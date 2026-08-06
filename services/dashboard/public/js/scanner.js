@@ -64,6 +64,18 @@ const COLUMNS = [
 ];
 const STICKY_END_KEY = 'sector_id';
 
+// ── Density presets ─────────────────────────────────────────────────────────
+// Row height must match what VirtualScroll is told (see virtual-scroll.js's
+// setRowHeight()) -- it uses a fixed pixel height for scroll-position math,
+// so CSS row height and this value have to agree or "which rows are visible"
+// silently desyncs from what's actually on screen.
+const DENSITY = {
+  compact:     { rowHeight: 26, label: 'Compact' },
+  comfortable: { rowHeight: 34, label: 'Comfortable' },
+  spacious:    { rowHeight: 44, label: 'Spacious' },
+};
+const DEFAULT_DENSITY = 'compact';
+
 const STATE_COLORS = {
   coiled:       { bg: '#14532d', color: '#4ade80', label: 'COILED'  },
   accumulating: { bg: '#1e3a5f', color: '#60a5fa', label: 'ACCUM'   },
@@ -265,6 +277,18 @@ function px(width) {
 
 function visibleColumns(hidden) {
   return COLUMNS.filter(c => !hidden.has(c.key));
+}
+
+// Sticky (frozen) columns keep a fixed width — their left offset is computed
+// once from nominal widths (see stickyMeta), so letting them flex would
+// desync that math. Every other column stretches to fill whatever space is
+// left, proportional to its own minimum width -- turn a column off and the
+// rest automatically get wider, no manual retuning needed.
+function cellSizeStyle(col, isSticky) {
+  if (isSticky) {
+    return `width:${col.width};min-width:${col.width};max-width:${col.width};`;
+  }
+  return `flex:1 1 ${col.width};min-width:${col.width};`;
 }
 
 function stickyMeta(columns) {
@@ -776,6 +800,7 @@ export class ScannerPanel {
     this._selectedOptionToken = 0;
     this._biasLocks = new Map();
     this._hidden = new Set(); // hidden column keys
+    this._density = DEFAULT_DENSITY;
     this._vs = null;
     this._unsubs = [];
     this._warming = false;
@@ -794,6 +819,12 @@ export class ScannerPanel {
     // Default hidden columns
     COLUMNS.filter(c => c.defaultHidden && !this._hidden.has(c.key + ':shown'))
             .forEach(c => this._hidden.add(c.key));
+
+    // Load density preference
+    try {
+      const savedDensity = localStorage.getItem('infusion:scanner:density');
+      if (savedDensity && DENSITY[savedDensity]) this._density = savedDensity;
+    } catch (_) {}
 
     this._el.innerHTML = `
       <div class="filter-bar">
@@ -823,6 +854,11 @@ export class ScannerPanel {
           <button type="button" data-preset="">Clear</button>
         </div>
         <span class="filter-count" id="scannerCount">0 symbols</span>
+        <div class="density-toggle" id="densityToggle">
+          ${Object.entries(DENSITY).map(([key, d]) => `
+            <button type="button" data-density="${key}" class="${key === this._density ? 'active' : ''}" title="${d.label} row spacing">${d.label}</button>
+          `).join('')}
+        </div>
         <button class="scanner-action-btn" id="mtfWarmBtn" title="Refresh historical MTF score cache for scanner rows">Warm MTF</button>
         <button class="col-toggle-btn" id="scannerColToggle" title="Toggle columns">Columns</button>
       </div>
@@ -837,15 +873,25 @@ export class ScannerPanel {
       <div class="vscroll-viewport" id="scannerViewport"></div>
     `;
 
+    this._el.classList.add(`density-${this._density}`);
     this._buildHeader();
 
     const viewport = this._el.querySelector('#scannerViewport');
     const headScroll = this._el.querySelector('#scannerHeadScroll');
     this._vs = new VirtualScroll(viewport, {
-      rowHeight: 70,
+      rowHeight: DENSITY[this._density].rowHeight,
       overscan: 15,
       renderRow: (item) => this._renderRow(item),
       keyFn: (item) => item.symbol,
+      // Row selection is already handled by the delegated click listener
+      // below (this._el, matches .scanner-row[data-symbol]) -- not wiring
+      // onRowClick here too, that would fire the same selection twice.
+    });
+
+    this._el.querySelector('#densityToggle')?.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-density]');
+      if (!btn) return;
+      this._setDensity(btn.dataset.density);
     });
     this._syncingScroll = false;
     viewport.addEventListener('scroll', () => {
@@ -927,6 +973,12 @@ export class ScannerPanel {
         this._logPaperTrade(logBtn);
         return;
       }
+      const stageBtn = e.target.closest('[data-stage-row]');
+      if (stageBtn && this._el.contains(stageBtn)) {
+        e.preventDefault();
+        this._stageFromRow(stageBtn.dataset.stageRow, stageBtn);
+        return;
+      }
       const tvBtn = e.target.closest('[data-open-tv]');
       if (tvBtn && this._el.contains(tvBtn)) {
         const symbol = tvBtn.dataset.openTv || this._selectedSymbol;
@@ -946,11 +998,31 @@ export class ScannerPanel {
       }
       const row = e.target.closest('.scanner-row[data-symbol]');
       if (!row || !this._el.contains(row)) return;
-      this._selectedSymbol = row.dataset.symbol || '';
-      this._loadSelectedOption(this._selectedSymbol);
-      this._updateMiniTradeCard();
-      if (this._vs) this._vs.refresh();
+      this._selectSymbol(row.dataset.symbol || '');
     });
+
+    // Keyboard navigation: ↑/↓ move the selection through the currently
+    // sorted/filtered list, Enter opens the same detail a click would.
+    // Scoped to the panel so typing in an unrelated input elsewhere on the
+    // page (e.g. the chat) never gets hijacked.
+    this._el.addEventListener('keydown', (e) => {
+      if (e.target.matches('input, select, textarea')) return;
+      if (!['ArrowUp', 'ArrowDown', 'Enter'].includes(e.key)) return;
+      if (!this._sorted.length) return;
+      e.preventDefault();
+      const currentIdx = this._sorted.findIndex(
+        (x) => String(x.symbol).toUpperCase() === String(this._selectedSymbol).toUpperCase()
+      );
+      if (e.key === 'Enter') {
+        if (currentIdx >= 0) this._scrollSelectedIntoView(currentIdx);
+        return;
+      }
+      const delta = e.key === 'ArrowDown' ? 1 : -1;
+      const nextIdx = Math.max(0, Math.min(this._sorted.length - 1, (currentIdx < 0 ? 0 : currentIdx) + delta));
+      this._selectSymbol(this._sorted[nextIdx].symbol);
+      this._scrollSelectedIntoView(nextIdx);
+    });
+    this._el.tabIndex = 0; // make the panel keyboard-focusable
     document.addEventListener('chart:load', (e) => {
       const symbol = e.detail?.symbol;
       if (!symbol) return;
@@ -1055,7 +1127,7 @@ export class ScannerPanel {
         const isSticky = sticky.has(c.key);
         const classes = ['sh', isSticky ? 'sticky-freeze' : '', c.key === 'symbol' ? 'sticky-symbol' : ''].filter(Boolean).join(' ');
         const stickyStyle = isSticky ? `left:${sticky.get(c.key)}px;` : '';
-        return `<div class="${classes}" title="Click to sort by ${escapeHtml(c.label)}" style="${stickyStyle}text-align:${c.align};width:${c.width};min-width:${c.width}" data-col="${c.key}">${c.label} <span class="sort-arrow"></span></div>`;
+        return `<div class="${classes}" title="Click to sort by ${escapeHtml(c.label)}" style="${stickyStyle}text-align:${c.align};${cellSizeStyle(c, isSticky)}" data-col="${c.key}">${c.label} <span class="sort-arrow"></span></div>`;
       })
       .join('');
     if (filterHead) {
@@ -1069,7 +1141,7 @@ export class ScannerPanel {
     const stickyStyle = isSticky ? `left:${sticky.get(c.key)}px;` : '';
     const classes = ['sf', isSticky ? 'sticky-freeze' : '', c.key === 'symbol' ? 'sticky-symbol' : ''].filter(Boolean).join(' ');
     const value = this._colFilters[c.key] || '';
-    const wrap = (html) => `<div class="${classes}" data-col="${c.key}" style="${stickyStyle}width:${c.width};min-width:${c.width};max-width:${c.width};text-align:${c.align}">${html}</div>`;
+    const wrap = (html) => `<div class="${classes}" data-col="${c.key}" style="${stickyStyle}${cellSizeStyle(c, isSticky)}text-align:${c.align}">${html}</div>`;
     const options = (items) => items.map(([v, label]) => `<option value="${escapeHtml(v)}" ${String(value) === String(v) ? 'selected' : ''}>${escapeHtml(label)}</option>`).join('');
     if (c.key === 'symbol') return wrap(`<input data-filter-col="symbol" value="${escapeHtml(value)}" placeholder="Find" />`);
     if (c.key === 'change_pct') return wrap(`<select data-filter-col="change_pct">${options([['','All'],['positive','Green'],['negative','Red']])}</select>`);
@@ -1121,6 +1193,42 @@ export class ScannerPanel {
 
   _saveHidden() {
     try { localStorage.setItem('infusion:scanner:hidden:v2', JSON.stringify([...this._hidden])); } catch (_) {}
+  }
+
+  _setDensity(key) {
+    if (!DENSITY[key] || key === this._density) return;
+    this._el.classList.remove(`density-${this._density}`);
+    this._density = key;
+    this._el.classList.add(`density-${this._density}`);
+    try { localStorage.setItem('infusion:scanner:density', key); } catch (_) {}
+    this._el.querySelectorAll('#densityToggle [data-density]').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.density === key);
+    });
+    if (this._vs) this._vs.setRowHeight(DENSITY[key].rowHeight);
+  }
+
+  // Single place that performs "select this symbol" -- reused by row
+  // clicks and keyboard navigation so they can never drift apart.
+  _selectSymbol(symbol) {
+    if (!symbol) return;
+    this._selectedSymbol = symbol;
+    this._loadSelectedOption(symbol);
+    this._updateMiniTradeCard();
+    if (this._vs) this._vs.refresh();
+  }
+
+  _scrollSelectedIntoView(index) {
+    if (!this._vs) return;
+    const viewport = this._el.querySelector('#scannerViewport');
+    if (!viewport) return;
+    const rowHeight = DENSITY[this._density].rowHeight;
+    const rowTop = index * rowHeight;
+    const rowBottom = rowTop + rowHeight;
+    if (rowTop < viewport.scrollTop) {
+      viewport.scrollTop = rowTop;
+    } else if (rowBottom > viewport.scrollTop + viewport.clientHeight) {
+      viewport.scrollTop = rowBottom - viewport.clientHeight;
+    }
   }
 
   async _warmMTFCache(button) {
@@ -2028,6 +2136,46 @@ export class ScannerPanel {
     }
   }
 
+  // Row quick-action: stage a ticket directly from the table without the
+  // click-row -> scroll -> click-Stage round trip. Same lookup pattern as
+  // _logPaperTrade (find the auto-logged journal row for this symbol) and
+  // the same /api/execution/stage call journal-panel.js's Stage Ticket
+  // button uses -- one staging path, not two that could drift apart.
+  async _stageFromRow(symbol, buttonEl) {
+    const sym = String(symbol || '').toUpperCase();
+    if (!sym) return;
+    const originalText = buttonEl.textContent;
+    buttonEl.disabled = true;
+    buttonEl.textContent = '...';
+    try {
+      const data = await api.fetch('/api/journal/trades?limit=200');
+      const rows = Array.isArray(data?.trades) ? data.trades : [];
+      const trade = rows.find(x => String(x.symbol || '').toUpperCase() === sym);
+      if (!trade?.id) {
+        buttonEl.textContent = 'No signal yet';
+        setTimeout(() => {
+          buttonEl.disabled = false;
+          buttonEl.textContent = originalText;
+        }, 1800);
+        return;
+      }
+      const res = await api.post('/api/execution/stage', { trade });
+      if (res?.ok) {
+        buttonEl.textContent = res.ticket?.status === 'READY_TO_STAGE' ? 'Staged' : 'Blocked';
+        document.dispatchEvent(new CustomEvent('execution:refresh', { detail: res.ticket }));
+      } else {
+        buttonEl.textContent = 'Stage failed';
+      }
+    } catch (_) {
+      buttonEl.textContent = 'Stage failed';
+    } finally {
+      setTimeout(() => {
+        buttonEl.disabled = false;
+        buttonEl.textContent = originalText;
+      }, 1800);
+    }
+  }
+
   _renderRow(item) {
     const chgClass   = (item.change_pct || 0) >= 0 ? 'positive' : 'negative';
     const rvClass    = (item.rel_vol || 0) > 2 ? 'positive' : (item.rel_vol || 0) < 0.5 ? 'negative' : '';
@@ -2087,7 +2235,7 @@ export class ScannerPanel {
 
     // Map from column key → cell HTML content
     const contentMap = {
-      symbol:     `<span class="sym-link">${escapeHtml(item.symbol)}</span>`,
+      symbol:     `<span class="sym-link">${escapeHtml(item.symbol)}</span><button type="button" class="row-quick-stage" data-stage-row="${escapeHtml(item.symbol)}" title="Stage this trade (paper-first)">Stage</button>`,
       ltp:        `<span style="font-weight:600">${formatPrice(item.ltp)}</span>`,
       prev_diff:  `<span class="${nDiffClass(item.points_diff)}">${formatPrice(item.prev_close || 0)}<br><small>${formatPrice(item.points_diff || 0)} (${formatPct(item.pct_diff ?? item.change_pct)})</small></span>`,
       change_pct: `<span class="${chgClass}">${formatPct(item.change_pct)}</span>`,
@@ -2146,7 +2294,7 @@ export class ScannerPanel {
         const isSticky = stickyCols.has(c.key);
         const classes = ['sc', isSticky ? 'sticky-freeze' : '', c.key === 'symbol' ? 'sticky-symbol' : ''].filter(Boolean).join(' ');
         const stickyStyle = isSticky ? `left:${stickyCols.get(c.key)}px;` : '';
-        return `<div class="${classes}" data-col="${c.key}" style="${stickyStyle}width:${c.width};min-width:${c.width};max-width:${c.width};text-align:${c.align}">${content}</div>`;
+        return `<div class="${classes}" data-col="${c.key}" style="${stickyStyle}${cellSizeStyle(c, isSticky)}text-align:${c.align}">${content}</div>`;
       })
       .join('');
 

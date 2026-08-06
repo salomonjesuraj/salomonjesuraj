@@ -200,6 +200,21 @@ export class VirtualScroll {
   }
 
   /**
+   * Change the fixed per-row height (e.g. a density toggle) and re-render.
+   * The spacer's total height must be recalculated against the new value —
+   * a stale rowHeight here desyncs scroll-position math from actual pixel
+   * geometry, which silently breaks "which rows are visible" calculations.
+   *
+   * @param {number} newHeight
+   */
+  setRowHeight(newHeight) {
+    if (!newHeight || newHeight === this._rowHeight) return;
+    this._rowHeight = newHeight;
+    this._spacerEl.style.height = `${this._items.length * this._rowHeight}px`;
+    this.refresh();
+  }
+
+  /**
    * Get the indices of the currently visible row range.
    *
    * @returns {{ start: number, end: number, total: number }}

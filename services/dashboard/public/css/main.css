@@ -7222,22 +7222,112 @@ body.screener-v4-page{
    exact pixel/column math) was removed from scanner.js entirely — it kept
    re-breaking on every column change and duplicated the "Selected Trade
    Plan" panel, which already shows full detail without that fragility.
-   Selected rows now just highlight. Denser rows + removed sticky-column
-   divider line, per feedback.
+   Selected rows now just highlight. Removed sticky-column divider line.
    ──────────────────────────────────────────────────────────────────────── */
-.screener-pro-v4 .scanner-row{
-  min-height:26px!important;
-}
-.screener-pro-v4 .scanner-row .sc{
-  min-height:26px!important;
-  padding-top:3px!important;
-  padding-bottom:3px!important;
-}
 .screener-pro-v4 .scanner-row.selected-row{
   height:auto!important;
-  min-height:26px!important;
 }
 .screener-pro-v4 .scanner-row .sc.sticky-freeze{
   border-right:none!important;
   box-shadow:none!important;
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+   v7.5.0 — row density tiers. Row height here MUST match the values in
+   scanner.js's DENSITY constant (also fed to VirtualScroll.setRowHeight())
+   -- CSS visual height and the virtualizer's scroll-position math have to
+   agree or rows render at the wrong scroll offset.
+   ──────────────────────────────────────────────────────────────────────── */
+.screener-pro-v4 .scanner-table-zone.density-compact .scanner-row,
+.screener-pro-v4 .scanner-table-zone.density-compact .scanner-row .sc{
+  min-height:26px!important;
+  font-size:10px!important;
+}
+.screener-pro-v4 .scanner-table-zone.density-compact .scanner-row .sc{
+  padding-top:3px!important;
+  padding-bottom:3px!important;
+}
+.screener-pro-v4 .scanner-table-zone.density-comfortable .scanner-row,
+.screener-pro-v4 .scanner-table-zone.density-comfortable .scanner-row .sc{
+  min-height:34px!important;
+  font-size:11px!important;
+}
+.screener-pro-v4 .scanner-table-zone.density-comfortable .scanner-row .sc{
+  padding-top:6px!important;
+  padding-bottom:6px!important;
+}
+.screener-pro-v4 .scanner-table-zone.density-spacious .scanner-row,
+.screener-pro-v4 .scanner-table-zone.density-spacious .scanner-row .sc{
+  min-height:44px!important;
+  font-size:12px!important;
+}
+.screener-pro-v4 .scanner-table-zone.density-spacious .scanner-row .sc{
+  padding-top:10px!important;
+  padding-bottom:10px!important;
+}
+
+.density-toggle{
+  display:flex;
+  gap:2px;
+  padding:2px;
+  border-radius:8px;
+  background:rgba(148,163,184,.10);
+}
+.density-toggle button{
+  border:none;
+  background:transparent;
+  color:var(--text-muted);
+  font-family:var(--font-ui);
+  font-size:10px;
+  font-weight:600;
+  padding:3px 8px;
+  border-radius:6px;
+  cursor:pointer;
+  transition:all var(--transition-fast,120ms);
+}
+.density-toggle button:hover{
+  color:var(--text-primary);
+}
+.density-toggle button.active{
+  background:var(--blue);
+  color:#fff;
+}
+
+/* Tabular numerics -- LTP/Entry/T1-T3/SL/etc line up on the decimal point
+   instead of drifting under a proportional font. Safe on non-numeric
+   columns too, this only changes how digit glyphs render. */
+.screener-pro-v4 .scanner-head .sh,
+.screener-pro-v4 .scanner-filter-head .sf,
+.screener-pro-v4 .scanner-row .sc{
+  font-variant-numeric:tabular-nums;
+}
+
+/* Row quick-action (Stage) — hidden until hover/focus so the symbol cell
+   stays clean at a glance, one click away when you actually want it. */
+.row-quick-stage{
+  margin-left:6px;
+  padding:1px 6px;
+  font-size:9px;
+  font-weight:700;
+  text-transform:uppercase;
+  letter-spacing:.3px;
+  border:1px solid rgba(59,130,246,.35);
+  border-radius:999px;
+  background:rgba(59,130,246,.10);
+  color:var(--blue);
+  cursor:pointer;
+  opacity:0;
+  transition:opacity var(--transition-fast,120ms);
+}
+.screener-pro-v4 .scanner-row:hover .row-quick-stage,
+.screener-pro-v4 .scanner-row.selected-row .row-quick-stage{
+  opacity:1;
+}
+.row-quick-stage:hover{
+  background:var(--blue);
+  color:#fff;
+}
+.row-quick-stage:disabled{
+  opacity:.6;
+  cursor:default;
 }
