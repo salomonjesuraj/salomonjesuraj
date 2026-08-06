@@ -9,43 +9,47 @@ import { api } from './api.js';
 import { ws } from './ws.js';
 
 // ── Column definitions ─────────────────────────────────────────────────────
-// toggle:true = can be hidden; default:false = hidden by default
+// toggle:true = can be hidden (via the Columns button); defaultHidden:true =
+// hidden on first load. Per direct feedback, only 8 columns are essential by
+// default: Symbol, LTP, Chg%, Sector, Conviction, Bias (CE/PE), Chase, MTF.
+// Everything else still exists and is one click away in the Columns panel —
+// nothing was deleted, just turned off by default.
 const COLUMNS = [
   { key: 'symbol',       label: 'Symbol',      align: 'left',   width: '112px',  toggle: false },
   { key: 'ltp',          label: 'LTP',         align: 'right',  width: '92px',   toggle: false },
-  { key: 'prev_diff',    label: 'Prev close +/-', align: 'right', width: '118px', toggle: true },
-  { key: 'change_pct',   label: 'Chg%',        align: 'right',  width: '70px',   toggle: false },
-  { key: 'rel_vol',      label: 'RVol',        align: 'right',  width: '66px',   toggle: true },
-  { key: 'sector_id',    label: 'Sector',      align: 'left',   width: '122px',  toggle: false },
-  { key: 'smart_rank',   label: 'Rank',        align: 'right',  width: '86px',   toggle: false },
-  { key: 'mode_signal',  label: 'Mode Signal', align: 'center', width: '126px',  toggle: false },
-  { key: 'gate_score',   label: 'Gates',       align: 'center', width: '108px',  toggle: false },
-  { key: 'intelligence_score', label: 'Intel', align: 'right',  width: '92px',   toggle: false },
-  { key: 'news_confirmation', label: 'News',   align: 'center', width: '104px',  toggle: true },
-  { key: 'trade_horizon', label: 'Horizon',    align: 'center', width: '104px',  toggle: false },
-  { key: 'chase_quality', label: 'Chase',      align: 'center', width: '118px',  toggle: false },
-  { key: 'intraday_score', label: 'Intra',     align: 'right',  width: '78px',   toggle: true },
-  { key: 'swing_score',  label: 'Swing',       align: 'right',  width: '78px',   toggle: true },
-  { key: 'trend_bias',   label: 'Trend',       align: 'center', width: '78px',   toggle: false },
-  { key: 'mtf_dots',     label: 'MTF',         align: 'center', width: '124px',  toggle: false },
-  { key: 'mtf_score',    label: 'MTF Score',   align: 'right',  width: '94px',   toggle: false },
-  { key: 'mtf_source',   label: 'MTF Src',     align: 'center', width: '82px',   toggle: true },
-  { key: 'setup_strength', label: 'Strength',  align: 'right',  width: '92px',   toggle: false },
-  { key: 'trade_decision', label: 'Bias',      align: 'center', width: '88px',   toggle: false },
-  { key: 'direction_zone', label: 'CE / PE Zone', align: 'left', width: '210px', toggle: false },
-  { key: 'ce_score',      label: 'CE',         align: 'right',  width: '72px',   toggle: true },
-  { key: 'pe_score',      label: 'PE',         align: 'right',  width: '72px',   toggle: true },
-  { key: 'option_readiness', label: 'Conviction', align: 'right', width: '104px', toggle: false },
-  { key: 'chain_execution_status', label: 'Chain', align: 'center', width: '112px', toggle: true },
-  { key: 'evidence',     label: 'Why / Block', align: 'left',   width: '176px',  toggle: true },
-  { key: 'entry_price_hint', label: 'Entry',   align: 'right',  width: '88px',   toggle: true },
+  { key: 'prev_diff',    label: 'Prev close +/-', align: 'right', width: '118px', toggle: true, defaultHidden: true },
+  { key: 'change_pct',   label: 'Chg%',        align: 'right',  width: '70px',   toggle: true },
+  { key: 'rel_vol',      label: 'RVol',        align: 'right',  width: '66px',   toggle: true, defaultHidden: true },
+  { key: 'sector_id',    label: 'Sector',      align: 'left',   width: '122px',  toggle: true },
+  { key: 'smart_rank',   label: 'Rank',        align: 'right',  width: '86px',   toggle: true, defaultHidden: true },
+  { key: 'mode_signal',  label: 'Mode Signal', align: 'center', width: '126px',  toggle: true, defaultHidden: true },
+  { key: 'gate_score',   label: 'Gates',       align: 'center', width: '108px',  toggle: true, defaultHidden: true },
+  { key: 'intelligence_score', label: 'Intel', align: 'right',  width: '92px',   toggle: true, defaultHidden: true },
+  { key: 'news_confirmation', label: 'News',   align: 'center', width: '104px',  toggle: true, defaultHidden: true },
+  { key: 'trade_horizon', label: 'Horizon',    align: 'center', width: '104px',  toggle: true, defaultHidden: true },
+  { key: 'chase_quality', label: 'Chase',      align: 'center', width: '118px',  toggle: true },
+  { key: 'intraday_score', label: 'Intra',     align: 'right',  width: '78px',   toggle: true, defaultHidden: true },
+  { key: 'swing_score',  label: 'Swing',       align: 'right',  width: '78px',   toggle: true, defaultHidden: true },
+  { key: 'trend_bias',   label: 'Trend',       align: 'center', width: '78px',   toggle: true, defaultHidden: true },
+  { key: 'mtf_dots',     label: 'MTF',         align: 'center', width: '124px',  toggle: true },
+  { key: 'mtf_score',    label: 'MTF Score',   align: 'right',  width: '94px',   toggle: true, defaultHidden: true },
+  { key: 'mtf_source',   label: 'MTF Src',     align: 'center', width: '82px',   toggle: true, defaultHidden: true },
+  { key: 'setup_strength', label: 'Strength',  align: 'right',  width: '92px',   toggle: true, defaultHidden: true },
+  { key: 'trade_decision', label: 'Bias',      align: 'center', width: '88px',   toggle: true },
+  { key: 'direction_zone', label: 'CE / PE Zone', align: 'left', width: '210px', toggle: true, defaultHidden: true },
+  { key: 'ce_score',      label: 'CE',         align: 'right',  width: '72px',   toggle: true, defaultHidden: true },
+  { key: 'pe_score',      label: 'PE',         align: 'right',  width: '72px',   toggle: true, defaultHidden: true },
+  { key: 'option_readiness', label: 'Conviction', align: 'right', width: '104px', toggle: true },
+  { key: 'chain_execution_status', label: 'Chain', align: 'center', width: '112px', toggle: true, defaultHidden: true },
+  { key: 'evidence',     label: 'Why / Block', align: 'left',   width: '176px',  toggle: true, defaultHidden: true },
+  { key: 'entry_price_hint', label: 'Entry',   align: 'right',  width: '88px',   toggle: true, defaultHidden: true },
   { key: 'stop_loss_hint', label: 'SL',        align: 'right',  width: '78px',   toggle: true, defaultHidden: true },
   { key: 'target_1_hint', label: 'T1',         align: 'right',  width: '78px',   toggle: true, defaultHidden: true },
-  { key: 'positive_above', label: 'Bull above', align: 'right', width: '92px',   toggle: true },
+  { key: 'positive_above', label: 'Bull above', align: 'right', width: '92px',   toggle: true, defaultHidden: true },
   { key: 'negative_below', label: 'Bear below', align: 'right', width: '92px',   toggle: true, defaultHidden: true },
-  { key: 'ai_trade_map', label: 'AI Trade Map', align: 'left',  width: '220px',  toggle: true },
-  { key: 'readiness',    label: 'Ready',       align: 'right',  width: '72px',   toggle: false },
-  { key: 'status',       label: 'Status',      align: 'center', width: '92px',   toggle: true },
+  { key: 'ai_trade_map', label: 'AI Trade Map', align: 'left',  width: '220px',  toggle: true, defaultHidden: true },
+  { key: 'readiness',    label: 'Ready',       align: 'right',  width: '72px',   toggle: true, defaultHidden: true },
+  { key: 'status',       label: 'Status',      align: 'center', width: '92px',   toggle: true, defaultHidden: true },
   { key: 'alignment',    label: 'Alignment',   align: 'left',   width: '104px',  toggle: true, defaultHidden: true },
   { key: 'fibo_pivot',   label: 'Fibo P',      align: 'right',  width: '78px',   toggle: true, defaultHidden: true },
   { key: 'volume',       label: 'Vol',         align: 'right',  width: '70px',   toggle: true, defaultHidden: true },
@@ -1863,7 +1867,6 @@ export class ScannerPanel {
     el.innerHTML = `
       <div class="trade-plan-card ${directionClass}">
         ${this._tradeDecisionBanner(item)}
-        ${commandCenterBlock(item)}
         <div class="trade-plan-hero">
           <span>Selected Trade Plan</span>
           <b>${escapeHtml(symbol || '-')}</b>
@@ -1881,41 +1884,46 @@ export class ScannerPanel {
           <b>${escapeHtml(modeSig.label)}</b>
           <small>${escapeHtml(modeSig.reason)} · Needs Opt ${modeProfile.watch}/${modeProfile.paper}+ and R:R ${modeProfile.minRr}:1+</small>
         </div>
-        ${selectedTradeChecklist(item, this._signalMode)}
         <div class="trade-plan-metric"><label>LTP</label><b>${formatPrice(item.ltp)}</b><small class="${Number(item.change_pct || 0) >= 0 ? 'positive' : 'negative'}">${formatPct(item.change_pct)} · ${formatRelVol(item.rel_vol)}</small></div>
         <div class="trade-plan-metric"><label>Entry</label><b>${formatPrice(entry)}</b><small>${escapeHtml(item.status || 'WATCH')}</small></div>
         <div class="trade-plan-metric"><label>SL</label><b class="negative">${formatPrice(sl)}</b><small>Risk ${underlyingRisk ? formatPrice(underlyingRisk) : '-'}</small></div>
         <div class="trade-plan-metric"><label>T1 / T2</label><b class="positive">${formatPrice(t1)}</b><small>${formatPrice(t2)} · R:R ${rr1}:1</small></div>
         <div class="trade-plan-metric"><label>${escapeHtml(triggerLabel)}</label><b class="${directionClass === 'sell' ? 'negative' : 'positive'}">${formatPrice(trigger)}</b><small>activation</small></div>
         <div class="trade-plan-metric"><label>Risk budget</label><b>${formatPrice(risk.riskAmount)}</b><small>${risk.riskPct.toFixed(1)}% capital</small></div>
-        <div class="direction-command-panel ${escapeHtml(item.direction_tone || 'wait')}">
-          <div><label>BUY CE only above</label><b class="positive">${formatPrice(item.ce_active_above)}</b><small>Need 5M/15M close + volume</small></div>
-          <div><label>WAIT / No chase zone</label><b>${escapeHtml(item.direction_wait_zone || 'building')}</b><small>${escapeHtml(item.direction_state || 'WAIT_ZONE')}</small></div>
-          <div><label>BUY PE only below</label><b class="negative">${formatPrice(item.pe_active_below)}</b><small>Need 5M/15M close + VWAP rejection</small></div>
-          <div><label>Directional conviction</label><b>CE ${Math.round(Number(item.ce_score || 0))} / PE ${Math.round(Number(item.pe_score || 0))}</b><small>${escapeHtml(item.direction_switch_note || item.direction_reason || 'Stable direction engine active')}</small></div>
-        </div>
-        <div class="trade-plan-ai-map">
-          <div class="ai-map-head">
-            <span>AI Trade Map</span>
-            ${horizonChip(item.trade_horizon)}
-            ${chaseChip(item.chase_quality)}
-          </div>
-          <p>${escapeHtml(item.breakout_explanation || 'Awaiting breakout map')}</p>
-          ${item.target_method ? `<small class="target-method-note">${escapeHtml(item.target_method)}</small>` : ''}
-          <div class="ai-map-levels">
-            <span><label>Breakout area</label><b>${formatPrice(item.breakout_area || item.positive_above)}</b></span>
-            <span><label>Sustain rule</label><b>${escapeHtml(item.sustain_rule || '5M/15M close')}</b></span>
-            <span><label>Move upto</label><b class="positive">${formatPrice(item.move_to || t1)}</b></span>
-            <span><label>Extended</label><b class="positive">${formatPrice(item.extended_move_to || t2)}</b></span>
-            <span><label>Breakdown / invalid</label><b class="negative">${formatPrice(item.invalidation_area || item.negative_below)}</b></span>
-            <span><label>Carry risk</label><b>${escapeHtml(item.carry_risk || 'MEDIUM')}</b></span>
-          </div>
-          <small>${escapeHtml(item.horizon_reason || 'Horizon model is building from MTF, sector, trend and option realism.')}</small>
-        </div>
-        ${this._renderOptionQuickPick(item)}
-        ${this._renderExecutionGates(item)}
         <div class="trade-plan-wide"><label>MTF / Evidence</label><b>${escapeHtml(mtf)}</b><small>Strength ${setup} · ${escapeHtml(reasons || 'Evidence building')}</small></div>
-        <div class="trade-plan-wide"><label>Block / Anti-chase</label><b>${escapeHtml(blockers)}</b><small>${item.anti_chase_ok === false ? 'Wait for cleaner retest' : 'Allowed if chart confirms'}</small></div>
+
+        <details class="trade-plan-advanced">
+          <summary>Advanced ▾</summary>
+          ${commandCenterBlock(item)}
+          ${selectedTradeChecklist(item, this._signalMode)}
+          <div class="direction-command-panel ${escapeHtml(item.direction_tone || 'wait')}">
+            <div><label>BUY CE only above</label><b class="positive">${formatPrice(item.ce_active_above)}</b><small>Need 5M/15M close + volume</small></div>
+            <div><label>WAIT / No chase zone</label><b>${escapeHtml(item.direction_wait_zone || 'building')}</b><small>${escapeHtml(item.direction_state || 'WAIT_ZONE')}</small></div>
+            <div><label>BUY PE only below</label><b class="negative">${formatPrice(item.pe_active_below)}</b><small>Need 5M/15M close + VWAP rejection</small></div>
+            <div><label>Directional conviction</label><b>CE ${Math.round(Number(item.ce_score || 0))} / PE ${Math.round(Number(item.pe_score || 0))}</b><small>${escapeHtml(item.direction_switch_note || item.direction_reason || 'Stable direction engine active')}</small></div>
+          </div>
+          <div class="trade-plan-ai-map">
+            <div class="ai-map-head">
+              <span>AI Trade Map</span>
+              ${horizonChip(item.trade_horizon)}
+              ${chaseChip(item.chase_quality)}
+            </div>
+            <p>${escapeHtml(item.breakout_explanation || 'Awaiting breakout map')}</p>
+            ${item.target_method ? `<small class="target-method-note">${escapeHtml(item.target_method)}</small>` : ''}
+            <div class="ai-map-levels">
+              <span><label>Breakout area</label><b>${formatPrice(item.breakout_area || item.positive_above)}</b></span>
+              <span><label>Sustain rule</label><b>${escapeHtml(item.sustain_rule || '5M/15M close')}</b></span>
+              <span><label>Move upto</label><b class="positive">${formatPrice(item.move_to || t1)}</b></span>
+              <span><label>Extended</label><b class="positive">${formatPrice(item.extended_move_to || t2)}</b></span>
+              <span><label>Breakdown / invalid</label><b class="negative">${formatPrice(item.invalidation_area || item.negative_below)}</b></span>
+              <span><label>Carry risk</label><b>${escapeHtml(item.carry_risk || 'MEDIUM')}</b></span>
+            </div>
+            <small>${escapeHtml(item.horizon_reason || 'Horizon model is building from MTF, sector, trend and option realism.')}</small>
+          </div>
+          ${this._renderOptionQuickPick(item)}
+          ${this._renderExecutionGates(item)}
+          <div class="trade-plan-wide"><label>Block / Anti-chase</label><b>${escapeHtml(blockers)}</b><small>${item.anti_chase_ok === false ? 'Wait for cleaner retest' : 'Allowed if chart confirms'}</small></div>
+        </details>
       </div>
     `;
   }
@@ -2157,31 +2165,35 @@ export class ScannerPanel {
         <span><label>Entry</label><b>${formatPrice(item.entry_price_hint)}</b></span>
         <span><label>SL</label><b class="negative">${formatPrice(item.stop_loss_hint)}</b></span>
         <span><label>T1/T2</label><b class="positive">${formatPrice(item.target_1_hint)} / ${formatPrice(item.target_2_hint)}</b></span>
-        <span><label>Bull above</label><b class="positive">${formatPrice(item.positive_above)}</b></span>
-        <span><label>Bear below</label><b class="negative">${formatPrice(item.negative_below)}</b></span>
-        <span><label>CE only above</label><b class="positive">${formatPrice(item.ce_active_above)}</b></span>
-        <span><label>PE only below</label><b class="negative">${formatPrice(item.pe_active_below)}</b></span>
-        <span><label>Wait zone</label><b>${escapeHtml(item.direction_wait_zone || 'building')}</b></span>
-        <span><label>CE / PE score</label><b>CE ${Math.round(Number(item.ce_score || 0))} / PE ${Math.round(Number(item.pe_score || 0))}</b></span>
-        <span><label>Horizon</label><b>${escapeHtml(item.trade_horizon || 'INTRADAY')}</b></span>
         <span><label>Chase</label><b>${escapeHtml(item.chase_quality || 'WATCH_ONLY')}</b></span>
-        <span><label>Sustain</label><b>${escapeHtml(item.sustain_rule || '5M/15M close')}</b></span>
-        <span><label>Hist MTF</label><b>${escapeHtml(item.historical_mtf_alignment || item.mtf_source || 'PROXY')}</b></span>
-        <span><label>Option Chain</label><b>${escapeHtml(item.chain_execution_status || (item.option_chain_ready ? 'WAIT_CONTRACT' : 'PROXY'))} ${item.chain_option_score ? Math.round(Number(item.chain_option_score)) : ''}</b></span>
-        <span><label>Contract</label><b>${escapeHtml(item.chain_suggested_contract || 'Select/fetch option chain')}</b></span>
-        <span><label>Move upto</label><b class="positive">${formatPrice(item.move_to || item.target_1_hint)}</b></span>
-        <span><label>Breakdown</label><b class="negative">${formatPrice(item.breakdown_to || item.negative_below)}</b></span>
-        <span class="wide"><label>AI Map</label><b>${escapeHtml(item.breakout_explanation || 'Breakout map building from live F&O scan')}</b></span>
-        <span class="wide"><label>Infusion Intel</label><b>${escapeHtml(item.intelligence_summary || item.trade_map_summary || 'Decision intelligence building')}</b></span>
-        <span class="wide"><label>News Confirm</label><b>${escapeHtml(item.news_confirmation?.message || 'Select stock to fetch/cache public news confirmation')}</b></span>
-        <span class="wide"><label>Option Reality</label><b>${escapeHtml(item.chain_score_cap_detail || (item.option_chain_ready ? 'Contract gate data available' : 'Proxy only until Upstox chain is fetched for this stock'))}</b></span>
-        <span class="wide"><label>Intraday/Swing Read</label><b>${escapeHtml(item.mtf_decision_note || item.horizon_reason || 'Historical MTF cache warming')}</b></span>
-        <span class="wide"><label>Primary Trade Map</label><b>${escapeHtml(primaryMap || item.breakout_explanation || 'Primary map building')}</b></span>
-        ${alternateMap ? `<span class="wide"><label>MTF Alternate Map</label><b>${escapeHtml(alternateMap)}</b><small>${escapeHtml(item.mtf_conflict_note || 'Historical MTF alternate trigger')}</small></span>` : ''}
-        <span class="wide"><label>Stable Direction</label><b>${escapeHtml(item.direction_reason || 'CE/PE direction zone building')}</b><small>${escapeHtml(item.direction_switch_note || 'Anti-flip lock active')}</small></span>
         <span class="wide"><label>MTF</label><b>${escapeHtml(item.mtf_text || 'MTF building')}</b></span>
-        <span class="wide"><label>Why</label><b>${escapeHtml(why)}</b></span>
-        <span class="wide"><label>Block</label><b>${escapeHtml(block)}</b></span>
+
+        <details class="scanner-inline-advanced wide">
+          <summary>Advanced ▾</summary>
+          <span><label>Bull above</label><b class="positive">${formatPrice(item.positive_above)}</b></span>
+          <span><label>Bear below</label><b class="negative">${formatPrice(item.negative_below)}</b></span>
+          <span><label>CE only above</label><b class="positive">${formatPrice(item.ce_active_above)}</b></span>
+          <span><label>PE only below</label><b class="negative">${formatPrice(item.pe_active_below)}</b></span>
+          <span><label>Wait zone</label><b>${escapeHtml(item.direction_wait_zone || 'building')}</b></span>
+          <span><label>CE / PE score</label><b>CE ${Math.round(Number(item.ce_score || 0))} / PE ${Math.round(Number(item.pe_score || 0))}</b></span>
+          <span><label>Horizon</label><b>${escapeHtml(item.trade_horizon || 'INTRADAY')}</b></span>
+          <span><label>Sustain</label><b>${escapeHtml(item.sustain_rule || '5M/15M close')}</b></span>
+          <span><label>Hist MTF</label><b>${escapeHtml(item.historical_mtf_alignment || item.mtf_source || 'PROXY')}</b></span>
+          <span><label>Option Chain</label><b>${escapeHtml(item.chain_execution_status || (item.option_chain_ready ? 'WAIT_CONTRACT' : 'PROXY'))} ${item.chain_option_score ? Math.round(Number(item.chain_option_score)) : ''}</b></span>
+          <span><label>Contract</label><b>${escapeHtml(item.chain_suggested_contract || 'Select/fetch option chain')}</b></span>
+          <span><label>Move upto</label><b class="positive">${formatPrice(item.move_to || item.target_1_hint)}</b></span>
+          <span><label>Breakdown</label><b class="negative">${formatPrice(item.breakdown_to || item.negative_below)}</b></span>
+          <span class="wide"><label>AI Map</label><b>${escapeHtml(item.breakout_explanation || 'Breakout map building from live F&O scan')}</b></span>
+          <span class="wide"><label>Infusion Intel</label><b>${escapeHtml(item.intelligence_summary || item.trade_map_summary || 'Decision intelligence building')}</b></span>
+          <span class="wide"><label>News Confirm</label><b>${escapeHtml(item.news_confirmation?.message || 'Select stock to fetch/cache public news confirmation')}</b></span>
+          <span class="wide"><label>Option Reality</label><b>${escapeHtml(item.chain_score_cap_detail || (item.option_chain_ready ? 'Contract gate data available' : 'Proxy only until Upstox chain is fetched for this stock'))}</b></span>
+          <span class="wide"><label>Intraday/Swing Read</label><b>${escapeHtml(item.mtf_decision_note || item.horizon_reason || 'Historical MTF cache warming')}</b></span>
+          <span class="wide"><label>Primary Trade Map</label><b>${escapeHtml(primaryMap || item.breakout_explanation || 'Primary map building')}</b></span>
+          ${alternateMap ? `<span class="wide"><label>MTF Alternate Map</label><b>${escapeHtml(alternateMap)}</b><small>${escapeHtml(item.mtf_conflict_note || 'Historical MTF alternate trigger')}</small></span>` : ''}
+          <span class="wide"><label>Stable Direction</label><b>${escapeHtml(item.direction_reason || 'CE/PE direction zone building')}</b><small>${escapeHtml(item.direction_switch_note || 'Anti-flip lock active')}</small></span>
+          <span class="wide"><label>Why</label><b>${escapeHtml(why)}</b></span>
+          <span class="wide"><label>Block</label><b>${escapeHtml(block)}</b></span>
+        </details>
       </div>
     `;
   }

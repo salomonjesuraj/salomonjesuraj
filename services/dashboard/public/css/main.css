@@ -7176,3 +7176,56 @@ body.screener-v4-page{
     grid-template-columns:repeat(3,1fr)!important;
   }
 }
+
+/* ────────────────────────────────────────────────────────────────────────
+   v7.2.0 — "Advanced" collapsibles for the trade-plan card and scanner
+   inline row detail (both in scanner.js). Native <details>/<summary>,
+   collapsed by default, no new JS state needed. Essentials (score/entry/
+   SL/T1-T2/chase/MTF) stay outside these and remain always visible.
+   ──────────────────────────────────────────────────────────────────────── */
+.trade-plan-advanced,
+.scanner-inline-advanced{
+  grid-column:1/-1;
+  margin-top:6px;
+  border-top:1px dashed rgba(148,163,184,.22);
+  padding-top:8px;
+}
+.trade-plan-advanced summary,
+.scanner-inline-advanced summary{
+  cursor:pointer;
+  list-style:none;
+  font-family:var(--font-ui);
+  font-size:10px;
+  font-weight:700;
+  text-transform:uppercase;
+  letter-spacing:.4px;
+  color:var(--text-muted);
+  padding:4px 8px;
+  border-radius:999px;
+  background:rgba(148,163,184,.08);
+  display:inline-block;
+  transition:color var(--transition-fast,120ms),background var(--transition-fast,120ms);
+}
+.trade-plan-advanced summary::-webkit-details-marker,
+.scanner-inline-advanced summary::-webkit-details-marker{
+  display:none;
+}
+.trade-plan-advanced summary:hover,
+.scanner-inline-advanced summary:hover{
+  color:var(--text-primary);
+  background:rgba(148,163,184,.16);
+}
+.trade-plan-advanced[open] summary,
+.scanner-inline-advanced[open] summary{
+  color:var(--blue);
+  background:var(--blue-dim);
+  margin-bottom:8px;
+}
+.scanner-inline-advanced[open]{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(140px,1fr));
+  gap:4px 10px;
+}
+.scanner-inline-advanced .wide{
+  grid-column:1/-1;
+}
