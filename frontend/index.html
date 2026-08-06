@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Infusion - Live Feed</title>
+  <style>
+    :root {
+      --bg-primary: #0d1117;
+      --bg-secondary: #161b22;
+      --bg-tertiary: #21262d;
+      --border: #30363d;
+      --text-primary: #c9d1d9;
+      --text-secondary: #8b949e;
+      --text-muted: #484f58;
+      --green: #3fb950;
+      --red: #f85149;
+      --blue: #58a6ff;
+      --yellow: #d29922;
+      --font: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      font-family: var(--font);
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    /* Header */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 16px;
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .header h1 {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--blue);
+      letter-spacing: 1px;
+    }
+
+    .status-bar {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 4px;
+    }
+
+    .status-dot.connected { background: var(--green); }
+    .status-dot.disconnected { background: var(--red); }
+    .status-dot.connecting { background: var(--yellow); animation: pulse 1s infinite; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    /* Layout */
+    .container {
+      display: grid;
+      grid-template-columns: 1fr 280px;
+      gap: 1px;
+      background: var(--border);
+      height: calc(100vh - 37px);
+    }
+
+    /* Tick Table */
+    .tick-panel {
+      background: var(--bg-primary);
+      overflow: auto;
+    }
+
+    .tick-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .tick-table th {
+      position: sticky;
+      top: 0;
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border);
+      padding: 6px 10px;
+      text-align: right;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      z-index: 1;
+    }
+
+    .tick-table th:first-child { text-align: left; }
+
+    .tick-table td {
+      padding: 5px 10px;
+      text-align: right;
+      border-bottom: 1px solid var(--bg-tertiary);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .tick-table td:first-child {
+      text-align: left;
+      font-weight: 600;
+      color: var(--blue);
+    }
+
+    .tick-table tr:hover { background: var(--bg-secondary); }
+
+    .tick-table tr.flash-green { animation: flashGreen 300ms ease-out; }
+    .tick-table tr.flash-red { animation: flashRed 300ms ease-out; }
+
+    @keyframes flashGreen {
+      0% { background: rgba(63, 185, 80, 0.15); }
+      100% { background: transparent; }
+    }
+
+    @keyframes flashRed {
+      0% { background: rgba(248, 81, 73, 0.15); }
+      100% { background: transparent; }
+    }
+
+    .positive { color: var(--green); }
+    .negative { color: var(--red); }
+
+    /* Side Panel */
+    .side-panel {
+      background: var(--bg-primary);
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      overflow: auto;
+    }
+
+    .panel-section {
+      background: var(--bg-secondary);
+      padding: 10px 12px;
+    }
+
+    .panel-section h3 {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+    }
+
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 2px 0;
+    }
+
+    .stat-label { color: var(--text-muted); }
+    .stat-value { color: var(--text-primary); font-weight: 500; }
+
+    .service-status {
+      display: flex;
+      justify-content: space-between;
+      padding: 3px 0;
+    }
+
+    .service-name { color: var(--text-secondary); }
+
+    /* Latency bar */
+    .latency-bar {
+      height: 3px;
+      background: var(--bg-tertiary);
+      border-radius: 2px;
+      margin-top: 4px;
+      overflow: hidden;
+    }
+
+    .latency-fill {
+      height: 100%;
+      border-radius: 2px;
+      transition: width 300ms ease;
+    }
+
+    .latency-good { background: var(--green); }
+    .latency-warn { background: var(--yellow); }
+    .latency-bad { background: var(--red); }
+
+    /* Log */
+    .log-section {
+      flex: 1;
+      overflow: auto;
+      background: var(--bg-secondary);
+      padding: 10px 12px;
+    }
+
+    .log-entry {
+      font-size: 11px;
+      color: var(--text-muted);
+      padding: 1px 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .log-entry.error { color: var(--red); }
+    .log-entry.warn { color: var(--yellow); }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>INFUSION</h1>
+    <div class="status-bar">
+      <span id="wsStatus">
+        <span class="status-dot connecting" id="wsDot"></span>
+        <span id="wsLabel" style="color: var(--text-secondary)">Connecting...</span>
+      </span>
+      <span style="color: var(--text-muted)">
+        Ticks: <span id="tickCount" style="color: var(--text-primary)">0</span>
+      </span>
+      <span style="color: var(--text-muted)">
+        Latency: <span id="latencyMs" style="color: var(--text-primary)">--</span>ms
+      </span>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="tick-panel">
+      <table class="tick-table">
+        <thead>
+          <tr>
+            <th>Symbol</th>
+            <th>LTP</th>
+            <th>Change</th>
+            <th>Volume</th>
+            <th>High</th>
+            <th>Low</th>
+          </tr>
+        </thead>
+        <tbody id="tickBody"></tbody>
+      </table>
+    </div>
+
+    <div class="side-panel">
+      <div class="panel-section">
+        <h3>Pipeline Stats</h3>
+        <div class="stat-row">
+          <span class="stat-label">WS Messages</span>
+          <span class="stat-value" id="msgCount">0</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Symbols Active</span>
+          <span class="stat-value" id="symbolCount">0</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Uptime</span>
+          <span class="stat-value" id="uptime">0s</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Reconnects</span>
+          <span class="stat-value" id="reconnects">0</span>
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <h3>Latency</h3>
+        <div class="stat-row">
+          <span class="stat-label">WS Delivery</span>
+          <span class="stat-value" id="wsLatency">--</span>
+        </div>
+        <div class="latency-bar">
+          <div class="latency-fill latency-good" id="latencyBar" style="width: 0%"></div>
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <h3>Services</h3>
+        <div id="serviceStatus"></div>
+      </div>
+
+      <div class="log-section">
+        <h3 style="font-size:11px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Event Log</h3>
+        <div id="eventLog"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const WS_URL = 'ws://localhost:8001/ws';
+    const HEALTH_URL = 'http://localhost:8000/api/health';
+    const HEALTH_INTERVAL = 10000;
+
+    let ws = null;
+    let tickCount = 0;
+    let msgCount = 0;
+    let reconnectCount = 0;
+    let startTime = Date.now();
+    let symbols = {};
+    let prevPrices = {};
+
+    // --- WebSocket ---
+    function connectWS() {
+      addLog('Connecting to WS...');
+      setWSStatus('connecting');
+
+      ws = new WebSocket(WS_URL);
+
+      ws.onopen = () => {
+        setWSStatus('connected');
+        addLog('WebSocket connected');
+      };
+
+      ws.onmessage = (evt) => {
+        msgCount++;
+        const msg = JSON.parse(evt.data);
+
+        if (msg.type === 'tick_batch') {
+          const now = Date.now();
+          const latency = now - msg.ts;
+          document.getElementById('latencyMs').textContent = latency;
+          updateLatencyBar(latency);
+
+          for (const [symbol, data] of Object.entries(msg.data)) {
+            tickCount++;
+            symbols[symbol] = { ...symbols[symbol], ...data, lastUpdate: now };
+          }
+          renderTable();
+        }
+
+        document.getElementById('tickCount').textContent = tickCount;
+        document.getElementById('msgCount').textContent = msgCount;
+        document.getElementById('symbolCount').textContent = Object.keys(symbols).length;
+      };
+
+      ws.onclose = () => {
+        setWSStatus('disconnected');
+        addLog('WebSocket disconnected', 'warn');
+        reconnectCount++;
+        document.getElementById('reconnects').textContent = reconnectCount;
+        setTimeout(connectWS, 3000);
+      };
+
+      ws.onerror = (err) => {
+        addLog('WebSocket error', 'error');
+      };
+    }
+
+    function setWSStatus(status) {
+      const dot = document.getElementById('wsDot');
+      const label = document.getElementById('wsLabel');
+      dot.className = 'status-dot ' + status;
+      label.textContent = status === 'connected' ? 'Live' :
+                          status === 'connecting' ? 'Connecting...' : 'Disconnected';
+    }
+
+    function updateLatencyBar(ms) {
+      const bar = document.getElementById('latencyBar');
+      const el = document.getElementById('wsLatency');
+      el.textContent = ms + 'ms';
+
+      const pct = Math.min(ms / 500 * 100, 100);
+      bar.style.width = pct + '%';
+      bar.className = 'latency-fill ' + (ms < 100 ? 'latency-good' : ms < 300 ? 'latency-warn' : 'latency-bad');
+    }
+
+    // --- Table ---
+    function renderTable() {
+      const tbody = document.getElementById('tickBody');
+      const sorted = Object.entries(symbols).sort((a, b) => a[0].localeCompare(b[0]));
+
+      let html = '';
+      for (const [sym, data] of sorted) {
+        const ltp = data.ltp != null ? Number(data.ltp).toFixed(2) : '--';
+        const chg = data.change_pct != null ? Number(data.change_pct).toFixed(2) : '0.00';
+        const vol = data.volume != null ? formatVol(data.volume) : '--';
+        const high = data.high != null ? Number(data.high).toFixed(2) : '--';
+        const low = data.low != null ? Number(data.low).toFixed(2) : '--';
+        const isUp = Number(chg) >= 0;
+        const chgClass = isUp ? 'positive' : 'negative';
+        const chgStr = (isUp ? '+' : '') + chg + '%';
+
+        // Flash on price change
+        let rowClass = '';
+        if (prevPrices[sym] !== undefined && prevPrices[sym] !== data.ltp) {
+          rowClass = data.ltp > prevPrices[sym] ? 'flash-green' : 'flash-red';
+        }
+        prevPrices[sym] = data.ltp;
+
+        html += `<tr class="${rowClass}">
+          <td>${sym}</td>
+          <td>${ltp}</td>
+          <td class="${chgClass}">${chgStr}</td>
+          <td>${vol}</td>
+          <td>${high}</td>
+          <td>${low}</td>
+        </tr>`;
+      }
+      tbody.innerHTML = html;
+    }
+
+    function formatVol(v) {
+      v = Number(v);
+      if (v >= 10000000) return (v / 10000000).toFixed(1) + 'Cr';
+      if (v >= 100000) return (v / 100000).toFixed(1) + 'L';
+      if (v >= 1000) return (v / 1000).toFixed(1) + 'K';
+      return v.toString();
+    }
+
+    // --- Health ---
+    async function checkHealth() {
+      try {
+        const resp = await fetch(HEALTH_URL);
+        const data = await resp.json();
+        const container = document.getElementById('serviceStatus');
+        let html = '';
+        for (const [svc, info] of Object.entries(data.services || {})) {
+          const status = info.status || 'unknown';
+          const color = status === 'healthy' ? 'var(--green)' : 'var(--red)';
+          html += `<div class="service-status">
+            <span class="service-name">${svc}</span>
+            <span style="color:${color}">${status}</span>
+          </div>`;
+        }
+        container.innerHTML = html;
+      } catch (e) {
+        // API not available
+      }
+    }
+
+    // --- Log ---
+    function addLog(msg, level = '') {
+      const log = document.getElementById('eventLog');
+      const time = new Date().toLocaleTimeString();
+      const entry = document.createElement('div');
+      entry.className = 'log-entry' + (level ? ' ' + level : '');
+      entry.textContent = `${time} ${msg}`;
+      log.insertBefore(entry, log.firstChild);
+      // Keep only last 50 entries
+      while (log.children.length > 50) {
+        log.removeChild(log.lastChild);
+      }
+    }
+
+    // --- Uptime ---
+    setInterval(() => {
+      const sec = Math.floor((Date.now() - startTime) / 1000);
+      const min = Math.floor(sec / 60);
+      const hr = Math.floor(min / 60);
+      document.getElementById('uptime').textContent =
+        hr > 0 ? `${hr}h ${min % 60}m` : min > 0 ? `${min}m ${sec % 60}s` : `${sec}s`;
+    }, 1000);
+
+    // --- Init ---
+    connectWS();
+    checkHealth();
+    setInterval(checkHealth, HEALTH_INTERVAL);
+  </script>
+</body>
+</html>

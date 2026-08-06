@@ -1,0 +1,52 @@
+services:
+  redis:
+    ports:
+      - "6379:6379"
+
+  postgres:
+    ports:
+      - "5432:5432"
+
+  # Dev: mount source + libs as volumes for hot reload
+  ingestion:
+    volumes:
+      - ./libs:/app/libs:ro
+      - ./services/ingestion/src:/app/services/ingestion/src:ro
+      - ./config:/app/config:ro
+    environment:
+      - INFUSION_LOG_LEVEL=debug
+      - INFUSION_LOG_FORMAT=console
+
+  normalizer:
+    volumes:
+      - ./libs:/app/libs:ro
+      - ./services/normalizer/src:/app/services/normalizer/src:ro
+      - ./config:/app/config:ro
+    environment:
+      - INFUSION_LOG_LEVEL=debug
+      - INFUSION_LOG_FORMAT=console
+
+  feature-engine:
+    volumes:
+      - ./libs:/app/libs:ro
+      - ./services/feature-engine/src:/app/services/feature-engine/src:ro
+      - ./config:/app/config:ro
+    environment:
+      - INFUSION_LOG_LEVEL=debug
+      - INFUSION_LOG_FORMAT=console
+
+  api:
+    volumes:
+      - ./libs:/app/libs:ro
+      - ./services/api/src:/app/services/api/src:ro
+    environment:
+      - INFUSION_LOG_LEVEL=debug
+      - INFUSION_LOG_FORMAT=console
+
+  ws-gateway:
+    volumes:
+      - ./libs:/app/libs:ro
+      - ./services/ws-gateway/src:/app/services/ws-gateway/src:ro
+    environment:
+      - INFUSION_LOG_LEVEL=debug
+      - INFUSION_LOG_FORMAT=console

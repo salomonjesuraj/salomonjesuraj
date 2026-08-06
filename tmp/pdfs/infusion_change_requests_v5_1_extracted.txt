@@ -1,0 +1,386 @@
+PAGES 14
+
+
+--- PAGE 1 ---
+—
+INFUSION DASHBOARD
+ENGINEERING CHANGE REQUESTS
+Target release: v5.1.0 "Reality Check"
+Prepared for: AI/Backend Engineer
+Current baseline: v5.0.0 Safety Cockpit
+—
+0. CONTEXT READ THIS FIRST
+The safety layer, execution staging, and journal architecture of
+v5.0.0 are sound. Do not rebuild them.
+The problem is different and more serious: the numbers the system
+currently produces are not trustworthy, for four reasons.
+1. Option P&L is computed without transaction costs or spread
+crossing.
+2. Option stop-loss is derived from a hardcoded constant (28%)
+instead of from the underlying stop and delta.
+3. Nothing checks whether the underlying target actually clears
+the option's breakeven.
+4. Paper trades are logged manually and therefore selectively.
+Until these four are fixed, every analytic, every precision number,
+and every optimizer output in the system is noise. No new features,
+
+
+--- PAGE 2 ---
+tabs, modules, or phases until P0 and P1 below are shipped.
+Work strictly in the order given. P0 → P1 → P2 → P3.
+—
+P0 BLOCKERS
+—
+CR-1 Central cost & slippage model
+Create a single cost_model module. Journal, Execution Staging,
+and Analytics must all call it. No component computes P&L
+independently.
+Fill assumptions (non-negotiable):
+Entry fill = ask price
+Exit fill = bid price
+Never LTP. Never mid. Never last traded premium.
+Per-trade cost components to model:
+Brokerage (flat per executed order, both legs)
+STT on the sell side of options premium
+Exchange transaction charges
+SEBI turnover fees
+GST on (brokerage + transaction charges)
+Stamp duty on the buy side
+Output contract:
+cost_model.compute(trade) -> {
+gross_pnl,
+total_costs,
+
+
+--- PAGE 3 ---
+slippage_cost,
+net_pnl,
+cost_as_pct_of_premium
+}
+Acceptance criteria:
+Every existing journal row is recomputed and displays
+gross_pnl and net_pnl side by side.
+cost_as_pct_of_premium is visible in Execution Staging
+before a ticket is staged.
+Unit test: a trade that moves 0% must show a clearly negative
+net_pnl .
+—
+CR-2 Remove the hardcoded 28% premium stop-loss
+Delete the constant entirely. Derive the option stop from the
+underlying stop and delta.
+underlying_risk = abs(entry_underlying -
+sl_underlying)
+premium_risk = underlying_risk * abs(delta)
+option_sl_price = entry_premium - premium_risk
+premium_risk_pct = premium_risk / entry_premium
+Guard rails:
+If premium_risk_pct < 0.12 → BLOCK ticket. Reason:
+"SL inside spread — noise stop" .
+If premium_risk_pct > 0.45 → BLOCK ticket. Reason:
+"strike too far OTM for this SL distance" .
+
+
+--- PAGE 4 ---
+Acceptance criteria:
+Staged ticket displays the derived premium_risk_pct , the
+delta used, and the underlying risk it was derived from.
+All three values are persisted in the journal snapshot at
+decision time.
+—
+Grep the codebase for 0.28 and 28 confirm zero
+remaining references to the old constant.
+— ⚠
+CR-3 Breakeven vs expected-move gate HIGHEST
+IMPACT
+The scanner currently produces underlying Entry/SL/T1/T2 without
+ever checking whether those levels can pay for the option. Fix this.
+# CE
+breakeven_underlying = strike + entry_premium +
+spread + est_costs_per_unit
+# PE
+breakeven_underlying = strike - entry_premium -
+spread - est_costs_per_unit
+required_move_pct = abs(breakeven_underlying -
+spot) / spot * 100
+expected_move_pct = daily_atr_pct *
+expected_holding_days
+Gating rules:
+
+
+--- PAGE 5 ---
+Condition Action
+Downgrade to
+required_move_pct > 0.6 WAIT_CONTRACT , reason
+* expected_move_pct "breakeven too far
+vs ATR"
+required_move_pct > 1.0 Hard block
+* expected_move_pct AVOID_CONTRACT
+Hard block. Reason:
+T1 (underlying) does not clear
+"target does not
+breakeven_underlying
+pay for premium"
+Acceptance criteria:
+New screener column Req Move % displayed adjacent to
+option status.
+required_move_pct and expected_move_pct stored in
+every journal snapshot.
+Regression test: a far-OTM weekly contract on a low-ATR
+stock must be blocked.
+—
+CR-4 IV rank gate
+Persist rolling implied-volatility history per instrument (minimum 60
+sessions).
+iv_rank = (current_iv - min_iv_60d) /
+(max_iv_60d - min_iv_60d) * 100
+
+
+--- PAGE 6 ---
+Gating rules for option BUYING:
+IV Rank Action
+Hard block. Reason: "IV rank extreme —
+> 80
+buying into crush"
+60 – Downgrade to WAIT_CONTRACT , reason
+80 "elevated IV"
+< 60 Pass
+Acceptance criteria:
+iv_rank shown in the Option Basis strip and stored in every
+journal snapshot.
+If fewer than 60 sessions of IV history exist for an instrument,
+status is CHAIN_PENDING , not TRADE_READY . Do not guess.
+—
+CR-5 Delta band gate
+Hard filter for directional option buying:
+Accept only contracts with 0.35 <= abs(delta) <=
+0.60 .
+Anything outside → AVOID_CONTRACT , reason "delta
+outside directional band" .
+Persist delta in every journal snapshot regardless of
+outcome.
+
+
+--- PAGE 7 ---
+—
+P1 DATA INTEGRITY
+Without these, all analytics remain unusable even after P0 ships.
+—
+CR-6 Auto-log every signal
+Change logging from manual to automatic.
+—
+The moment a signal fires, write a full journal row
+regardless of whether the trader acts on it.
+Add field discretionary_action with values: TAKEN |
+SKIPPED | NOT_REVIEWED (default NOT_REVIEWED ).
+The "Log Paper Trade" button no longer creates a record. It
+only sets discretionary_action = TAKEN .
+Add optional free-text skip_reason when the trader marks
+SKIPPED .
+Why this matters: manual logging records only the setups that
+looked good at the time. This is why paper results systematically
+outperform live results. Auto-logging is what makes the dataset
+honest.
+Acceptance criteria:
+Analytics can report outcomes for TAKEN vs SKIPPED vs
+NOT_REVIEWED separately.
+—
+CR-7 Reset the analytics baseline
+Move all existing signal outcomes into a
+—
+legacy_contaminated table. Do not delete do not use.
+
+
+--- PAGE 8 ---
+Start all live metrics from zero on the date CR-1 through CR-6
+ship.
+Analytics UI must never blend legacy and post-fix data in the
+same chart or number.
+—
+CR-8 Replace "precision" with expectancy metrics
+Primary metrics on the Analytics tab become:
+Metric Definition
+Expectancy Average R per trade, net of costs
+Profit factor Gross wins / gross losses
+R distribution Histogram of R-multiples per trade
+Max drawdown In R, and in currency
+Cost drag Total costs as % of gross P&L
+Hit rate / precision remains visible but is demoted from the
+—
+headline. It is not a decision metric a 40% hit rate with 3R
+winners beats an 80% hit rate with 0.3R winners.
+—
+CR-9 Disable and rebuild the 80% precision optimizer
+The current optimizer curve-fits on contaminated history and can
+silently influence guard settings.
+Immediately: disable it. It must not write to any live threshold.
+
+
+--- PAGE 9 ---
+–
+Rebuild as walk-forward: train on months 1 2, validate on
+month 3, roll the window forward.
+Report out-of-sample results only. In-sample numbers may be
+logged but never displayed as performance.
+—
+P2 INSTRUMENT-SPECIFIC SAFETY
+—
+CR-10 Physical settlement rule
+Indian stock options settle physically. This is a delivery obligation,
+not a warning.
+≤
+Hard block new stock-option entries where expiry is 3
+trading days away.
+Any open ITM stock-option position during expiry week
+triggers a persistent red banner in the header and a Telegram
+alert.
+Safety Cockpit verdict drops to WATCH_READY minimum
+whenever such a position exists.
+—
+CR-11 Liquidity whitelist
+Restrict the tradable universe. Compute weekly over the trailing 20
+sessions, per instrument:
+Option open interest above a configured floor
+Average daily option volume above a configured floor
+Median bid-ask spread below a configured % of premium
+
+
+--- PAGE 10 ---
+Instruments failing any criterion remain visible in the scanner but
+are permanently AVOID_CONTRACT with reason "below
+liquidity whitelist" . Thresholds must be config-driven, not
+hardcoded.
+—
+CR-12 Replace News Edge keyword logic
+Drop sentiment keyword classification entirely. It produces false
+confidence and adds no measurable edge.
+Replace with a binary event calendar:
+Earnings / results date
+Board meeting
+Dividend, split, bonus, buyback
+Index rebalance
+Rule: hard block on new entries from T-2 to T+1 around results.
+Display the next event date on the selected stock row.
+—
+P3 SIGNAL ENGINE CLEANUP
+—
+CR-13 De-correlate the conviction score
+Run a correlation matrix across current scanner inputs: VWAP
+position, EMA stack (5/9/20/50), MACD, RSI, MTF dots
+(1M/5M/15M/1H/4H/1D), Bollinger compression.
+Any pair with correlation above ~0.7 → keep one, drop the
+other from the composite score.
+
+
+--- PAGE 11 ---
+Publish the correlation matrix as a one-off report before
+making changes.
+—
+Why: the composite currently counts a single factor price
+—
+direction roughly six times, which inflates conviction without
+adding information.
+—
+CR-14 Market regime as a hard gate
+Regime is currently displayed in the header but gates nothing.
+Make it binding:
+Bearish regime/breadth → block new CE signals
+Bullish regime/breadth → block new PE signals
+Defined chop/neutral regime → block all new entries
+Regime state at decision time must be stored in the journal
+snapshot.
+—
+CR-15 Feature freeze
+No new modules, tabs, phases, or integrations until CR-1 through
+CR-9 are shipped and three months of clean paper data have
+accumulated under the new logic.
+SUMMARY CHECKLIST
+
+
+--- PAGE 12 ---
+ID Change Priority Status
+CR-1 Central cost & slippage model P0 ☐
+Delta-derived option SL
+CR-2 P0 ☐
+(remove 28% constant)
+Breakeven vs expected-move
+CR-3 P0 ☐
+gate
+CR-4 IV rank gate P0 ☐
+CR-
+Delta band gate (0.35–0.60) P0 ☐
+5
+CR-
+Auto-log every signal P1 ☐
+6
+CR-
+Reset analytics baseline P1 ☐
+7
+Expectancy metrics replace
+CR-8 P1 ☐
+precision
+Disable + rebuild optimizer
+CR-9 P1 ☐
+(walk-forward)
+CR-
+Physical settlement rule P2 ☐
+10
+CR-
+Liquidity whitelist P2 ☐
+11
+CR- Event calendar replaces news
+P2 ☐
+12 keywords
+
+
+--- PAGE 13 ---
+ID Change Priority Status
+CR-
+De-correlate conviction score P3 ☐
+13
+CR-
+Regime as hard gate P3 ☐
+14
+CR-
+Feature freeze P3 ☐
+15
+NEW JOURNAL SNAPSHOT FIELDS
+(consolidated)
+Every auto-logged signal must persist, at minimum, the fields
+already captured in v5.0.0 plus:
+delta
+iv_rank
+premium_risk_pct
+underlying_risk
+required_move_pct
+expected_move_pct
+breakeven_underlying
+spread_at_decision
+est_costs_per_unit
+gross_pnl
+total_costs
+net_pnl
+regime_at_decision
+discretionary_action
+skip_reason
+
+
+--- PAGE 14 ---
+next_event_date
+liquidity_whitelist_pass
+These are what make later attribution analysis possible. Adding
+—
+them retroactively is not possible they must be captured at
+decision time.
+ONE-LINE BRIEF
+The safety and execution layers are fine. The problem is that we
+compute option P&L without costs, derive stops from a
+hardcoded constant, never check whether the target clears
+—
+breakeven, and log trades selectively so none of our current
+numbers mean anything. Fix those four first, then freeze
+features for three months of clean data.
+Note: this document covers system design and data integrity only. It
+is not investment advice, and shipping these changes does not
+—
+establish that the strategy has an edge it establishes that the
+system can finally measure whether it does.

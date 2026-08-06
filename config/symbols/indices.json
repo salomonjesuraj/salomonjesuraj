@@ -1,0 +1,74 @@
+{
+  "NIFTY50": {
+    "symbol": "NIFTY50",
+    "upstox_key": "NSE_INDEX|Nifty 50",
+    "exchange": "NSE",
+    "segment": "INDEX",
+    "sector_id": "INDEX",
+    "description": "NIFTY 50 Index"
+  },
+  "NIFTYBANK": {
+    "symbol": "NIFTYBANK",
+    "upstox_key": "NSE_INDEX|Nifty Bank",
+    "exchange": "NSE",
+    "segment": "INDEX",
+    "sector_id": "INDEX",
+    "description": "NIFTY Bank Index"
+  },
+  "NIFTYIT": {
+    "symbol": "NIFTYIT",
+    "upstox_key": "NSE_INDEX|Nifty IT",
+    "exchange": "NSE",
+    "segment": "INDEX",
+    "sector_id": "INDEX",
+    "description": "NIFTY IT Index"
+  },
+  "NIFTYPHARMA": {
+    "symbol": "NIFTYPHARMA",
+    "upstox_key": "NSE_INDEX|Nifty Pharma",
+    "exchange": "NSE",
+    "segment": "INDEX",
+    "sector_id": "INDEX",
+    "description": "NIFTY Pharma Index"
+  },
+  "NIFTYMETAL": {
+    "symbol": "NIFTYMETAL",
+    "upstox_key": "NSE_INDEX|Nifty Metal",
+    "exchange": "NSE",
+    "segment": "INDEX",
+    "sector_id": "INDEX",
+    "description": "NIFTY Metal Index"
+  },
+  "NIFTYAUTO": {
+    "symbol": "NIFTYAUTO",
+    "upstox_key": "NSE_INDEX|Nifty Auto",
+    "exchange": "NSE",
+    "segment": "INDEX",
+    "sector_id": "INDEX",
+    "description": "NIFTY Auto Index"
+  },
+  "NIFTYFMCG": {
+    "symbol": "NIFTYFMCG",
+    "upstox_key": "NSE_INDEX|Nifty FMCG",
+    "exchange": "NSE",
+    "segment": "INDEX",
+    "sector_id": "INDEX",
+    "description": "NIFTY FMCG Index"
+  },
+  "NIFTYENERGY": {
+    "symbol": "NIFTYENERGY",
+    "upstox_key": "NSE_INDEX|Nifty Energy",
+    "exchange": "NSE",
+    "segment": "INDEX",
+    "sector_id": "INDEX",
+    "description": "NIFTY Energy Index"
+  },
+  "NIFTYREALTY": {
+    "symbol": "NIFTYREALTY",
+    "upstox_key": "NSE_INDEX|Nifty Realty",
+    "exchange": "NSE",
+    "segment": "INDEX",
+    "sector_id": "INDEX",
+    "description": "NIFTY Realty Index"
+  }
+}

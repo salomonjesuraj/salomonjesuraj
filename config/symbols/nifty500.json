@@ -1,0 +1,6040 @@
+{
+  "RELIANCE": {
+    "symbol": "RELIANCE",
+    "isin": "INE002A01018",
+    "upstox_key": "NSE_EQ|INE002A01018",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "ENERGY",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "TCS": {
+    "symbol": "TCS",
+    "isin": "INE467B01029",
+    "upstox_key": "NSE_EQ|INE467B01029",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "IT",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "HDFCBANK": {
+    "symbol": "HDFCBANK",
+    "isin": "INE040A01034",
+    "upstox_key": "NSE_EQ|INE040A01034",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PRIVATE_BANK",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "INFY": {
+    "symbol": "INFY",
+    "isin": "INE009A01021",
+    "upstox_key": "NSE_EQ|INE009A01021",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "IT",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "ICICIBANK": {
+    "symbol": "ICICIBANK",
+    "isin": "INE090A01021",
+    "upstox_key": "NSE_EQ|INE090A01021",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PRIVATE_BANK",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "BHARTIARTL": {
+    "symbol": "BHARTIARTL",
+    "isin": "INE397D01024",
+    "upstox_key": "NSE_EQ|INE397D01024",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "TELECOM",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "SBIN": {
+    "symbol": "SBIN",
+    "isin": "INE062A01020",
+    "upstox_key": "NSE_EQ|INE062A01020",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PSU_BANK",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "HINDUNILVR": {
+    "symbol": "HINDUNILVR",
+    "isin": "INE030A01027",
+    "upstox_key": "NSE_EQ|INE030A01027",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FMCG",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "ITC": {
+    "symbol": "ITC",
+    "isin": "INE154A01025",
+    "upstox_key": "NSE_EQ|INE154A01025",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FMCG",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "KOTAKBANK": {
+    "symbol": "KOTAKBANK",
+    "isin": "INE237A01028",
+    "upstox_key": "NSE_EQ|INE237A01028",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PRIVATE_BANK",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "LT": {
+    "symbol": "LT",
+    "isin": "INE018A01030",
+    "upstox_key": "NSE_EQ|INE018A01030",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "AXISBANK": {
+    "symbol": "AXISBANK",
+    "isin": "INE238A01034",
+    "upstox_key": "NSE_EQ|INE238A01034",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PRIVATE_BANK",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "BAJFINANCE": {
+    "symbol": "BAJFINANCE",
+    "isin": "INE296A01024",
+    "upstox_key": "NSE_EQ|INE296A01024",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FINANCIALS",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "SUNPHARMA": {
+    "symbol": "SUNPHARMA",
+    "isin": "INE044A01036",
+    "upstox_key": "NSE_EQ|INE044A01036",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PHARMA",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "TATAMOTORS": {
+    "symbol": "TATAMOTORS",
+    "isin": "INE155A01022",
+    "upstox_key": "NSE_EQ|INE155A01022",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "AUTO",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "MARUTI": {
+    "symbol": "MARUTI",
+    "isin": "INE585B01010",
+    "upstox_key": "NSE_EQ|INE585B01010",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "AUTO",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "TITAN": {
+    "symbol": "TITAN",
+    "isin": "INE280A01028",
+    "upstox_key": "NSE_EQ|INE280A01028",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CONSUMER_DURABLES",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "ASIANPAINT": {
+    "symbol": "ASIANPAINT",
+    "isin": "INE021A01026",
+    "upstox_key": "NSE_EQ|INE021A01026",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CONSUMER_DURABLES",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "WIPRO": {
+    "symbol": "WIPRO",
+    "isin": "INE075A01022",
+    "upstox_key": "NSE_EQ|INE075A01022",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "IT",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "HCLTECH": {
+    "symbol": "HCLTECH",
+    "isin": "INE860A01027",
+    "upstox_key": "NSE_EQ|INE860A01027",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "IT",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "NTPC": {
+    "symbol": "NTPC",
+    "isin": "INE733E01010",
+    "upstox_key": "NSE_EQ|INE733E01010",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "POWER",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "POWERGRID": {
+    "symbol": "POWERGRID",
+    "isin": "INE752E01010",
+    "upstox_key": "NSE_EQ|INE752E01010",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "POWER",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "ONGC": {
+    "symbol": "ONGC",
+    "isin": "INE213A01029",
+    "upstox_key": "NSE_EQ|INE213A01029",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "ENERGY",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "ULTRACEMCO": {
+    "symbol": "ULTRACEMCO",
+    "isin": "INE481G01011",
+    "upstox_key": "NSE_EQ|INE481G01011",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CEMENT",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "TATASTEEL": {
+    "symbol": "TATASTEEL",
+    "isin": "INE081A01020",
+    "upstox_key": "NSE_EQ|INE081A01020",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "METALS",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "JSWSTEEL": {
+    "symbol": "JSWSTEEL",
+    "isin": "INE019A01038",
+    "upstox_key": "NSE_EQ|INE019A01038",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "METALS",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "HINDALCO": {
+    "symbol": "HINDALCO",
+    "isin": "INE038A01020",
+    "upstox_key": "NSE_EQ|INE038A01020",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "METALS",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "M&M": {
+    "symbol": "M&M",
+    "isin": "INE101A01026",
+    "upstox_key": "NSE_EQ|INE101A01026",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "AUTO",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "BAJAJFINSV": {
+    "symbol": "BAJAJFINSV",
+    "isin": "INE918I01018",
+    "upstox_key": "NSE_EQ|INE918I01018",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FINANCIALS",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "ADANIENT": {
+    "symbol": "ADANIENT",
+    "isin": "INE423A01024",
+    "upstox_key": "NSE_EQ|INE423A01024",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "ADANIPORTS": {
+    "symbol": "ADANIPORTS",
+    "isin": "INE742F01042",
+    "upstox_key": "NSE_EQ|INE742F01042",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "NESTLEIND": {
+    "symbol": "NESTLEIND",
+    "isin": "INE239A01016",
+    "upstox_key": "NSE_EQ|INE239A01016",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FMCG",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "TECHM": {
+    "symbol": "TECHM",
+    "isin": "INE669C01036",
+    "upstox_key": "NSE_EQ|INE669C01036",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "IT",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "INDUSINDBK": {
+    "symbol": "INDUSINDBK",
+    "isin": "INE095A01012",
+    "upstox_key": "NSE_EQ|INE095A01012",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PRIVATE_BANK",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "DRREDDY": {
+    "symbol": "DRREDDY",
+    "isin": "INE089A01023",
+    "upstox_key": "NSE_EQ|INE089A01023",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PHARMA",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "CIPLA": {
+    "symbol": "CIPLA",
+    "isin": "INE059A01026",
+    "upstox_key": "NSE_EQ|INE059A01026",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PHARMA",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "DIVISLAB": {
+    "symbol": "DIVISLAB",
+    "isin": "INE361B01024",
+    "upstox_key": "NSE_EQ|INE361B01024",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PHARMA",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "COALINDIA": {
+    "symbol": "COALINDIA",
+    "isin": "INE522F01014",
+    "upstox_key": "NSE_EQ|INE522F01014",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "METALS",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "BPCL": {
+    "symbol": "BPCL",
+    "isin": "INE029A01011",
+    "upstox_key": "NSE_EQ|INE029A01011",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "ENERGY",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "EICHERMOT": {
+    "symbol": "EICHERMOT",
+    "isin": "INE066A01021",
+    "upstox_key": "NSE_EQ|INE066A01021",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "AUTO",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "HEROMOTOCO": {
+    "symbol": "HEROMOTOCO",
+    "isin": "INE158A01026",
+    "upstox_key": "NSE_EQ|INE158A01026",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "AUTO",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "APOLLOHOSP": {
+    "symbol": "APOLLOHOSP",
+    "isin": "INE437A01024",
+    "upstox_key": "NSE_EQ|INE437A01024",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PHARMA",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "BRITANNIA": {
+    "symbol": "BRITANNIA",
+    "isin": "INE216A01030",
+    "upstox_key": "NSE_EQ|INE216A01030",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FMCG",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "GRASIM": {
+    "symbol": "GRASIM",
+    "isin": "INE047A01021",
+    "upstox_key": "NSE_EQ|INE047A01021",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CEMENT",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "BAJAJ-AUTO": {
+    "symbol": "BAJAJ-AUTO",
+    "isin": "INE917I01010",
+    "upstox_key": "NSE_EQ|INE917I01010",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "AUTO",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "HDFCLIFE": {
+    "symbol": "HDFCLIFE",
+    "isin": "INE795G01014",
+    "upstox_key": "NSE_EQ|INE795G01014",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INSURANCE",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "SBILIFE": {
+    "symbol": "SBILIFE",
+    "isin": "INE123W01016",
+    "upstox_key": "NSE_EQ|INE123W01016",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INSURANCE",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "TATACONSUM": {
+    "symbol": "TATACONSUM",
+    "isin": "INE192A01025",
+    "upstox_key": "NSE_EQ|INE192A01025",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FMCG",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "LTIM": {
+    "symbol": "LTIM",
+    "isin": "INE214T01019",
+    "upstox_key": "NSE_EQ|INE214T01019",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "IT",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "SHRIRAMFIN": {
+    "symbol": "SHRIRAMFIN",
+    "isin": "INE721A01013",
+    "upstox_key": "NSE_EQ|INE721A01013",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FINANCIALS",
+    "index_membership": [
+      "NIFTY50",
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "ABB": {
+    "symbol": "ABB",
+    "isin": "INE117A01022",
+    "upstox_key": "NSE_EQ|INE117A01022",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "ADANIGREEN": {
+    "symbol": "ADANIGREEN",
+    "isin": "INE364U01010",
+    "upstox_key": "NSE_EQ|INE364U01010",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "ENERGY",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "AMBUJACEM": {
+    "symbol": "AMBUJACEM",
+    "isin": "INE079A01024",
+    "upstox_key": "NSE_EQ|INE079A01024",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CEMENT",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "ATGL": {
+    "symbol": "ATGL",
+    "isin": "INE399L01023",
+    "upstox_key": "NSE_EQ|INE399L01023",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "ENERGY",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "AUROPHARMA": {
+    "symbol": "AUROPHARMA",
+    "isin": "INE406A01037",
+    "upstox_key": "NSE_EQ|INE406A01037",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PHARMA",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "BANKBARODA": {
+    "symbol": "BANKBARODA",
+    "isin": "INE028A01039",
+    "upstox_key": "NSE_EQ|INE028A01039",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PSU_BANK",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "BERGEPAINT": {
+    "symbol": "BERGEPAINT",
+    "isin": "INE463A01038",
+    "upstox_key": "NSE_EQ|INE463A01038",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CONSUMER_DURABLES",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "BOSCHLTD": {
+    "symbol": "BOSCHLTD",
+    "isin": "INE323A01026",
+    "upstox_key": "NSE_EQ|INE323A01026",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "AUTO",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "CHOLAFIN": {
+    "symbol": "CHOLAFIN",
+    "isin": "INE121A01024",
+    "upstox_key": "NSE_EQ|INE121A01024",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FINANCIALS",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "COLPAL": {
+    "symbol": "COLPAL",
+    "isin": "INE259A01022",
+    "upstox_key": "NSE_EQ|INE259A01022",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FMCG",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "DABUR": {
+    "symbol": "DABUR",
+    "isin": "INE016A01026",
+    "upstox_key": "NSE_EQ|INE016A01026",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FMCG",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "DLF": {
+    "symbol": "DLF",
+    "isin": "INE271C01023",
+    "upstox_key": "NSE_EQ|INE271C01023",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "REALTY",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "GAIL": {
+    "symbol": "GAIL",
+    "isin": "INE129A01019",
+    "upstox_key": "NSE_EQ|INE129A01019",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "ENERGY",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "GODREJCP": {
+    "symbol": "GODREJCP",
+    "isin": "INE102D01028",
+    "upstox_key": "NSE_EQ|INE102D01028",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FMCG",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "HAVELLS": {
+    "symbol": "HAVELLS",
+    "isin": "INE176B01034",
+    "upstox_key": "NSE_EQ|INE176B01034",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CONSUMER_DURABLES",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "HAL": {
+    "symbol": "HAL",
+    "isin": "INE066F01020",
+    "upstox_key": "NSE_EQ|INE066F01020",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "ICICIGI": {
+    "symbol": "ICICIGI",
+    "isin": "INE765G01017",
+    "upstox_key": "NSE_EQ|INE765G01017",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INSURANCE",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "ICICIPRULI": {
+    "symbol": "ICICIPRULI",
+    "isin": "INE726G01019",
+    "upstox_key": "NSE_EQ|INE726G01019",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INSURANCE",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "INDUSTOWER": {
+    "symbol": "INDUSTOWER",
+    "isin": "INE121J01017",
+    "upstox_key": "NSE_EQ|INE121J01017",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "TELECOM",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "IOC": {
+    "symbol": "IOC",
+    "isin": "INE242A01010",
+    "upstox_key": "NSE_EQ|INE242A01010",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "ENERGY",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "IRCTC": {
+    "symbol": "IRCTC",
+    "isin": "INE335Y01020",
+    "upstox_key": "NSE_EQ|INE335Y01020",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "JINDALSTEL": {
+    "symbol": "JINDALSTEL",
+    "isin": "INE220G01021",
+    "upstox_key": "NSE_EQ|INE220G01021",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "METALS",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "LICI": {
+    "symbol": "LICI",
+    "isin": "INE0J1Y01017",
+    "upstox_key": "NSE_EQ|INE0J1Y01017",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INSURANCE",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "LUPIN": {
+    "symbol": "LUPIN",
+    "isin": "INE326A01037",
+    "upstox_key": "NSE_EQ|INE326A01037",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PHARMA",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "MARICO": {
+    "symbol": "MARICO",
+    "isin": "INE196A01026",
+    "upstox_key": "NSE_EQ|INE196A01026",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FMCG",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "MOTHERSON": {
+    "symbol": "MOTHERSON",
+    "isin": "INE775A01035",
+    "upstox_key": "NSE_EQ|INE775A01035",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "AUTO",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "NAUKRI": {
+    "symbol": "NAUKRI",
+    "isin": "INE663F01024",
+    "upstox_key": "NSE_EQ|INE663F01024",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "IT",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "PEL": {
+    "symbol": "PEL",
+    "isin": "INE318A01026",
+    "upstox_key": "NSE_EQ|INE318A01026",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FINANCIALS",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "PIDILITIND": {
+    "symbol": "PIDILITIND",
+    "isin": "INE318A01026",
+    "upstox_key": "NSE_EQ|INE318A01026",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CHEMICALS",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "PNB": {
+    "symbol": "PNB",
+    "isin": "INE160A01022",
+    "upstox_key": "NSE_EQ|INE160A01022",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PSU_BANK",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "POLYCAB": {
+    "symbol": "POLYCAB",
+    "isin": "INE455K01017",
+    "upstox_key": "NSE_EQ|INE455K01017",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CONSUMER_DURABLES",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "RECLTD": {
+    "symbol": "RECLTD",
+    "isin": "INE020B01018",
+    "upstox_key": "NSE_EQ|INE020B01018",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FINANCIALS",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "PFC": {
+    "symbol": "PFC",
+    "isin": "INE134E01011",
+    "upstox_key": "NSE_EQ|INE134E01011",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FINANCIALS",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "SBICARD": {
+    "symbol": "SBICARD",
+    "isin": "INE018E01016",
+    "upstox_key": "NSE_EQ|INE018E01016",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FINANCIALS",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "SIEMENS": {
+    "symbol": "SIEMENS",
+    "isin": "INE003A01024",
+    "upstox_key": "NSE_EQ|INE003A01024",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "SRF": {
+    "symbol": "SRF",
+    "isin": "INE647A01024",
+    "upstox_key": "NSE_EQ|INE647A01024",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CHEMICALS",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "TATAPOWER": {
+    "symbol": "TATAPOWER",
+    "isin": "INE245A01021",
+    "upstox_key": "NSE_EQ|INE245A01021",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "POWER",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "TORNTPHARM": {
+    "symbol": "TORNTPHARM",
+    "isin": "INE685A01028",
+    "upstox_key": "NSE_EQ|INE685A01028",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PHARMA",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "TRENT": {
+    "symbol": "TRENT",
+    "isin": "INE849A01020",
+    "upstox_key": "NSE_EQ|INE849A01020",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FMCG",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "UNIONBANK": {
+    "symbol": "UNIONBANK",
+    "isin": "INE692A01016",
+    "upstox_key": "NSE_EQ|INE692A01016",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PSU_BANK",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "VEDL": {
+    "symbol": "VEDL",
+    "isin": "INE205A01025",
+    "upstox_key": "NSE_EQ|INE205A01025",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "METALS",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "VOLTAS": {
+    "symbol": "VOLTAS",
+    "isin": "INE226A01021",
+    "upstox_key": "NSE_EQ|INE226A01021",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CONSUMER_DURABLES",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "ZOMATO": {
+    "symbol": "ZOMATO",
+    "isin": "INE758T01015",
+    "upstox_key": "NSE_EQ|INE758T01015",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "IT",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "ZYDUSLIFE": {
+    "symbol": "ZYDUSLIFE",
+    "isin": "INE010B01027",
+    "upstox_key": "NSE_EQ|INE010B01027",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PHARMA",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "MANKIND": {
+    "symbol": "MANKIND",
+    "isin": "INE634S01028",
+    "upstox_key": "NSE_EQ|INE634S01028",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PHARMA",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "JSWENERGY": {
+    "symbol": "JSWENERGY",
+    "isin": "INE121E01018",
+    "upstox_key": "NSE_EQ|INE121E01018",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "POWER",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "CANBK": {
+    "symbol": "CANBK",
+    "isin": "INE476A01014",
+    "upstox_key": "NSE_EQ|INE476A01014",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PSU_BANK",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "BHARATFORG": {
+    "symbol": "BHARATFORG",
+    "isin": "INE465A01025",
+    "upstox_key": "NSE_EQ|INE465A01025",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "AUTO",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "MAXHEALTH": {
+    "symbol": "MAXHEALTH",
+    "isin": "INE027H01010",
+    "upstox_key": "NSE_EQ|INE027H01010",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PHARMA",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "NHPC": {
+    "symbol": "NHPC",
+    "isin": "INE848E01016",
+    "upstox_key": "NSE_EQ|INE848E01016",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "POWER",
+    "index_membership": [
+      "NIFTY100",
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "ACC": {
+    "symbol": "ACC",
+    "isin": "INE012A01025",
+    "upstox_key": "NSE_EQ|INE012A01025",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CEMENT",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "ALKEM": {
+    "symbol": "ALKEM",
+    "isin": "INE540L01014",
+    "upstox_key": "NSE_EQ|INE540L01014",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PHARMA",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "ASTRAL": {
+    "symbol": "ASTRAL",
+    "isin": "INE006I01046",
+    "upstox_key": "NSE_EQ|INE006I01046",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CHEMICALS",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "ATUL": {
+    "symbol": "ATUL",
+    "isin": "INE100A01010",
+    "upstox_key": "NSE_EQ|INE100A01010",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CHEMICALS",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "AUBANK": {
+    "symbol": "AUBANK",
+    "isin": "INE949L01017",
+    "upstox_key": "NSE_EQ|INE949L01017",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PRIVATE_BANK",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "BALKRISIND": {
+    "symbol": "BALKRISIND",
+    "isin": "INE787D01026",
+    "upstox_key": "NSE_EQ|INE787D01026",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "AUTO",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "BANDHANBNK": {
+    "symbol": "BANDHANBNK",
+    "isin": "INE545U01014",
+    "upstox_key": "NSE_EQ|INE545U01014",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PRIVATE_BANK",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "BATAINDIA": {
+    "symbol": "BATAINDIA",
+    "isin": "INE176A01028",
+    "upstox_key": "NSE_EQ|INE176A01028",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CONSUMER_DURABLES",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "BEL": {
+    "symbol": "BEL",
+    "isin": "INE263A01024",
+    "upstox_key": "NSE_EQ|INE263A01024",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "BHEL": {
+    "symbol": "BHEL",
+    "isin": "INE257A01026",
+    "upstox_key": "NSE_EQ|INE257A01026",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "BIOCON": {
+    "symbol": "BIOCON",
+    "isin": "INE376G01013",
+    "upstox_key": "NSE_EQ|INE376G01013",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PHARMA",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "CANFINHOME": {
+    "symbol": "CANFINHOME",
+    "isin": "INE477A01020",
+    "upstox_key": "NSE_EQ|INE477A01020",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FINANCIALS",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "CENTRALBK": {
+    "symbol": "CENTRALBK",
+    "isin": "INE483A01010",
+    "upstox_key": "NSE_EQ|INE483A01010",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PSU_BANK",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "COFORGE": {
+    "symbol": "COFORGE",
+    "isin": "INE591G01017",
+    "upstox_key": "NSE_EQ|INE591G01017",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "IT",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "CONCOR": {
+    "symbol": "CONCOR",
+    "isin": "INE111A01025",
+    "upstox_key": "NSE_EQ|INE111A01025",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "CROMPTON": {
+    "symbol": "CROMPTON",
+    "isin": "INE299U01018",
+    "upstox_key": "NSE_EQ|INE299U01018",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CONSUMER_DURABLES",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "CUMMINSIND": {
+    "symbol": "CUMMINSIND",
+    "isin": "INE298A01020",
+    "upstox_key": "NSE_EQ|INE298A01020",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "DEEPAKFERT": {
+    "symbol": "DEEPAKFERT",
+    "isin": "INE501A01019",
+    "upstox_key": "NSE_EQ|INE501A01019",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CHEMICALS",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "DEEPAKNTR": {
+    "symbol": "DEEPAKNTR",
+    "isin": "INE288B01029",
+    "upstox_key": "NSE_EQ|INE288B01029",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CHEMICALS",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "DELHIVERY": {
+    "symbol": "DELHIVERY",
+    "isin": "INE148O01028",
+    "upstox_key": "NSE_EQ|INE148O01028",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "DIXON": {
+    "symbol": "DIXON",
+    "isin": "INE935N01020",
+    "upstox_key": "NSE_EQ|INE935N01020",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CONSUMER_DURABLES",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "ESCORTS": {
+    "symbol": "ESCORTS",
+    "isin": "INE042A01014",
+    "upstox_key": "NSE_EQ|INE042A01014",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "AUTO",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "EXIDEIND": {
+    "symbol": "EXIDEIND",
+    "isin": "INE302A01020",
+    "upstox_key": "NSE_EQ|INE302A01020",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "AUTO",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "FEDERALBNK": {
+    "symbol": "FEDERALBNK",
+    "isin": "INE171A01029",
+    "upstox_key": "NSE_EQ|INE171A01029",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PRIVATE_BANK",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "FORTIS": {
+    "symbol": "FORTIS",
+    "isin": "INE061F01013",
+    "upstox_key": "NSE_EQ|INE061F01013",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PHARMA",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "GLENMARK": {
+    "symbol": "GLENMARK",
+    "isin": "INE935A01035",
+    "upstox_key": "NSE_EQ|INE935A01035",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PHARMA",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "GMRINFRA": {
+    "symbol": "GMRINFRA",
+    "isin": "INE776C01039",
+    "upstox_key": "NSE_EQ|INE776C01039",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "GNFC": {
+    "symbol": "GNFC",
+    "isin": "INE113A01013",
+    "upstox_key": "NSE_EQ|INE113A01013",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CHEMICALS",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "GODREJPROP": {
+    "symbol": "GODREJPROP",
+    "isin": "INE484J01027",
+    "upstox_key": "NSE_EQ|INE484J01027",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "REALTY",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "GUJGASLTD": {
+    "symbol": "GUJGASLTD",
+    "isin": "INE844O01030",
+    "upstox_key": "NSE_EQ|INE844O01030",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "ENERGY",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "HINDPETRO": {
+    "symbol": "HINDPETRO",
+    "isin": "INE094A01015",
+    "upstox_key": "NSE_EQ|INE094A01015",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "ENERGY",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "HONAUT": {
+    "symbol": "HONAUT",
+    "isin": "INE671A01010",
+    "upstox_key": "NSE_EQ|INE671A01010",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CONSUMER_DURABLES",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "IDFCFIRSTB": {
+    "symbol": "IDFCFIRSTB",
+    "isin": "INE092T01019",
+    "upstox_key": "NSE_EQ|INE092T01019",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PRIVATE_BANK",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "IEX": {
+    "symbol": "IEX",
+    "isin": "INE022Q01020",
+    "upstox_key": "NSE_EQ|INE022Q01020",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FINANCIALS",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "INDHOTEL": {
+    "symbol": "INDHOTEL",
+    "isin": "INE053A01029",
+    "upstox_key": "NSE_EQ|INE053A01029",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CONSUMER_DURABLES",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "INDIGO": {
+    "symbol": "INDIGO",
+    "isin": "INE646L01027",
+    "upstox_key": "NSE_EQ|INE646L01027",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "IPCALAB": {
+    "symbol": "IPCALAB",
+    "isin": "INE571A01020",
+    "upstox_key": "NSE_EQ|INE571A01020",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PHARMA",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "IRFC": {
+    "symbol": "IRFC",
+    "isin": "INE053F01010",
+    "upstox_key": "NSE_EQ|INE053F01010",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FINANCIALS",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "JKCEMENT": {
+    "symbol": "JKCEMENT",
+    "isin": "INE823G01012",
+    "upstox_key": "NSE_EQ|INE823G01012",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CEMENT",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "JUBLFOOD": {
+    "symbol": "JUBLFOOD",
+    "isin": "INE797F01012",
+    "upstox_key": "NSE_EQ|INE797F01012",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FMCG",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "KPITTECH": {
+    "symbol": "KPITTECH",
+    "isin": "INE04I401011",
+    "upstox_key": "NSE_EQ|INE04I401011",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "IT",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "LAURUSLABS": {
+    "symbol": "LAURUSLABS",
+    "isin": "INE947Q01028",
+    "upstox_key": "NSE_EQ|INE947Q01028",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PHARMA",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "LICHSGFIN": {
+    "symbol": "LICHSGFIN",
+    "isin": "INE115A01026",
+    "upstox_key": "NSE_EQ|INE115A01026",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FINANCIALS",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "LALPATHLAB": {
+    "symbol": "LALPATHLAB",
+    "isin": "INE600L01024",
+    "upstox_key": "NSE_EQ|INE600L01024",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PHARMA",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "LTTS": {
+    "symbol": "LTTS",
+    "isin": "INE010V01017",
+    "upstox_key": "NSE_EQ|INE010V01017",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "IT",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "MFSL": {
+    "symbol": "MFSL",
+    "isin": "INE118H01025",
+    "upstox_key": "NSE_EQ|INE118H01025",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FINANCIALS",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "MPHASIS": {
+    "symbol": "MPHASIS",
+    "isin": "INE356A01018",
+    "upstox_key": "NSE_EQ|INE356A01018",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "IT",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "MRF": {
+    "symbol": "MRF",
+    "isin": "INE883A01011",
+    "upstox_key": "NSE_EQ|INE883A01011",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "AUTO",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "MUTHOOTFIN": {
+    "symbol": "MUTHOOTFIN",
+    "isin": "INE414G01012",
+    "upstox_key": "NSE_EQ|INE414G01012",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FINANCIALS",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "NATIONALUM": {
+    "symbol": "NATIONALUM",
+    "isin": "INE139A01034",
+    "upstox_key": "NSE_EQ|INE139A01034",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "METALS",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "NAVINFLUOR": {
+    "symbol": "NAVINFLUOR",
+    "isin": "INE048G01026",
+    "upstox_key": "NSE_EQ|INE048G01026",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CHEMICALS",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "NMDC": {
+    "symbol": "NMDC",
+    "isin": "INE584A01023",
+    "upstox_key": "NSE_EQ|INE584A01023",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "METALS",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "OBEROIRLTY": {
+    "symbol": "OBEROIRLTY",
+    "isin": "INE093I01010",
+    "upstox_key": "NSE_EQ|INE093I01010",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "REALTY",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "OFSS": {
+    "symbol": "OFSS",
+    "isin": "INE881D01027",
+    "upstox_key": "NSE_EQ|INE881D01027",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "IT",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "PAGEIND": {
+    "symbol": "PAGEIND",
+    "isin": "INE761H01022",
+    "upstox_key": "NSE_EQ|INE761H01022",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "TEXTILES",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "PATANJALI": {
+    "symbol": "PATANJALI",
+    "isin": "INE349Z01014",
+    "upstox_key": "NSE_EQ|INE349Z01014",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FMCG",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "PERSISTENT": {
+    "symbol": "PERSISTENT",
+    "isin": "INE262H01013",
+    "upstox_key": "NSE_EQ|INE262H01013",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "IT",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "PETRONET": {
+    "symbol": "PETRONET",
+    "isin": "INE347G01014",
+    "upstox_key": "NSE_EQ|INE347G01014",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "ENERGY",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "PIIND": {
+    "symbol": "PIIND",
+    "isin": "INE603J01030",
+    "upstox_key": "NSE_EQ|INE603J01030",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CHEMICALS",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "PRESTIGE": {
+    "symbol": "PRESTIGE",
+    "isin": "INE811K01011",
+    "upstox_key": "NSE_EQ|INE811K01011",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "REALTY",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "RAMCOCEM": {
+    "symbol": "RAMCOCEM",
+    "isin": "INE331A01037",
+    "upstox_key": "NSE_EQ|INE331A01037",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CEMENT",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "RAYMOND": {
+    "symbol": "RAYMOND",
+    "isin": "INE301A01014",
+    "upstox_key": "NSE_EQ|INE301A01014",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "TEXTILES",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "SAIL": {
+    "symbol": "SAIL",
+    "isin": "INE114A01011",
+    "upstox_key": "NSE_EQ|INE114A01011",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "METALS",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "SHREECEM": {
+    "symbol": "SHREECEM",
+    "isin": "INE070A01015",
+    "upstox_key": "NSE_EQ|INE070A01015",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CEMENT",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "SONACOMS": {
+    "symbol": "SONACOMS",
+    "isin": "INE073K01018",
+    "upstox_key": "NSE_EQ|INE073K01018",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "AUTO",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "STARHEALTH": {
+    "symbol": "STARHEALTH",
+    "isin": "INE575P01011",
+    "upstox_key": "NSE_EQ|INE575P01011",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INSURANCE",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "SUMICHEM": {
+    "symbol": "SUMICHEM",
+    "isin": "INE258G01010",
+    "upstox_key": "NSE_EQ|INE258G01010",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CHEMICALS",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "SUNDARMFIN": {
+    "symbol": "SUNDARMFIN",
+    "isin": "INE660A01013",
+    "upstox_key": "NSE_EQ|INE660A01013",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FINANCIALS",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "SUNDRMFAST": {
+    "symbol": "SUNDRMFAST",
+    "isin": "INE387A01021",
+    "upstox_key": "NSE_EQ|INE387A01021",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "AUTO",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "SUPREMEIND": {
+    "symbol": "SUPREMEIND",
+    "isin": "INE195A01028",
+    "upstox_key": "NSE_EQ|INE195A01028",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CHEMICALS",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "SYNGENE": {
+    "symbol": "SYNGENE",
+    "isin": "INE398R01022",
+    "upstox_key": "NSE_EQ|INE398R01022",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PHARMA",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "TATACHEM": {
+    "symbol": "TATACHEM",
+    "isin": "INE092A01019",
+    "upstox_key": "NSE_EQ|INE092A01019",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CHEMICALS",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "TATACOMM": {
+    "symbol": "TATACOMM",
+    "isin": "INE151A01013",
+    "upstox_key": "NSE_EQ|INE151A01013",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "TELECOM",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "TATAELXSI": {
+    "symbol": "TATAELXSI",
+    "isin": "INE670A01012",
+    "upstox_key": "NSE_EQ|INE670A01012",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "IT",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "THERMAX": {
+    "symbol": "THERMAX",
+    "isin": "INE152A01029",
+    "upstox_key": "NSE_EQ|INE152A01029",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "TIINDIA": {
+    "symbol": "TIINDIA",
+    "isin": "INE670A01012",
+    "upstox_key": "NSE_EQ|INE670A01012",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CONSUMER_DURABLES",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "TIMKEN": {
+    "symbol": "TIMKEN",
+    "isin": "INE325A01013",
+    "upstox_key": "NSE_EQ|INE325A01013",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "TORNTPOWER": {
+    "symbol": "TORNTPOWER",
+    "isin": "INE813H01021",
+    "upstox_key": "NSE_EQ|INE813H01021",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "POWER",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "TVSMOTOR": {
+    "symbol": "TVSMOTOR",
+    "isin": "INE494B01023",
+    "upstox_key": "NSE_EQ|INE494B01023",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "AUTO",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "UBL": {
+    "symbol": "UBL",
+    "isin": "INE686F01025",
+    "upstox_key": "NSE_EQ|INE686F01025",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FMCG",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "UCOBANK": {
+    "symbol": "UCOBANK",
+    "isin": "INE691A01018",
+    "upstox_key": "NSE_EQ|INE691A01018",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PSU_BANK",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "UJJIVANSFB": {
+    "symbol": "UJJIVANSFB",
+    "isin": "INE551W01018",
+    "upstox_key": "NSE_EQ|INE551W01018",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PRIVATE_BANK",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "UNITDSPR": {
+    "symbol": "UNITDSPR",
+    "isin": "INE854D01024",
+    "upstox_key": "NSE_EQ|INE854D01024",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FMCG",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "UPL": {
+    "symbol": "UPL",
+    "isin": "INE628A01036",
+    "upstox_key": "NSE_EQ|INE628A01036",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CHEMICALS",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "VGUARD": {
+    "symbol": "VGUARD",
+    "isin": "INE951I01027",
+    "upstox_key": "NSE_EQ|INE951I01027",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CONSUMER_DURABLES",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "VINATIORGA": {
+    "symbol": "VINATIORGA",
+    "isin": "INE410B01037",
+    "upstox_key": "NSE_EQ|INE410B01037",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CHEMICALS",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "WHIRLPOOL": {
+    "symbol": "WHIRLPOOL",
+    "isin": "INE716A01013",
+    "upstox_key": "NSE_EQ|INE716A01013",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CONSUMER_DURABLES",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "YESBANK": {
+    "symbol": "YESBANK",
+    "isin": "INE528G01035",
+    "upstox_key": "NSE_EQ|INE528G01035",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PRIVATE_BANK",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "APLAPOLLO": {
+    "symbol": "APLAPOLLO",
+    "isin": "INE702C01027",
+    "upstox_key": "NSE_EQ|INE702C01027",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "METALS",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "AAVAS": {
+    "symbol": "AAVAS",
+    "isin": "INE216P01012",
+    "upstox_key": "NSE_EQ|INE216P01012",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FINANCIALS",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "ABSLAMC": {
+    "symbol": "ABSLAMC",
+    "isin": "INE00RE01013",
+    "upstox_key": "NSE_EQ|INE00RE01013",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FINANCIALS",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "ABCAPITAL": {
+    "symbol": "ABCAPITAL",
+    "isin": "INE674K01013",
+    "upstox_key": "NSE_EQ|INE674K01013",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FINANCIALS",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "AJANTPHARM": {
+    "symbol": "AJANTPHARM",
+    "isin": "INE031B01049",
+    "upstox_key": "NSE_EQ|INE031B01049",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PHARMA",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "APLLTD": {
+    "symbol": "APLLTD",
+    "isin": "INE901L01018",
+    "upstox_key": "NSE_EQ|INE901L01018",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PHARMA",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "ASHOKLEY": {
+    "symbol": "ASHOKLEY",
+    "isin": "INE208A01029",
+    "upstox_key": "NSE_EQ|INE208A01029",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "AUTO",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "BAJAJELEC": {
+    "symbol": "BAJAJELEC",
+    "isin": "INE193E01025",
+    "upstox_key": "NSE_EQ|INE193E01025",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CONSUMER_DURABLES",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "BANKINDIA": {
+    "symbol": "BANKINDIA",
+    "isin": "INE084A01016",
+    "upstox_key": "NSE_EQ|INE084A01016",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PSU_BANK",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "BLUESTARLT": {
+    "symbol": "BLUESTARLT",
+    "isin": "INE472A01039",
+    "upstox_key": "NSE_EQ|INE472A01039",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CONSUMER_DURABLES",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "CARBORUNIV": {
+    "symbol": "CARBORUNIV",
+    "isin": "INE120A01034",
+    "upstox_key": "NSE_EQ|INE120A01034",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "CGPOWER": {
+    "symbol": "CGPOWER",
+    "isin": "INE067A01029",
+    "upstox_key": "NSE_EQ|INE067A01029",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY200",
+      "NIFTY500"
+    ],
+    "market_cap_tier": "large"
+  },
+  "3MINDIA": {
+    "symbol": "3MINDIA",
+    "isin": "INE470A01017",
+    "upstox_key": "NSE_EQ|INE470A01017",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CONSUMER_DURABLES",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "AARTIIND": {
+    "symbol": "AARTIIND",
+    "isin": "INE769A01020",
+    "upstox_key": "NSE_EQ|INE769A01020",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CHEMICALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "ABFRL": {
+    "symbol": "ABFRL",
+    "isin": "INE647O01011",
+    "upstox_key": "NSE_EQ|INE647O01011",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "TEXTILES",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "AEGISCHEM": {
+    "symbol": "AEGISCHEM",
+    "isin": "INE208C01025",
+    "upstox_key": "NSE_EQ|INE208C01025",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CHEMICALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "AIAENG": {
+    "symbol": "AIAENG",
+    "isin": "INE212H01026",
+    "upstox_key": "NSE_EQ|INE212H01026",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "AFFLE": {
+    "symbol": "AFFLE",
+    "isin": "INE00WF01019",
+    "upstox_key": "NSE_EQ|INE00WF01019",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "IT",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "AKZOINDIA": {
+    "symbol": "AKZOINDIA",
+    "isin": "INE767A01016",
+    "upstox_key": "NSE_EQ|INE767A01016",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CHEMICALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "AMARAJABAT": {
+    "symbol": "AMARAJABAT",
+    "isin": "INE885A01032",
+    "upstox_key": "NSE_EQ|INE885A01032",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "AUTO",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "ANGELONE": {
+    "symbol": "ANGELONE",
+    "isin": "INE732I01013",
+    "upstox_key": "NSE_EQ|INE732I01013",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FINANCIALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "ANURAS": {
+    "symbol": "ANURAS",
+    "isin": "INE457K01013",
+    "upstox_key": "NSE_EQ|INE457K01013",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FMCG",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "ASTRAZEN": {
+    "symbol": "ASTRAZEN",
+    "isin": "INE203A01020",
+    "upstox_key": "NSE_EQ|INE203A01020",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PHARMA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "AVANTIFEED": {
+    "symbol": "AVANTIFEED",
+    "isin": "INE871C01038",
+    "upstox_key": "NSE_EQ|INE871C01038",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FMCG",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "BASF": {
+    "symbol": "BASF",
+    "isin": "INE172A01027",
+    "upstox_key": "NSE_EQ|INE172A01027",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CHEMICALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "BAYERCROP": {
+    "symbol": "BAYERCROP",
+    "isin": "INE462A01022",
+    "upstox_key": "NSE_EQ|INE462A01022",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CHEMICALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "BIRLACORPN": {
+    "symbol": "BIRLACORPN",
+    "isin": "INE340A01012",
+    "upstox_key": "NSE_EQ|INE340A01012",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CEMENT",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "BLUEDART": {
+    "symbol": "BLUEDART",
+    "isin": "INE233B01017",
+    "upstox_key": "NSE_EQ|INE233B01017",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "BSOFT": {
+    "symbol": "BSOFT",
+    "isin": "INE824B01021",
+    "upstox_key": "NSE_EQ|INE824B01021",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "IT",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "CAMPUS": {
+    "symbol": "CAMPUS",
+    "isin": "INE768G01024",
+    "upstox_key": "NSE_EQ|INE768G01024",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "TEXTILES",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "CASTROLIND": {
+    "symbol": "CASTROLIND",
+    "isin": "INE172A01027",
+    "upstox_key": "NSE_EQ|INE172A01027",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "ENERGY",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "CDSL": {
+    "symbol": "CDSL",
+    "isin": "INE736A01011",
+    "upstox_key": "NSE_EQ|INE736A01011",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FINANCIALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "CEATLTD": {
+    "symbol": "CEATLTD",
+    "isin": "INE482A01020",
+    "upstox_key": "NSE_EQ|INE482A01020",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "AUTO",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "CENTURYPLY": {
+    "symbol": "CENTURYPLY",
+    "isin": "INE281A01026",
+    "upstox_key": "NSE_EQ|INE281A01026",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CONSUMER_DURABLES",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "CESC": {
+    "symbol": "CESC",
+    "isin": "INE486A01021",
+    "upstox_key": "NSE_EQ|INE486A01021",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "POWER",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "CHAMBLFERT": {
+    "symbol": "CHAMBLFERT",
+    "isin": "INE085A01013",
+    "upstox_key": "NSE_EQ|INE085A01013",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CHEMICALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "CHEMPLASTS": {
+    "symbol": "CHEMPLASTS",
+    "isin": "INE488B01017",
+    "upstox_key": "NSE_EQ|INE488B01017",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CHEMICALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "CLEAN": {
+    "symbol": "CLEAN",
+    "isin": "INE399L01023",
+    "upstox_key": "NSE_EQ|INE399L01023",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "ENERGY",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "COCHINSHIP": {
+    "symbol": "COCHINSHIP",
+    "isin": "INE704A01026",
+    "upstox_key": "NSE_EQ|INE704A01026",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "CYIENT": {
+    "symbol": "CYIENT",
+    "isin": "INE136B01020",
+    "upstox_key": "NSE_EQ|INE136B01020",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "IT",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "DATAPATTNS": {
+    "symbol": "DATAPATTNS",
+    "isin": "INE822P01016",
+    "upstox_key": "NSE_EQ|INE822P01016",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "DCMSHRIRAM": {
+    "symbol": "DCMSHRIRAM",
+    "isin": "INE499A01024",
+    "upstox_key": "NSE_EQ|INE499A01024",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CHEMICALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "DEVYANI": {
+    "symbol": "DEVYANI",
+    "isin": "INE872J01018",
+    "upstox_key": "NSE_EQ|INE872J01018",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FMCG",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "DHANI": {
+    "symbol": "DHANI",
+    "isin": "INE680H01016",
+    "upstox_key": "NSE_EQ|INE680H01016",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FINANCIALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "ECLERX": {
+    "symbol": "ECLERX",
+    "isin": "INE738I01010",
+    "upstox_key": "NSE_EQ|INE738I01010",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "IT",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "ELECON": {
+    "symbol": "ELECON",
+    "isin": "INE205C01021",
+    "upstox_key": "NSE_EQ|INE205C01021",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "EMAMILTD": {
+    "symbol": "EMAMILTD",
+    "isin": "INE548C01032",
+    "upstox_key": "NSE_EQ|INE548C01032",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FMCG",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "ENDURANCE": {
+    "symbol": "ENDURANCE",
+    "isin": "INE913H01037",
+    "upstox_key": "NSE_EQ|INE913H01037",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "AUTO",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "ENGINERSIN": {
+    "symbol": "ENGINERSIN",
+    "isin": "INE510A01028",
+    "upstox_key": "NSE_EQ|INE510A01028",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "EQUITASBNK": {
+    "symbol": "EQUITASBNK",
+    "isin": "INE063P01018",
+    "upstox_key": "NSE_EQ|INE063P01018",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PRIVATE_BANK",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "ERIS": {
+    "symbol": "ERIS",
+    "isin": "INE406M01024",
+    "upstox_key": "NSE_EQ|INE406M01024",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PHARMA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "FINCABLES": {
+    "symbol": "FINCABLES",
+    "isin": "INE235A01022",
+    "upstox_key": "NSE_EQ|INE235A01022",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CONSUMER_DURABLES",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "FINEORG": {
+    "symbol": "FINEORG",
+    "isin": "INE686Y01026",
+    "upstox_key": "NSE_EQ|INE686Y01026",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CHEMICALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "FSL": {
+    "symbol": "FSL",
+    "isin": "INE684F01012",
+    "upstox_key": "NSE_EQ|INE684F01012",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PHARMA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "GALAXYSURF": {
+    "symbol": "GALAXYSURF",
+    "isin": "INE600K01018",
+    "upstox_key": "NSE_EQ|INE600K01018",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CHEMICALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "GARFIBRES": {
+    "symbol": "GARFIBRES",
+    "isin": "INE276B01024",
+    "upstox_key": "NSE_EQ|INE276B01024",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CHEMICALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "GILLETTE": {
+    "symbol": "GILLETTE",
+    "isin": "INE322A01010",
+    "upstox_key": "NSE_EQ|INE322A01010",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FMCG",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "GLAXO": {
+    "symbol": "GLAXO",
+    "isin": "INE159A01016",
+    "upstox_key": "NSE_EQ|INE159A01016",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PHARMA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "GLOBUSSPR": {
+    "symbol": "GLOBUSSPR",
+    "isin": "INE950O01027",
+    "upstox_key": "NSE_EQ|INE950O01027",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FMCG",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "GRANULES": {
+    "symbol": "GRANULES",
+    "isin": "INE101D01020",
+    "upstox_key": "NSE_EQ|INE101D01020",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PHARMA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "GRINDWELL": {
+    "symbol": "GRINDWELL",
+    "isin": "INE536A01023",
+    "upstox_key": "NSE_EQ|INE536A01023",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "GSPL": {
+    "symbol": "GSPL",
+    "isin": "INE246F01010",
+    "upstox_key": "NSE_EQ|INE246F01010",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "ENERGY",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "GRSE": {
+    "symbol": "GRSE",
+    "isin": "INE382Z01011",
+    "upstox_key": "NSE_EQ|INE382Z01011",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "GSHIP": {
+    "symbol": "GSHIP",
+    "isin": "INE517A01014",
+    "upstox_key": "NSE_EQ|INE517A01014",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "HAPPSTMNDS": {
+    "symbol": "HAPPSTMNDS",
+    "isin": "INE419U01012",
+    "upstox_key": "NSE_EQ|INE419U01012",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "IT",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "HATSUN": {
+    "symbol": "HATSUN",
+    "isin": "INE473B01035",
+    "upstox_key": "NSE_EQ|INE473B01035",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FMCG",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "HFCL": {
+    "symbol": "HFCL",
+    "isin": "INE548A01028",
+    "upstox_key": "NSE_EQ|INE548A01028",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "TELECOM",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "HINDCOPPER": {
+    "symbol": "HINDCOPPER",
+    "isin": "INE531E01026",
+    "upstox_key": "NSE_EQ|INE531E01026",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "METALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "HINDZINC": {
+    "symbol": "HINDZINC",
+    "isin": "INE267A01025",
+    "upstox_key": "NSE_EQ|INE267A01025",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "METALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "HUDCO": {
+    "symbol": "HUDCO",
+    "isin": "INE031A01017",
+    "upstox_key": "NSE_EQ|INE031A01017",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FINANCIALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "ICRA": {
+    "symbol": "ICRA",
+    "isin": "INE725G01016",
+    "upstox_key": "NSE_EQ|INE725G01016",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FINANCIALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "IDBI": {
+    "symbol": "IDBI",
+    "isin": "INE008A01015",
+    "upstox_key": "NSE_EQ|INE008A01015",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PSU_BANK",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "IDFC": {
+    "symbol": "IDFC",
+    "isin": "INE043D01016",
+    "upstox_key": "NSE_EQ|INE043D01016",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FINANCIALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "IIFL": {
+    "symbol": "IIFL",
+    "isin": "INE530B01024",
+    "upstox_key": "NSE_EQ|INE530B01024",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FINANCIALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "IIFLWAM": {
+    "symbol": "IIFLWAM",
+    "isin": "INE466M01020",
+    "upstox_key": "NSE_EQ|INE466M01020",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FINANCIALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "INDIGOPNTS": {
+    "symbol": "INDIGOPNTS",
+    "isin": "INE203B01028",
+    "upstox_key": "NSE_EQ|INE203B01028",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CHEMICALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "INTELLECT": {
+    "symbol": "INTELLECT",
+    "isin": "INE306R01017",
+    "upstox_key": "NSE_EQ|INE306R01017",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "IT",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "ISGEC": {
+    "symbol": "ISGEC",
+    "isin": "INE858B01011",
+    "upstox_key": "NSE_EQ|INE858B01011",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "ISEC": {
+    "symbol": "ISEC",
+    "isin": "INE763G01038",
+    "upstox_key": "NSE_EQ|INE763G01038",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FINANCIALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "JBCHEPHARM": {
+    "symbol": "JBCHEPHARM",
+    "isin": "INE572A01028",
+    "upstox_key": "NSE_EQ|INE572A01028",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PHARMA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "JKLAKSHMI": {
+    "symbol": "JKLAKSHMI",
+    "isin": "INE786A01032",
+    "upstox_key": "NSE_EQ|INE786A01032",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CEMENT",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "JMFINANCIL": {
+    "symbol": "JMFINANCIL",
+    "isin": "INE780C01023",
+    "upstox_key": "NSE_EQ|INE780C01023",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FINANCIALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "JSWINFRA": {
+    "symbol": "JSWINFRA",
+    "isin": "INE880J01011",
+    "upstox_key": "NSE_EQ|INE880J01011",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "JUBLINGREA": {
+    "symbol": "JUBLINGREA",
+    "isin": "INE040A01034",
+    "upstox_key": "NSE_EQ|INE040A01034",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CONSUMER_DURABLES",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "JUSTDIAL": {
+    "symbol": "JUSTDIAL",
+    "isin": "INE599M01018",
+    "upstox_key": "NSE_EQ|INE599M01018",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "IT",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "JYOTHYLAB": {
+    "symbol": "JYOTHYLAB",
+    "isin": "INE668F01031",
+    "upstox_key": "NSE_EQ|INE668F01031",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FMCG",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "KAJARIACER": {
+    "symbol": "KAJARIACER",
+    "isin": "INE217B01036",
+    "upstox_key": "NSE_EQ|INE217B01036",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CONSUMER_DURABLES",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "KALPATPOWR": {
+    "symbol": "KALPATPOWR",
+    "isin": "INE220B01022",
+    "upstox_key": "NSE_EQ|INE220B01022",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "KALYANKJIL": {
+    "symbol": "KALYANKJIL",
+    "isin": "INE303R01014",
+    "upstox_key": "NSE_EQ|INE303R01014",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CONSUMER_DURABLES",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "KEC": {
+    "symbol": "KEC",
+    "isin": "INE389H01022",
+    "upstox_key": "NSE_EQ|INE389H01022",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "KEI": {
+    "symbol": "KEI",
+    "isin": "INE878B01027",
+    "upstox_key": "NSE_EQ|INE878B01027",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "KIRLOSENG": {
+    "symbol": "KIRLOSENG",
+    "isin": "INE146L01010",
+    "upstox_key": "NSE_EQ|INE146L01010",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "KNRCON": {
+    "symbol": "KNRCON",
+    "isin": "INE634I01029",
+    "upstox_key": "NSE_EQ|INE634I01029",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "KPRMILL": {
+    "symbol": "KPRMILL",
+    "isin": "INE930H01023",
+    "upstox_key": "NSE_EQ|INE930H01023",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "TEXTILES",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "KRBL": {
+    "symbol": "KRBL",
+    "isin": "INE001B01026",
+    "upstox_key": "NSE_EQ|INE001B01026",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FMCG",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "KTKBANK": {
+    "symbol": "KTKBANK",
+    "isin": "INE614B01018",
+    "upstox_key": "NSE_EQ|INE614B01018",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PRIVATE_BANK",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "L&TFH": {
+    "symbol": "L&TFH",
+    "isin": "INE498A01024",
+    "upstox_key": "NSE_EQ|INE498A01024",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FINANCIALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "LATENTVIEW": {
+    "symbol": "LATENTVIEW",
+    "isin": "INE0CCK01010",
+    "upstox_key": "NSE_EQ|INE0CCK01010",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "IT",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "LAXMIMACH": {
+    "symbol": "LAXMIMACH",
+    "isin": "INE234B01023",
+    "upstox_key": "NSE_EQ|INE234B01023",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "LINDEINDIA": {
+    "symbol": "LINDEINDIA",
+    "isin": "INE473A01011",
+    "upstox_key": "NSE_EQ|INE473A01011",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CHEMICALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "LUXIND": {
+    "symbol": "LUXIND",
+    "isin": "INE150G01020",
+    "upstox_key": "NSE_EQ|INE150G01020",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "TEXTILES",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "MAHSEAMLES": {
+    "symbol": "MAHSEAMLES",
+    "isin": "INE271B01025",
+    "upstox_key": "NSE_EQ|INE271B01025",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "METALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "MANAPPURAM": {
+    "symbol": "MANAPPURAM",
+    "isin": "INE522D01027",
+    "upstox_key": "NSE_EQ|INE522D01027",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FINANCIALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "MASTEK": {
+    "symbol": "MASTEK",
+    "isin": "INE759A01021",
+    "upstox_key": "NSE_EQ|INE759A01021",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "IT",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "MCX": {
+    "symbol": "MCX",
+    "isin": "INE745G01035",
+    "upstox_key": "NSE_EQ|INE745G01035",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FINANCIALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "METROPOLIS": {
+    "symbol": "METROPOLIS",
+    "isin": "INE112L01020",
+    "upstox_key": "NSE_EQ|INE112L01020",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PHARMA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "MINDAIND": {
+    "symbol": "MINDAIND",
+    "isin": "INE405E01023",
+    "upstox_key": "NSE_EQ|INE405E01023",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "AUTO",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "MOTILALOFS": {
+    "symbol": "MOTILALOFS",
+    "isin": "INE338I01027",
+    "upstox_key": "NSE_EQ|INE338I01027",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FINANCIALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "MRPL": {
+    "symbol": "MRPL",
+    "isin": "INE196A01026",
+    "upstox_key": "NSE_EQ|INE196A01026",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "ENERGY",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "NATCOPHARM": {
+    "symbol": "NATCOPHARM",
+    "isin": "INE987B01026",
+    "upstox_key": "NSE_EQ|INE987B01026",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PHARMA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "NIACL": {
+    "symbol": "NIACL",
+    "isin": "INE047B01011",
+    "upstox_key": "NSE_EQ|INE047B01011",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INSURANCE",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "NLC": {
+    "symbol": "NLC",
+    "isin": "INE589A01014",
+    "upstox_key": "NSE_EQ|INE589A01014",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "POWER",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "NOCIL": {
+    "symbol": "NOCIL",
+    "isin": "INE163A01018",
+    "upstox_key": "NSE_EQ|INE163A01018",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CHEMICALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "OLECTRA": {
+    "symbol": "OLECTRA",
+    "isin": "INE260D01016",
+    "upstox_key": "NSE_EQ|INE260D01016",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "AUTO",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "ORIENTELEC": {
+    "symbol": "ORIENTELEC",
+    "isin": "INE142Z01019",
+    "upstox_key": "NSE_EQ|INE142Z01019",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CONSUMER_DURABLES",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "PGHH": {
+    "symbol": "PGHH",
+    "isin": "INE179A01014",
+    "upstox_key": "NSE_EQ|INE179A01014",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FMCG",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "PHOENIXLTD": {
+    "symbol": "PHOENIXLTD",
+    "isin": "INE211B01039",
+    "upstox_key": "NSE_EQ|INE211B01039",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "REALTY",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "POLYMED": {
+    "symbol": "POLYMED",
+    "isin": "INE205C01021",
+    "upstox_key": "NSE_EQ|INE205C01021",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PHARMA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "POONAWALLA": {
+    "symbol": "POONAWALLA",
+    "isin": "INE511C01022",
+    "upstox_key": "NSE_EQ|INE511C01022",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FINANCIALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "POWERMECH": {
+    "symbol": "POWERMECH",
+    "isin": "INE775I01014",
+    "upstox_key": "NSE_EQ|INE775I01014",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "PRINCEPIPE": {
+    "symbol": "PRINCEPIPE",
+    "isin": "INE689W01016",
+    "upstox_key": "NSE_EQ|INE689W01016",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CHEMICALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "PRSMJOHNSN": {
+    "symbol": "PRSMJOHNSN",
+    "isin": "INE068I01014",
+    "upstox_key": "NSE_EQ|INE068I01014",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CONSUMER_DURABLES",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "PSB": {
+    "symbol": "PSB",
+    "isin": "INE608A01012",
+    "upstox_key": "NSE_EQ|INE608A01012",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PSU_BANK",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "QUESS": {
+    "symbol": "QUESS",
+    "isin": "INE615P01015",
+    "upstox_key": "NSE_EQ|INE615P01015",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "IT",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "RADICO": {
+    "symbol": "RADICO",
+    "isin": "INE944F01028",
+    "upstox_key": "NSE_EQ|INE944F01028",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FMCG",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "RAIN": {
+    "symbol": "RAIN",
+    "isin": "INE855B01025",
+    "upstox_key": "NSE_EQ|INE855B01025",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CHEMICALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "RAJESHEXPO": {
+    "symbol": "RAJESHEXPO",
+    "isin": "INE343B01030",
+    "upstox_key": "NSE_EQ|INE343B01030",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FMCG",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "RALLIS": {
+    "symbol": "RALLIS",
+    "isin": "INE613A01020",
+    "upstox_key": "NSE_EQ|INE613A01020",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CHEMICALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "RKFORGE": {
+    "symbol": "RKFORGE",
+    "isin": "INE399G01023",
+    "upstox_key": "NSE_EQ|INE399G01023",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "AUTO",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "ROUTE": {
+    "symbol": "ROUTE",
+    "isin": "INE450U01017",
+    "upstox_key": "NSE_EQ|INE450U01017",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "IT",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "RVNL": {
+    "symbol": "RVNL",
+    "isin": "INE415G01027",
+    "upstox_key": "NSE_EQ|INE415G01027",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "SAREGAMA": {
+    "symbol": "SAREGAMA",
+    "isin": "INE979A01025",
+    "upstox_key": "NSE_EQ|INE979A01025",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "MEDIA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "SCHAEFFLER": {
+    "symbol": "SCHAEFFLER",
+    "isin": "INE513A01014",
+    "upstox_key": "NSE_EQ|INE513A01014",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "AUTO",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "SHOPERSTOP": {
+    "symbol": "SHOPERSTOP",
+    "isin": "INE498B01024",
+    "upstox_key": "NSE_EQ|INE498B01024",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CONSUMER_DURABLES",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "small"
+  },
+  "SJVN": {
+    "symbol": "SJVN",
+    "isin": "INE002L01015",
+    "upstox_key": "NSE_EQ|INE002L01015",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "POWER",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "SKFINDIA": {
+    "symbol": "SKFINDIA",
+    "isin": "INE640A01023",
+    "upstox_key": "NSE_EQ|INE640A01023",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "AUTO",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "SOBHA": {
+    "symbol": "SOBHA",
+    "isin": "INE671H01015",
+    "upstox_key": "NSE_EQ|INE671H01015",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "REALTY",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "SOLARA": {
+    "symbol": "SOLARA",
+    "isin": "INE624Z01016",
+    "upstox_key": "NSE_EQ|INE624Z01016",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PHARMA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "SPARC": {
+    "symbol": "SPARC",
+    "isin": "INE232I01014",
+    "upstox_key": "NSE_EQ|INE232I01014",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PHARMA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "STLTECH": {
+    "symbol": "STLTECH",
+    "isin": "INE089C01029",
+    "upstox_key": "NSE_EQ|INE089C01029",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "TELECOM",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "SUNTV": {
+    "symbol": "SUNTV",
+    "isin": "INE424H01027",
+    "upstox_key": "NSE_EQ|INE424H01027",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "MEDIA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "SUPRAJIT": {
+    "symbol": "SUPRAJIT",
+    "isin": "INE399C01030",
+    "upstox_key": "NSE_EQ|INE399C01030",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "AUTO",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "SUVENPHAR": {
+    "symbol": "SUVENPHAR",
+    "isin": "INE03QN01013",
+    "upstox_key": "NSE_EQ|INE03QN01013",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PHARMA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "SWANENERGY": {
+    "symbol": "SWANENERGY",
+    "isin": "INE665A01038",
+    "upstox_key": "NSE_EQ|INE665A01038",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "ENERGY",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "SYMPHONY": {
+    "symbol": "SYMPHONY",
+    "isin": "INE225D01027",
+    "upstox_key": "NSE_EQ|INE225D01027",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CONSUMER_DURABLES",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "TANLA": {
+    "symbol": "TANLA",
+    "isin": "INE483C01032",
+    "upstox_key": "NSE_EQ|INE483C01032",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "IT",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "TATAINVEST": {
+    "symbol": "TATAINVEST",
+    "isin": "INE672A01018",
+    "upstox_key": "NSE_EQ|INE672A01018",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FINANCIALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "TATAMETALI": {
+    "symbol": "TATAMETALI",
+    "isin": "INE056C01010",
+    "upstox_key": "NSE_EQ|INE056C01010",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "METALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "TEAMLEASE": {
+    "symbol": "TEAMLEASE",
+    "isin": "INE985S01024",
+    "upstox_key": "NSE_EQ|INE985S01024",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "IT",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "TECHNO": {
+    "symbol": "TECHNO",
+    "isin": "INE345L01018",
+    "upstox_key": "NSE_EQ|INE345L01018",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "THYROCARE": {
+    "symbol": "THYROCARE",
+    "isin": "INE594H01019",
+    "upstox_key": "NSE_EQ|INE594H01019",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PHARMA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "TINPLATE": {
+    "symbol": "TINPLATE",
+    "isin": "INE422A01016",
+    "upstox_key": "NSE_EQ|INE422A01016",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "METALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "TMB": {
+    "symbol": "TMB",
+    "isin": "INE700A01033",
+    "upstox_key": "NSE_EQ|INE700A01033",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PRIVATE_BANK",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "TRIDENT": {
+    "symbol": "TRIDENT",
+    "isin": "INE064C01022",
+    "upstox_key": "NSE_EQ|INE064C01022",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "TEXTILES",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "TRITURBINE": {
+    "symbol": "TRITURBINE",
+    "isin": "INE152M01016",
+    "upstox_key": "NSE_EQ|INE152M01016",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "POWER",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "TRIVENI": {
+    "symbol": "TRIVENI",
+    "isin": "INE256C01024",
+    "upstox_key": "NSE_EQ|INE256C01024",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "TTML": {
+    "symbol": "TTML",
+    "isin": "INE037A01022",
+    "upstox_key": "NSE_EQ|INE037A01022",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "TELECOM",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "TV18BRDCST": {
+    "symbol": "TV18BRDCST",
+    "isin": "INE886H01027",
+    "upstox_key": "NSE_EQ|INE886H01027",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "MEDIA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "UTIAMC": {
+    "symbol": "UTIAMC",
+    "isin": "INE094J01016",
+    "upstox_key": "NSE_EQ|INE094J01016",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FINANCIALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "VAIBHAVGBL": {
+    "symbol": "VAIBHAVGBL",
+    "isin": "INE884A01027",
+    "upstox_key": "NSE_EQ|INE884A01027",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CONSUMER_DURABLES",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "VARDHMNSTX": {
+    "symbol": "VARDHMNSTX",
+    "isin": "INE825A01012",
+    "upstox_key": "NSE_EQ|INE825A01012",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "TEXTILES",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "VBLLTD": {
+    "symbol": "VBLLTD",
+    "isin": "INE200M01013",
+    "upstox_key": "NSE_EQ|INE200M01013",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FMCG",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "VIPIND": {
+    "symbol": "VIPIND",
+    "isin": "INE054A01027",
+    "upstox_key": "NSE_EQ|INE054A01027",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CONSUMER_DURABLES",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "VMART": {
+    "symbol": "VMART",
+    "isin": "INE665J01013",
+    "upstox_key": "NSE_EQ|INE665J01013",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CONSUMER_DURABLES",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "small"
+  },
+  "VSTIND": {
+    "symbol": "VSTIND",
+    "isin": "INE710A01016",
+    "upstox_key": "NSE_EQ|INE710A01016",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FMCG",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "WELCORP": {
+    "symbol": "WELCORP",
+    "isin": "INE338B01022",
+    "upstox_key": "NSE_EQ|INE338B01022",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "METALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "WELSPUNLIV": {
+    "symbol": "WELSPUNLIV",
+    "isin": "INE192B01031",
+    "upstox_key": "NSE_EQ|INE192B01031",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "TEXTILES",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "WESTLIFE": {
+    "symbol": "WESTLIFE",
+    "isin": "INE274F01020",
+    "upstox_key": "NSE_EQ|INE274F01020",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FMCG",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "WOCKPHARMA": {
+    "symbol": "WOCKPHARMA",
+    "isin": "INE049B01025",
+    "upstox_key": "NSE_EQ|INE049B01025",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PHARMA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "ZEEL": {
+    "symbol": "ZEEL",
+    "isin": "INE256A01028",
+    "upstox_key": "NSE_EQ|INE256A01028",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "MEDIA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "ZENSARTECH": {
+    "symbol": "ZENSARTECH",
+    "isin": "INE520A01027",
+    "upstox_key": "NSE_EQ|INE520A01027",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "IT",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "ZPFIN": {
+    "symbol": "ZPFIN",
+    "isin": "INE251B01019",
+    "upstox_key": "NSE_EQ|INE251B01019",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FINANCIALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "AETHER": {
+    "symbol": "AETHER",
+    "isin": "INE0GXQ01019",
+    "upstox_key": "NSE_EQ|INE0GXQ01019",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CHEMICALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "ALKYLAMINE": {
+    "symbol": "ALKYLAMINE",
+    "isin": "INE150B01039",
+    "upstox_key": "NSE_EQ|INE150B01039",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CHEMICALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "ANANDRATHI": {
+    "symbol": "ANANDRATHI",
+    "isin": "INE657B01018",
+    "upstox_key": "NSE_EQ|INE657B01018",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FINANCIALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "ANANTRAJ": {
+    "symbol": "ANANTRAJ",
+    "isin": "INE242C01024",
+    "upstox_key": "NSE_EQ|INE242C01024",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "REALTY",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "APTUS": {
+    "symbol": "APTUS",
+    "isin": "INE852O01025",
+    "upstox_key": "NSE_EQ|INE852O01025",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FINANCIALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "ASTER": {
+    "symbol": "ASTER",
+    "isin": "INE914M01019",
+    "upstox_key": "NSE_EQ|INE914M01019",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PHARMA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "BANARISUG": {
+    "symbol": "BANARISUG",
+    "isin": "INE459A01010",
+    "upstox_key": "NSE_EQ|INE459A01010",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FMCG",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "BEML": {
+    "symbol": "BEML",
+    "isin": "INE258A01016",
+    "upstox_key": "NSE_EQ|INE258A01016",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "BLS": {
+    "symbol": "BLS",
+    "isin": "INE153T01027",
+    "upstox_key": "NSE_EQ|INE153T01027",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "BRIGADE": {
+    "symbol": "BRIGADE",
+    "isin": "INE791I01019",
+    "upstox_key": "NSE_EQ|INE791I01019",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "REALTY",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "BSE": {
+    "symbol": "BSE",
+    "isin": "INE118H01025",
+    "upstox_key": "NSE_EQ|INE118H01025",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FINANCIALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "CAPLIPOINT": {
+    "symbol": "CAPLIPOINT",
+    "isin": "INE475E01026",
+    "upstox_key": "NSE_EQ|INE475E01026",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PHARMA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "CERA": {
+    "symbol": "CERA",
+    "isin": "INE739E01017",
+    "upstox_key": "NSE_EQ|INE739E01017",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CONSUMER_DURABLES",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "CHALET": {
+    "symbol": "CHALET",
+    "isin": "INE427F01016",
+    "upstox_key": "NSE_EQ|INE427F01016",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CONSUMER_DURABLES",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "CUB": {
+    "symbol": "CUB",
+    "isin": "INE112A01023",
+    "upstox_key": "NSE_EQ|INE112A01023",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PRIVATE_BANK",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "CRISIL": {
+    "symbol": "CRISIL",
+    "isin": "INE007A01025",
+    "upstox_key": "NSE_EQ|INE007A01025",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FINANCIALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "DALBHARAT": {
+    "symbol": "DALBHARAT",
+    "isin": "INE453B01029",
+    "upstox_key": "NSE_EQ|INE453B01029",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CEMENT",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "DMART": {
+    "symbol": "DMART",
+    "isin": "INE192R01011",
+    "upstox_key": "NSE_EQ|INE192R01011",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FMCG",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "DOMS": {
+    "symbol": "DOMS",
+    "isin": "INE345W01019",
+    "upstox_key": "NSE_EQ|INE345W01019",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CONSUMER_DURABLES",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "EIH": {
+    "symbol": "EIH",
+    "isin": "INE230A01023",
+    "upstox_key": "NSE_EQ|INE230A01023",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CONSUMER_DURABLES",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "EPL": {
+    "symbol": "EPL",
+    "isin": "INE255C01020",
+    "upstox_key": "NSE_EQ|INE255C01020",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CONSUMER_DURABLES",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "FACT": {
+    "symbol": "FACT",
+    "isin": "INE188A01015",
+    "upstox_key": "NSE_EQ|INE188A01015",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CHEMICALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "FINOLEX": {
+    "symbol": "FINOLEX",
+    "isin": "INE235A01022",
+    "upstox_key": "NSE_EQ|INE235A01022",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CONSUMER_DURABLES",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "FIRSTSOUR": {
+    "symbol": "FIRSTSOUR",
+    "isin": "INE684F01012",
+    "upstox_key": "NSE_EQ|INE684F01012",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "IT",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "FLUOROCHEM": {
+    "symbol": "FLUOROCHEM",
+    "isin": "INE580B01039",
+    "upstox_key": "NSE_EQ|INE580B01039",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CHEMICALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "GHCL": {
+    "symbol": "GHCL",
+    "isin": "INE539A01019",
+    "upstox_key": "NSE_EQ|INE539A01019",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CHEMICALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "GODFRYPHLP": {
+    "symbol": "GODFRYPHLP",
+    "isin": "INE260B01028",
+    "upstox_key": "NSE_EQ|INE260B01028",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FMCG",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "GPIL": {
+    "symbol": "GPIL",
+    "isin": "INE635Q01024",
+    "upstox_key": "NSE_EQ|INE635Q01024",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "METALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "GUJALKALI": {
+    "symbol": "GUJALKALI",
+    "isin": "INE186A01019",
+    "upstox_key": "NSE_EQ|INE186A01019",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CHEMICALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "HECLTD": {
+    "symbol": "HECLTD",
+    "isin": "INE549A01026",
+    "upstox_key": "NSE_EQ|INE549A01026",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "HEMIPROP": {
+    "symbol": "HEMIPROP",
+    "isin": "INE373I01016",
+    "upstox_key": "NSE_EQ|INE373I01016",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "REALTY",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "HGINFRA": {
+    "symbol": "HGINFRA",
+    "isin": "INE545H01022",
+    "upstox_key": "NSE_EQ|INE545H01022",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "HOMEFIRST": {
+    "symbol": "HOMEFIRST",
+    "isin": "INE481N01020",
+    "upstox_key": "NSE_EQ|INE481N01020",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FINANCIALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "IBREALEST": {
+    "symbol": "IBREALEST",
+    "isin": "INE069I01010",
+    "upstox_key": "NSE_EQ|INE069I01010",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "REALTY",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "IFBIND": {
+    "symbol": "IFBIND",
+    "isin": "INE559A01017",
+    "upstox_key": "NSE_EQ|INE559A01017",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CONSUMER_DURABLES",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "small"
+  },
+  "IIFLSEC": {
+    "symbol": "IIFLSEC",
+    "isin": "INE530B01040",
+    "upstox_key": "NSE_EQ|INE530B01040",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FINANCIALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "small"
+  },
+  "INOXWIND": {
+    "symbol": "INOXWIND",
+    "isin": "INE066P01011",
+    "upstox_key": "NSE_EQ|INE066P01011",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "POWER",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "IONEXCHANG": {
+    "symbol": "IONEXCHANG",
+    "isin": "INE503A01015",
+    "upstox_key": "NSE_EQ|INE503A01015",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CHEMICALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "JAMNAAUTO": {
+    "symbol": "JAMNAAUTO",
+    "isin": "INE039C01032",
+    "upstox_key": "NSE_EQ|INE039C01032",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "AUTO",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "JBMA": {
+    "symbol": "JBMA",
+    "isin": "INE227A01013",
+    "upstox_key": "NSE_EQ|INE227A01013",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "AUTO",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "JINDALSAW": {
+    "symbol": "JINDALSAW",
+    "isin": "INE324A01024",
+    "upstox_key": "NSE_EQ|INE324A01024",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "METALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "JKPAPER": {
+    "symbol": "JKPAPER",
+    "isin": "INE789E01012",
+    "upstox_key": "NSE_EQ|INE789E01012",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CONSUMER_DURABLES",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "JPASSOCIAT": {
+    "symbol": "JPASSOCIAT",
+    "isin": "INE455F01025",
+    "upstox_key": "NSE_EQ|INE455F01025",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "small"
+  },
+  "JSWHL": {
+    "symbol": "JSWHL",
+    "isin": "INE824A01015",
+    "upstox_key": "NSE_EQ|INE824A01015",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "METALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "JUBILANT": {
+    "symbol": "JUBILANT",
+    "isin": "INE700A01033",
+    "upstox_key": "NSE_EQ|INE700A01033",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PHARMA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "KARURVYSYA": {
+    "symbol": "KARURVYSYA",
+    "isin": "INE036D01028",
+    "upstox_key": "NSE_EQ|INE036D01028",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PRIVATE_BANK",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "KAYNES": {
+    "symbol": "KAYNES",
+    "isin": "INE918Z01010",
+    "upstox_key": "NSE_EQ|INE918Z01010",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "IT",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "KFINTECH": {
+    "symbol": "KFINTECH",
+    "isin": "INE138Y01010",
+    "upstox_key": "NSE_EQ|INE138Y01010",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "IT",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "KOLTEPATIL": {
+    "symbol": "KOLTEPATIL",
+    "isin": "INE094I01018",
+    "upstox_key": "NSE_EQ|INE094I01018",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "REALTY",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "KOPRAN": {
+    "symbol": "KOPRAN",
+    "isin": "INE082A01010",
+    "upstox_key": "NSE_EQ|INE082A01010",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PHARMA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "small"
+  },
+  "KRSNAA": {
+    "symbol": "KRSNAA",
+    "isin": "INE328Q01018",
+    "upstox_key": "NSE_EQ|INE328Q01018",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PHARMA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "LXCHEM": {
+    "symbol": "LXCHEM",
+    "isin": "INE576O01020",
+    "upstox_key": "NSE_EQ|INE576O01020",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CHEMICALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "MAHABANK": {
+    "symbol": "MAHABANK",
+    "isin": "INE457A01014",
+    "upstox_key": "NSE_EQ|INE457A01014",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PSU_BANK",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "MAHINDCIE": {
+    "symbol": "MAHINDCIE",
+    "isin": "INE536H01013",
+    "upstox_key": "NSE_EQ|INE536H01013",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "AUTO",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "MAHLOG": {
+    "symbol": "MAHLOG",
+    "isin": "INE766P01016",
+    "upstox_key": "NSE_EQ|INE766P01016",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "MAITHANALL": {
+    "symbol": "MAITHANALL",
+    "isin": "INE683B01019",
+    "upstox_key": "NSE_EQ|INE683B01019",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CHEMICALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "MAPMYINDIA": {
+    "symbol": "MAPMYINDIA",
+    "isin": "INE353V01018",
+    "upstox_key": "NSE_EQ|INE353V01018",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "IT",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "MASFIN": {
+    "symbol": "MASFIN",
+    "isin": "INE150P01013",
+    "upstox_key": "NSE_EQ|INE150P01013",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FINANCIALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "MAYURUNIQ": {
+    "symbol": "MAYURUNIQ",
+    "isin": "INE885E01018",
+    "upstox_key": "NSE_EQ|INE885E01018",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "TEXTILES",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "small"
+  },
+  "MEDANTA": {
+    "symbol": "MEDANTA",
+    "isin": "INE546S01023",
+    "upstox_key": "NSE_EQ|INE546S01023",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PHARMA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "MIDHANI": {
+    "symbol": "MIDHANI",
+    "isin": "INE099Z01011",
+    "upstox_key": "NSE_EQ|INE099Z01011",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "METALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "MMTC": {
+    "symbol": "MMTC",
+    "isin": "INE123F01029",
+    "upstox_key": "NSE_EQ|INE123F01029",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "METALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "MOLDTKPAC": {
+    "symbol": "MOLDTKPAC",
+    "isin": "INE468B01015",
+    "upstox_key": "NSE_EQ|INE468B01015",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CONSUMER_DURABLES",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "MOIL": {
+    "symbol": "MOIL",
+    "isin": "INE490G01020",
+    "upstox_key": "NSE_EQ|INE490G01020",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "METALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "MTARTECH": {
+    "symbol": "MTARTECH",
+    "isin": "INE864P01027",
+    "upstox_key": "NSE_EQ|INE864P01027",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "NAZARA": {
+    "symbol": "NAZARA",
+    "isin": "INE418L01014",
+    "upstox_key": "NSE_EQ|INE418L01014",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "IT",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "NESCO": {
+    "symbol": "NESCO",
+    "isin": "INE317F01035",
+    "upstox_key": "NSE_EQ|INE317F01035",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "REALTY",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "NETWORK18": {
+    "symbol": "NETWORK18",
+    "isin": "INE870H01016",
+    "upstox_key": "NSE_EQ|INE870H01016",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "MEDIA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "NEWGEN": {
+    "symbol": "NEWGEN",
+    "isin": "INE877F01012",
+    "upstox_key": "NSE_EQ|INE877F01012",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "IT",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "NUVAMA": {
+    "symbol": "NUVAMA",
+    "isin": "INE531B01024",
+    "upstox_key": "NSE_EQ|INE531B01024",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FINANCIALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "EIDPARRY": {
+    "symbol": "EIDPARRY",
+    "isin": "INE126A01031",
+    "upstox_key": "NSE_EQ|INE126A01031",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FMCG",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "PCBL": {
+    "symbol": "PCBL",
+    "isin": "INE602A01023",
+    "upstox_key": "NSE_EQ|INE602A01023",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CHEMICALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "PDSL": {
+    "symbol": "PDSL",
+    "isin": "INE111Q01018",
+    "upstox_key": "NSE_EQ|INE111Q01018",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "IT",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "PGEL": {
+    "symbol": "PGEL",
+    "isin": "INE538B01015",
+    "upstox_key": "NSE_EQ|INE538B01015",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CHEMICALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "PNBHOUSING": {
+    "symbol": "PNBHOUSING",
+    "isin": "INE572E01012",
+    "upstox_key": "NSE_EQ|INE572E01012",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FINANCIALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "PPLPHARMA": {
+    "symbol": "PPLPHARMA",
+    "isin": "INE214C01015",
+    "upstox_key": "NSE_EQ|INE214C01015",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PHARMA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "PRISM": {
+    "symbol": "PRISM",
+    "isin": "INE010A01011",
+    "upstox_key": "NSE_EQ|INE010A01011",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CEMENT",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "PVRINOX": {
+    "symbol": "PVRINOX",
+    "isin": "INE191H01014",
+    "upstox_key": "NSE_EQ|INE191H01014",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "MEDIA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "RBLBANK": {
+    "symbol": "RBLBANK",
+    "isin": "INE976G01028",
+    "upstox_key": "NSE_EQ|INE976G01028",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PRIVATE_BANK",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "REDINGTON": {
+    "symbol": "REDINGTON",
+    "isin": "INE891D01026",
+    "upstox_key": "NSE_EQ|INE891D01026",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "IT",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "RENUKA": {
+    "symbol": "RENUKA",
+    "isin": "INE087H01022",
+    "upstox_key": "NSE_EQ|INE087H01022",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FMCG",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "RHI": {
+    "symbol": "RHI",
+    "isin": "INE743B01012",
+    "upstox_key": "NSE_EQ|INE743B01012",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "RITES": {
+    "symbol": "RITES",
+    "isin": "INE320J01015",
+    "upstox_key": "NSE_EQ|INE320J01015",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "ROSSARI": {
+    "symbol": "ROSSARI",
+    "isin": "INE02A801020",
+    "upstox_key": "NSE_EQ|INE02A801020",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CHEMICALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "SAFARI": {
+    "symbol": "SAFARI",
+    "isin": "INE180C01018",
+    "upstox_key": "NSE_EQ|INE180C01018",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CONSUMER_DURABLES",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "SANOFI": {
+    "symbol": "SANOFI",
+    "isin": "INE058A01010",
+    "upstox_key": "NSE_EQ|INE058A01010",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PHARMA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "SAPPHIRE": {
+    "symbol": "SAPPHIRE",
+    "isin": "INE829A01014",
+    "upstox_key": "NSE_EQ|INE829A01014",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "TEXTILES",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "SHILPAMED": {
+    "symbol": "SHILPAMED",
+    "isin": "INE790G01031",
+    "upstox_key": "NSE_EQ|INE790G01031",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PHARMA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "SOLARINDS": {
+    "symbol": "SOLARINDS",
+    "isin": "INE343H01029",
+    "upstox_key": "NSE_EQ|INE343H01029",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "SOUTHBANK": {
+    "symbol": "SOUTHBANK",
+    "isin": "INE683A01023",
+    "upstox_key": "NSE_EQ|INE683A01023",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PRIVATE_BANK",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "STAR": {
+    "symbol": "STAR",
+    "isin": "INE092J01027",
+    "upstox_key": "NSE_EQ|INE092J01027",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CONSUMER_DURABLES",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "STYRENIX": {
+    "symbol": "STYRENIX",
+    "isin": "INE489A01015",
+    "upstox_key": "NSE_EQ|INE489A01015",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CHEMICALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "SUDARSCHEM": {
+    "symbol": "SUDARSCHEM",
+    "isin": "INE659B01023",
+    "upstox_key": "NSE_EQ|INE659B01023",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CHEMICALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "SUNTECK": {
+    "symbol": "SUNTECK",
+    "isin": "INE805D01034",
+    "upstox_key": "NSE_EQ|INE805D01034",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "REALTY",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "SWSOLAR": {
+    "symbol": "SWSOLAR",
+    "isin": "INE00G001012",
+    "upstox_key": "NSE_EQ|INE00G001012",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "POWER",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "TARSONS": {
+    "symbol": "TARSONS",
+    "isin": "INE138M01015",
+    "upstox_key": "NSE_EQ|INE138M01015",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PHARMA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "TATVA": {
+    "symbol": "TATVA",
+    "isin": "INE819C01013",
+    "upstox_key": "NSE_EQ|INE819C01013",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PHARMA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "TDPOWER": {
+    "symbol": "TDPOWER",
+    "isin": "INE419M01027",
+    "upstox_key": "NSE_EQ|INE419M01027",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "POWER",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "TI": {
+    "symbol": "TI",
+    "isin": "INE149A01033",
+    "upstox_key": "NSE_EQ|INE149A01033",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "METALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "TITAGARH": {
+    "symbol": "TITAGARH",
+    "isin": "INE615H01020",
+    "upstox_key": "NSE_EQ|INE615H01020",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "TREASURYCE": {
+    "symbol": "TREASURYCE",
+    "isin": "INE070I01018",
+    "upstox_key": "NSE_EQ|INE070I01018",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CONSUMER_DURABLES",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "UNICHEMLAB": {
+    "symbol": "UNICHEMLAB",
+    "isin": "INE351A01035",
+    "upstox_key": "NSE_EQ|INE351A01035",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PHARMA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "USHAMART": {
+    "symbol": "USHAMART",
+    "isin": "INE228A01035",
+    "upstox_key": "NSE_EQ|INE228A01035",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "AUTO",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "UTKARSHBNK": {
+    "symbol": "UTKARSHBNK",
+    "isin": "INE482E01022",
+    "upstox_key": "NSE_EQ|INE482E01022",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "PRIVATE_BANK",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "VARROC": {
+    "symbol": "VARROC",
+    "isin": "INE665L01035",
+    "upstox_key": "NSE_EQ|INE665L01035",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "AUTO",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "VENKEYS": {
+    "symbol": "VENKEYS",
+    "isin": "INE398A01010",
+    "upstox_key": "NSE_EQ|INE398A01010",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FMCG",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "VOLTAMP": {
+    "symbol": "VOLTAMP",
+    "isin": "INE540H01012",
+    "upstox_key": "NSE_EQ|INE540H01012",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CONSUMER_DURABLES",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "WABAG": {
+    "symbol": "WABAG",
+    "isin": "INE274B01020",
+    "upstox_key": "NSE_EQ|INE274B01020",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "INFRA",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "WATERBASE": {
+    "symbol": "WATERBASE",
+    "isin": "INE054C01016",
+    "upstox_key": "NSE_EQ|INE054C01016",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "FMCG",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "small"
+  },
+  "WELENT": {
+    "symbol": "WELENT",
+    "isin": "INE428A01036",
+    "upstox_key": "NSE_EQ|INE428A01036",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "POWER",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "WHEELS": {
+    "symbol": "WHEELS",
+    "isin": "INE029A01011",
+    "upstox_key": "NSE_EQ|INE029A01011",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "AUTO",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "WONDERLA": {
+    "symbol": "WONDERLA",
+    "isin": "INE066V01014",
+    "upstox_key": "NSE_EQ|INE066V01014",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "CONSUMER_DURABLES",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "ZENITHSTL": {
+    "symbol": "ZENITHSTL",
+    "isin": "INE034A01015",
+    "upstox_key": "NSE_EQ|INE034A01015",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "METALS",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  },
+  "ZENTEC": {
+    "symbol": "ZENTEC",
+    "isin": "INE251B01027",
+    "upstox_key": "NSE_EQ|INE251B01027",
+    "exchange": "NSE",
+    "segment": "EQ",
+    "sector_id": "IT",
+    "index_membership": [
+      "NIFTY500"
+    ],
+    "market_cap_tier": "mid"
+  }
+}

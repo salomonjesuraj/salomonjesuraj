@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Infusion Layout Draft - Option Trading Cockpit</title>
+  <style>
+    :root {
+      --bg: #090d17;
+      --panel: #111827;
+      --panel2: #182235;
+      --line: #263247;
+      --muted: #75839b;
+      --text: #e5edf7;
+      --green: #10b981;
+      --red: #ef4444;
+      --amber: #f59e0b;
+      --blue: #4f46e5;
+      --cyan: #06b6d4;
+      --purple: #8b5cf6;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, Segoe UI, Arial, sans-serif;
+      overflow: hidden;
+    }
+
+    .dashboard {
+      height: 100vh;
+      display: grid;
+      grid-template-rows: 46px 78px 1fr 210px 24px;
+      gap: 1px;
+      background: var(--line);
+    }
+
+    .topbar,
+    .sector-ribbon,
+    .main,
+    .option-floor,
+    .footer {
+      background: var(--bg);
+    }
+
+    .topbar {
+      display: grid;
+      grid-template-columns: 210px 1fr 280px;
+      align-items: center;
+      padding: 0 14px;
+      gap: 14px;
+    }
+
+    .brand {
+      color: #5865ff;
+      font-weight: 800;
+      letter-spacing: 2px;
+      font-size: 18px;
+    }
+
+    .index-strip {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .tile {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 6px 10px;
+      min-width: 150px;
+    }
+
+    .tile .label,
+    .mini-label {
+      color: var(--muted);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: .7px;
+    }
+
+    .tile .value {
+      margin-top: 2px;
+      font-family: Consolas, monospace;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .pos { color: var(--green); }
+    .neg { color: var(--red); }
+    .warn { color: var(--amber); }
+    .cyan { color: var(--cyan); }
+
+    .market-health {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+    }
+
+    .health-pill {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 5px 8px;
+      text-align: center;
+      font-size: 11px;
+    }
+
+    .sector-ribbon {
+      padding: 8px 12px;
+      display: grid;
+      grid-template-columns: 92px 1fr;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .section-title {
+      color: var(--muted);
+      text-transform: uppercase;
+      font-size: 11px;
+      letter-spacing: 1px;
+      font-weight: 800;
+    }
+
+    .sector-grid {
+      display: grid;
+      grid-template-columns: repeat(9, 1fr);
+      gap: 7px;
+    }
+
+    .sector-card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 6px;
+      min-width: 0;
+    }
+
+    .sector-name {
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      font-weight: 800;
+      margin-bottom: 5px;
+    }
+
+    .bar {
+      height: 6px;
+      background: #070a12;
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .fill {
+      height: 100%;
+      border-radius: 999px;
+    }
+
+    .main {
+      display: grid;
+      grid-template-columns: 46fr 54fr;
+      gap: 1px;
+      min-height: 0;
+    }
+
+    .scanner,
+    .breakout {
+      background: var(--panel);
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .panel-head {
+      height: 35px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(90deg, #172033, #101827);
+    }
+
+    .panel-head strong {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .8px;
+      color: #b7c2d6;
+    }
+
+    .controls {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      color: var(--muted);
+      font-size: 10px;
+    }
+
+    .chip {
+      border: 1px solid #4151e8;
+      color: #8792ff;
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-size: 10px;
+    }
+
+    .scanner-table {
+      display: grid;
+      grid-template-rows: 28px repeat(14, 28px);
+      font-family: Consolas, monospace;
+      font-size: 11px;
+      overflow: hidden;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 92px 78px 58px 64px 80px 70px 70px;
+      align-items: center;
+      border-bottom: 1px solid rgba(38,50,71,.55);
+      padding: 0 8px;
+      gap: 8px;
+    }
+
+    .row.head {
+      color: var(--muted);
+      background: #172033;
+      text-transform: uppercase;
+      font-size: 10px;
+    }
+
+    .row.hot { background: rgba(16,185,129,.10); border-left: 3px solid var(--green); }
+    .row.weak { background: rgba(239,68,68,.08); border-left: 3px solid var(--red); }
+
+    .meter {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .mini-bar {
+      flex: 1;
+      height: 5px;
+      background: #050812;
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .breakout-body {
+      padding: 8px;
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      overflow: hidden;
+    }
+
+    .setup-card {
+      background: #151e30;
+      border: 1px solid var(--line);
+      border-left: 4px solid var(--green);
+      border-radius: 10px;
+      padding: 9px;
+      min-height: 118px;
+    }
+
+    .setup-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .symbol {
+      font-family: Consolas, monospace;
+      font-weight: 800;
+      font-size: 14px;
+    }
+
+    .state {
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: rgba(16,185,129,.16);
+      color: var(--green);
+      font-size: 10px;
+      font-weight: 800;
+    }
+
+    .setup-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .stat {
+      background: #090d17;
+      border: 1px solid #1f2b42;
+      border-radius: 6px;
+      padding: 5px;
+    }
+
+    .stat b {
+      display: block;
+      font-family: Consolas, monospace;
+      font-size: 12px;
+      margin-top: 2px;
+    }
+
+    .option-floor {
+      display: grid;
+      grid-template-columns: 260px 1fr 330px;
+      gap: 1px;
+      min-height: 0;
+    }
+
+    .option-block {
+      background: var(--panel);
+      padding: 10px 12px;
+      overflow: hidden;
+    }
+
+    .option-title {
+      color: #cbd5e1;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .8px;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    .bias-big {
+      font-size: 34px;
+      font-weight: 900;
+      color: var(--green);
+      margin: 10px 0 2px;
+    }
+
+    .gate-grid {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 8px;
+    }
+
+    .gate {
+      background: #0b101b;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px;
+      min-height: 58px;
+    }
+
+    .gate.ok { border-color: rgba(16,185,129,.55); }
+    .gate.bad { border-color: rgba(239,68,68,.55); }
+    .gate.wait { border-color: rgba(245,158,11,.55); }
+
+    .log-line {
+      font-family: Consolas, monospace;
+      font-size: 11px;
+      border-bottom: 1px solid rgba(38,50,71,.6);
+      padding: 5px 0;
+      color: #aab6c9;
+    }
+
+    .floating-chart {
+      position: fixed;
+      right: 28px;
+      bottom: 245px;
+      width: 520px;
+      height: 310px;
+      background: #101827;
+      border: 1px solid #475569;
+      border-radius: 14px;
+      box-shadow: 0 20px 60px rgba(0,0,0,.65);
+      overflow: hidden;
+    }
+
+    .chart-head {
+      height: 36px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0 12px;
+      background: #172033;
+      border-bottom: 1px solid var(--line);
+      font-size: 12px;
+    }
+
+    .chart-area {
+      height: calc(100% - 36px);
+      padding: 12px;
+      position: relative;
+      background:
+        linear-gradient(180deg, transparent 24%, rgba(255,255,255,.04) 25%, transparent 26%),
+        linear-gradient(90deg, transparent 24%, rgba(255,255,255,.04) 25%, transparent 26%),
+        #0b1020;
+      background-size: 100% 48px, 72px 100%;
+    }
+
+    .fake-line {
+      position: absolute;
+      left: 20px;
+      right: 20px;
+      top: 120px;
+      height: 80px;
+      border-top: 3px solid var(--green);
+      transform: skewY(-8deg);
+      opacity: .9;
+    }
+
+    .close {
+      color: var(--red);
+      border: 1px solid rgba(239,68,68,.45);
+      border-radius: 999px;
+      padding: 1px 8px;
+    }
+
+    .footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0 14px;
+      color: var(--muted);
+      font-family: Consolas, monospace;
+      font-size: 10px;
+    }
+
+    @media (max-width: 1300px) {
+      .sector-grid { grid-template-columns: repeat(6, 1fr); }
+      .dashboard { grid-template-rows: 46px 116px 1fr 210px 24px; }
+      .floating-chart { width: 470px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="dashboard">
+    <header class="topbar">
+      <div class="brand">INFUSION</div>
+      <div class="index-strip">
+        <div class="tile">
+          <div class="label">NIFTY</div>
+          <div class="value">₹22,212.40 <span class="pos">+0.83%</span></div>
+        </div>
+        <div class="tile">
+          <div class="label">BANKNIFTY</div>
+          <div class="value">₹57,442.75 <span class="neg">-0.85%</span></div>
+        </div>
+        <div class="tile">
+          <div class="label">Selected</div>
+          <div class="value">MFSL ₹1,695.00 <span class="pos">+0.50%</span></div>
+        </div>
+      </div>
+      <div class="market-health">
+        <div class="health-pill warn">Neutral</div>
+        <div class="health-pill">Breadth <b>27%</b></div>
+        <div class="health-pill">A/D <span class="pos">53</span>/<span class="neg">140</span></div>
+      </div>
+    </header>
+
+    <section class="sector-ribbon">
+      <div class="section-title">Sector Strength</div>
+      <div class="sector-grid">
+        <div class="sector-card"><div class="sector-name"><span>PHARMA</span><span class="warn">59</span></div><div class="bar"><div class="fill" style="width:59%;background:var(--amber)"></div></div></div>
+        <div class="sector-card"><div class="sector-name"><span>REALTY</span><span class="warn">50</span></div><div class="bar"><div class="fill" style="width:50%;background:var(--amber)"></div></div></div>
+        <div class="sector-card"><div class="sector-name"><span>TEXTILES</span><span class="warn">40</span></div><div class="bar"><div class="fill" style="width:40%;background:#f97316"></div></div></div>
+        <div class="sector-card"><div class="sector-name"><span>AUTO</span><span class="neg">38</span></div><div class="bar"><div class="fill" style="width:38%;background:#f97316"></div></div></div>
+        <div class="sector-card"><div class="sector-name"><span>CHEM</span><span class="neg">36</span></div><div class="bar"><div class="fill" style="width:36%;background:#f97316"></div></div></div>
+        <div class="sector-card"><div class="sector-name"><span>FMCG</span><span class="neg">35</span></div><div class="bar"><div class="fill" style="width:35%;background:var(--red)"></div></div></div>
+        <div class="sector-card"><div class="sector-name"><span>IT</span><span class="neg">31</span></div><div class="bar"><div class="fill" style="width:31%;background:var(--red)"></div></div></div>
+        <div class="sector-card"><div class="sector-name"><span>BANK</span><span class="neg">29</span></div><div class="bar"><div class="fill" style="width:29%;background:var(--red)"></div></div></div>
+        <div class="sector-card"><div class="sector-name"><span>METAL</span><span class="neg">26</span></div><div class="bar"><div class="fill" style="width:26%;background:var(--red)"></div></div></div>
+      </div>
+    </section>
+
+    <main class="main">
+      <section class="scanner">
+        <div class="panel-head">
+          <strong>Scanner</strong>
+          <div class="controls"><span class="chip">All Sectors</span><span class="chip">Sort: Ready ↓</span></div>
+        </div>
+        <div class="scanner-table">
+          <div class="row head"><span>Symbol</span><span>LTP</span><span>Chg%</span><span>RVol</span><span>Sector</span><span>Setup</span><span>Conv</span></div>
+          <div class="row hot"><span>PRESTIGE</span><span>₹1,770</span><span class="pos">+1.2%</span><span>4.2x</span><span>REALTY</span><span class="meter"><span>97</span><span class="mini-bar"><i class="fill" style="display:block;width:97%;background:var(--green)"></i></span></span><span>—</span></div>
+          <div class="row hot"><span>OBEROIRLTY</span><span>₹1,736</span><span class="pos">+0.8%</span><span>3.3x</span><span>REALTY</span><span class="meter"><span>97</span><span class="mini-bar"><i class="fill" style="display:block;width:97%;background:var(--green)"></i></span></span><span>—</span></div>
+          <div class="row"><span>MFSL</span><span>₹1,695</span><span class="pos">+0.5%</span><span>1.6x</span><span>FIN</span><span class="meter"><span>87</span><span class="mini-bar"><i class="fill" style="display:block;width:87%;background:var(--green)"></i></span></span><span>—</span></div>
+          <div class="row"><span>GODREJPROP</span><span>₹2,180</span><span class="pos">+0.9%</span><span>2.0x</span><span>REALTY</span><span class="meter"><span>85</span><span class="mini-bar"><i class="fill" style="display:block;width:85%;background:var(--green)"></i></span></span><span>—</span></div>
+          <div class="row weak"><span>LTTS</span><span>₹3,333</span><span class="neg">-1.3%</span><span>—</span><span>IT</span><span class="meter"><span>22</span><span class="mini-bar"><i class="fill" style="display:block;width:22%;background:var(--red)"></i></span></span><span>—</span></div>
+          <div class="row"><span>TORNTPHARM</span><span>₹4,512</span><span class="pos">+1.2%</span><span>—</span><span>PHARMA</span><span class="meter"><span>68</span><span class="mini-bar"><i class="fill" style="display:block;width:68%;background:var(--amber)"></i></span></span><span>—</span></div>
+          <div class="row"><span>ABB</span><span>₹7,147</span><span class="neg">-1.5%</span><span>—</span><span>INFRA</span><span class="meter"><span>52</span><span class="mini-bar"><i class="fill" style="display:block;width:52%;background:var(--amber)"></i></span></span><span>—</span></div>
+          <div class="row"><span>CONCOR</span><span>₹477</span><span class="pos">+0.8%</span><span>—</span><span>INFRA</span><span class="meter"><span>49</span><span class="mini-bar"><i class="fill" style="display:block;width:49%;background:#f97316"></i></span></span><span>—</span></div>
+          <div class="row"><span>BHARTIARTL</span><span>₹1,912</span><span class="neg">-0.2%</span><span>—</span><span>TEL</span><span class="meter"><span>39</span><span class="mini-bar"><i class="fill" style="display:block;width:39%;background:#f97316"></i></span></span><span>—</span></div>
+          <div class="row"><span>TITAN</span><span>₹4,306</span><span class="neg">-1.5%</span><span>—</span><span>CD</span><span class="meter"><span>34</span><span class="mini-bar"><i class="fill" style="display:block;width:34%;background:var(--red)"></i></span></span><span>—</span></div>
+          <div class="row"><span>BAJFINANCE</span><span>₹969</span><span class="pos">+0.1%</span><span>—</span><span>FIN</span><span class="meter"><span>31</span><span class="mini-bar"><i class="fill" style="display:block;width:31%;background:var(--red)"></i></span></span><span>—</span></div>
+          <div class="row"><span>IDFCFIRSTB</span><span>₹78</span><span class="neg">-2.3%</span><span>—</span><span>BANK</span><span class="meter"><span>28</span><span class="mini-bar"><i class="fill" style="display:block;width:28%;background:var(--red)"></i></span></span><span>—</span></div>
+          <div class="row"><span>BERGEPAINT</span><span>₹547</span><span class="neg">-0.4%</span><span>—</span><span>CD</span><span class="meter"><span>25</span><span class="mini-bar"><i class="fill" style="display:block;width:25%;background:var(--red)"></i></span></span><span>—</span></div>
+        </div>
+      </section>
+
+      <section class="breakout">
+        <div class="panel-head">
+          <strong>Breakout Watchlist - long section</strong>
+          <div class="controls"><span class="chip">Setup Strength</span><span class="chip">Coiled First</span></div>
+        </div>
+        <div class="breakout-body">
+          <div class="setup-card">
+            <div class="setup-top"><span class="symbol">PRESTIGE</span><span class="state">COILED</span></div>
+            <div class="meter"><span>Setup Strength 97</span><span class="mini-bar"><i class="fill" style="display:block;width:97%;background:var(--green)"></i></span></div>
+            <div class="setup-grid"><div class="stat"><span class="mini-label">Comp</span><b>57%</b></div><div class="stat"><span class="mini-label">RVol</span><b class="pos">4.2x</b></div><div class="stat"><span class="mini-label">RSI</span><b>46.7</b></div></div>
+          </div>
+          <div class="setup-card">
+            <div class="setup-top"><span class="symbol">OBEROIRLTY</span><span class="state">COILED</span></div>
+            <div class="meter"><span>Setup Strength 97</span><span class="mini-bar"><i class="fill" style="display:block;width:97%;background:var(--green)"></i></span></div>
+            <div class="setup-grid"><div class="stat"><span class="mini-label">Comp</span><b>82%</b></div><div class="stat"><span class="mini-label">RVol</span><b class="pos">3.3x</b></div><div class="stat"><span class="mini-label">RSI</span><b>45.2</b></div></div>
+          </div>
+          <div class="setup-card">
+            <div class="setup-top"><span class="symbol">MFSL</span><span class="state">COILED</span></div>
+            <div class="meter"><span>Setup Strength 87</span><span class="mini-bar"><i class="fill" style="display:block;width:87%;background:var(--green)"></i></span></div>
+            <div class="setup-grid"><div class="stat"><span class="mini-label">Comp</span><b>82%</b></div><div class="stat"><span class="mini-label">RVol</span><b>1.6x</b></div><div class="stat"><span class="mini-label">Time</span><b>8m</b></div></div>
+          </div>
+          <div class="setup-card">
+            <div class="setup-top"><span class="symbol">GODREJPROP</span><span class="state">COILED</span></div>
+            <div class="meter"><span>Setup Strength 85</span><span class="mini-bar"><i class="fill" style="display:block;width:85%;background:var(--green)"></i></span></div>
+            <div class="setup-grid"><div class="stat"><span class="mini-label">Sector</span><b class="warn">Realty 50</b></div><div class="stat"><span class="mini-label">Trigger</span><b>Waiting</b></div><div class="stat"><span class="mini-label">Bias</span><b>CE Watch</b></div></div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <section class="option-floor">
+      <div class="option-block">
+        <div class="option-title">Option Bias</div>
+        <div class="mini-label">Selected Stock</div>
+        <div class="bias-big">CE</div>
+        <div class="pos">Underlying bullish setup, chain pending</div>
+        <br />
+        <div class="tile" style="min-width:0">
+          <div class="label">Suggested</div>
+          <div class="value">MFSL ATM CE</div>
+        </div>
+      </div>
+
+      <div class="option-block">
+        <div class="option-title">All Option Logic Gates - one long section</div>
+        <div class="gate-grid">
+          <div class="gate ok"><span class="mini-label">Trend</span><br /><b class="pos">OK</b></div>
+          <div class="gate ok"><span class="mini-label">Volume</span><br /><b class="pos">OK</b></div>
+          <div class="gate bad"><span class="mini-label">VWAP</span><br /><b class="neg">Fail</b></div>
+          <div class="gate wait"><span class="mini-label">OI</span><br /><b class="warn">Pending</b></div>
+          <div class="gate wait"><span class="mini-label">IV</span><br /><b class="warn">Pending</b></div>
+          <div class="gate wait"><span class="mini-label">Spread</span><br /><b class="warn">Pending</b></div>
+        </div>
+        <br />
+        <div class="bar"><div class="fill" style="width:62%;background:linear-gradient(90deg,var(--red),var(--amber),var(--green))"></div></div>
+        <div style="margin-top:7px;color:var(--muted);font-size:12px">Final option readiness score: <b class="warn">62 / 100</b> - wait for VWAP reclaim or chain confirmation.</div>
+      </div>
+
+      <div class="option-block">
+        <div class="option-title">Option / Alert Log</div>
+        <div class="log-line"><span class="cyan">12:35:02</span> MFSL CE bias selected</div>
+        <div class="log-line"><span class="warn">12:35:04</span> VWAP gate failed</div>
+        <div class="log-line"><span class="pos">12:35:07</span> Volume expansion OK</div>
+        <div class="log-line"><span class="neg">12:35:09</span> No option chain yet</div>
+        <div class="log-line"><span class="cyan">12:35:15</span> Waiting for trigger</div>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <span>OPEN · Kite Live · Symbols 194 · Watch 96 · Signals 0</span>
+      <span>v2.4-layout-draft · Updated 2026-06-23 12:45 IST</span>
+    </footer>
+  </div>
+
+  <aside class="floating-chart">
+    <div class="chart-head">
+      <strong>Popup Chart: MFSL · 15M</strong>
+      <span class="close">Close ×</span>
+    </div>
+    <div class="chart-area">
+      <div class="fake-line"></div>
+      <div style="position:absolute;left:16px;bottom:16px;color:var(--muted);font-size:12px">
+        Opens on stock click · closes on outside click / close / another stock
+      </div>
+    </div>
+  </aside>
+</body>
+</html>

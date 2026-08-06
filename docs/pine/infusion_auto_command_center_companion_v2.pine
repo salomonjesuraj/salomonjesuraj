@@ -1,0 +1,208 @@
+//@version=6
+indicator("INFUSION Auto Command Center Companion v2", overlay=true, max_labels_count=80, max_lines_count=40)
+
+// ---------------------------------------------------------------------------
+// INFUSION Command Center Companion
+// Purpose:
+// - Use after dashboard highlights a stock, or on any NSE F&O chart.
+// - Automatically shows CE/PE favour, breakout/breakdown line, SL, T1/T2/T3, MTF state,
+//   filtered candlestick patterns, supply/demand, and no-chase warnings.
+// - This is chart-confirmation logic only. It cannot read Upstox option chain.
+// - Option-chain evidence stays in the INFUSION dashboard.
+// ---------------------------------------------------------------------------
+
+// === Inputs ===
+groupEngine = "Engine"
+lookback = input.int(20, "Breakout lookback", minval=5, maxval=100, group=groupEngine)
+atrLen = input.int(14, "ATR length", minval=5, maxval=50, group=groupEngine)
+emaFastLen = input.int(9, "EMA fast", minval=3, maxval=50, group=groupEngine)
+emaMidLen = input.int(20, "EMA mid", minval=5, maxval=100, group=groupEngine)
+emaSlowLen = input.int(50, "EMA slow", minval=20, maxval=200, group=groupEngine)
+rsiLen = input.int(14, "RSI length", minval=5, maxval=50, group=groupEngine)
+volLen = input.int(20, "Volume MA length", minval=5, maxval=100, group=groupEngine)
+
+groupRisk = "Risk / No Chase"
+minRR = input.float(1.6, "Minimum R:R", step=0.1, group=groupRisk)
+maxVwapStretchAtr = input.float(2.2, "Max VWAP stretch ATR", step=0.1, group=groupRisk)
+maxCandleAtr = input.float(2.8, "Max signal candle ATR", step=0.1, group=groupRisk)
+needClosedCandle = input.bool(true, "Require closed candle confirmation", group=groupRisk)
+
+groupVisual = "Visual"
+showMtfTable = input.bool(true, "Show MTF table", group=groupVisual)
+showPatterns = input.bool(true, "Show filtered candle patterns", group=groupVisual)
+showSupplyDemand = input.bool(true, "Show supply / demand zones", group=groupVisual)
+showCommandLabel = input.bool(true, "Show command label", group=groupVisual)
+
+// === Core indicators ===
+atr = ta.atr(atrLen)
+emaFast = ta.ema(close, emaFastLen)
+emaMid = ta.ema(close, emaMidLen)
+emaSlow = ta.ema(close, emaSlowLen)
+rsi = ta.rsi(close, rsiLen)
+[macdLine, macdSignal, macdHist] = ta.macd(close, 12, 26, 9)
+vwap = ta.vwap(hlc3)
+volMa = ta.sma(volume, volLen)
+relVol = volMa > 0 ? volume / volMa : 0.0
+
+// === Automatic levels ===
+autoCe = ta.highest(high, lookback)[1]
+autoPe = ta.lowest(low, lookback)[1]
+recentHigh = ta.highest(high, lookback)
+recentLow = ta.lowest(low, lookback)
+ceAbove = autoCe
+peBelow = autoPe
+waitZoneMid = (ceAbove + peBelow) / 2.0
+
+// === Trend state ===
+emaBull = close > emaFast and emaFast > emaMid and emaMid > emaSlow
+emaBear = close < emaFast and emaFast < emaMid and emaMid < emaSlow
+vwapBull = close > vwap
+vwapBear = close < vwap
+macdBull = macdLine > macdSignal and macdHist > 0
+macdBear = macdLine < macdSignal and macdHist < 0
+rsiBull = rsi >= 52 and rsi <= 72
+rsiBear = rsi <= 48 and rsi >= 28
+volumeOk = relVol >= 1.2
+
+// === MTF state ===
+f_state() =>
+    e9 = ta.ema(close, emaFastLen)
+    e20 = ta.ema(close, emaMidLen)
+    r = ta.rsi(close, rsiLen)
+    m = ta.ema(close, 12) - ta.ema(close, 26)
+    s = ta.ema(m, 9)
+    bull = close > e20 and e9 > e20 and r >= 50 and m >= s
+    bear = close < e20 and e9 < e20 and r <= 50 and m <= s
+    bull ? 1 : bear ? -1 : 0
+
+mtf1 = request.security(syminfo.tickerid, "1", f_state(), barmerge.gaps_off, barmerge.lookahead_off)
+mtf5 = request.security(syminfo.tickerid, "5", f_state(), barmerge.gaps_off, barmerge.lookahead_off)
+mtf15 = request.security(syminfo.tickerid, "15", f_state(), barmerge.gaps_off, barmerge.lookahead_off)
+mtf60 = request.security(syminfo.tickerid, "60", f_state(), barmerge.gaps_off, barmerge.lookahead_off)
+mtf240 = request.security(syminfo.tickerid, "240", f_state(), barmerge.gaps_off, barmerge.lookahead_off)
+mtfD = request.security(syminfo.tickerid, "D", f_state(), barmerge.gaps_off, barmerge.lookahead_off)
+
+fastBull = (mtf1 == 1 ? 1 : 0) + (mtf5 == 1 ? 1 : 0) + (mtf15 == 1 ? 1 : 0)
+fastBear = (mtf1 == -1 ? 1 : 0) + (mtf5 == -1 ? 1 : 0) + (mtf15 == -1 ? 1 : 0)
+higherBull = (mtf60 == 1 ? 1 : 0) + (mtf240 == 1 ? 1 : 0) + (mtfD == 1 ? 1 : 0)
+higherBear = (mtf60 == -1 ? 1 : 0) + (mtf240 == -1 ? 1 : 0) + (mtfD == -1 ? 1 : 0)
+
+// === CE / PE trigger logic ===
+closedOk = not needClosedCandle or barstate.isconfirmed
+ceBreak = closedOk and close > ceAbove
+peBreak = closedOk and close < peBelow
+ceScore = 0.0
+ceScore += vwapBull ? 18 : 0
+ceScore += emaBull ? 22 : close > emaMid ? 10 : 0
+ceScore += macdBull ? 16 : 0
+ceScore += rsiBull ? 12 : 0
+ceScore += volumeOk ? 12 : 0
+ceScore += fastBull >= 2 ? 10 : 0
+ceScore += higherBull >= 2 ? 10 : 0
+peScore = 0.0
+peScore += vwapBear ? 18 : 0
+peScore += emaBear ? 22 : close < emaMid ? 10 : 0
+peScore += macdBear ? 16 : 0
+peScore += rsiBear ? 12 : 0
+peScore += volumeOk ? 12 : 0
+peScore += fastBear >= 2 ? 10 : 0
+peScore += higherBear >= 2 ? 10 : 0
+
+vwapStretchAtr = atr > 0 ? math.abs(close - vwap) / atr : 99.0
+signalCandleAtr = atr > 0 ? math.abs(close - open) / atr : 0.0
+antiChaseBlock = vwapStretchAtr > maxVwapStretchAtr or signalCandleAtr > maxCandleAtr
+
+ceReady = ceBreak and ceScore >= 65 and ceScore >= peScore + 8 and not antiChaseBlock
+peReady = peBreak and peScore >= 65 and peScore >= ceScore + 8 and not antiChaseBlock
+side = ceReady ? "BUY CE" : peReady ? "BUY PE" : "WAIT"
+
+// === Risk and targets ===
+autoCeSL = math.max(peBelow, ceAbove - math.max(atr * 1.1, close * 0.004))
+autoPeSL = math.min(ceAbove, peBelow + math.max(atr * 1.1, close * 0.004))
+sl = side == "BUY PE" ? autoPeSL : autoCeSL
+risk = math.abs((side == "BUY PE" ? peBelow : ceAbove) - sl)
+baseEntry = side == "BUY PE" ? peBelow : ceAbove
+autoT1 = side == "BUY PE" ? baseEntry - math.max(risk * minRR, atr * 1.35) : baseEntry + math.max(risk * minRR, atr * 1.35)
+autoT2 = side == "BUY PE" ? baseEntry - math.max(risk * 2.4, atr * 2.2) : baseEntry + math.max(risk * 2.4, atr * 2.2)
+autoT3 = side == "BUY PE" ? baseEntry - math.max(risk * 3.2, atr * 3.0) : baseEntry + math.max(risk * 3.2, atr * 3.0)
+t1 = autoT1
+t2 = autoT2
+t3 = autoT3
+
+// === Candlestick patterns filtered near levels ===
+body = math.abs(close - open)
+upperWick = high - math.max(close, open)
+lowerWick = math.min(close, open) - low
+bullEngulf = close > open and close[1] < open[1] and close >= open[1] and open <= close[1]
+bearEngulf = close < open and close[1] > open[1] and close <= open[1] and open >= close[1]
+hammer = lowerWick > body * 2.0 and upperWick <= body * 0.8 and close > open
+shooting = upperWick > body * 2.0 and lowerWick <= body * 0.8 and close < open
+nearSupport = math.abs(close - peBelow) <= atr * 0.8 or math.abs(close - recentLow) <= atr * 0.8
+nearResistance = math.abs(close - ceAbove) <= atr * 0.8 or math.abs(close - recentHigh) <= atr * 0.8
+showBullPattern = showPatterns and nearSupport and (bullEngulf or hammer)
+showBearPattern = showPatterns and nearResistance and (bearEngulf or shooting)
+
+// === Supply / demand pivots ===
+pivH = ta.pivothigh(high, 5, 5)
+pivL = ta.pivotlow(low, 5, 5)
+var float supply = na
+var float demand = na
+if not na(pivH)
+    supply := pivH
+if not na(pivL)
+    demand := pivL
+
+// === Plots ===
+plot(emaFast, "EMA 9", color=color.new(color.teal, 20), linewidth=1)
+plot(emaMid, "EMA 20", color=color.new(color.blue, 25), linewidth=1)
+plot(vwap, "VWAP", color=color.new(color.purple, 10), linewidth=2)
+plot(ceAbove, "CE Above / Breakout", color=color.new(color.lime, 0), linewidth=2, style=plot.style_linebr)
+plot(peBelow, "PE Below / Breakdown", color=color.new(color.red, 0), linewidth=2, style=plot.style_linebr)
+plot(side != "WAIT" ? sl : na, "Stop Loss", color=color.new(color.red, 0), linewidth=2, style=plot.style_linebr)
+plot(side != "WAIT" ? t1 : na, "Target 1", color=color.new(color.green, 0), linewidth=1, style=plot.style_linebr)
+plot(side != "WAIT" ? t2 : na, "Target 2", color=color.new(color.green, 20), linewidth=1, style=plot.style_linebr)
+plot(side != "WAIT" ? t3 : na, "Target 3", color=color.new(color.green, 35), linewidth=1, style=plot.style_linebr)
+plot(showSupplyDemand ? supply : na, "Supply", color=color.new(color.orange, 20), linewidth=2, style=plot.style_stepline)
+plot(showSupplyDemand ? demand : na, "Demand", color=color.new(color.aqua, 20), linewidth=2, style=plot.style_stepline)
+
+bgcolor(ceReady ? color.new(color.green, 88) : peReady ? color.new(color.red, 88) : antiChaseBlock ? color.new(color.orange, 90) : na)
+plotshape(showPatterns and nearSupport and bullEngulf, title="Bullish engulfing near support", style=shape.labelup, text="Bull Engulf", color=color.new(color.green, 0), textcolor=color.white, location=location.belowbar, size=size.tiny)
+plotshape(showPatterns and nearSupport and hammer, title="Hammer near support", style=shape.labelup, text="Hammer", color=color.new(color.green, 0), textcolor=color.white, location=location.belowbar, size=size.tiny)
+plotshape(showPatterns and nearResistance and bearEngulf, title="Bearish engulfing near resistance", style=shape.labeldown, text="Bear Engulf", color=color.new(color.red, 0), textcolor=color.white, location=location.abovebar, size=size.tiny)
+plotshape(showPatterns and nearResistance and shooting, title="Shooting star near resistance", style=shape.labeldown, text="Shoot", color=color.new(color.red, 0), textcolor=color.white, location=location.abovebar, size=size.tiny)
+
+// === Compact MTF table ===
+f_dot(v) => v == 1 ? "B" : v == -1 ? "S" : "N"
+f_col(v) => v == 1 ? color.lime : v == -1 ? color.red : color.orange
+var table mt = table.new(position.top_right, 6, 2, border_width=1)
+if showMtfTable and barstate.islast
+    table.cell(mt, 0, 0, "1M", text_color=color.white, bgcolor=color.new(color.black, 15), text_size=size.tiny)
+    table.cell(mt, 1, 0, "5M", text_color=color.white, bgcolor=color.new(color.black, 15), text_size=size.tiny)
+    table.cell(mt, 2, 0, "15M", text_color=color.white, bgcolor=color.new(color.black, 15), text_size=size.tiny)
+    table.cell(mt, 3, 0, "1H", text_color=color.white, bgcolor=color.new(color.black, 15), text_size=size.tiny)
+    table.cell(mt, 4, 0, "4H", text_color=color.white, bgcolor=color.new(color.black, 15), text_size=size.tiny)
+    table.cell(mt, 5, 0, "1D", text_color=color.white, bgcolor=color.new(color.black, 15), text_size=size.tiny)
+    table.cell(mt, 0, 1, f_dot(mtf1), text_color=f_col(mtf1), bgcolor=color.new(color.black, 5), text_size=size.small)
+    table.cell(mt, 1, 1, f_dot(mtf5), text_color=f_col(mtf5), bgcolor=color.new(color.black, 5), text_size=size.small)
+    table.cell(mt, 2, 1, f_dot(mtf15), text_color=f_col(mtf15), bgcolor=color.new(color.black, 5), text_size=size.small)
+    table.cell(mt, 3, 1, f_dot(mtf60), text_color=f_col(mtf60), bgcolor=color.new(color.black, 5), text_size=size.small)
+    table.cell(mt, 4, 1, f_dot(mtf240), text_color=f_col(mtf240), bgcolor=color.new(color.black, 5), text_size=size.small)
+    table.cell(mt, 5, 1, f_dot(mtfD), text_color=f_col(mtfD), bgcolor=color.new(color.black, 5), text_size=size.small)
+
+// === One clean command label ===
+var label cmdLabel = na
+if showCommandLabel and barstate.islast
+    label.delete(cmdLabel)
+    quality = antiChaseBlock ? "NO CHASE" : ceReady ? "CE READY" : peReady ? "PE READY" : "WAIT"
+    why = ceReady ? "Buyers + breakout confirmed" : peReady ? "Sellers + breakdown confirmed" : antiChaseBlock ? "VWAP/candle stretch" : "Wait for CE/PE level"
+    txt = "INFUSION " + quality + "\n" +
+      "CE above: " + str.tostring(ceAbove, format.mintick) + " | PE below: " + str.tostring(peBelow, format.mintick) + "\n" +
+      "SL: " + str.tostring(sl, format.mintick) + " | T1/T2/T3: " + str.tostring(t1, format.mintick) + " / " + str.tostring(t2, format.mintick) + " / " + str.tostring(t3, format.mintick) + "\n" +
+      "CE " + str.tostring(math.round(ceScore)) + " / PE " + str.tostring(math.round(peScore)) + " | RVOL " + str.tostring(relVol, "#.0") + "x | RSI " + str.tostring(rsi, "#.0") + "\n" +
+      why
+    labColor = ceReady ? color.green : peReady ? color.red : antiChaseBlock ? color.orange : color.gray
+    cmdLabel := label.new(bar_index, high + atr * 1.2, txt, style=label.style_label_down, color=labColor, textcolor=color.white, size=size.small)
+
+alertcondition(ceReady, "INFUSION CE Ready", "INFUSION CE Ready: {{ticker}} above CE trigger. Check option chain/risk before trade.")
+alertcondition(peReady, "INFUSION PE Ready", "INFUSION PE Ready: {{ticker}} below PE trigger. Check option chain/risk before trade.")
+alertcondition(antiChaseBlock, "INFUSION No Chase", "INFUSION No Chase: {{ticker}} stretched. Wait for retest.")

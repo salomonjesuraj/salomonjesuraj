@@ -1,0 +1,502 @@
+//@version=6
+indicator("INFUSION Sniper CE/PE Confirmation v3.3", overlay=true, max_labels_count=60, max_lines_count=60, max_boxes_count=10)
+
+//------------------------------------------------------------------------------
+// INFUSION SNIPER CE/PE CONFIRMATION v3.3
+// Purpose:
+// - TradingView visual confirmation companion for INFUSION dashboard.
+// - No manual stock-level entry required.
+// - Dashboard handles Upstox option-chain data. This Pine handles chart structure.
+// - Clean default view: one CE trigger, one PE trigger, optional SL/T1/T2/T3 after confirmation.
+//------------------------------------------------------------------------------
+
+// === Inputs ===
+groupEngine = "Engine"
+lookback = input.int(40, "Structure lookback", minval=15, maxval=120, group=groupEngine)
+pivotLen = input.int(5, "Stable pivot strength", minval=2, maxval=20, group=groupEngine)
+atrLen = input.int(14, "ATR length", minval=5, maxval=50, group=groupEngine)
+volLen = input.int(20, "Volume average length", minval=5, maxval=100, group=groupEngine)
+orbMins = input.int(30, "Opening range minutes", minval=5, maxval=90, group=groupEngine)
+bufferAtr = input.float(0.05, "Trigger buffer ATR", minval=0.0, maxval=0.5, step=0.01, group=groupEngine)
+minLevelDistanceAtr = input.float(0.25, "Minimum trigger distance ATR", minval=0.0, maxval=2.0, step=0.05, group=groupEngine)
+levelUpdateAtr = input.float(0.75, "Minimum level update ATR", minval=0.1, maxval=3.0, step=0.05, group=groupEngine)
+freezeConfirmedLevels = input.bool(true, "Freeze confirmed CE/PE level", group=groupEngine)
+
+groupGate = "Confirmation gates"
+minRelVol = input.float(1.10, "Minimum relative volume", minval=0.5, maxval=5.0, step=0.05, group=groupGate)
+maxVwapStretchAtr = input.float(2.40, "No-chase VWAP stretch ATR", minval=0.8, maxval=8.0, step=0.1, group=groupGate)
+maxCandleAtr = input.float(2.20, "No-chase candle size ATR", minval=0.8, maxval=8.0, step=0.1, group=groupGate)
+minTrendScore = input.int(3, "Minimum MTF score", minval=1, maxval=6, group=groupGate)
+strongTrendScore = input.int(4, "Strong MTF score", minval=2, maxval=6, group=groupGate)
+bigVolumeRel = input.float(1.80, "Large volume threshold", minval=1.0, maxval=6.0, step=0.1, group=groupGate)
+retestBars = input.int(8, "Retest lookback bars", minval=2, maxval=30, group=groupGate)
+
+groupRisk = "Risk / targets"
+slAtr = input.float(1.20, "Fallback SL ATR", minval=0.5, maxval=3.0, step=0.1, group=groupRisk)
+maxSlAtr = input.float(2.50, "Max SL distance ATR", minval=1.0, maxval=5.0, step=0.1, group=groupRisk)
+t1R = input.float(1.60, "Target 1 R", minval=0.5, maxval=5.0, step=0.1, group=groupRisk)
+t2R = input.float(2.40, "Target 2 R", minval=1.0, maxval=8.0, step=0.1, group=groupRisk)
+t3R = input.float(3.20, "Target 3 R", minval=1.5, maxval=10.0, step=0.1, group=groupRisk)
+minT1R = input.float(1.10, "Minimum T1 reward R", minval=0.5, maxval=3.0, step=0.1, group=groupRisk)
+
+groupVisual = "Visuals"
+showTargets = input.bool(true, "Show SL/T1/T2/T3 only after confirmation", group=groupVisual)
+showMtfTable = input.bool(true, "Show compact MTF table", group=groupVisual)
+showPatterns = input.bool(true, "Show filtered candle patterns near trigger levels", group=groupVisual)
+showCompressionBox = input.bool(false, "Show clean compression box", group=groupVisual)
+showEmaVwap = input.bool(false, "Show EMA/VWAP guide lines", group=groupVisual)
+showChartTint = input.bool(false, "Show background tint", group=groupVisual)
+lineBarsLeft = input.int(35, "Current level line bars left", minval=5, maxval=150, group=groupVisual)
+lineBarsRight = input.int(35, "Current level line bars right", minval=5, maxval=150, group=groupVisual)
+showSniperPanel = input.bool(true, "Show sniper confidence panel", group=groupVisual)
+showCommandLabel = input.bool(false, "Show large command label", group=groupVisual)
+showOnlyRecentPatterns = input.bool(true, "Hide old pattern labels", group=groupVisual)
+recentPatternBars = input.int(50, "Recent pattern bars", minval=20, maxval=300, group=groupVisual)
+
+// === Core values ===
+atr = ta.atr(atrLen)
+ema9 = ta.ema(close, 9)
+ema20 = ta.ema(close, 20)
+ema50 = ta.ema(close, 50)
+vwapValue = ta.vwap(hlc3)
+volAvg = ta.sma(volume, volLen)
+relVol = volAvg > 0 ? volume / volAvg : 0.0
+candleAtr = atr > 0 ? (high - low) / atr : 0.0
+vwapStretchAtr = atr > 0 ? math.abs(close - vwapValue) / atr : 0.0
+
+// Keep highest/lowest calculations global for Pine consistency.
+swingHigh = ta.highest(high, lookback)[1]
+swingLow = ta.lowest(low, lookback)[1]
+boxHigh = ta.highest(high, math.max(10, math.floor(lookback / 2)))[1]
+boxLow = ta.lowest(low, math.max(10, math.floor(lookback / 2)))[1]
+lowestForPattern = ta.lowest(low, lookback)
+highestForPattern = ta.highest(high, lookback)
+lowestRetest = ta.lowest(low, retestBars)
+highestRetest = ta.highest(high, retestBars)
+pivHighRaw = ta.pivothigh(high, pivotLen, pivotLen)
+pivLowRaw = ta.pivotlow(low, pivotLen, pivotLen)
+var float stablePivotHigh = na
+var float stablePivotLow = na
+if not na(pivHighRaw)
+    stablePivotHigh := pivHighRaw
+if not na(pivLowRaw)
+    stablePivotLow := pivLowRaw
+
+pdHigh = request.security(syminfo.tickerid, "D", high[1], barmerge.gaps_off, barmerge.lookahead_off)
+pdLow = request.security(syminfo.tickerid, "D", low[1], barmerge.gaps_off, barmerge.lookahead_off)
+prevWeekHigh = request.security(syminfo.tickerid, "W", high[1], barmerge.gaps_off, barmerge.lookahead_off)
+prevWeekLow = request.security(syminfo.tickerid, "W", low[1], barmerge.gaps_off, barmerge.lookahead_off)
+hourSwingHigh = request.security(syminfo.tickerid, "60", ta.highest(high, 20)[1], barmerge.gaps_off, barmerge.lookahead_off)
+hourSwingLow = request.security(syminfo.tickerid, "60", ta.lowest(low, 20)[1], barmerge.gaps_off, barmerge.lookahead_off)
+fourHourSwingHigh = request.security(syminfo.tickerid, "240", ta.highest(high, 20)[1], barmerge.gaps_off, barmerge.lookahead_off)
+fourHourSwingLow = request.security(syminfo.tickerid, "240", ta.lowest(low, 20)[1], barmerge.gaps_off, barmerge.lookahead_off)
+
+// === Opening range ===
+isNewDay = ta.change(time("D")) != 0
+var float orbHigh = na
+var float orbLow = na
+var int dayStartTime = na
+
+if isNewDay or na(dayStartTime)
+    orbHigh := na
+    orbLow := na
+    dayStartTime := time
+
+orbActive = not na(dayStartTime) and time < dayStartTime + orbMins * 60000
+if orbActive
+    orbHigh := na(orbHigh) ? high : math.max(orbHigh, high)
+    orbLow := na(orbLow) ? low : math.min(orbLow, low)
+
+// === Helper functions ===
+f_nearestAbove(float price, float a, float b, float c, float d) =>
+    float best = na
+    if not na(a) and a > price
+        best := a
+    if not na(b) and b > price and (na(best) or b < best)
+        best := b
+    if not na(c) and c > price and (na(best) or c < best)
+        best := c
+    if not na(d) and d > price and (na(best) or d < best)
+        best := d
+    best
+
+f_nearestBelow(float price, float a, float b, float c, float d) =>
+    float best = na
+    if not na(a) and a < price
+        best := a
+    if not na(b) and b < price and (na(best) or b > best)
+        best := b
+    if not na(c) and c < price and (na(best) or c > best)
+        best := c
+    if not na(d) and d < price and (na(best) or d > best)
+        best := d
+    best
+
+f_meaningfulAbove(float price, float minDistance, float a, float b, float c, float d) =>
+    f_nearestAbove(price + minDistance, a, b, c, d)
+
+f_meaningfulBelow(float price, float minDistance, float a, float b, float c, float d) =>
+    f_nearestBelow(price - minDistance, a, b, c, d)
+
+f_srcNameAbove(float level) =>
+    string src = "auto resistance"
+    if math.abs(level - nz(stablePivotHigh, level)) <= atr * 0.12
+        src := "confirmed pivot high"
+    else if math.abs(level - nz(orbHigh, level)) <= atr * 0.12
+        src := "opening range high"
+    else if math.abs(level - nz(pdHigh, level)) <= atr * 0.12
+        src := "previous day high"
+    else if math.abs(level - nz(prevWeekHigh, level)) <= atr * 0.12
+        src := "previous week high"
+    else if math.abs(level - nz(hourSwingHigh, level)) <= atr * 0.12
+        src := "1H resistance"
+    else if math.abs(level - nz(fourHourSwingHigh, level)) <= atr * 0.12
+        src := "4H resistance"
+    else if math.abs(level - nz(boxHigh, level)) <= atr * 0.12
+        src := "compression high"
+    else if math.abs(level - nz(swingHigh, level)) <= atr * 0.12
+        src := "swing high"
+    src
+
+f_srcNameBelow(float level) =>
+    string src = "auto support"
+    if math.abs(level - nz(stablePivotLow, level)) <= atr * 0.12
+        src := "confirmed pivot low"
+    else if math.abs(level - nz(orbLow, level)) <= atr * 0.12
+        src := "opening range low"
+    else if math.abs(level - nz(pdLow, level)) <= atr * 0.12
+        src := "previous day low"
+    else if math.abs(level - nz(prevWeekLow, level)) <= atr * 0.12
+        src := "previous week low"
+    else if math.abs(level - nz(hourSwingLow, level)) <= atr * 0.12
+        src := "1H support"
+    else if math.abs(level - nz(fourHourSwingLow, level)) <= atr * 0.12
+        src := "4H support"
+    else if math.abs(level - nz(boxLow, level)) <= atr * 0.12
+        src := "compression low"
+    else if math.abs(level - nz(swingLow, level)) <= atr * 0.12
+        src := "swing low"
+    src
+
+f_mtfState(string tf) =>
+    request.security(syminfo.tickerid, tf, close > ta.ema(close, 20) and ta.ema(close, 20) > ta.ema(close, 50) ? 1 : close < ta.ema(close, 20) and ta.ema(close, 20) < ta.ema(close, 50) ? -1 : 0, barmerge.gaps_off, barmerge.lookahead_off)
+
+f_dot(int v) =>
+    v == 1 ? "B" : v == -1 ? "S" : "N"
+
+f_col(int v) =>
+    v == 1 ? color.lime : v == -1 ? color.red : color.orange
+
+// === Auto CE/PE trigger levels ===
+// v3.3 logic:
+// - A trigger must come from a stable structure, not from a line that chases every candle.
+// - Primary levels: confirmed pivot high/low, ORB, previous day/week, 1H/4H structure.
+// - Intraday range high/low is fallback only.
+// - Confirmed breakout/breakdown can freeze the reference line.
+minLevelDistance = atr * minLevelDistanceAtr
+rawCeLocal = f_meaningfulAbove(close, minLevelDistance, stablePivotHigh, orbHigh, pdHigh, boxHigh)
+rawCeHtf = f_meaningfulAbove(close, minLevelDistance, hourSwingHigh, fourHourSwingHigh, prevWeekHigh, swingHigh)
+rawPeLocal = f_meaningfulBelow(close, minLevelDistance, stablePivotLow, orbLow, pdLow, boxLow)
+rawPeHtf = f_meaningfulBelow(close, minLevelDistance, hourSwingLow, fourHourSwingLow, prevWeekLow, swingLow)
+
+selectedCeRaw = nz(rawCeLocal, rawCeHtf)
+selectedPeRaw = nz(rawPeLocal, rawPeHtf)
+fallbackCe = math.max(nz(stablePivotHigh, nz(swingHigh, high)), nz(boxHigh, high))
+fallbackPe = math.min(nz(stablePivotLow, nz(swingLow, low)), nz(boxLow, low))
+
+candidateCe = nz(selectedCeRaw, fallbackCe) + atr * bufferAtr
+candidatePe = nz(selectedPeRaw, fallbackPe) - atr * bufferAtr
+
+var float workingCe = na
+var float workingPe = na
+var float frozenCe = na
+var float frozenPe = na
+var int frozenSide = 0
+resetFrozen = isNewDay
+if resetFrozen
+    workingCe := na
+    workingPe := na
+    frozenCe := na
+    frozenPe := na
+    frozenSide := 0
+
+levelUpdateDistance = atr * levelUpdateAtr
+if na(workingCe) or candidateCe > workingCe + levelUpdateDistance
+    workingCe := candidateCe
+if na(workingPe) or candidatePe < workingPe - levelUpdateDistance
+    workingPe := candidatePe
+
+stableCe = nz(workingCe, candidateCe)
+stablePe = nz(workingPe, candidatePe)
+
+preCeBreak = barstate.isconfirmed and close > stableCe
+prePeBreak = barstate.isconfirmed and close < stablePe
+if freezeConfirmedLevels and preCeBreak and frozenSide != 1
+    frozenCe := stableCe
+    frozenPe := stablePe
+    frozenSide := 1
+if freezeConfirmedLevels and prePeBreak and frozenSide != -1
+    frozenCe := stableCe
+    frozenPe := stablePe
+    frozenSide := -1
+
+ceAbove = freezeConfirmedLevels and frozenSide != 0 and not na(frozenCe) ? frozenCe : stableCe
+peBelow = freezeConfirmedLevels and frozenSide != 0 and not na(frozenPe) ? frozenPe : stablePe
+
+// === MTF direction ===
+mtf1 = f_mtfState("1")
+mtf5 = f_mtfState("5")
+mtf15 = f_mtfState("15")
+mtf60 = f_mtfState("60")
+mtf240 = f_mtfState("240")
+mtfD = f_mtfState("D")
+
+bullMtfScore = (mtf1 == 1 ? 1 : 0) + (mtf5 == 1 ? 1 : 0) + (mtf15 == 1 ? 1 : 0) + (mtf60 == 1 ? 1 : 0) + (mtf240 == 1 ? 1 : 0) + (mtfD == 1 ? 1 : 0)
+bearMtfScore = (mtf1 == -1 ? 1 : 0) + (mtf5 == -1 ? 1 : 0) + (mtf15 == -1 ? 1 : 0) + (mtf60 == -1 ? 1 : 0) + (mtf240 == -1 ? 1 : 0) + (mtfD == -1 ? 1 : 0)
+
+// === Gates ===
+bullTrend = close > ema20 and ema20 >= ema50 and close > vwapValue
+bearTrend = close < ema20 and ema20 <= ema50 and close < vwapValue
+volumeOk = relVol >= minRelVol
+antiChase = vwapStretchAtr > maxVwapStretchAtr or candleAtr > maxCandleAtr
+largeVolume = relVol >= bigVolumeRel
+upVolume = close >= open ? volume : close > close[1] ? volume * 0.55 : 0.0
+downVolume = close <= open ? volume : close < close[1] ? volume * 0.55 : 0.0
+buyerVol = ta.ema(upVolume, 5)
+sellerVol = ta.ema(downVolume, 5)
+volDenom = buyerVol + sellerVol
+volPressure = volDenom > 0 ? (buyerVol - sellerVol) / volDenom * 100.0 : 0.0
+buyerPressure = volPressure > 20 and largeVolume
+sellerPressure = volPressure < -20 and largeVolume
+
+ceBreak = barstate.isconfirmed and close > ceAbove
+peBreak = barstate.isconfirmed and close < peBelow
+ceRetestHold = lowestRetest <= ceAbove and close > ceAbove and close > open
+peRetestHold = highestRetest >= peBelow and close < peBelow and close < open
+ceReady = ceBreak and bullTrend and volumeOk and bullMtfScore >= minTrendScore and not antiChase
+peReady = peBreak and bearTrend and volumeOk and bearMtfScore >= minTrendScore and not antiChase
+ceSniperReady = ceReady and (buyerPressure or ceRetestHold) and bullMtfScore >= strongTrendScore
+peSniperReady = peReady and (sellerPressure or peRetestHold) and bearMtfScore >= strongTrendScore
+ceBuilding = not ceReady and close < ceAbove and bullTrend and bullMtfScore >= strongTrendScore and volumeOk
+peBuilding = not peReady and close > peBelow and bearTrend and bearMtfScore >= strongTrendScore and volumeOk
+
+side = ceReady ? "CE" : peReady ? "PE" : "WAIT"
+quality = antiChase ? "NO CHASE" : ceSniperReady ? "CE SNIPER" : peSniperReady ? "PE SNIPER" : ceReady ? "CE CONFIRMED" : peReady ? "PE CONFIRMED" : ceBuilding ? "CE BUILDING" : peBuilding ? "PE BUILDING" : "WAIT"
+
+// === SL and targets ===
+ceBaseSl = math.min(nz(swingLow, ceAbove - atr * slAtr), nz(vwapValue, ceAbove - atr * slAtr))
+ceSlTooWide = ceAbove - ceBaseSl > atr * maxSlAtr
+ceSL = ceSlTooWide ? ceAbove - atr * slAtr : ceBaseSl
+ceRisk = math.max(ceAbove - ceSL, syminfo.mintick)
+ceHistT1 = f_nearestAbove(ceAbove, pdHigh, prevWeekHigh, hourSwingHigh, fourHourSwingHigh)
+ceHistT2 = f_nearestAbove(nz(ceHistT1, ceAbove + ceRisk * t1R) + syminfo.mintick, pdHigh, prevWeekHigh, hourSwingHigh, fourHourSwingHigh)
+ceAtrT1 = ceAbove + ceRisk * t1R
+ceAtrT2 = ceAbove + ceRisk * t2R
+ceAtrT3 = ceAbove + ceRisk * t3R
+ceT1 = not na(ceHistT1) and ceHistT1 - ceAbove >= ceRisk * minT1R ? ceHistT1 : ceAtrT1
+ceT2 = math.max(ceAtrT2, nz(ceHistT2, ceAtrT2))
+ceT3 = math.max(ceAtrT3, ceT2 + ceRisk * 0.8)
+
+peBaseSl = math.max(nz(swingHigh, peBelow + atr * slAtr), nz(vwapValue, peBelow + atr * slAtr))
+peSlTooWide = peBaseSl - peBelow > atr * maxSlAtr
+peSL = peSlTooWide ? peBelow + atr * slAtr : peBaseSl
+peRisk = math.max(peSL - peBelow, syminfo.mintick)
+peHistT1 = f_nearestBelow(peBelow, pdLow, prevWeekLow, hourSwingLow, fourHourSwingLow)
+peHistT2 = f_nearestBelow(nz(peHistT1, peBelow - peRisk * t1R) - syminfo.mintick, pdLow, prevWeekLow, hourSwingLow, fourHourSwingLow)
+peAtrT1 = peBelow - peRisk * t1R
+peAtrT2 = peBelow - peRisk * t2R
+peAtrT3 = peBelow - peRisk * t3R
+peT1 = not na(peHistT1) and peBelow - peHistT1 >= peRisk * minT1R ? peHistT1 : peAtrT1
+peT2 = math.min(peAtrT2, nz(peHistT2, peAtrT2))
+peT3 = math.min(peAtrT3, peT2 - peRisk * 0.8)
+
+activeSL = side == "CE" ? ceSL : side == "PE" ? peSL : na
+activeT1 = side == "CE" ? ceT1 : side == "PE" ? peT1 : na
+activeT2 = side == "CE" ? ceT2 : side == "PE" ? peT2 : na
+activeT3 = side == "CE" ? ceT3 : side == "PE" ? peT3 : na
+activeRisk = side == "CE" ? ceRisk : side == "PE" ? peRisk : na
+activeReward = side == "CE" ? ceT1 - ceAbove : side == "PE" ? peBelow - peT1 : na
+activeRR = not na(activeRisk) and activeRisk > 0 ? activeReward / activeRisk : na
+rewardOk = na(activeRR) or activeRR >= minT1R
+sniperScore = math.min(100, math.max(0,
+  (bullTrend or bearTrend ? 18 : 0) +
+  (volumeOk ? 14 : 0) +
+  (largeVolume ? 10 : 0) +
+  ((bullMtfScore >= strongTrendScore or bearMtfScore >= strongTrendScore) ? 24 : bullMtfScore >= minTrendScore or bearMtfScore >= minTrendScore ? 14 : 0) +
+  ((ceRetestHold or peRetestHold) ? 12 : 0) +
+  (not antiChase ? 14 : 0) +
+  (rewardOk ? 8 : 0)))
+
+// === Candlestick patterns, filtered near meaningful levels ===
+body = math.abs(close - open)
+upperWick = high - math.max(close, open)
+lowerWick = math.min(close, open) - low
+bullEngulf = close > open and close[1] < open[1] and close >= open[1] and open <= close[1]
+bearEngulf = close < open and close[1] > open[1] and close <= open[1] and open >= close[1]
+hammer = lowerWick > body * 2.0 and upperWick <= body * 0.8 and close > open
+shooting = upperWick > body * 2.0 and lowerWick <= body * 0.8 and close < open
+insideBar = high < high[1] and low > low[1]
+nearSupport = math.abs(close - peBelow) <= atr * 0.8 or math.abs(close - lowestForPattern) <= atr * 0.8
+nearResistance = math.abs(close - ceAbove) <= atr * 0.8 or math.abs(close - highestForPattern) <= atr * 0.8
+
+recentPatternOk = not showOnlyRecentPatterns or bar_index > last_bar_index - recentPatternBars
+bullPattern = showPatterns and recentPatternOk and nearSupport and (bullEngulf or hammer)
+bearPattern = showPatterns and recentPatternOk and nearResistance and (bearEngulf or shooting)
+insideBreakout = showPatterns and recentPatternOk and insideBar[1] and close > high[1] and close > ema20
+insideBreakdown = showPatterns and recentPatternOk and insideBar[1] and close < low[1] and close < ema20
+
+// === Optional compression box ===
+rangeAtr = atr > 0 ? (boxHigh - boxLow) / atr : na
+compressed = not na(rangeAtr) and rangeAtr <= 4.0 and relVol < 1.25
+var box compressionBox = na
+if showCompressionBox and barstate.islast
+    if not na(compressionBox)
+        box.delete(compressionBox)
+    if compressed
+        compressionBox := box.new(left=bar_index - math.max(10, math.floor(lookback / 2)), top=boxHigh, right=bar_index, bottom=boxLow, border_color=color.new(color.orange, 0), bgcolor=color.new(color.orange, 92))
+
+// === Current-action lines only ===
+var line ceLine = na
+var line peLine = na
+var line slLine = na
+var line t1Line = na
+var line t2Line = na
+var line t3Line = na
+var label ceTag = na
+var label peTag = na
+var label slTag = na
+var label t1Tag = na
+var label t2Tag = na
+var label t3Tag = na
+
+f_resetLine(line ln) =>
+    if not na(ln)
+        line.delete(ln)
+
+f_resetLabel(label lb) =>
+    if not na(lb)
+        label.delete(lb)
+
+if barstate.islast
+    f_resetLine(ceLine)
+    f_resetLine(peLine)
+    f_resetLine(slLine)
+    f_resetLine(t1Line)
+    f_resetLine(t2Line)
+    f_resetLine(t3Line)
+    f_resetLabel(ceTag)
+    f_resetLabel(peTag)
+    f_resetLabel(slTag)
+    f_resetLabel(t1Tag)
+    f_resetLabel(t2Tag)
+    f_resetLabel(t3Tag)
+    x1 = bar_index - lineBarsLeft
+    x2 = bar_index + lineBarsRight
+    ceLine := line.new(x1, ceAbove, x2, ceAbove, color=color.new(color.lime, 0), width=3)
+    peLine := line.new(x1, peBelow, x2, peBelow, color=color.new(color.red, 0), width=3)
+    ceTag := label.new(x2, ceAbove, "CE ABOVE\n" + str.tostring(ceAbove, format.mintick), style=label.style_label_left, color=color.new(color.lime, 0), textcolor=color.white, size=size.small)
+    peTag := label.new(x2, peBelow, "PE BELOW\n" + str.tostring(peBelow, format.mintick), style=label.style_label_left, color=color.new(color.red, 0), textcolor=color.white, size=size.small)
+    if showTargets and side != "WAIT"
+        slLine := line.new(x1, activeSL, x2, activeSL, color=color.new(color.red, 0), width=2, style=line.style_dashed)
+        t1Line := line.new(x1, activeT1, x2, activeT1, color=color.new(color.green, 0), width=2, style=line.style_dashed)
+        t2Line := line.new(x1, activeT2, x2, activeT2, color=color.new(color.green, 20), width=1, style=line.style_dashed)
+        t3Line := line.new(x1, activeT3, x2, activeT3, color=color.new(color.green, 35), width=1, style=line.style_dashed)
+        slTag := label.new(x2, activeSL, "SL\n" + str.tostring(activeSL, format.mintick), style=label.style_label_left, color=color.new(color.red, 0), textcolor=color.white, size=size.tiny)
+        t1Tag := label.new(x2, activeT1, "T1\n" + str.tostring(activeT1, format.mintick), style=label.style_label_left, color=color.new(color.green, 0), textcolor=color.white, size=size.tiny)
+        t2Tag := label.new(x2, activeT2, "T2\n" + str.tostring(activeT2, format.mintick), style=label.style_label_left, color=color.new(color.green, 20), textcolor=color.white, size=size.tiny)
+        t3Tag := label.new(x2, activeT3, "T3\n" + str.tostring(activeT3, format.mintick), style=label.style_label_left, color=color.new(color.green, 35), textcolor=color.white, size=size.tiny)
+
+plot(showEmaVwap ? ema20 : na, "EMA 20", color=color.new(color.blue, 20), linewidth=1)
+plot(showEmaVwap ? ema50 : na, "EMA 50", color=color.new(color.gray, 35), linewidth=1)
+plot(showEmaVwap ? vwapValue : na, "VWAP", color=color.new(color.purple, 15), linewidth=2)
+
+bgcolor(showChartTint ? ceReady ? color.new(color.green, 91) : peReady ? color.new(color.red, 91) : antiChase ? color.new(color.orange, 92) : na : na)
+
+plotshape(bullPattern, title="Bull pattern near support", style=shape.labelup, location=location.belowbar, text="Bull", color=color.new(color.lime, 0), textcolor=color.white, size=size.tiny)
+plotshape(bearPattern, title="Bear pattern near resistance", style=shape.labeldown, location=location.abovebar, text="Bear", color=color.new(color.red, 0), textcolor=color.white, size=size.tiny)
+plotshape(insideBreakout, title="Inside breakout", style=shape.triangleup, location=location.belowbar, text="IB", color=color.new(color.lime, 0), textcolor=color.white, size=size.tiny)
+plotshape(insideBreakdown, title="Inside breakdown", style=shape.triangledown, location=location.abovebar, text="IB", color=color.new(color.red, 0), textcolor=color.white, size=size.tiny)
+
+// === One clean command label ===
+var label cmdLabel = na
+if barstate.islast
+    label.delete(cmdLabel)
+if showCommandLabel and barstate.islast
+    ceSource = f_srcNameAbove(ceAbove - atr * bufferAtr)
+    peSource = f_srcNameBelow(peBelow + atr * bufferAtr)
+    noChaseWhy = vwapStretchAtr > maxVwapStretchAtr ? "VWAP stretch too high" : candleAtr > maxCandleAtr ? "signal candle too large" : ""
+    volumeText = buyerPressure ? "Buyer volume pressure" : sellerPressure ? "Seller volume pressure" : largeVolume ? "Large volume, direction mixed" : "Normal volume"
+    retestText = ceRetestHold ? "CE retest holding" : peRetestHold ? "PE retest holding" : "No retest proof yet"
+    rrText = side == "WAIT" ? "-" : str.tostring(activeRR, "#.##") + "R"
+    actionLine = antiChase ? "Do not chase. Wait for retest." : not rewardOk ? "Reward not enough. Wait for better level." : ceSniperReady ? "BUY CE candidate. Confirm option chain in dashboard." : peSniperReady ? "BUY PE candidate. Confirm option chain in dashboard." : ceReady ? "CE confirmed, but wait for option-chain support." : peReady ? "PE confirmed, but wait for option-chain support." : ceBuilding ? "CE building. Wait for close above green line." : peBuilding ? "PE building. Wait for close below red line." : "Wait inside zone. No forced trade."
+    labelText = "INFUSION " + quality + "\n" +
+      "CE above: " + str.tostring(ceAbove, format.mintick) + " from " + ceSource + "\n" +
+      "PE below: " + str.tostring(peBelow, format.mintick) + " from " + peSource + "\n" +
+      "SL: " + (side == "WAIT" ? "-" : str.tostring(activeSL, format.mintick)) + " | T1/T2/T3: " + (side == "WAIT" ? "-" : str.tostring(activeT1, format.mintick) + " / " + str.tostring(activeT2, format.mintick) + " / " + str.tostring(activeT3, format.mintick)) + "\n" +
+      "Score " + str.tostring(sniperScore) + " | R:R " + rrText + " | MTF B/S " + str.tostring(bullMtfScore) + "/" + str.tostring(bearMtfScore) + "\n" +
+      volumeText + " | " + retestText + " | VWAP stretch " + str.tostring(vwapStretchAtr, "#.##") + " ATR\n" +
+      (antiChase ? "Block: " + noChaseWhy : actionLine)
+    labelColor = ceReady ? color.new(color.green, 15) : peReady ? color.new(color.red, 15) : antiChase ? color.new(color.orange, 10) : color.new(color.gray, 15)
+    labelY = ceReady ? high + atr * 0.8 : peReady ? low - atr * 0.8 : close
+    labelStyle = peReady ? label.style_label_up : label.style_label_down
+    cmdLabel := label.new(bar_index, labelY, labelText, style=labelStyle, textcolor=color.white, color=labelColor, size=size.small)
+
+// === Sniper confidence panel ===
+f_yesNo(bool v) =>
+    v ? "OK" : "WAIT"
+
+f_bgDecision(string q) =>
+    q == "CE SNIPER" or q == "CE CONFIRMED" or q == "CE BUILDING" ? color.new(color.green, 18) : q == "PE SNIPER" or q == "PE CONFIRMED" or q == "PE BUILDING" ? color.new(color.red, 18) : q == "NO CHASE" ? color.new(color.orange, 10) : color.new(color.gray, 25)
+
+var table sniper = table.new(position.middle_right, 2, 9, border_width=1)
+if showSniperPanel and barstate.islast
+    panelBg = color.new(color.black, 18)
+    table.cell(sniper, 0, 0, "INFUSION", text_color=color.white, bgcolor=color.new(color.black, 0), text_size=size.small)
+    table.cell(sniper, 1, 0, quality, text_color=color.white, bgcolor=f_bgDecision(quality), text_size=size.small)
+    table.cell(sniper, 0, 1, "CE above", text_color=color.white, bgcolor=panelBg, text_size=size.tiny)
+    table.cell(sniper, 1, 1, str.tostring(ceAbove, format.mintick), text_color=color.lime, bgcolor=panelBg, text_size=size.tiny)
+    table.cell(sniper, 0, 2, "PE below", text_color=color.white, bgcolor=panelBg, text_size=size.tiny)
+    table.cell(sniper, 1, 2, str.tostring(peBelow, format.mintick), text_color=color.red, bgcolor=panelBg, text_size=size.tiny)
+    table.cell(sniper, 0, 3, "Score", text_color=color.white, bgcolor=panelBg, text_size=size.tiny)
+    table.cell(sniper, 1, 3, str.tostring(sniperScore) + "/100", text_color=sniperScore >= 80 ? color.lime : sniperScore >= 65 ? color.orange : color.red, bgcolor=panelBg, text_size=size.tiny)
+    table.cell(sniper, 0, 4, "MTF B/S", text_color=color.white, bgcolor=panelBg, text_size=size.tiny)
+    table.cell(sniper, 1, 4, str.tostring(bullMtfScore) + "/" + str.tostring(bearMtfScore), text_color=bullMtfScore > bearMtfScore ? color.lime : bearMtfScore > bullMtfScore ? color.red : color.orange, bgcolor=panelBg, text_size=size.tiny)
+    table.cell(sniper, 0, 5, "Volume", text_color=color.white, bgcolor=panelBg, text_size=size.tiny)
+    table.cell(sniper, 1, 5, str.tostring(relVol, "#.##") + "x " + (buyerPressure ? "BUYERS" : sellerPressure ? "SELLERS" : largeVolume ? "LARGE" : "NORMAL"), text_color=buyerPressure ? color.lime : sellerPressure ? color.red : largeVolume ? color.orange : color.white, bgcolor=panelBg, text_size=size.tiny)
+    table.cell(sniper, 0, 6, "Retest", text_color=color.white, bgcolor=panelBg, text_size=size.tiny)
+    table.cell(sniper, 1, 6, ceRetestHold ? "CE HOLD" : peRetestHold ? "PE HOLD" : "WAIT", text_color=ceRetestHold ? color.lime : peRetestHold ? color.red : color.orange, bgcolor=panelBg, text_size=size.tiny)
+    table.cell(sniper, 0, 7, "R:R", text_color=color.white, bgcolor=panelBg, text_size=size.tiny)
+    table.cell(sniper, 1, 7, side == "WAIT" ? "-" : str.tostring(activeRR, "#.##") + "R", text_color=rewardOk ? color.lime : color.red, bgcolor=panelBg, text_size=size.tiny)
+    table.cell(sniper, 0, 8, "Action", text_color=color.white, bgcolor=panelBg, text_size=size.tiny)
+    table.cell(sniper, 1, 8, antiChase ? "NO CHASE" : ceSniperReady ? "CE WATCH" : peSniperReady ? "PE WATCH" : ceBuilding ? "CE BUILD" : peBuilding ? "PE BUILD" : "WAIT", text_color=antiChase ? color.orange : ceSniperReady or ceBuilding ? color.lime : peSniperReady or peBuilding ? color.red : color.white, bgcolor=panelBg, text_size=size.tiny)
+else if not showSniperPanel and barstate.islast
+    for r = 0 to 8
+        table.cell(sniper, 0, r, "", bgcolor=color.new(color.white, 100))
+        table.cell(sniper, 1, r, "", bgcolor=color.new(color.white, 100))
+
+// === Compact MTF table ===
+var table mt = table.new(position.top_right, 6, 2, border_width=1)
+if showMtfTable and barstate.islast
+    table.cell(mt, 0, 0, "1M", text_color=color.white, bgcolor=color.new(color.black, 20), text_size=size.tiny)
+    table.cell(mt, 1, 0, "5M", text_color=color.white, bgcolor=color.new(color.black, 20), text_size=size.tiny)
+    table.cell(mt, 2, 0, "15M", text_color=color.white, bgcolor=color.new(color.black, 20), text_size=size.tiny)
+    table.cell(mt, 3, 0, "1H", text_color=color.white, bgcolor=color.new(color.black, 20), text_size=size.tiny)
+    table.cell(mt, 4, 0, "4H", text_color=color.white, bgcolor=color.new(color.black, 20), text_size=size.tiny)
+    table.cell(mt, 5, 0, "1D", text_color=color.white, bgcolor=color.new(color.black, 20), text_size=size.tiny)
+    table.cell(mt, 0, 1, f_dot(mtf1), text_color=f_col(mtf1), bgcolor=color.new(color.black, 5), text_size=size.small)
+    table.cell(mt, 1, 1, f_dot(mtf5), text_color=f_col(mtf5), bgcolor=color.new(color.black, 5), text_size=size.small)
+    table.cell(mt, 2, 1, f_dot(mtf15), text_color=f_col(mtf15), bgcolor=color.new(color.black, 5), text_size=size.small)
+    table.cell(mt, 3, 1, f_dot(mtf60), text_color=f_col(mtf60), bgcolor=color.new(color.black, 5), text_size=size.small)
+    table.cell(mt, 4, 1, f_dot(mtf240), text_color=f_col(mtf240), bgcolor=color.new(color.black, 5), text_size=size.small)
+    table.cell(mt, 5, 1, f_dot(mtfD), text_color=f_col(mtfD), bgcolor=color.new(color.black, 5), text_size=size.small)
+else if not showMtfTable and barstate.islast
+    for c = 0 to 5
+        table.cell(mt, c, 0, "", bgcolor=color.new(color.white, 100))
+        table.cell(mt, c, 1, "", bgcolor=color.new(color.white, 100))
+
+// === Alerts ===
+alertcondition(ceSniperReady, title="INFUSION CE sniper", message="INFUSION CE SNIPER: {{ticker}} CE trigger confirmed with MTF/volume/retest support. Check option chain in dashboard.")
+alertcondition(peSniperReady, title="INFUSION PE sniper", message="INFUSION PE SNIPER: {{ticker}} PE trigger confirmed with MTF/volume/retest support. Check option chain in dashboard.")
+alertcondition(ceReady, title="INFUSION CE confirmed", message="INFUSION CE CONFIRMED: {{ticker}} close sustained above auto CE trigger. Check option chain in dashboard.")
+alertcondition(peReady, title="INFUSION PE confirmed", message="INFUSION PE CONFIRMED: {{ticker}} close sustained below auto PE trigger. Check option chain in dashboard.")
+alertcondition(antiChase, title="INFUSION no chase", message="INFUSION NO CHASE: {{ticker}} is stretched or candle too large. Wait for retest.")

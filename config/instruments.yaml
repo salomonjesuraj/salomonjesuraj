@@ -1,0 +1,14 @@
+# Instrument tier configuration — skeleton
+tiers:
+  tier_1:
+    mode: full
+    description: "NIFTY 50 + top F&O"
+    symbols: []
+  tier_2:
+    mode: throttled
+    throttle_ms: 500
+    symbols: []
+  tier_3:
+    mode: snapshot
+    throttle_ms: 2000
+    symbols: []

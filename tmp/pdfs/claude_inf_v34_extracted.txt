@@ -1,0 +1,412 @@
+Page 1
+INFUSION Sniper CE/PE Confirmation — v3.4 Implementation Plan
+INFUSION Sniper CE/PE Confirmation
+v3.3 → v3.4 Engineering Implementation Plan
+Prepared for: Salomon  |  Generated: 2026-08-05  |  Source files reviewed: infusion_sniper_cepe_confirmation_v3_3.pine,
+INFUSION_Pine_CE_PE_Logic_Review_v3_3.pdf
+Objective: eliminate chart-timeframe dependency in the CE/PE anchor levels so the same symbol shows the same structural
+CE/PE map on 5M and 15M charts, while keeping timeframe-specific confirmation (trend, volume, MTF, retest) exactly as it
+works today.
+1. Executive Summary
+The review PDF correctly diagnoses the root cause: v3.3 builds its CE/PE trigger lines from a mix of
+chart-timeframe-dependent series (stablePivotHigh, stablePivotLow, swingHigh, swingLow, boxHigh,
+boxLow) and fixed-timeframe series (pdHigh/Low, prevWeekHigh/Low, hourSwingHigh/Low,
+fourHourSwingHigh/Low). Worse, the selection logic (selectedCeRaw = nz(rawCeLocal, rawCeHtf))
+prefers the unstable local set first, so the least stable levels win whenever they exist — which is most of the time.
+This plan converts that into a two-layer engine, exactly as recommended in the review: a Level Engine that only reads
+fixed anchor timeframes (15M/1H/4H/D/W) and therefore produces an identical CE/PE map regardless of chart
+timeframe, and a Confirmation Engine that keeps reading the active chart timeframe for trend, volume, retest and
+candle-pattern gates. Risk and Display layers are updated to match. A backward-compatible Micro Mode preserves the
+current v3.3 chart-timeframe behavior as an opt-in for scalpers.
+Estimated effort: 4–6 focused engineering hours plus 1–2 hours of on-chart regression testing across symbols and
+timeframes.
+2. Root Cause — Mapped to Actual v3.3 Code
+Every variable below exists in the uploaded script. This is the authoritative list of what must change and what can stay
+untouched.
+Variable / expression
+Current source
+TF-stab
+le?
+Required action
+stablePivotHigh /
+stablePivotLow
+ta.pivothigh / ta.pivotlow on
+chart series
+No
+Remove from CE/PE anchor
+selection. Keep only as a
+pattern/label helper (Section 4).
+swingHigh / swingLow
+ta.highest/lowest(lookback) on
+chart series
+No
+Replace as an anchor source with a
+new fixed-15M anchor (Section 4).
+Keep old version only under Micro
+Mode.
+boxHigh / boxLow
+ta.highest/lowest(lookback/2)
+on chart series
+No
+Same treatment as swingHigh/Low:
+fixed-anchor version becomes
+primary, chart version becomes Micro
+Mode only.
+
+
+Page 2
+INFUSION Sniper CE/PE Confirmation — v3.4 Implementation Plan
+Variable / expression
+Current source
+TF-stab
+le?
+Required action
+orbHigh / orbLow
+Accumulated from chart bars
+inside the clock-time ORB
+window
+Partly
+Acceptable as-is (Phase 6 optional
+hardening available). Variance is one
+chart-bar width at most.
+pdHigh / pdLow,
+prevWeekHigh /
+prevWeekLow
+request.security fixed D / W
+Yes
+No change — already correct.
+hourSwingHigh/Low,
+fourHourSwingHigh/Low
+request.security fixed 60 / 240
+Yes
+No change — already correct.
+selectedCeRaw =
+nz(rawCeLocal, rawCeHtf)
+Prefers local (unstable) set first
+No
+Rewire so fixed anchors are
+evaluated first; chart-local levels only
+apply in Micro Mode.
+f_nearestAbove/Below
+(4-arg helpers)
+Hard-capped at 4 candidate
+levels
+N/A
+Refactor to array-based, N-ary
+versions so all fixed anchors can be
+compared in one call.
+Everything in the Confirmation Gates section of v3.3 (bullTrend, bearTrend, volumeOk, antiChase, f_mtfState, retest, buyer/seller
+pressure) is intentionally chart-timeframe dependent per the review and needs no change — that is what should differ between 5M and 15M.
+
+
+Page 3
+INFUSION Sniper CE/PE Confirmation — v3.4 Implementation Plan
+3. Target Architecture (v3.4)
+Layer
+Purpose
+v3.4 behavior
+Level Engine
+Produce ceAbove /
+peBelow
+Fixed anchors only: 15M range, 1H pivot-range, 4H
+pivot-range, previous day/week high-low, ATR buffer. Identical
+output on 5M and 15M charts.
+Confirmation
+Engine
+Decide CE READY / PE
+READY / WAIT
+Active chart timeframe close, trend (EMA/VWAP), relative
+volume, MTF score, anti-chase, retest, buyer/seller pressure
+— unchanged from v3.3.
+Risk Engine
+SL / T1 / T2 / T3
+Fixed CE/PE anchor plus 15M/1H/4H structure and ATR —
+logic unchanged, only its inputs (ceAbove/peBelow) become
+stable.
+Display Engine
+Lines, labels, panel, alerts
+Same CE/PE line across 5M/15M. Two new panel rows:
+Anchor TF (fixed) and Confirmation TF (chart), so the trader
+sees why readiness can still differ.
+Design principle carried through every phase below: the chart timeframe is allowed to change when a signal fires,
+never where the line sits.
+4. New Inputs to Add
+Input
+Type
+Default
+Options / range
+Purpose
+levelAnchorMode
+input.string
+"Fixed MTF
+Anchors"
+"Fixed MTF Anchors",
+"Micro Mode (chart
+TF)"
+Master switch. Fixed mode is
+default and recommended for
+production.
+anchorTF
+input.timefra
+me
+"15"
+any valid TF string
+Primary intraday anchor
+timeframe used for
+anchor15High/Low.
+anchorLookback
+input.int
+24
+10–100
+Bars looked back on the
+anchor timeframe (mirrors
+existing lookback intent, ~6
+hours on 15M).
+showAnchorRow
+input.bool
+true
+true/false
+Toggle the new Anchor TF /
+Confirmation TF panel rows.
+All four go in a new input group, e.g. groupAnchor = "Level Anchor", placed directly above the existing groupGate block.
+
+
+Page 4
+INFUSION Sniper CE/PE Confirmation — v3.4 Implementation Plan
+5. Phased Implementation
+PHASE 0  —  Versioning & Safety Net
+Risk: Low
+
+Duplicate the script to infusion_sniper_cepe_confirmation_v3_4.pine; keep v3.3 published and
+untouched until v3.4 passes the acceptance checklist (Section 8).
+
+Bump indicator("INFUSION Sniper CE/PE Confirmation v3.3", ...) title to v3.4 and add a
+one-line changelog comment block at the top of the file.
+PHASE 1  —  Add Fixed-Anchor Variables
+Risk: Low
+Add alongside the existing pdHigh/prevWeekHigh block (same request.security pattern already used in v3.3, so no
+new technique is introduced):
+groupAnchor = "Level Anchor"
+levelAnchorMode = input.string("Fixed MTF Anchors", "Level anchor mode",
+options=["Fixed MTF Anchors", "Micro Mode (chart TF)"], group=groupAnchor)
+anchorTF = input.timeframe("15", "Anchor timeframe (intraday structure)", group=groupAnchor)
+anchorLookback = input.int(24, "Anchor lookback bars", minval=10, maxval=100, group=groupAnchor)
+showAnchorRow = input.bool(true, "Show Anchor TF / Confirmation TF panel rows",
+group=groupAnchor)
+// Fixed-timeframe structure -- identical output regardless of chart timeframe
+anchor15High = request.security(syminfo.tickerid, anchorTF, ta.highest(high, anchorLookback)[1],
+barmerge.gaps_off, barmerge.lookahead_off)
+anchor15Low = request.security(syminfo.tickerid, anchorTF, ta.lowest(low, anchorLookback)[1],
+barmerge.gaps_off, barmerge.lookahead_off)
+anchor15BoxHigh = request.security(syminfo.tickerid, anchorTF,
+ta.highest(high, math.max(6, math.floor(anchorLookback / 2)))[1], barmerge.gaps_off,
+barmerge.lookahead_off)
+anchor15BoxLow = request.security(syminfo.tickerid, anchorTF,
+ta.lowest(low, math.max(6, math.floor(anchorLookback / 2)))[1], barmerge.gaps_off,
+barmerge.lookahead_off)
+Note the trailing [1] inside every expression, matching the pattern v3.3 already uses for hourSwingHigh/fourHourSwingHigh. This forces
+each anchor to read the last closed bar on the anchor timeframe, so values cannot repaint intrabar — the same non-repainting guarantee the
+fixed 1H/4H/D/W levels already have.
+PHASE 2  —  Refactor Nearest-Level Helpers to N-ary
+Risk: Medium
+The current f_nearestAbove/Below and f_meaningfulAbove/Below take exactly 4 fixed parameters. Once
+pivot/box/swing are removed from the fixed set and anchor15High/Low are added, the candidate list needs to hold 6+
+levels. Replace with array-based versions:
+
+
+Page 5
+INFUSION Sniper CE/PE Confirmation — v3.4 Implementation Plan
+f_nearestAbove(float price, array<float> levels) =>
+    float best = na
+    for lvl in levels
+        if not na(lvl) and lvl > price and (na(best) or lvl < best)
+            best := lvl
+    best
+f_nearestBelow(float price, array<float> levels) =>
+    float best = na
+    for lvl in levels
+        if not na(lvl) and lvl < price and (na(best) or lvl > best)
+            best := lvl
+    best
+f_meaningfulAbove(float price, float minDistance, array<float> levels) =>
+    f_nearestAbove(price + minDistance, levels)
+f_meaningfulBelow(float price, float minDistance, array<float> levels) =>
+    f_nearestBelow(price - minDistance, levels)
+This is a drop-in behavioral equivalent for the existing 4-argument call sites elsewhere in the script (e.g. ceHistT1/ceHistT2 target logic) —
+just pass array.from(a, b, c, d) there to avoid touching Section 7 (targets) in this pass.
+PHASE 3  —  Rewire CE/PE Candidate Selection
+Risk: Medium
+Replace the local/HTF split with a single mode-aware candidate list, fixed anchors first:
+fixedCeLevels = array.from(anchor15High, orbHigh, pdHigh, prevWeekHigh, hourSwingHigh,
+fourHourSwingHigh)
+fixedPeLevels = array.from(anchor15Low, orbLow, pdLow, prevWeekLow, hourSwingLow,
+fourHourSwingLow)
+microCeLevels = array.from(stablePivotHigh, swingHigh, boxHigh, anchor15High)
+microPeLevels = array.from(stablePivotLow, swingLow, boxLow, anchor15Low)
+useMicro = levelAnchorMode == "Micro Mode (chart TF)"
+ceLevels = useMicro ? microCeLevels : fixedCeLevels
+peLevels = useMicro ? microPeLevels : fixedPeLevels
+minLevelDistance = atr * minLevelDistanceAtr
+selectedCeRaw = f_meaningfulAbove(close, minLevelDistance, ceLevels)
+selectedPeRaw = f_meaningfulBelow(close, minLevelDistance, peLevels)
+fallbackCe = useMicro ? nz(stablePivotHigh, nz(swingHigh, high)) : nz(anchor15High,
+nz(hourSwingHigh, high))
+fallbackPe = useMicro ? nz(stablePivotLow, nz(swingLow, low)) : nz(anchor15Low, nz(hourSwingLow,
+low))
+candidateCe = nz(selectedCeRaw, fallbackCe) + atr * bufferAtr
+candidatePe = nz(selectedPeRaw, fallbackPe) - atr * bufferAtr
+Everything below this point in v3.3 — working-level lock, freeze-on-breakout, ceAbove/peBelow resolution — is
+untouched. It already operates purely on candidateCe/candidatePe, so it inherits the stability fix automatically.
+
+
+Page 6
+INFUSION Sniper CE/PE Confirmation — v3.4 Implementation Plan
+PHASE 4  —  Update Diagnostic Source-Name Functions
+Risk: Low
+f_srcNameAbove/f_srcNameBelow are cosmetic (used only in the optional command label) but should reflect the
+new source. Add one branch each and keep stablePivotHigh/stablePivotLow for the pattern-proximity logic
+(nearSupport/nearResistance) in Section 9, which is unaffected by this refactor and can stay chart-timeframe
+based:
+// add near the top of f_srcNameAbove, before the pivot check
+if math.abs(level - nz(anchor15High, level)) <= atr * 0.12
+    src := "15M structure high (fixed anchor)"
+// add near the top of f_srcNameBelow, before the pivot check
+if math.abs(level - nz(anchor15Low, level)) <= atr * 0.12
+    src := "15M structure low (fixed anchor)"
+PHASE 5  —  Panel & Label: Anchor TF / Confirmation TF
+Risk: Low
+Add two rows to the sniper confidence table.new (bump the row count from 9 to 11) so the trader always sees which
+layer produced the line and which layer produced the readiness state:
+// table.new(position.middle_right, 2, 11, border_width=1) <-- was 2, 9
+table.cell(sniper, 0, 9, "Anchor TF", text_color=color.white, bgcolor=panelBg,
+text_size=size.tiny)
+table.cell(sniper, 1, 9, useMicro ? "Micro (chart)" : anchorTF + "M/1H/4H/D/W",
+text_color=color.aqua, bgcolor=panelBg, text_size=size.tiny)
+table.cell(sniper, 0, 10, "Confirm TF", text_color=color.white, bgcolor=panelBg,
+text_size=size.tiny)
+table.cell(sniper, 1, 10, timeframe.period, text_color=color.aqua, bgcolor=panelBg,
+text_size=size.tiny)
+Gate both new rows behind the existing showAnchorRow input and mirror the same clear/blank pattern already used for showSniperPanel
+so the table does not leave stale rows when toggled off.
+6. Optional Hardening (Phase 6 & 7 — not required for the core fix)
+PHASE 6  —  Fixed-Timeframe ORB Reconstruction
+Risk: Medium
+The review rates ORB stability as “Partly” — it uses real clock time (dayStartTime + orbMins * 60000) so drift is
+at most one chart-bar width, which is usually immaterial. If exact parity is required, rebuild the ORB accumulator on a
+fixed 1-minute series via request.security(syminfo.tickerid, "1", ...) with the same accumulation
+pattern, then discard the chart-bar version. Treat as a nice-to-have, not a blocker.
+PHASE 7  —  Stable Pivot on Anchor Timeframe (advanced)
+Risk: High
+Only pursue this if 15M range highs/lows (Phase 1) prove too wide in testing. It requires moving the stateful var
+stablePivotHigh accumulation into a user-defined function and evaluating it inside request.security so the
+persistent variable runs in the anchor timeframe's context, not the chart's. This is a well-known but fragile Pine v6
+pattern (context-switched stateful UDFs) and needs isolated testing before merging — budget extra time and treat it as
+a separate release, not part of the v3.4 core fix.
+
+
+Page 7
+INFUSION Sniper CE/PE Confirmation — v3.4 Implementation Plan
+7. Testing, Validation & Rollout
+PHASE 8  —  Acceptance Testing
+Risk: Low
+Test
+Expected result
+Severity
+Open same symbol, 5M then 15M,
+Fixed mode
+ceAbove and peBelow identical (or within one tick)
+Blocking
+Change chart timeframe mid-session
+Only status/quality label changes; CE/PE lines do not move
+Blocking
+Toggle Level Anchor Mode to Micro
+Lines revert to v3.3 chart-local behavior; panel shows “Micro
+(chart)”
+Blocking
+Price sitting inside the range
+Status shows WAIT / CE BUILDING / PE BUILDING, never a
+forced trade
+Blocking
+Close breaks above ceAbove
+CE CONFIRMED only when trend, volume, MTF and
+anti-chase all pass
+Blocking
+Close breaks below peBelow
+PE CONFIRMED only when trend, volume, MTF and
+anti-chase all pass
+Blocking
+Compare T1/T2/T3 before/after
+Historical-level-first, ATR-fallback-second behavior
+unchanged
+Regression
+Freeze-on-breakout still works
+frozenCe/frozenPe still lock after first confirmed break, same
+as v3.3
+Regression
+Multiple symbols (trending, ranging,
+gappy)
+No runtime errors; anchor15High/Low never both na for >1
+bar after warmup
+Blocking
+request.security call budget
+Total calls stay well under Pine's 40-call ceiling (v3.4 adds ~4,
+from 14 to ~18)
+Sanity
+PHASE 9  —  Rollout
+Risk: Low
+
+Ship with levelAnchorMode defaulted to “Fixed MTF Anchors” so existing users get the corrected behavior
+automatically; Micro Mode is the explicit opt-out for scalpers who want the old 5M-local lines.
+
+Update the indicator title/version string and publish v3.4 alongside v3.3 for one trading week before retiring v3.3,
+so live alerts are not interrupted mid-session.
+
+Re-run the Section 4.3 target/SL logic sanity check once anchors are fixed, since T1/T2/T3 formulas depend on
+ceAbove/peBelow as inputs.
+8. Risk Register
+Risk
+Likelihoo
+d
+Mitigation
+Anchor timeframe range too wide/narrow
+on illiquid symbols
+Medium
+Keep anchorLookback user-configurable (default 24 bars ≈
+6h on 15M); expose in input group for quick tuning.
+request.security repaint on the anchor
+series
+Low
+Every anchor expression uses trailing [1] plus
+barmerge.lookahead_off, matching the pattern v3.3 already
+relies on for hourSwingHigh/fourHourSwingHigh.
+
+
+Page 8
+INFUSION Sniper CE/PE Confirmation — v3.4 Implementation Plan
+Risk
+Likelihoo
+d
+Mitigation
+Behavior change surprises existing v3.3
+users
+Medium
+Micro Mode preserves old behavior exactly; default change is
+called out in the changelog and panel label.
+Array-based helper refactor breaks an
+existing 4-arg call site
+Medium
+Grep the file for every f_nearestAbove/f_nearestBelow/f_me
+aningfulAbove/f_meaningfulBelow call before merging (target
+logic in Section 7 also uses f_nearestAbove/Below) and
+convert each to array.from(...).
+Pine max_lines_count / max_labels_count
+/ max_boxes_count limits
+Low
+No new lines/labels/boxes are added by this plan; only table
+cells and plain variables, which are uncapped.
+9. Summary
+The fix is contained: five code phases (1–5) touch level selection and display only, none of them alter the Confirmation
+Engine, Risk Engine formulas, alert conditions, or visual styling that already work. Phases 6–7 are optional hardening,
+not required to close the review's core finding. Once Phase 8 passes on at least two symbols across 5M/15M, the same
+stock will tell the same structural CE/PE story on both charts, exactly as the review's Section 9 final recommendation
+specifies.

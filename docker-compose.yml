@@ -1,0 +1,369 @@
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+  networks:
+    - infusion
+
+services:
+  # ════════════════════════════════════════════
+  # INFRASTRUCTURE
+  # ════════════════════════════════════════════
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+      - ./config/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    command: redis-server /usr/local/etc/redis/redis.conf
+    deploy:
+      resources:
+        limits:
+          memory: 1280M
+        reservations:
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    <<: *service-defaults
+
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-infusion}
+      POSTGRES_USER: ${POSTGRES_USER:-infusion}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./migrations/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+        reservations:
+          memory: 256M
+    command: >
+      postgres
+        -c shared_buffers=256MB
+        -c work_mem=8MB
+        -c effective_cache_size=512MB
+        -c maintenance_work_mem=64MB
+        -c max_connections=50
+        -c log_min_duration_statement=100
+        -c log_statement=none
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-infusion}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    <<: *service-defaults
+
+  # ════════════════════════════════════════════
+  # CORE PIPELINE SERVICES
+  # ════════════════════════════════════════════
+
+  ingestion:
+    build:
+      context: .
+      dockerfile: services/ingestion/Dockerfile
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - INFUSION_SERVICE_NAME=ingestion
+      - INFUSION_REDIS_URL=redis://redis:6379/0
+      - INFUSION_BROKER_PRIMARY=${BROKER_PRIMARY:-upstox}
+      - INFUSION_UPSTOX_API_KEY=${UPSTOX_API_KEY:-}
+      - INFUSION_UPSTOX_API_SECRET=${UPSTOX_API_SECRET:-}
+      - INFUSION_UPSTOX_ACCESS_TOKEN=${UPSTOX_ACCESS_TOKEN:-}
+      - INFUSION_LOG_LEVEL=${LOG_LEVEL:-info}
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    <<: *service-defaults
+
+  normalizer:
+    build:
+      context: .
+      dockerfile: services/normalizer/Dockerfile
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - INFUSION_SERVICE_NAME=normalizer
+      - INFUSION_REDIS_URL=redis://redis:6379/0
+      - INFUSION_LOG_LEVEL=${LOG_LEVEL:-info}
+    deploy:
+      resources:
+        limits:
+          memory: 192M
+    <<: *service-defaults
+
+  feature-engine:
+    build:
+      context: .
+      dockerfile: services/feature-engine/Dockerfile
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    environment:
+      - INFUSION_SERVICE_NAME=feature-engine
+      - INFUSION_REDIS_URL=redis://redis:6379/0
+      - INFUSION_DATABASE_URL=postgresql://${POSTGRES_USER:-infusion}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-infusion}
+      - INFUSION_LOG_LEVEL=${LOG_LEVEL:-info}
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    <<: *service-defaults
+
+  scanner:
+    build:
+      context: .
+      dockerfile: services/scanner/Dockerfile
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - INFUSION_SERVICE_NAME=scanner
+      - INFUSION_REDIS_URL=redis://redis:6379/0
+      - INFUSION_LOG_LEVEL=${LOG_LEVEL:-info}
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+    <<: *service-defaults
+
+  sector-intel:
+    build:
+      context: .
+      dockerfile: services/sector-intel/Dockerfile
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - INFUSION_SERVICE_NAME=sector-intel
+      - INFUSION_REDIS_URL=redis://redis:6379/0
+      - INFUSION_LOG_LEVEL=${LOG_LEVEL:-info}
+    deploy:
+      resources:
+        limits:
+          memory: 192M
+    <<: *service-defaults
+
+  conviction:
+    build:
+      context: .
+      dockerfile: services/conviction/Dockerfile
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - INFUSION_SERVICE_NAME=conviction
+      - INFUSION_REDIS_URL=redis://redis:6379/0
+      - INFUSION_LOG_LEVEL=${LOG_LEVEL:-info}
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+    <<: *service-defaults
+
+  alerter:
+    build:
+      context: .
+      dockerfile: services/alerter/Dockerfile
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - INFUSION_SERVICE_NAME=alerter
+      - INFUSION_REDIS_URL=redis://redis:6379/0
+      - INFUSION_TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - INFUSION_TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+      - INFUSION_LOG_LEVEL=${LOG_LEVEL:-info}
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+    <<: *service-defaults
+
+  archiver:
+    build:
+      context: .
+      dockerfile: services/archiver/Dockerfile
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    environment:
+      - INFUSION_SERVICE_NAME=archiver
+      - INFUSION_REDIS_URL=redis://redis:6379/0
+      - INFUSION_DATABASE_URL=postgresql://${POSTGRES_USER:-infusion}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-infusion}
+      - INFUSION_LOG_LEVEL=${LOG_LEVEL:-info}
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    <<: *service-defaults
+
+  # ════════════════════════════════════════════
+  # DELIVERY SERVICES
+  # ════════════════════════════════════════════
+
+  ws-gateway:
+    build:
+      context: .
+      dockerfile: services/ws-gateway/Dockerfile
+    ports:
+      - "8001:8001"
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - INFUSION_SERVICE_NAME=ws-gateway
+      - INFUSION_REDIS_URL=redis://redis:6379/0
+      - INFUSION_LOG_LEVEL=${LOG_LEVEL:-info}
+    deploy:
+      resources:
+        limits:
+          memory: 192M
+    <<: *service-defaults
+
+  api:
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    ports:
+      - "8000:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    environment:
+      - INFUSION_SERVICE_NAME=api
+      - INFUSION_REDIS_URL=redis://redis:6379/0
+      - INFUSION_DATABASE_URL=postgresql://${POSTGRES_USER:-infusion}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-infusion}
+      - INFUSION_LOG_LEVEL=${LOG_LEVEL:-info}
+      - INFUSION_OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - INFUSION_OPENAI_MODEL=${OPENAI_MODEL:-gpt-5.4-mini}
+      - INFUSION_OPENAI_TIMEOUT_SEC=${OPENAI_TIMEOUT_SEC:-20}
+      - INFUSION_OPENAI_CACHE_TTL_SEC=${OPENAI_CACHE_TTL_SEC:-300}
+      - INFUSION_UPSTOX_ACCESS_TOKEN=${UPSTOX_ACCESS_TOKEN:-}
+    deploy:
+      resources:
+        limits:
+          memory: 192M
+    <<: *service-defaults
+
+  # ════════════════════════════════════════════
+  # PERIPHERAL SERVICES
+  # ════════════════════════════════════════════
+
+  nse-scraper:
+    build:
+      context: .
+      dockerfile: services/nse-scraper/Dockerfile
+    ports:
+      - "5100:5100"
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./config/symbols:/app/config/symbols:ro
+    environment:
+      - INFUSION_SERVICE_NAME=nse-scraper
+      - INFUSION_REDIS_URL=redis://redis:6379/0
+      - INFUSION_DATABASE_URL=postgresql://${POSTGRES_USER:-infusion}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-infusion}
+      - INFUSION_SYMBOL_UNIVERSE=${SYMBOL_UNIVERSE:-nifty200}
+      - INFUSION_UPSTOX_API_KEY=${UPSTOX_API_KEY:-}
+      - INFUSION_UPSTOX_API_SECRET=${UPSTOX_API_SECRET:-}
+      - INFUSION_UPSTOX_REDIRECT_URI=http://localhost:5100/callback/upstox
+      - INFUSION_LOG_LEVEL=${LOG_LEVEL:-info}
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    <<: *service-defaults
+
+  telegram-bot:
+    build:
+      context: .
+      dockerfile: services/telegram-bot/Dockerfile
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - INFUSION_SERVICE_NAME=telegram-bot
+      - INFUSION_REDIS_URL=redis://redis:6379/0
+      - INFUSION_TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - INFUSION_LOG_LEVEL=${LOG_LEVEL:-info}
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+    <<: *service-defaults
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: services/scheduler/Dockerfile
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    environment:
+      - INFUSION_SERVICE_NAME=scheduler
+      - INFUSION_REDIS_URL=redis://redis:6379/0
+      - INFUSION_DATABASE_URL=postgresql://${POSTGRES_USER:-infusion}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-infusion}
+      - INFUSION_LOG_LEVEL=${LOG_LEVEL:-info}
+    deploy:
+      resources:
+        limits:
+          memory: 96M
+    <<: *service-defaults
+
+  # ════════════════════════════════════════════
+  # DASHBOARD
+  # ════════════════════════════════════════════
+
+  dashboard:
+    build:
+      context: services/dashboard
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_started
+      ws-gateway:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+    <<: *service-defaults
+
+volumes:
+  pgdata:
+  redisdata:
+
+networks:
+  infusion:
+    driver: bridge

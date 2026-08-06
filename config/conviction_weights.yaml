@@ -1,0 +1,6 @@
+# Conviction scoring weights — skeleton
+weights:
+  technical_score: 0.35
+  volume_score: 0.25
+  sector_score: 0.20
+  context_score: 0.20

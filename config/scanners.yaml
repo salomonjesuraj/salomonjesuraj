@@ -1,0 +1,17 @@
+# Scanner strategy configuration — skeleton
+strategies:
+  breakout:
+    enabled: true
+    cooldown_seconds: 300
+  volume_surge:
+    enabled: true
+    cooldown_seconds: 300
+  momentum:
+    enabled: true
+    cooldown_seconds: 300
+  pre_breakout:
+    enabled: true
+    cooldown_seconds: 600
+  oi_buildup:
+    enabled: true
+    cooldown_seconds: 300

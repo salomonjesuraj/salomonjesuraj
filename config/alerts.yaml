@@ -1,0 +1,9 @@
+# Alert configuration — skeleton
+throttle:
+  global_max_per_minute: 10
+  per_symbol_cooldown_seconds: 300
+channels:
+  telegram:
+    enabled: false
+  websocket:
+    enabled: true

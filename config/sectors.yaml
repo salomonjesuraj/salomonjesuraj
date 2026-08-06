@@ -1,0 +1,32 @@
+# Sector configuration — skeleton
+sectors:
+  BANK:
+    name: Banking
+    constituents: []
+  IT:
+    name: Information Technology
+    constituents: []
+  PHARMA:
+    name: Pharmaceuticals
+    constituents: []
+  AUTO:
+    name: Automobile
+    constituents: []
+  FMCG:
+    name: FMCG
+    constituents: []
+  METAL:
+    name: Metals & Mining
+    constituents: []
+  ENERGY:
+    name: Energy
+    constituents: []
+  REALTY:
+    name: Realty
+    constituents: []
+  INFRA:
+    name: Infrastructure
+    constituents: []
+  MEDIA:
+    name: Media & Entertainment
+    constituents: []
