@@ -20,6 +20,11 @@
     <div class="quick-controls pro-nav-strip" id="quickControls"></div>
     <footer class="footer-bar top-status-strip" id="footer"></footer>
 
+    <!-- Sector map — pinned below the status bar (ambient market context,
+         not a per-signal panel). Self-contained: sector-ribbon.js renders
+         its own "Market Pulse" header + collapse/drag controls. -->
+    <div class="sector-ribbon pro-sector-deck" id="sectorRibbon" data-collapsible-section="market-pulse" data-draggable-section="market-pulse"></div>
+
     <main class="hybrid-main pro-main">
       <!--
         SIGNAL COCKPIT — the only thing shown by default. Symbol, CE/PE
@@ -51,7 +56,6 @@
             <button class="workbench-tab active" data-tab="screener">Screener</button>
             <button class="workbench-tab" data-tab="watchlist">Watchlist</button>
             <button class="workbench-tab" data-tab="option-basis">Option Basis</button>
-            <button class="workbench-tab" data-tab="sectors">Sectors</button>
             <button class="workbench-tab" data-tab="risk">Risk</button>
             <button class="workbench-tab" data-tab="stock-detail">Stock Detail</button>
             <button class="workbench-tab" data-tab="triggers">Triggers</button>
@@ -83,13 +87,6 @@
             <div class="workbench-section-title">Option Basis</div>
             <div class="panel-badge option-status-inline" id="optionStatus">READY</div>
             <div id="optionCockpitBody" class="workbench-scroll"></div>
-          </div>
-
-          <div class="workbench-pane" data-pane="sectors">
-            <!-- sector-ribbon.js renders its own "Market Pulse" header + collapse
-                 controls; keep its own collapsible-section attributes so those
-                 controls stay functional nested inside this pane. -->
-            <div id="sectorRibbon" class="workbench-scroll" data-collapsible-section="market-pulse"></div>
           </div>
 
           <div class="workbench-pane" data-pane="risk">
