@@ -7073,3 +7073,106 @@ body.screener-v4-page{
     grid-template-columns:repeat(2,1fr)!important;
   }
 }
+
+/* ────────────────────────────────────────────────────────────────────────
+   v7.1.0 — fix: .top-status-strip was left `position:sticky;top:0` by an
+   earlier cascade layer (see line ~5408/5987). On scroll it re-pins to the
+   viewport top and overlaps whatever scrolls beneath it (reported after
+   the sector map was placed directly below it). Same specificity as those
+   rules, appended last so it wins; !important for certainty against any
+   rule we haven't audited.
+   ──────────────────────────────────────────────────────────────────────── */
+.screener-pro-v4 .top-status-strip{
+  position:static!important;
+  box-shadow:none!important;
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+   v7.1.0 SCORE-FIRST COCKPIT — per feedback: score + MTF colour dots +
+   entry/SL/T1/T2/T3 + chaseable flag is enough; drop the prose reasoning
+   from the default card (still available on click-through to Stock Detail).
+   ──────────────────────────────────────────────────────────────────────── */
+.cockpit-card{
+  padding:14px;
+}
+
+.cockpit-score-row{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  margin:6px 0 10px;
+}
+.cockpit-score{
+  font-size:32px;
+  font-weight:800;
+  line-height:1;
+  font-family:var(--font-mono);
+}
+.cockpit-score.grade-aplus,.cockpit-score.grade-a{ color:var(--green); }
+.cockpit-score.grade-bplus,.cockpit-score.grade-b{ color:var(--gold); }
+.cockpit-score.grade-c{ color:var(--red); }
+.cockpit-grade-label{
+  font-size:11px;
+  font-weight:700;
+  color:var(--text-secondary);
+  text-transform:uppercase;
+  letter-spacing:.4px;
+}
+.cockpit-chase-badge{
+  margin-left:auto;
+  display:flex;
+  align-items:center;
+  gap:4px;
+  padding:3px 10px;
+  border-radius:999px;
+  font-size:10px;
+  font-weight:700;
+  text-transform:uppercase;
+  letter-spacing:.3px;
+}
+.cockpit-chase-badge.go{
+  background:var(--green-dim);
+  color:var(--green);
+}
+.cockpit-chase-badge.wait{
+  background:rgba(148,163,184,.16);
+  color:var(--text-secondary);
+}
+
+.cockpit-mtf-row{
+  display:flex;
+  gap:4px;
+  margin-bottom:10px;
+}
+.cockpit-mtf-dot{
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:2px;
+  padding:4px 0;
+  border-radius:6px;
+  background:rgba(148,163,184,.08);
+}
+.cockpit-mtf-dot .dot{
+  width:9px;
+  height:9px;
+  border-radius:50%;
+}
+.cockpit-mtf-dot .tf-label{
+  font-size:8px;
+  color:var(--text-disabled);
+  font-family:var(--font-ui);
+}
+.cockpit-mtf-dot.g .dot{ background:var(--green); box-shadow:0 0 5px rgba(16,185,129,.5); }
+.cockpit-mtf-dot.r .dot{ background:var(--red); box-shadow:0 0 5px rgba(239,68,68,.5); }
+.cockpit-mtf-dot.y .dot{ background:var(--gold); box-shadow:0 0 5px rgba(217,119,6,.4); }
+
+.cockpit-price-grid.t3{
+  grid-template-columns:repeat(5,1fr)!important;
+}
+@media (max-width:768px){
+  .cockpit-price-grid.t3{
+    grid-template-columns:repeat(3,1fr)!important;
+  }
+}

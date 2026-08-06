@@ -174,6 +174,15 @@ def main():
     stale_result = compute_pine_decision(stale, bullish=True, entry=100.0, invalidation=98.0)
     check("Falls back when MTF cache is stale", stale_result.mtf_source == "live_proxy")
 
+    check("T1 < T2 < T3 ordering (bullish)", with_cache.t1_price < with_cache.t2_price < with_cache.t3_price,
+          f"{with_cache.t1_price} < {with_cache.t2_price} < {with_cache.t3_price}")
+    chase_features = {**strong_features, "ltp": 100.0, "vwap": 99.0}
+    chase_features["ml_features"] = {"adx": 35.0, "supertrend_bullish": True, "candle_body_pct": 0.7}
+    chaseable_decision = compute_pine_decision(chase_features, bullish=True, entry=100.0, invalidation=98.0)
+    check("Chaseable flag true on strong aligned setup", chaseable_decision.chaseable is True)
+    weak_chase = compute_pine_decision(weak_features | {"ltp": 100.0, "vwap": 101.0}, bullish=True, entry=100.0, invalidation=98.0)
+    check("Chaseable flag false on weak setup", weak_chase.chaseable is False)
+
     # ═══════════════════════════════════════════════
     # PHASE 4 — MTF MAJOR BLOCKER
     # ═══════════════════════════════════════════════
@@ -212,16 +221,20 @@ def main():
         "entry_price": 2847.5, "invalidation_price": 2820.0, "target_price": 2900.0,
         "sub_scores": {"position_sizing": {"lot_count": 3, "lot_size": 250, "quantity": 750, "risk_amount": 500.0}},
         "features_snapshot": {
-            "trend_text": "UPTREND (HH/HL)", "last_event_label": "Bullish BOS",
-            "candle_pattern": "Bullish Engulfing", "strength_score": 81.0,
-            "mtf_text": "Strong CE alignment", "mtf_source": "historical_cache",
-            "option_bias": "BUY CE",
+            "t1_price": 2880.0, "t2_price": 2900.0, "t3_price": 2920.0,
+            "chaseable": True, "option_bias": "BUY CE",
+            "mtf_dots": {"1M": "G", "5M": "G", "15M": "G", "1H": "G", "4H": "Y", "1D": "G"},
         },
     }
     text = format_signal(payload)
-    check("Formatter includes Structure line", "Structure:" in text)
-    check("Formatter includes BOS/CHOCH event", "Bullish BOS" in text)
+    # Short, score-first format per direct feedback: score/grade, MTF dots,
+    # entry/SL/T1/T2/T3, chaseable flag, sizing -- no prose walls of text.
+    check("Formatter includes score", "Score 84" in text)
+    check("Formatter includes MTF colour dots line", any(line.startswith("MTF") for line in text.split("\n")))
+    check("Formatter includes chaseable flag", "Chaseable" in text)
+    check("Formatter includes T1/T2/T3", "T1" in text and "T2" in text and "T3" in text)
     check("Formatter includes Sizing line", "Sizing: 3 lot" in text)
+    check("Formatter stays short (<= 10 lines)", text.count("\n") <= 9, f"lines={text.count(chr(10))+1}")
     check("Formatter does not crash on missing fields", format_signal({"symbol": "X"}) is not None)
 
     # ═══════════════════════════════════════════════

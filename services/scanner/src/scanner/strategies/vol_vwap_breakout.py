@@ -22,7 +22,7 @@ Design:
 from __future__ import annotations
 
 from scanner.config import ScannerSettings
-from scanner.pine_confidence import compute_pine_decision, practical_option_targets
+from scanner.pine_confidence import compute_pine_decision
 from scanner.state import ScannerSymbolState
 from scanner.strategies.base import BaseStrategy, SignalCandidate
 
@@ -135,23 +135,19 @@ class VolVwapBreakout(BaseStrategy):
         entry = ltp
         atr_safe = atr if atr > 0 else max(ltp * 0.0045, 0.50)
         invalidation = min(vwap - (atr_safe * 0.35), entry - max(atr_safe * 0.75, entry * 0.0035, 0.50))
-        target, target2, effective_risk, target_method = practical_option_targets(
-            bullish=True,
-            entry=entry,
-            invalidation=invalidation,
-            atr=atr_safe,
-            ltp=ltp,
-        )
         # Pine-alignment scoring (structure/MTF/strength-meter story), same
         # call options_first_hybrid.py already makes — previously this
         # strategy skipped it entirely, so vol_vwap_breakout signals carried
-        # no Pine-consistent explanation.
+        # no Pine-consistent explanation. It also computes T1/T2/T3
+        # internally, so reuse rather than recomputing.
         pine = compute_pine_decision(
             features,
             bullish=True,
             entry=entry,
             invalidation=invalidation,
         )
+        target, target2, target3 = pine.t1_price, pine.t2_price, pine.t3_price
+        effective_risk, target_method = pine.risk_per_share, pine.target_method
         if pine.anti_chase_ok:
             explanation.append("Anti-chase: clean location")
         else:
@@ -182,6 +178,7 @@ class VolVwapBreakout(BaseStrategy):
                 "prev_close": features.get("prev_close", 0.0),
                 "t1_price": round(target, 2),
                 "t2_price": round(target2, 2),
+                "t3_price": round(target3, 2),
                 "risk_per_share": round(effective_risk, 2),
                 "target_method": target_method,
                 "pine_confidence": round(pine.dominant_confidence, 1),
@@ -190,6 +187,7 @@ class VolVwapBreakout(BaseStrategy):
                 "mtf": pine.mtf,
                 "mtf_dots": pine.mtf_dots,
                 "strength_score": pine.strength_score,
+                "chaseable": pine.chaseable,
                 "anti_chase_ok": pine.anti_chase_ok,
                 "anti_chase_reasons": pine.anti_chase_reasons,
                 "rejection_reasons": pine.rejection_reasons,

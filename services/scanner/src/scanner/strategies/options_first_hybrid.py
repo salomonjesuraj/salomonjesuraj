@@ -18,7 +18,7 @@ quality candidates can exist in the system without becoming noisy alerts.
 from __future__ import annotations
 
 from scanner.config import ScannerSettings
-from scanner.pine_confidence import compute_pine_decision, practical_option_targets
+from scanner.pine_confidence import compute_pine_decision
 from scanner.state import ScannerSymbolState
 from scanner.strategies.base import BaseStrategy, SignalCandidate
 
@@ -147,13 +147,11 @@ class OptionsFirstHybrid(BaseStrategy):
             entry=entry,
             invalidation=invalidation,
         )
-        target, target2, effective_risk, target_method = practical_option_targets(
-            bullish=bullish,
-            entry=entry,
-            invalidation=invalidation,
-            atr=atr_safe,
-            ltp=ltp,
-        )
+        # pine already computed T1/T2/T3 with these exact same inputs
+        # (compute_pine_decision calls practical_option_targets internally)
+        # — reuse instead of recomputing.
+        target, target2, target3 = pine.t1_price, pine.t2_price, pine.t3_price
+        effective_risk, target_method = pine.risk_per_share, pine.target_method
 
         explanation = [
             f"{option_bias} candidate from options-first hybrid model",
@@ -215,11 +213,13 @@ class OptionsFirstHybrid(BaseStrategy):
             "mtf_text": pine.mtf_text,
             "mtf_source": pine.mtf_source,
             "strength_score": pine.strength_score,
+            "chaseable": pine.chaseable,
             "anti_chase_ok": pine.anti_chase_ok,
             "anti_chase_reasons": pine.anti_chase_reasons,
             "rejection_reasons": pine.rejection_reasons,
             "t1_price": round(pine.t1_price, 2),
             "t2_price": round(target2, 2),
+            "t3_price": round(target3, 2),
             "risk_per_share": round(effective_risk, 2),
             "target_method": target_method,
             "vwap_distance_atr": round(pine.vwap_distance_atr, 2),

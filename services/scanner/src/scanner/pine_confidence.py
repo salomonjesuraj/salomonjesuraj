@@ -89,29 +89,63 @@ def practical_option_targets(
     invalidation: float,
     atr: float,
     ltp: float,
-) -> tuple[float, float, float, str]:
-    """Return practical option-trading targets for the underlying.
+) -> tuple[float, float, float, float, str]:
+    """Return practical option-trading targets for the underlying: (t1, t2,
+    t3, effective_risk, method).
 
     The scanner trades stock options, so tiny theoretical targets are not
     useful. This floors target distance using ATR and a minimum underlying
-    percentage move, while preserving the actual invalidation line.
+    percentage move, while preserving the actual invalidation line. T3 is
+    the "runner" target — matches Pine v6's Target 3 tier (intradayT3R=3.0
+    / swingT3R=4.0), scaled the same way T1/T2 already are here.
     """
     if entry <= 0:
-        return 0.0, 0.0, 0.0, "No valid entry"
+        return 0.0, 0.0, 0.0, 0.0, "No valid entry"
     risk = abs(entry - invalidation)
     atr_floor = max(float(atr or 0.0), entry * 0.0045, 0.50)
     effective_risk = max(risk, atr_floor * 0.75, entry * 0.0035, 0.50)
     t1_dist = max(effective_risk * 1.7, atr_floor * 1.25, entry * 0.0060, 1.00)
     t2_dist = max(effective_risk * 3.0, atr_floor * 2.20, entry * 0.0110, 1.50)
+    t3_dist = max(effective_risk * 4.5, atr_floor * 3.20, entry * 0.0160, 2.00)
     if bullish:
         t1 = entry + t1_dist
         t2 = entry + t2_dist
+        t3 = entry + t3_dist
     else:
         t1 = entry - t1_dist
         t2 = entry - t2_dist
+        t3 = entry - t3_dist
     rr1 = round(t1_dist / effective_risk, 2) if effective_risk > 0 else 0.0
     method = f"Practical option target floor: T1 {t1_dist:.2f}, risk {effective_risk:.2f}, R:R {rr1:.2f}"
-    return t1, t2, effective_risk, method
+    return t1, t2, t3, effective_risk, method
+
+
+ROCKET_ADX_THRESHOLD = 32.0     # Pine's rocketAdxThreshold default
+ROCKET_BODY_PCT = 0.65          # Pine's rocketBodyPct default
+
+
+def compute_chaseable(features: dict, *, bullish: bool) -> bool:
+    """Mirrors Pine v6's "Rocket" chaseable marker: ADX >= 32, Supertrend
+    and VWAP both agree with the trade direction, and the trigger candle's
+    body is a strong >= 65% of its range (not a doji/indecisive bar).
+
+    This is the single "should I actually chase this right now" flag the
+    dashboard/Telegram show instead of a wall of anti-chase prose.
+    """
+    ml = features.get("ml_features") or {}
+    adx = float(ml.get("adx") or 0.0)
+    supertrend_bullish = bool(ml.get("supertrend_bullish", True))
+    body_pct = float(ml.get("candle_body_pct") or 0.0)
+    ltp = float(features.get("ltp") or 0.0)
+    vwap = float(features.get("vwap") or 0.0)
+    above_vwap = ltp > vwap > 0
+    below_vwap = 0 < ltp < vwap
+
+    if adx < ROCKET_ADX_THRESHOLD or body_pct < ROCKET_BODY_PCT:
+        return False
+    if bullish:
+        return supertrend_bullish and above_vwap
+    return (not supertrend_bullish) and below_vwap
 
 
 @dataclass(frozen=True)
@@ -125,11 +159,13 @@ class PineDecision:
     mtf_text: str
     mtf_source: str            # "historical_cache" | "live_proxy"
     strength_score: float      # 0-100, Pine v6 Strength Meter equivalent
+    chaseable: bool            # Pine v6 "Rocket" marker equivalent
     anti_chase_ok: bool
     anti_chase_reasons: list[str]
     rejection_reasons: list[str]
     t1_price: float
     t2_price: float
+    t3_price: float
     risk_per_share: float
     target_method: str
     signal_candle_atr: float
@@ -147,11 +183,13 @@ class PineDecision:
             "mtf_text": self.mtf_text,
             "mtf_source": self.mtf_source,
             "strength_score": self.strength_score,
+            "chaseable": self.chaseable,
             "anti_chase_ok": self.anti_chase_ok,
             "anti_chase_reasons": self.anti_chase_reasons,
             "rejection_reasons": self.rejection_reasons,
             "t1_price": round(self.t1_price, 2),
             "t2_price": round(self.t2_price, 2),
+            "t3_price": round(self.t3_price, 2),
             "risk_per_share": round(self.risk_per_share, 2),
             "target_method": self.target_method,
             "signal_candle_atr": round(self.signal_candle_atr, 2),
@@ -303,7 +341,7 @@ def compute_pine_decision(
         rejection.append("15M and 1H oppose PE")
 
     if bullish:
-        t1, t2, effective_risk, target_method = practical_option_targets(
+        t1, t2, t3, effective_risk, target_method = practical_option_targets(
             bullish=True,
             entry=entry,
             invalidation=invalidation,
@@ -312,7 +350,7 @@ def compute_pine_decision(
         )
         dominant = "CE" if bull >= bear else "PE"
     else:
-        t1, t2, effective_risk, target_method = practical_option_targets(
+        t1, t2, t3, effective_risk, target_method = practical_option_targets(
             bullish=False,
             entry=entry,
             invalidation=invalidation,
@@ -331,11 +369,13 @@ def compute_pine_decision(
         mtf_text=mtf_text,
         mtf_source="historical_cache" if use_cache else "live_proxy",
         strength_score=compute_strength_meter(features, bullish),
+        chaseable=compute_chaseable(features, bullish=bullish),
         anti_chase_ok=not anti_reasons,
         anti_chase_reasons=anti_reasons,
         rejection_reasons=rejection,
         t1_price=t1,
         t2_price=t2,
+        t3_price=t3,
         risk_per_share=effective_risk,
         target_method=target_method,
         signal_candle_atr=signal_candle_atr,

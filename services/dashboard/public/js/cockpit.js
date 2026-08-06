@@ -1,20 +1,18 @@
 /**
  * Signal Cockpit — the ONE thing visible by default.
  *
- * Deliberately minimal: symbol, CE/PE direction, conviction grade, a single
- * one-line reason, and entry/SL/T1/T2 ready to copy into TradingView or the
- * journal. Everything else (screener table, journal, analytics, news,
- * safety, etc.) lives behind the "More" drawer (see workbench-tabs.js /
- * section-controls.js) so this stays scannable at a glance.
- *
- * Reuses /api/signals (same endpoint signals.js already polled) and the
- * existing .signal-card / .sig-* CSS so no new visual language is needed —
- * just a trimmed layout.
+ * Score-first, per direct feedback: the score should be convincing on its
+ * own, not a wall of text. A card shows only: symbol + CE/PE direction,
+ * a big conviction score/grade, a chaseable flag, the MTF colour-dot row,
+ * and entry/SL/T1/T2/T3. No prose reasoning on the card itself — click
+ * through (Stock Detail tab in "More") for the full explanation.
  */
 import { api } from './api.js';
 import { formatPrice, escapeHtml } from './utils.js';
 
 const DASH = '—';
+const MTF_ORDER = ['1M', '5M', '15M', '1H', '4H', '1D'];
+const MTF_CLASS = { G: 'g', R: 'r', Y: 'y' };
 
 function ageStr(createdUs) {
   if (!createdUs) return '';
@@ -23,24 +21,6 @@ function ageStr(createdUs) {
   const ageMin = Math.floor(ageSec / 60);
   if (ageMin < 60) return `${ageMin}m ago`;
   return `${Math.floor(ageMin / 60)}h ago`;
-}
-
-function cleanPhrase(text) {
-  return String(text || '').replace(/\s+/g, ' ').trim();
-}
-
-/** First explanation line, or a deterministic fallback built from the
- * fields we already have — never leave the "why" blank. */
-function oneLineReason(sig) {
-  const explanation = sig.explanation;
-  const items = Array.isArray(explanation)
-    ? explanation
-    : String(explanation || '').split('|');
-  const first = items.map(cleanPhrase).find(Boolean);
-  if (first) return first;
-  const fs = sig.features_snapshot && typeof sig.features_snapshot === 'object' ? sig.features_snapshot : {};
-  const parts = [fs.trend_text, fs.last_event_label, fs.mtf_text].filter(Boolean);
-  return parts.length ? parts.join(' — ') : `${sig.strategy_id || 'Scanner'} signal`;
 }
 
 function gradeClass(grade) {
@@ -92,9 +72,19 @@ export class CockpitPanel {
     });
   }
 
+  _renderMtfRow(fs) {
+    const dots = fs.mtf_dots && typeof fs.mtf_dots === 'object' ? fs.mtf_dots : {};
+    return `<div class="cockpit-mtf-row">${MTF_ORDER.map((tf) => {
+      const state = String(dots[tf] || 'Y');
+      const cls = MTF_CLASS[state] || 'y';
+      return `<div class="cockpit-mtf-dot ${cls}"><span class="dot"></span><span class="tf-label">${tf}</span></div>`;
+    }).join('')}</div>`;
+  }
+
   _renderCard(sig) {
     const score = Math.round(Number(sig.conviction_score || 0));
     const grade = sig.conviction_grade || DASH;
+    const gc = gradeClass(grade);
     const entry = Number(sig.entry_price || 0);
     const stop = Number(sig.invalidation_price || 0);
     const target = Number(sig.target_price || 0);
@@ -104,6 +94,8 @@ export class CockpitPanel {
     const badgeColor = isBull ? 'var(--green)' : 'var(--red)';
     const fs = sig.features_snapshot && typeof sig.features_snapshot === 'object' ? sig.features_snapshot : {};
     const target2 = Number(fs.t2_price || 0);
+    const target3 = Number(fs.t3_price || 0);
+    const chaseable = !!fs.chaseable;
 
     return `
     <div class="signal-card cockpit-card" data-cockpit-sym="${escapeHtml(sig.symbol)}">
@@ -113,12 +105,19 @@ export class CockpitPanel {
         </div>
         <div class="sig-header-right">
           <span class="sig-type-badge" style="background:${badgeBg};color:${badgeColor}">${escapeHtml(label)}</span>
-          <span class="grade-chip ${gradeClass(grade)}">${escapeHtml(grade)} · ${score}</span>
           <span class="sig-age">${ageStr(sig.created_at_us)}</span>
         </div>
       </div>
-      <div class="cockpit-reason">${escapeHtml(oneLineReason(sig))}</div>
-      <div class="sig-price-grid cockpit-price-grid">
+
+      <div class="cockpit-score-row">
+        <span class="cockpit-score ${gc}">${score}</span>
+        <span class="cockpit-grade-label">${escapeHtml(grade)}</span>
+        <span class="cockpit-chase-badge ${chaseable ? 'go' : 'wait'}">${chaseable ? '🚀 Chaseable' : '⏳ Wait'}</span>
+      </div>
+
+      ${this._renderMtfRow(fs)}
+
+      <div class="sig-price-grid cockpit-price-grid t3">
         <div class="sig-price-item">
           <span class="sig-price-label">Entry</span>
           <span class="sig-price-val entry-price">${formatPrice(entry)}</span>
@@ -134,6 +133,10 @@ export class CockpitPanel {
         <div class="sig-price-item">
           <span class="sig-price-label">T2</span>
           <span class="sig-price-val">${target2 > 0 ? formatPrice(target2) : DASH}</span>
+        </div>
+        <div class="sig-price-item">
+          <span class="sig-price-label">T3</span>
+          <span class="sig-price-val">${target3 > 0 ? formatPrice(target3) : DASH}</span>
         </div>
       </div>
     </div>`;
