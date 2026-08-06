@@ -7233,33 +7233,55 @@ body.screener-v4-page{
 }
 
 /* ────────────────────────────────────────────────────────────────────────
-   v7.5.0 — row density tiers. Row height here MUST match the values in
-   scanner.js's DENSITY constant (also fed to VirtualScroll.setRowHeight())
-   -- CSS visual height and the virtualizer's scroll-position math have to
-   agree or rows render at the wrong scroll offset.
+   v7.6.0 — row density tiers now cover the header (.sh) and filter (.sf)
+   rows too, not just body rows (.sc). Header/filter/body all share the same
+   height per tier so column boundaries line up regardless of which density
+   is active -- previously only body rows resized, so the header stayed
+   compact-sized while body rows grew in Comfortable/Spacious, breaking
+   alignment. Body row height here MUST still match scanner.js's DENSITY
+   constant (fed to VirtualScroll.setRowHeight()) -- CSS visual height and
+   the virtualizer's scroll-position math have to agree.
    ──────────────────────────────────────────────────────────────────────── */
 .screener-pro-v4 .scanner-table-zone.density-compact .scanner-row,
-.screener-pro-v4 .scanner-table-zone.density-compact .scanner-row .sc{
+.screener-pro-v4 .scanner-table-zone.density-compact .scanner-row .sc,
+.screener-pro-v4 .scanner-table-zone.density-compact .scanner-head .sh,
+.screener-pro-v4 .scanner-table-zone.density-compact .scanner-filter-head .sf{
   min-height:26px!important;
   font-size:10px!important;
+}
+.screener-pro-v4 .scanner-table-zone.density-compact .scanner-head,
+.screener-pro-v4 .scanner-table-zone.density-compact .scanner-filter-head{
+  height:26px!important;
 }
 .screener-pro-v4 .scanner-table-zone.density-compact .scanner-row .sc{
   padding-top:3px!important;
   padding-bottom:3px!important;
 }
 .screener-pro-v4 .scanner-table-zone.density-comfortable .scanner-row,
-.screener-pro-v4 .scanner-table-zone.density-comfortable .scanner-row .sc{
+.screener-pro-v4 .scanner-table-zone.density-comfortable .scanner-row .sc,
+.screener-pro-v4 .scanner-table-zone.density-comfortable .scanner-head .sh,
+.screener-pro-v4 .scanner-table-zone.density-comfortable .scanner-filter-head .sf{
   min-height:34px!important;
   font-size:11px!important;
+}
+.screener-pro-v4 .scanner-table-zone.density-comfortable .scanner-head,
+.screener-pro-v4 .scanner-table-zone.density-comfortable .scanner-filter-head{
+  height:34px!important;
 }
 .screener-pro-v4 .scanner-table-zone.density-comfortable .scanner-row .sc{
   padding-top:6px!important;
   padding-bottom:6px!important;
 }
 .screener-pro-v4 .scanner-table-zone.density-spacious .scanner-row,
-.screener-pro-v4 .scanner-table-zone.density-spacious .scanner-row .sc{
+.screener-pro-v4 .scanner-table-zone.density-spacious .scanner-row .sc,
+.screener-pro-v4 .scanner-table-zone.density-spacious .scanner-head .sh,
+.screener-pro-v4 .scanner-table-zone.density-spacious .scanner-filter-head .sf{
   min-height:44px!important;
   font-size:12px!important;
+}
+.screener-pro-v4 .scanner-table-zone.density-spacious .scanner-head,
+.screener-pro-v4 .scanner-table-zone.density-spacious .scanner-filter-head{
+  height:44px!important;
 }
 .screener-pro-v4 .scanner-table-zone.density-spacious .scanner-row .sc{
   padding-top:10px!important;

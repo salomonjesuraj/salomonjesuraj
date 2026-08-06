@@ -893,6 +893,25 @@ export class ScannerPanel {
       if (!btn) return;
       this._setDensity(btn.dataset.density);
     });
+
+    // Header/body columns were drifting out of alignment: #scannerViewport
+    // has a vertical scrollbar (208 rows), #scannerHeadScroll deliberately
+    // doesn't (overflow-y:hidden) -- so the header's content area was
+    // consistently wider than the body's by exactly the scrollbar's width.
+    // With fixed-width columns that only showed up as slop at the far-right
+    // edge; with fluid columns it spreads across every column. See
+    // _syncHeaderScrollbarGutter() -- called here and after every data/
+    // density change, since the scrollbar only exists once rows actually
+    // overflow the viewport (measuring once at init reads 0, before any
+    // data has loaded, and would never update).
+    this._headScrollEl = headScroll;
+    this._viewportEl = viewport;
+    this._syncHeaderScrollbarGutter();
+    if (window.ResizeObserver) {
+      this._viewportResizeObserver = new ResizeObserver(() => this._syncHeaderScrollbarGutter());
+      this._viewportResizeObserver.observe(viewport);
+    }
+
     this._syncingScroll = false;
     viewport.addEventListener('scroll', () => {
       if (this._syncingScroll) return;
@@ -1205,6 +1224,18 @@ export class ScannerPanel {
       btn.classList.toggle('active', btn.dataset.density === key);
     });
     if (this._vs) this._vs.setRowHeight(DENSITY[key].rowHeight);
+    // Taller rows at the same row count can flip the viewport from "no
+    // scrollbar" to "has one" (or vice versa) -- recheck the header gutter.
+    requestAnimationFrame(() => this._syncHeaderScrollbarGutter());
+  }
+
+  // See the long comment where this is first wired up (init()). Re-run
+  // whenever row count or row height could have changed the vertical
+  // scrollbar's presence on #scannerViewport.
+  _syncHeaderScrollbarGutter() {
+    if (!this._headScrollEl || !this._viewportEl) return;
+    const gutter = this._viewportEl.offsetWidth - this._viewportEl.clientWidth;
+    this._headScrollEl.style.paddingRight = gutter > 0 ? `${gutter}px` : '0px';
   }
 
   // Single place that performs "select this symbol" -- reused by row
@@ -1467,6 +1498,9 @@ export class ScannerPanel {
         : `Top ${items.length} of ${this._foTotalCount || fullMatchCount} F&O`;
     }
     if (this._vs) this._vs.setData(items);
+    // Row count just changed -- the viewport's scrollbar may have appeared
+    // or disappeared. Let VirtualScroll's DOM update land first.
+    requestAnimationFrame(() => this._syncHeaderScrollbarGutter());
     if (this._forceScrollTop) {
       const viewport = this._el.querySelector('#scannerViewport');
       if (viewport) viewport.scrollTop = 0;
@@ -2318,6 +2352,7 @@ export class ScannerPanel {
   destroy() {
     this._unsubs.forEach(fn => fn());
     if (this._vs) this._vs.destroy();
+    if (this._viewportResizeObserver) this._viewportResizeObserver.disconnect();
     this._flashTimers.forEach(t => clearTimeout(t));
   }
 }
