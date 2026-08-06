@@ -53,6 +53,7 @@ from infusion_streams.constants import (
     KEY_SIGNAL_ACTIVE,
 )
 from infusion_common.timing import now_us
+from infusion_common.sizing import compute_position_size
 
 logger = structlog.get_logger()
 
@@ -74,6 +75,7 @@ class ScannerEngine:
         redis: Redis,
         settings: ScannerSettings,
         symbol_sectors: dict[str, str],
+        symbol_lot_sizes: dict[str, int] | None = None,
     ):
         self.redis = redis
         self.settings = settings
@@ -82,6 +84,7 @@ class ScannerEngine:
         self.pre_breakout = PreBreakoutTracker(redis, settings)
         self.sector = SectorEngine(redis, settings, symbol_sectors)
         self._symbol_sectors = symbol_sectors
+        self._symbol_lot_sizes = symbol_lot_sizes or {}
         self._signals_emitted = 0
         self._signals_suppressed = 0
         self._evaluations = 0
@@ -119,6 +122,15 @@ class ScannerEngine:
         # Update pre-breakout state machine (event-driven, every tick)
         await self.pre_breakout.update(symbol, payload, state)
 
+        # Attach the real historical-MTF cache (api/routes/mtf.py's
+        # compute_mtf(), kept warm by mtf_queue.py) so pine_confidence.py can
+        # prefer it over its synthetic live-feature proxy. Strategies stay
+        # pure functions — this is the one place the engine does I/O before
+        # invoking them, same pattern as the cooldown/sector lookups below.
+        mtf_cache = await self._fetch_mtf_cache(symbol)
+        if mtf_cache is not None:
+            payload = {**payload, "mtf_cache": mtf_cache}
+
         # Run all registered strategies
         strategies = get_strategies()
         for strategy in strategies:
@@ -129,6 +141,45 @@ class ScannerEngine:
 
         # Update state AFTER evaluation (so prev_* reflects pre-evaluation)
         state.update_from_features(payload)
+
+    async def _recommended_lots(self, symbol: str, entry_price: float, invalidation_price: float) -> dict:
+        """Signal-time position-size estimate using underlying entry/stop —
+        matches simple_structure_pivot_ma_plan_v6.pine's Position Sizing
+        (1% Rule). This is an early estimate for the dashboard/alert to show
+        immediately; api/routes/execution.py recomputes the authoritative
+        number once real option premium/delta are available at staging.
+        """
+        per_unit_risk = abs(entry_price - invalidation_price)
+        lot_size = self._symbol_lot_sizes.get(symbol, 1)
+        try:
+            raw = await self.redis.get("infusion:risk:settings")
+            settings = json.loads(raw.decode() if isinstance(raw, bytes) else raw) if raw else {}
+        except Exception:
+            settings = {}
+        risk_amount = float(settings.get("risk_per_trade_amount") or 0.0)
+        if risk_amount <= 0:
+            capital = float(settings.get("capital") or 50000.0)
+            risk_pct = float(settings.get("risk_per_trade_pct") or 1.0)
+            risk_amount = capital * risk_pct / 100.0
+        max_lots = int(settings.get("max_lots") or 5)
+        sizing = compute_position_size(risk_amount, per_unit_risk, lot_size, max_lots=max_lots)
+        return {**sizing, "lot_size": lot_size, "risk_amount": round(risk_amount, 2)}
+
+    async def _fetch_mtf_cache(self, symbol: str) -> dict | None:
+        """Best-effort read of the cached historical-MTF payload.
+
+        Never raises into the hot path: any Redis/decode failure just means
+        pine_confidence.py falls back to its synthetic proxy, same as if the
+        cache entry didn't exist yet.
+        """
+        try:
+            raw = await self.redis.get(f"infusion:mtf:{symbol.upper()}")
+            if not raw:
+                return None
+            text = raw.decode() if isinstance(raw, bytes) else raw
+            return json.loads(text)
+        except Exception:
+            return None
 
     async def _persist_diagnostics(self, symbol, strategy_id, features, state, candidate):
         """Persist explainable gates for zero-signal investigation."""
@@ -184,6 +235,11 @@ class ScannerEngine:
             candidate.entry_price,
             candidate.invalidation_price,
             candidate.target_price,
+        )
+
+        # ── Position sizing (early estimate) ───────────
+        sub_scores["position_sizing"] = await self._recommended_lots(
+            candidate.symbol, candidate.entry_price, candidate.invalidation_price
         )
 
         created_us = now_us()

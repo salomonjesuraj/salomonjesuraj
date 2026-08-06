@@ -69,6 +69,20 @@ async def _snapshot(request: web.Request, symbol: str) -> dict:
         or await redis.exists(f"infusion:options:{symbol}")
     )
 
+    # Structure/strength story from feature_engine + scanner (Pine v6
+    # alignment). Prefer the signal's frozen features_snapshot when a signal
+    # exists; fall back to the live raw feature vector's ml_features dict
+    # otherwise, so this section still has something for "explain this
+    # stock" queries with no fired signal yet.
+    signal_fs = signal.get("features_snapshot")
+    signal_fs = signal_fs if isinstance(signal_fs, dict) else {}
+    ml = features.get("ml_features")
+    ml = ml if isinstance(ml, dict) else {}
+    sub_scores = signal.get("sub_scores")
+    sub_scores = sub_scores if isinstance(sub_scores, dict) else {}
+    sizing = sub_scores.get("position_sizing")
+    sizing = sizing if isinstance(sizing, dict) else {}
+
     return {
         "symbol": symbol,
         "scanner": {
@@ -103,6 +117,17 @@ async def _snapshot(request: web.Request, symbol: str) -> dict:
             "readiness_score": prebreak.get("readiness_score", 0),
             "sector_strength": sector.get("strength_score", 0),
             "sector_trend": sector.get("trend", ""),
+        },
+        "structure": {
+            "trend_text": signal_fs.get("trend_text") or ml.get("trend_text", ""),
+            "last_event_label": signal_fs.get("last_event_label") or ml.get("last_event_label", ""),
+            "supply_zone_top": signal_fs.get("supply_zone_top", ml.get("supply_zone_top")),
+            "demand_zone_bottom": signal_fs.get("demand_zone_bottom", ml.get("demand_zone_bottom")),
+            "strength_score": signal_fs.get("strength_score"),
+            "mtf_text": signal_fs.get("mtf_text", ""),
+            "mtf_source": signal_fs.get("mtf_source", ""),
+            "recommended_lots": sizing.get("lot_count"),
+            "recommended_quantity": sizing.get("quantity"),
         },
         "option_execution": {
             "chain_ready": option_chain_ready,

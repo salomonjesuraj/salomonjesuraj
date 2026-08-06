@@ -58,6 +58,28 @@ async def load_symbol_sectors(redis: aioredis.Redis) -> dict[str, str]:
     return symbol_sectors
 
 
+async def load_symbol_lot_sizes(redis: aioredis.Redis) -> dict[str, int]:
+    """Load symbol→lot_size mapping from infusion:symbols hash, for the
+    signal-time position-sizing estimate (see scanner/engine.py
+    _recommended_lots). Same hash/scan as load_symbol_sectors, kept as a
+    separate pass so a sector-map-only caller isn't forced to pay for it."""
+    symbol_lot_sizes: dict[str, int] = {}
+    raw = await redis.hgetall(KEY_SYMBOLS)
+    for _instrument_key, meta_raw in raw.items():
+        try:
+            if isinstance(meta_raw, bytes):
+                meta = msgpack.unpackb(meta_raw, raw=False)
+            else:
+                meta = meta_raw
+            symbol = meta.get("symbol", "")
+            lot_size = int(meta.get("lot_size") or 1)
+            if symbol and lot_size > 0:
+                symbol_lot_sizes[symbol] = lot_size
+        except Exception:
+            continue
+    return symbol_lot_sizes
+
+
 async def run() -> None:
     settings = ScannerSettings()
     setup_logging(settings.service_name, settings.log_level, settings.log_format)
@@ -73,6 +95,10 @@ async def run() -> None:
     symbol_sectors = await load_symbol_sectors(r)
     logger.info("symbols_loaded", count=len(symbol_sectors), sectors=list(set(symbol_sectors.values())))
 
+    # Load symbol→lot_size mapping (for signal-time position-size estimate)
+    symbol_lot_sizes = await load_symbol_lot_sizes(r)
+    logger.info("symbol_lot_sizes_loaded", count=len(symbol_lot_sizes))
+
     # Register strategies
     register_strategy(VolVwapBreakout(settings))
     register_strategy(OptionsFirstHybrid(settings))
@@ -83,7 +109,7 @@ async def run() -> None:
     )
 
     # Create scanner engine
-    engine = ScannerEngine(r, settings, symbol_sectors)
+    engine = ScannerEngine(r, settings, symbol_sectors, symbol_lot_sizes)
     await engine.sector.startup()
 
     # Create consumer

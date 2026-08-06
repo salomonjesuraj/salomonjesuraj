@@ -79,6 +79,25 @@ class SymbolState:
     # CCI
     cci_typical_prices: deque = field(default_factory=lambda: deque(maxlen=20))
 
+    # ADX / DI+ / DI- (Wilder smoothing, matches Pine's ta.dmi)
+    adx_prev_high: float = 0.0
+    adx_prev_low: float = 0.0
+    adx_prev_close: float = 0.0
+    adx_tr_smooth: float = 0.0
+    adx_plus_dm_smooth: float = 0.0
+    adx_minus_dm_smooth: float = 0.0
+    adx_dx_values: list = field(default_factory=list)
+    adx_value: float = 0.0
+    adx_warmup_count: int = 0
+    adx_initialized: bool = False
+
+    # Supertrend (ATR-band flip, matches Pine's ta.supertrend)
+    st_final_upper: float = 0.0
+    st_final_lower: float = 0.0
+    st_bullish: bool = True
+    st_prev_close: float = 0.0
+    st_initialized: bool = False
+
     # OBV
     obv: float = 0.0
     obv_prev_close: float = 0.0
@@ -98,6 +117,30 @@ class SymbolState:
     recent_1m_bars: deque = field(default_factory=lambda: deque(maxlen=20))
     completed_1m_bars: int = 0
     last_completed_1m_ms: int = 0
+
+    # Market structure — fractal swing pivots + trend state + BOS/CHOCH.
+    # Mirrors simple_structure_pivot_ma_plan_v6.pine's persistent `var` swing
+    # tracking (see feature_engine/features/structure.py). None until a pivot
+    # has been confirmed at least once.
+    swing_high_1: float | None = None
+    swing_high_2: float | None = None
+    swing_low_1: float | None = None
+    swing_low_2: float | None = None
+    trend_state: int = 0                 # 1 = uptrend, -1 = downtrend, 0 = range
+    last_event_label: str = "None"       # "Bullish BOS" / "Bullish CHOCH" / etc.
+    last_break_high: float | None = None  # swing_high_1 value that last triggered a break (dedup)
+    last_break_low: float | None = None
+    structure_event: bool = False        # True only on the bar a break just fired
+
+    # Candlestick pattern sizing baseline (EMA of body size, matches Pine v6's
+    # bodyAvgEma — used by Marubozu / Three Soldiers-Crows thresholds).
+    body_size_ema: float = 0.0
+    body_size_ema_initialized: bool = False
+
+    # Supply / demand zones (imbalance-candle methodology, see features/zones.py).
+    # Each zone is (top, bottom, formed_at_ms) or None when no zone is active.
+    supply_zone: tuple[float, float, int] | None = None
+    demand_zone: tuple[float, float, int] | None = None
 
     # Timing
     last_tick_exchange_ms: int = 0

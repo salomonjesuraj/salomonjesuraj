@@ -13,7 +13,10 @@ dashboard rows, and Telegram alerts all speak the same language.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
+
+MTF_CACHE_STALE_SEC = 900  # beyond this, prefer the synthetic live proxy
 
 
 def clamp(value: float, lo: float = 0.0, hi: float = 100.0) -> float:
@@ -25,6 +28,46 @@ def _f(features: dict, key: str, default: float = 0.0) -> float:
         return float(features.get(key) or default)
     except (TypeError, ValueError):
         return default
+
+
+def compute_strength_meter(features: dict, bullish: bool) -> float:
+    """0-100 continuous conviction read, matching
+    simple_structure_pivot_ma_plan_v6.pine's Strength Meter exactly:
+    ADX level (40) + EMA-stack-spread-vs-ATR (25) + Supertrend/VWAP
+    agreement (25) + candle body ratio (10).
+
+    Reads the ADX/Supertrend/candle-body values feature_engine now computes
+    (services/feature-engine/src/feature_engine/features/{momentum,volatility,
+    candles}.py) via the FeatureVectorV1.ml_features free-form dict.
+    """
+    ml = features.get("ml_features") or {}
+    ltp = _f(features, "ltp")
+    ema5 = _f(features, "ema_5")
+    ema20 = _f(features, "ema_20")
+    atr = _f(features, "atr_14")
+    vwap = _f(features, "vwap")
+    adx = _f(ml, "adx")
+    supertrend_bullish = bool(ml.get("supertrend_bullish", True))
+    body_ratio = _f(ml, "candle_body_pct")
+
+    atr_safe = atr if atr > 0 else max(ltp * 0.004, 0.05)
+
+    adx_part = clamp(adx, 0.0, 50.0) / 50.0 * 40.0
+
+    ema_spread = abs(ema5 - ema20) / (atr_safe * 2.0) if atr_safe > 0 else 0.0
+    ema_part = clamp(ema_spread, 0.0, 1.0) * 25.0
+
+    above_vwap = ltp > vwap > 0
+    below_vwap = 0 < ltp < vwap
+    st_vwap_agree = (
+        (supertrend_bullish and above_vwap) if bullish
+        else (not supertrend_bullish and below_vwap)
+    )
+    st_vwap_part = 25.0 if st_vwap_agree else 12.0
+
+    body_part = clamp(body_ratio, 0.0, 1.0) * 10.0
+
+    return round(clamp(adx_part + ema_part + st_vwap_part + body_part), 1)
 
 
 def _state_from_score(score: float) -> str:
@@ -80,6 +123,8 @@ class PineDecision:
     mtf: dict[str, str]
     mtf_dots: dict[str, str]
     mtf_text: str
+    mtf_source: str            # "historical_cache" | "live_proxy"
+    strength_score: float      # 0-100, Pine v6 Strength Meter equivalent
     anti_chase_ok: bool
     anti_chase_reasons: list[str]
     rejection_reasons: list[str]
@@ -100,6 +145,8 @@ class PineDecision:
             "mtf": self.mtf,
             "mtf_dots": self.mtf_dots,
             "mtf_text": self.mtf_text,
+            "mtf_source": self.mtf_source,
+            "strength_score": self.strength_score,
             "anti_chase_ok": self.anti_chase_ok,
             "anti_chase_reasons": self.anti_chase_reasons,
             "rejection_reasons": self.rejection_reasons,
@@ -188,33 +235,48 @@ def compute_pine_decision(
     bear += 3.0 if bear_pattern else 0.0
     bear += 5.0 if spread <= 35 else 2.0 if spread <= 70 else 0.0
 
-    # Pine-style MTF dots. True higher timeframe candles will replace these
-    # approximations when a dedicated MTF feature worker is added. We separate
-    # fast momentum from slower trend so the display still catches conflict.
-    mtf_scores = {
-        "1M": 50 + (12 if above_vwap else -12 if below_vwap else 0) + (12 if macd_bull else -12 if macd_bear else 0) + (rsi - 50) * 0.7,
-        "5M": 50 + (16 if ema_bull else -16 if ema_bear else 0) + (10 if macd_bull else -10 if macd_bear else 0),
-        "15M": 50 + (18 if ema_stack_bull else -18 if ema_stack_bear else 0) + (8 if atr_bull else -8 if atr_bear else 0),
-        "1H": 50 + (18 if ltp > ema50 > 0 else -18 if ltp < ema50 and ema50 > 0 else 0) + (8 if change_pct > 0 else -8 if change_pct < 0 else 0),
-        "4H": 50 + (15 if ltp > ema50 > 0 and ema20 > ema50 > 0 else -15 if ltp < ema50 and ema20 < ema50 and ema50 > 0 else 0),
-        "1D": 50 + (14 if change_pct > 0 else -14 if change_pct < 0 else 0) + (8 if above_vwap else -8 if below_vwap else 0),
-    }
-    mtf = {tf: _state_from_score(score) for tf, score in mtf_scores.items()}
-    dots = {tf: _dot(state) for tf, state in mtf.items()}
-    bull_count = sum(1 for x in mtf.values() if x == "BULL")
-    bear_count = sum(1 for x in mtf.values() if x == "BEAR")
-    if bull_count >= 5:
-        mtf_text = "Strong CE alignment"
-    elif bear_count >= 5:
-        mtf_text = "Strong PE alignment"
-    elif bull_count >= 4:
-        mtf_text = "CE focus; wait for clean trigger"
-    elif bear_count >= 4:
-        mtf_text = "PE focus; wait for clean trigger"
-    elif mtf["1M"] == mtf["5M"] and mtf["15M"] != mtf["1H"]:
-        mtf_text = "Fast scalp only; higher timeframe conflict"
+    # MTF alignment. Prefer the real historical-candle engine
+    # (api/routes/mtf.py:compute_mtf(), cached at infusion:mtf:{symbol} and
+    # kept warm by mtf_queue.py) when the scanner engine has fetched it fresh
+    # for this tick — see scanner/engine.py's _fetch_mtf_cache(). Falls back
+    # to the synthetic live-feature proxy below when no cache entry exists
+    # yet for this symbol (e.g. it hasn't reached the priority refresh queue)
+    # or the cached entry is stale.
+    mtf_cache = features.get("mtf_cache")
+    cache_age = time.time() - float(mtf_cache.get("updated_at") or 0) if mtf_cache else None
+    use_cache = bool(mtf_cache and mtf_cache.get("dots") and cache_age is not None and cache_age < MTF_CACHE_STALE_SEC)
+
+    if use_cache:
+        mtf = dict(mtf_cache.get("mtf") or {})
+        dots = dict(mtf_cache.get("dots") or {})
+        mtf_text = str(mtf_cache.get("mtf_text") or mtf_cache.get("alignment") or "Mixed alignment")
     else:
-        mtf_text = "Mixed alignment; wait for better location"
+        # Synthetic proxy from live tick-derived features. We separate fast
+        # momentum from slower trend so the display still catches conflict.
+        mtf_scores = {
+            "1M": 50 + (12 if above_vwap else -12 if below_vwap else 0) + (12 if macd_bull else -12 if macd_bear else 0) + (rsi - 50) * 0.7,
+            "5M": 50 + (16 if ema_bull else -16 if ema_bear else 0) + (10 if macd_bull else -10 if macd_bear else 0),
+            "15M": 50 + (18 if ema_stack_bull else -18 if ema_stack_bear else 0) + (8 if atr_bull else -8 if atr_bear else 0),
+            "1H": 50 + (18 if ltp > ema50 > 0 else -18 if ltp < ema50 and ema50 > 0 else 0) + (8 if change_pct > 0 else -8 if change_pct < 0 else 0),
+            "4H": 50 + (15 if ltp > ema50 > 0 and ema20 > ema50 > 0 else -15 if ltp < ema50 and ema20 < ema50 and ema50 > 0 else 0),
+            "1D": 50 + (14 if change_pct > 0 else -14 if change_pct < 0 else 0) + (8 if above_vwap else -8 if below_vwap else 0),
+        }
+        mtf = {tf: _state_from_score(score) for tf, score in mtf_scores.items()}
+        dots = {tf: _dot(state) for tf, state in mtf.items()}
+        bull_count = sum(1 for x in mtf.values() if x == "BULL")
+        bear_count = sum(1 for x in mtf.values() if x == "BEAR")
+        if bull_count >= 5:
+            mtf_text = "Strong CE alignment"
+        elif bear_count >= 5:
+            mtf_text = "Strong PE alignment"
+        elif bull_count >= 4:
+            mtf_text = "CE focus; wait for clean trigger"
+        elif bear_count >= 4:
+            mtf_text = "PE focus; wait for clean trigger"
+        elif mtf.get("1M") == mtf.get("5M") and mtf.get("15M") != mtf.get("1H"):
+            mtf_text = "Fast scalp only; higher timeframe conflict"
+        else:
+            mtf_text = "Mixed alignment; wait for better location"
 
     anti_reasons: list[str] = []
     if vwap_distance_atr > 1.5:
@@ -235,9 +297,9 @@ def compute_pine_decision(
         rejection.append(f"Confidence below 60 ({selected_conf:.0f})")
     if abs(selected_conf - opposite_conf) < 8:
         rejection.append("CE/PE evidence too close")
-    if bullish and mtf["15M"] == "BEAR" and mtf["1H"] == "BEAR":
+    if bullish and mtf.get("15M") == "BEAR" and mtf.get("1H") == "BEAR":
         rejection.append("15M and 1H oppose CE")
-    if not bullish and mtf["15M"] == "BULL" and mtf["1H"] == "BULL":
+    if not bullish and mtf.get("15M") == "BULL" and mtf.get("1H") == "BULL":
         rejection.append("15M and 1H oppose PE")
 
     if bullish:
@@ -267,6 +329,8 @@ def compute_pine_decision(
         mtf=mtf,
         mtf_dots=dots,
         mtf_text=mtf_text,
+        mtf_source="historical_cache" if use_cache else "live_proxy",
+        strength_score=compute_strength_meter(features, bullish),
         anti_chase_ok=not anti_reasons,
         anti_chase_reasons=anti_reasons,
         rejection_reasons=rejection,

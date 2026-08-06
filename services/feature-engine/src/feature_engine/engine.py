@@ -13,10 +13,16 @@ from feature_engine.features.price import (
 from feature_engine.features.momentum import (
     update_rsi, get_rsi, update_macd, get_macd,
     update_stochastic, get_stochastic, update_cci, get_cci,
+    update_adx, get_adx,
 )
-from feature_engine.features.volatility import update_atr, update_bollinger, get_bollinger
+from feature_engine.features.volatility import (
+    update_atr, update_bollinger, get_bollinger, update_supertrend, get_supertrend,
+)
 from feature_engine.features.volume import update_obv, get_relative_volume, get_volume_sma
 from feature_engine.features.microstructure import get_spread_bps, get_order_imbalance
+from feature_engine.features.structure import update_structure, structure_snapshot
+from feature_engine.features.candles import update_body_ema, detect_candle_pattern, body_pct
+from feature_engine.features.zones import update_zones, zone_snapshot
 from infusion_models.feature import FeatureVectorV1
 from infusion_common.timing import now_us
 
@@ -55,37 +61,6 @@ def _detect_nr_pattern(bars) -> str:
         return "NR7"
     if latest <= min(ranges[-4:]):
         return "NR4"
-    return ""
-
-
-def _detect_candle_pattern(bars) -> str:
-    """Small, dependency-free subset of high-value candle labels."""
-    items = list(bars)
-    if not items:
-        return ""
-    cur = items[-1]
-    o, h, l, c = (float(cur.get(k, 0.0)) for k in ("o", "h", "l", "c"))
-    rng = max(h - l, 0.0)
-    if rng <= 0:
-        return ""
-    body = abs(c - o)
-    upper = h - max(o, c)
-    lower = min(o, c) - l
-    if len(items) >= 2:
-        prev = items[-2]
-        po, pc, ph, pl = (float(prev.get(k, 0.0)) for k in ("o", "c", "h", "l"))
-        if h <= ph and l >= pl:
-            return "Inside Bar"
-        if pc < po and c > o and c >= po and o <= pc:
-            return "Bullish Engulfing"
-        if pc > po and c < o and c <= po and o >= pc:
-            return "Bearish Engulfing"
-    if body <= rng * 0.12:
-        return "Doji"
-    if lower >= body * 2.0 and upper <= body * 0.8 and c >= o:
-        return "Hammer"
-    if upper >= body * 2.0 and lower <= body * 0.8 and c <= o:
-        return "Shooting Star"
     return ""
 
 
@@ -312,21 +287,40 @@ class FeatureEngine:
             update_stochastic(state, completed_1m.high, completed_1m.low, close_1m)
             update_cci(state, completed_1m.high, completed_1m.low, close_1m, self.config.cci_period)
             update_obv(state, close_1m, completed_1m.volume)
+            update_adx(state, completed_1m.high, completed_1m.low, close_1m)
+            update_supertrend(state, completed_1m.high, completed_1m.low, close_1m, state.atr)
+            update_body_ema(state, completed_1m.open, close_1m)
             state.volume_history.append(completed_1m.volume)
             state.recent_1m_bars.append(_bar_dict(completed_1m))
             state.completed_1m_bars += 1
             state.last_completed_1m_ms = completed_1m.bar_start_ms
+            # Structure (swing pivots / BOS-CHOCH) and zones both need the bar
+            # just appended above, so they run after recent_1m_bars.append().
+            update_structure(state)
+            update_zones(state, completed_1m.bar_start_ms)
 
         # Collect computed features
         macd_line, macd_sig, macd_hist = get_macd(state)
         bb_upper, bb_lower, bb_width = get_bollinger(state)
         stoch_k, stoch_d = get_stochastic(state)
+        di_plus, di_minus, adx = get_adx(state)
+        supertrend_level, supertrend_bullish = get_supertrend(state)
         atr_trail_stop, atr_trend = _atr_trail(
             ltp=ltp,
             atr=state.atr,
             ema20=state.ema.get(20, ltp),
             macd_hist=macd_hist,
         )
+        ml_features = {
+            **structure_snapshot(state),
+            **zone_snapshot(state),
+            "di_plus": di_plus,
+            "di_minus": di_minus,
+            "adx": adx,
+            "supertrend_level": supertrend_level,
+            "supertrend_bullish": supertrend_bullish,
+            "candle_body_pct": body_pct(state.recent_1m_bars),
+        }
 
         return FeatureVectorV1(
             symbol=state.symbol,
@@ -350,7 +344,7 @@ class FeatureEngine:
             bb_width=bb_width,
             squeeze_state=_squeeze_state(bb_width),
             nr_pattern=_detect_nr_pattern(state.recent_1m_bars),
-            candle_pattern=_detect_candle_pattern(state.recent_1m_bars),
+            candle_pattern=detect_candle_pattern(state.recent_1m_bars, state.body_size_ema),
             rsi_14=get_rsi(state),
             macd=macd_line,
             macd_signal=macd_sig,
@@ -367,6 +361,7 @@ class FeatureEngine:
             completed_1m_bars=state.completed_1m_bars,
             spread_bps=get_spread_bps(state),
             order_imbalance=get_order_imbalance(state),
+            ml_features=ml_features,
         ), completed
 
     @property

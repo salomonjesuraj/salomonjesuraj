@@ -183,6 +183,7 @@ class OptionsFirstHybrid(BaseStrategy):
         else:
             explanation.extend([f"Anti-chase: {reason}" for reason in pine.anti_chase_reasons[:2]])
 
+        ml = features.get("ml_features") or {}
         snapshot = {
             "ltp": ltp,
             "vwap": vwap,
@@ -212,6 +213,8 @@ class OptionsFirstHybrid(BaseStrategy):
             "bull_confidence": round(pine.bull_confidence, 1),
             "bear_confidence": round(pine.bear_confidence, 1),
             "mtf_text": pine.mtf_text,
+            "mtf_source": pine.mtf_source,
+            "strength_score": pine.strength_score,
             "anti_chase_ok": pine.anti_chase_ok,
             "anti_chase_reasons": pine.anti_chase_reasons,
             "rejection_reasons": pine.rejection_reasons,
@@ -226,6 +229,16 @@ class OptionsFirstHybrid(BaseStrategy):
             "mtf_dots": pine.mtf_dots,
             "core_gates_passed": core_count,
             "strategy_family": "options_first",
+            # Structure/zone story from feature_engine (Pine v6 alignment) —
+            # same vocabulary the TradingView chart shows, so alerter and AI
+            # advisor can say the same thing the chart says.
+            "trend_state": ml.get("trend_state"),
+            "trend_text": ml.get("trend_text"),
+            "last_event_label": ml.get("last_event_label"),
+            "supply_zone_top": ml.get("supply_zone_top"),
+            "supply_zone_bottom": ml.get("supply_zone_bottom"),
+            "demand_zone_top": ml.get("demand_zone_top"),
+            "demand_zone_bottom": ml.get("demand_zone_bottom"),
         }
 
         return SignalCandidate(

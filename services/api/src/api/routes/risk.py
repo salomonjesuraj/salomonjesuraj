@@ -13,6 +13,8 @@ from zoneinfo import ZoneInfo
 
 from aiohttp import web
 
+from infusion_common.sizing import compute_position_size  # noqa: F401 (re-exported)
+
 routes = web.RouteTableDef()
 
 RISK_KEY = "infusion:risk:settings"
@@ -27,6 +29,7 @@ DEFAULT_RISK = {
     "green_day_max_trades": 5,
     "loss_day_max_trades": 2,
     "loss_streak_lock": 2,
+    "max_lots": 5,
     "preferred_expiry": "monthly_stock_options",
     "option_style": "BUY_ONLY_CE_PE",
     "auto_orders_enabled": False,
@@ -85,6 +88,7 @@ def _normalise(raw: dict | None) -> dict:
         "green_day_max_trades": _int(data.get("green_day_max_trades"), 5, 1, 20),
         "loss_day_max_trades": _int(data.get("loss_day_max_trades"), 2, 1, 5),
         "loss_streak_lock": _int(data.get("loss_streak_lock"), 2, 1, 5),
+        "max_lots": _int(data.get("max_lots"), DEFAULT_RISK["max_lots"], 1, 50),
         "auto_orders_enabled": False,
         "execution_mode": "paper_first",
         "trading_signal_mode": (

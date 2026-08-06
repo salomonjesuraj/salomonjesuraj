@@ -237,6 +237,63 @@ def _indicators(bars: list[dict], include_vwap: bool) -> IndicatorPack | None:
     )
 
 
+def _fractal_pivots(bars: list[dict], left: int = 2, right: int = 2) -> tuple[list[float], list[float]]:
+    """Confirmed swing pivot highs/lows over a bar series — the same
+    left/right=2 fractal rule as
+    simple_structure_pivot_ma_plan_v6.pine's ta.pivothigh/pivotlow and
+    feature_engine/features/structure.py's live incremental version. This
+    variant scans a full historical array at once (batch, not incremental).
+    """
+    highs: list[float] = []
+    lows: list[float] = []
+    window = left + right + 1
+    if len(bars) < window:
+        return highs, lows
+    for i in range(left, len(bars) - right):
+        segment = bars[i - left: i + right + 1]
+        cand_high = bars[i]["high"]
+        cand_low = bars[i]["low"]
+        seg_highs = [b["high"] for b in segment]
+        seg_lows = [b["low"] for b in segment]
+        if cand_high == max(seg_highs) and seg_highs.count(cand_high) == 1:
+            highs.append(cand_high)
+        if cand_low == min(seg_lows) and seg_lows.count(cand_low) == 1:
+            lows.append(cand_low)
+    return highs, lows
+
+
+def _major_blocker(blocker_bars: dict[str, list[dict]], ltp: float) -> dict:
+    """Nearest opposing swing pivot on the higher timeframes, between price
+    and either direction's target — matches Pine's "Major Blocker" concept.
+
+    Since this endpoint is computed per-symbol (not per-signal), it reports
+    the nearest pivot HIGH above price (a blocker for a bullish/CE target)
+    and nearest pivot LOW below price (a blocker for a bearish/PE target)
+    across the configured timeframes; the caller picks whichever matches its
+    trade direction.
+    """
+    best_up: tuple[float, str] | None = None
+    best_down: tuple[float, str] | None = None
+    for tf, bars in blocker_bars.items():
+        highs, lows = _fractal_pivots(bars)
+        candidates_up = [h for h in highs if h > ltp]
+        candidates_down = [l for l in lows if l < ltp]
+        if candidates_up:
+            level = min(candidates_up)  # nearest above price
+            if best_up is None or level < best_up[0]:
+                best_up = (level, tf)
+        if candidates_down:
+            level = max(candidates_down)  # nearest below price
+            if best_down is None or level > best_down[0]:
+                best_down = (level, tf)
+    return {
+        "blocker_up_level": round(best_up[0], 2) if best_up else None,
+        "blocker_up_source": best_up[1] if best_up else None,
+        "blocker_down_level": round(best_down[0], 2) if best_down else None,
+        "blocker_down_source": best_down[1] if best_down else None,
+    }
+
+
 def _state_from_score(score: float) -> str:
     if score >= 58:
         return "BULL"
@@ -388,13 +445,17 @@ async def compute_mtf(redis, symbol: str, store: bool = True) -> dict:
     intraday, daily = await _load_bars(redis, symbol)
     timeframes: dict[str, dict] = {}
     all_warnings: list[str] = []
+    blocker_bars: dict[str, list[dict]] = {}
 
     for tf, (kind, minutes) in TIMEFRAMES.items():
         bars = _aggregate(intraday, minutes) if kind == "intraday" else daily
         # Keep last 260 bars to prevent bloated JSON while preserving indicator context.
-        scored = _score_timeframe(tf, bars[-260:], include_vwap=(kind == "intraday"))
+        recent_bars = bars[-260:]
+        scored = _score_timeframe(tf, recent_bars, include_vwap=(kind == "intraday"))
         timeframes[tf] = scored
         all_warnings.extend([f"{tf}: {w}" for w in scored.get("warnings", [])])
+        if tf in ("1H", "1D"):
+            blocker_bars[tf] = recent_bars
 
     dots = {tf: row["dot"] for tf, row in timeframes.items()}
     states = {tf: row["state"] for tf, row in timeframes.items()}
@@ -433,6 +494,11 @@ async def compute_mtf(redis, symbol: str, store: bool = True) -> dict:
         + timeframes["4H"]["score"] * 0.13
         + timeframes["1D"]["score"] * 0.13
     )
+    current_ltp = timeframes["1M"].get("close") or timeframes["1D"].get("close") or 0.0
+    blocker = _major_blocker(blocker_bars, current_ltp) if current_ltp else {
+        "blocker_up_level": None, "blocker_up_source": None,
+        "blocker_down_level": None, "blocker_down_source": None,
+    }
     quality = "historical" if any(row["bars"] for row in timeframes.values()) else "missing"
     if any(row["quality"] == "limited" for row in timeframes.values()) and quality == "historical":
         quality = "limited"
@@ -460,6 +526,7 @@ async def compute_mtf(redis, symbol: str, store: bool = True) -> dict:
         "alignment": alignment,
         "trade_bias": trade_bias,
         "score": round(weighted, 1) if math.isfinite(weighted) else 50.0,
+        **blocker,
         "bull_count": bull_count,
         "bear_count": bear_count,
         "mixed_count": mixed_count,

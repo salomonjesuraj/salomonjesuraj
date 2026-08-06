@@ -142,7 +142,39 @@ def _mtf_line(fs: dict) -> str:
     icon = {"G": "🟢", "R": "🔴", "Y": "🟡"}
     parts = [f"{tf} {icon.get(str(dots.get(tf) or 'Y'), '🟡')}" for tf in labels]
     text = str(fs.get("mtf_text") or "MTF pending")
-    return f"MTF: {' | '.join(parts)}\n{text}"
+    source = str(fs.get("mtf_source") or "").strip()
+    source_note = " (historical)" if source == "historical_cache" else ""
+    return f"MTF: {' | '.join(parts)}{source_note}\n{text}"
+
+
+def _structure_line(fs: dict) -> str:
+    """Same structure/strength vocabulary the TradingView chart shows —
+    keeps the alert and the chart telling the same story."""
+    trend_text = str(fs.get("trend_text") or "").strip()
+    event = str(fs.get("last_event_label") or "").strip()
+    pattern = str(fs.get("candle_pattern") or "").strip()
+    strength = fs.get("strength_score")
+    parts = []
+    if trend_text:
+        parts.append(trend_text)
+    if event and event != "None":
+        parts.append(event)
+    if pattern:
+        parts.append(pattern)
+    line = "Structure: " + (" | ".join(parts) if parts else "warming up")
+    if strength is not None:
+        line += f" | Strength {_fmt_score(strength)}/100"
+    return line
+
+
+def _sizing_line(sub_scores: dict) -> str:
+    sizing = sub_scores.get("position_sizing") if isinstance(sub_scores, dict) else None
+    if not isinstance(sizing, dict) or not sizing.get("lot_count"):
+        return "Sizing: below minimum risk budget for this lot size — verify manually"
+    return (
+        f"Sizing: {sizing.get('lot_count')} lot(s) x {sizing.get('lot_size')} "
+        f"= {sizing.get('quantity')} qty (risk budget Rs {_num(sizing.get('risk_amount')):,.0f})"
+    )
 
 def format_signal(payload: dict) -> str:
     symbol = payload.get("symbol", "???")
@@ -211,6 +243,8 @@ def format_signal(payload: dict) -> str:
         f"T2:    {_format_price(t2)} ({t2_pct})",
         "",
         _mtf_line(fs),
+        _structure_line(fs),
+        _sizing_line(payload.get("sub_scores") or {}),
         "",
         "Trade map:",
         *(_trade_map_line("Primary", primary_map) or [

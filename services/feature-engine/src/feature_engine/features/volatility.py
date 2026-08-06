@@ -46,3 +46,49 @@ def get_bollinger(state: SymbolState, period: int = 20, num_std: float = 2.0) ->
     width = (upper - lower) / mean if mean > 0 else 0
 
     return upper, lower, width
+
+
+def update_supertrend(state: SymbolState, high: float, low: float, close: float,
+                       atr: float, factor: float = 3.0):
+    """ATR-band flip Supertrend — matches Pine's `ta.supertrend(factor, atrLen)`.
+
+    Reuses the existing `state.atr` (same ATR the rest of the engine already
+    computes) rather than maintaining a second ATR series.
+    """
+    if atr <= 0:
+        return
+    mid = (high + low) / 2.0
+    basic_upper = mid + factor * atr
+    basic_lower = mid - factor * atr
+
+    if not state.st_initialized:
+        state.st_final_upper = basic_upper
+        state.st_final_lower = basic_lower
+        state.st_bullish = close >= basic_lower
+        state.st_prev_close = close
+        state.st_initialized = True
+        return
+
+    final_upper = (
+        basic_upper
+        if (basic_upper < state.st_final_upper or state.st_prev_close > state.st_final_upper)
+        else state.st_final_upper
+    )
+    final_lower = (
+        basic_lower
+        if (basic_lower > state.st_final_lower or state.st_prev_close < state.st_final_lower)
+        else state.st_final_lower
+    )
+
+    bullish = (close >= final_lower) if state.st_bullish else (close > final_upper)
+
+    state.st_final_upper = final_upper
+    state.st_final_lower = final_lower
+    state.st_bullish = bullish
+    state.st_prev_close = close
+
+
+def get_supertrend(state: SymbolState) -> tuple[float, bool]:
+    """Returns (supertrend_level, is_bullish)."""
+    level = state.st_final_lower if state.st_bullish else state.st_final_upper
+    return level, state.st_bullish

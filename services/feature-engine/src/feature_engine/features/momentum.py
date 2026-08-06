@@ -100,3 +100,67 @@ def get_cci(state: SymbolState) -> float:
         return 0.0
     typical = state.cci_typical_prices[-1]
     return (typical - mean) / (0.015 * mad)
+
+
+def update_adx(state: SymbolState, high: float, low: float, close: float, period: int = 14):
+    """ADX / DI+ / DI- using Wilder smoothing — matches Pine's ta.dmi(len, len).
+
+    Used by the market-structure conviction gate (Pine's `useAdxFilter`/
+    `adxThreshold`) and the strength meter's ADX component.
+    """
+    if state.adx_prev_close == 0:
+        state.adx_prev_high = high
+        state.adx_prev_low = low
+        state.adx_prev_close = close
+        return
+
+    up_move = high - state.adx_prev_high
+    down_move = state.adx_prev_low - low
+    plus_dm = up_move if (up_move > down_move and up_move > 0) else 0.0
+    minus_dm = down_move if (down_move > up_move and down_move > 0) else 0.0
+    tr = max(
+        high - low,
+        abs(high - state.adx_prev_close),
+        abs(low - state.adx_prev_close),
+    )
+    state.adx_prev_high = high
+    state.adx_prev_low = low
+    state.adx_prev_close = close
+
+    if not state.adx_initialized:
+        state.adx_tr_smooth += tr
+        state.adx_plus_dm_smooth += plus_dm
+        state.adx_minus_dm_smooth += minus_dm
+        state.adx_warmup_count += 1
+        if state.adx_warmup_count >= period:
+            state.adx_initialized = True
+        return
+
+    state.adx_tr_smooth = state.adx_tr_smooth - (state.adx_tr_smooth / period) + tr
+    state.adx_plus_dm_smooth = state.adx_plus_dm_smooth - (state.adx_plus_dm_smooth / period) + plus_dm
+    state.adx_minus_dm_smooth = state.adx_minus_dm_smooth - (state.adx_minus_dm_smooth / period) + minus_dm
+
+    if state.adx_tr_smooth <= 0:
+        return
+    di_plus = 100 * state.adx_plus_dm_smooth / state.adx_tr_smooth
+    di_minus = 100 * state.adx_minus_dm_smooth / state.adx_tr_smooth
+    di_sum = di_plus + di_minus
+    dx = (100 * abs(di_plus - di_minus) / di_sum) if di_sum > 0 else 0.0
+
+    state.adx_dx_values.append(dx)
+    if len(state.adx_dx_values) > period:
+        state.adx_dx_values.pop(0)
+    if len(state.adx_dx_values) >= period:
+        if state.adx_value == 0:
+            state.adx_value = sum(state.adx_dx_values) / len(state.adx_dx_values)
+        else:
+            state.adx_value = (state.adx_value * (period - 1) + dx) / period
+
+
+def get_adx(state: SymbolState) -> tuple[float, float, float]:
+    """Returns (di_plus, di_minus, adx). Neutral (0, 0, 0) until warmed up."""
+    if not state.adx_initialized or state.adx_tr_smooth <= 0:
+        return 0.0, 0.0, 0.0
+    di_plus = 100 * state.adx_plus_dm_smooth / state.adx_tr_smooth
+    di_minus = 100 * state.adx_minus_dm_smooth / state.adx_tr_smooth
+    return di_plus, di_minus, state.adx_value

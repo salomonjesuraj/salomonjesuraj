@@ -22,7 +22,7 @@ Design:
 from __future__ import annotations
 
 from scanner.config import ScannerSettings
-from scanner.pine_confidence import practical_option_targets
+from scanner.pine_confidence import compute_pine_decision, practical_option_targets
 from scanner.state import ScannerSymbolState
 from scanner.strategies.base import BaseStrategy, SignalCandidate
 
@@ -142,7 +142,24 @@ class VolVwapBreakout(BaseStrategy):
             atr=atr_safe,
             ltp=ltp,
         )
+        # Pine-alignment scoring (structure/MTF/strength-meter story), same
+        # call options_first_hybrid.py already makes — previously this
+        # strategy skipped it entirely, so vol_vwap_breakout signals carried
+        # no Pine-consistent explanation.
+        pine = compute_pine_decision(
+            features,
+            bullish=True,
+            entry=entry,
+            invalidation=invalidation,
+        )
+        if pine.anti_chase_ok:
+            explanation.append("Anti-chase: clean location")
+        else:
+            explanation.extend([f"Anti-chase: {reason}" for reason in pine.anti_chase_reasons[:2]])
+        explanation.append(f"MTF: {pine.mtf_text}")
+        explanation.append(f"Strength meter: {pine.strength_score:.0f}/100")
 
+        ml = features.get("ml_features") or {}
         return SignalCandidate(
             symbol=state.symbol,
             strategy_id=self.strategy_id,
@@ -167,6 +184,23 @@ class VolVwapBreakout(BaseStrategy):
                 "t2_price": round(target2, 2),
                 "risk_per_share": round(effective_risk, 2),
                 "target_method": target_method,
+                "pine_confidence": round(pine.dominant_confidence, 1),
+                "mtf_text": pine.mtf_text,
+                "mtf_source": pine.mtf_source,
+                "mtf": pine.mtf,
+                "mtf_dots": pine.mtf_dots,
+                "strength_score": pine.strength_score,
+                "anti_chase_ok": pine.anti_chase_ok,
+                "anti_chase_reasons": pine.anti_chase_reasons,
+                "rejection_reasons": pine.rejection_reasons,
+                "candle_pattern": features.get("candle_pattern", ""),
+                "trend_state": ml.get("trend_state"),
+                "trend_text": ml.get("trend_text"),
+                "last_event_label": ml.get("last_event_label"),
+                "supply_zone_top": ml.get("supply_zone_top"),
+                "supply_zone_bottom": ml.get("supply_zone_bottom"),
+                "demand_zone_top": ml.get("demand_zone_top"),
+                "demand_zone_bottom": ml.get("demand_zone_bottom"),
             },
             entry_price=entry,
             invalidation_price=invalidation,

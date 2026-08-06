@@ -8,7 +8,6 @@ future Upstox order integration.
 from __future__ import annotations
 
 import json
-import math
 import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -17,6 +16,8 @@ from aiohttp import web
 
 from api.cost_model import OptionTradeCostInput, compute
 from api.option_reality import derive_option_sl
+from api.routes.risk import DEFAULT_RISK
+from infusion_common.sizing import compute_position_size
 
 routes = web.RouteTableDef()
 
@@ -49,7 +50,7 @@ def _list(value) -> list[str]:
     return [str(x) for x in value if str(x).strip()]
 
 
-def _build_ticket(payload: dict) -> dict:
+def _build_ticket(payload: dict, max_lots: int = DEFAULT_RISK["max_lots"]) -> dict:
     trade = payload.get("trade") if isinstance(payload.get("trade"), dict) else payload
     option = trade.get("option") if isinstance(trade.get("option"), dict) else {}
     news = trade.get("news_edge") if isinstance(trade.get("news_edge"), dict) else {}
@@ -80,9 +81,9 @@ def _build_ticket(payload: dict) -> dict:
     sl_model = derive_option_sl(entry_underlying, sl_underlying, entry_ask or premium, delta)
     option_sl_pct = _num(sl_model.get("premium_risk_pct"))
     premium_risk = _num(sl_model.get("premium_risk"))
-    qty_by_risk = math.floor(risk_amount / premium_risk) if premium_risk > 0 and risk_amount > 0 else 0
-    lot_count = max(0, math.floor(qty_by_risk / lot_size)) if lot_size > 0 else 0
-    quantity = lot_count * lot_size
+    sizing = compute_position_size(risk_amount, premium_risk, lot_size, max_lots=max_lots)
+    quantity = sizing["quantity"]
+    lot_count = sizing["lot_count"]
     estimated_max_loss = round(quantity * premium_risk, 2) if quantity else 0.0
     cost_preview = compute(
         OptionTradeCostInput(
@@ -187,6 +188,17 @@ async def _load_rows(redis, limit: int = 80) -> list[dict]:
     return rows
 
 
+async def _current_max_lots(redis) -> int:
+    try:
+        raw = await redis.get("infusion:risk:settings")
+        if not raw:
+            return DEFAULT_RISK["max_lots"]
+        text = raw.decode() if isinstance(raw, bytes) else raw
+        return int(json.loads(text).get("max_lots") or DEFAULT_RISK["max_lots"])
+    except Exception:
+        return DEFAULT_RISK["max_lots"]
+
+
 @routes.post("/api/execution/stage")
 async def stage_execution_ticket(request):
     redis = request.app["redis"]
@@ -194,7 +206,8 @@ async def stage_execution_ticket(request):
         payload = await request.json()
     except Exception:
         payload = {}
-    ticket = _build_ticket(payload or {})
+    max_lots = await _current_max_lots(redis)
+    ticket = _build_ticket(payload or {}, max_lots=max_lots)
     if request.query.get("dry_run") == "1":
         return web.json_response({"ok": True, "dry_run": True, "ticket": ticket})
     await redis.lpush(STAGED_KEY, json.dumps(ticket))
