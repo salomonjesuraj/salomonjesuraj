@@ -154,15 +154,6 @@ function aiTradeMapCell(item) {
   </div>`;
 }
 
-function tradeMapSummary(map) {
-  if (!map || typeof map !== 'object') return '';
-  const side = map.side || 'WATCH';
-  if (side === 'WATCH' || side === 'HOLD' || side === 'AVOID') {
-    return `${side}: Bull above ${formatPrice(map.bull_above)} / Bear below ${formatPrice(map.bear_below)} · ${map.sustain_rule || 'wait'}`;
-  }
-  return `${side}: Entry ${formatPrice(map.entry)} · SL ${formatPrice(map.stop_loss)} · T1/T2 ${formatPrice(map.target_1)} / ${formatPrice(map.target_2)} · ${map.sustain_rule || '5M/15M close'}`;
-}
-
 function intelCell(item) {
   const score = Math.round(Number(item.intelligence_score || item.option_readiness || 0));
   const zone = String(item.intelligence_zone || '').toUpperCase();
@@ -1350,10 +1341,23 @@ export class ScannerPanel {
       });
     }
 
+    // Default view: only the top-ranked 30 (already sorted above). Searching
+    // a symbol or picking a specific sector means the user wants to see
+    // everything matching that, not just the top of the whole universe.
+    const fullMatchCount = items.length;
+    const isNarrowed = Boolean(this._filter.search || this._filter.sector);
+    if (!isNarrowed && items.length > 30) {
+      items = items.slice(0, 30);
+    }
+
     this._sorted = items;
     if (!this._selectedSymbol && items.length) this._selectedSymbol = items[0].symbol || '';
     const countEl = this._el.querySelector('#scannerCount');
-    if (countEl) countEl.textContent = `${items.length}/${this._foTotalCount || items.length} F&O`;
+    if (countEl) {
+      countEl.textContent = isNarrowed
+        ? `${items.length}/${this._foTotalCount || fullMatchCount} F&O`
+        : `Top ${items.length} of ${this._foTotalCount || fullMatchCount} F&O`;
+    }
     if (this._vs) this._vs.setData(items);
     if (this._forceScrollTop) {
       const viewport = this._el.querySelector('#scannerViewport');
@@ -2150,59 +2154,17 @@ export class ScannerPanel {
     const gradeHighlight = item.grade === 'A+' ? 'grade-highlight-aplus'
                          : item.grade === 'A'  ? 'grade-highlight-a'
                          : '';
+    // Selected-row detail used to expand inline here (position:absolute
+    // over the row), which kept re-breaking every time the column set
+    // changed since it depended on exact sticky-width/row-height math.
+    // The "Selected Trade Plan" panel (_updateMiniTradeCard) already shows
+    // the same detail without that fragility, so the row itself now just
+    // highlights — one source of truth for "what's selected," not two.
     const selected = this._selectedSymbol && String(this._selectedSymbol).toUpperCase() === String(item.symbol || '').toUpperCase();
     const modeRow = modeSignal(item, this._signalMode);
     const rowClass = `scanner-row ${flashClass} ${hasSignal ? 'has-signal' : ''} ${cc} ${gradeHighlight} ${actionClass(item)} mode-${modeRow.key} ${selected ? 'selected-row' : ''}`.trim();
     const stickyWidth = cols.reduce((sum, col) => stickyCols.has(col.key) ? sum + px(col.width) : sum, 0);
-    const inlineDetail = selected ? this._renderInlineDetail(item, stickyWidth) : '';
-    return `<div class="${rowClass}" data-symbol="${escapeHtml(item.symbol)}" style="--sticky-width:${stickyWidth}px">${cells}${inlineDetail}</div>`;
-  }
-
-  _renderInlineDetail(item, stickyWidth) {
-    const primaryMap = tradeMapSummary(item.primary_trade_map);
-    const alternateMap = tradeMapSummary(item.mtf_alternate_trade_map);
-    const why = Array.isArray(item.strength_reasons) && item.strength_reasons.length
-      ? item.strength_reasons.slice(0, 3).join(' · ')
-      : item.mtf_text || 'Evidence building';
-    const block = Array.isArray(item.rejection_reasons) && item.rejection_reasons.length
-      ? item.rejection_reasons.slice(0, 2).join(' · ')
-      : item.anti_chase_ok ? 'Anti-chase clean' : 'Check blockers';
-    return `
-      <div class="scanner-inline-detail" style="left:${stickyWidth}px">
-        <span><label>Entry</label><b>${formatPrice(item.entry_price_hint)}</b></span>
-        <span><label>SL</label><b class="negative">${formatPrice(item.stop_loss_hint)}</b></span>
-        <span><label>T1/T2</label><b class="positive">${formatPrice(item.target_1_hint)} / ${formatPrice(item.target_2_hint)}</b></span>
-        <span><label>Chase</label><b>${escapeHtml(item.chase_quality || 'WATCH_ONLY')}</b></span>
-        <span class="wide"><label>MTF</label><b>${escapeHtml(item.mtf_text || 'MTF building')}</b></span>
-
-        <details class="scanner-inline-advanced wide">
-          <summary>Advanced ▾</summary>
-          <span><label>Bull above</label><b class="positive">${formatPrice(item.positive_above)}</b></span>
-          <span><label>Bear below</label><b class="negative">${formatPrice(item.negative_below)}</b></span>
-          <span><label>CE only above</label><b class="positive">${formatPrice(item.ce_active_above)}</b></span>
-          <span><label>PE only below</label><b class="negative">${formatPrice(item.pe_active_below)}</b></span>
-          <span><label>Wait zone</label><b>${escapeHtml(item.direction_wait_zone || 'building')}</b></span>
-          <span><label>CE / PE score</label><b>CE ${Math.round(Number(item.ce_score || 0))} / PE ${Math.round(Number(item.pe_score || 0))}</b></span>
-          <span><label>Horizon</label><b>${escapeHtml(item.trade_horizon || 'INTRADAY')}</b></span>
-          <span><label>Sustain</label><b>${escapeHtml(item.sustain_rule || '5M/15M close')}</b></span>
-          <span><label>Hist MTF</label><b>${escapeHtml(item.historical_mtf_alignment || item.mtf_source || 'PROXY')}</b></span>
-          <span><label>Option Chain</label><b>${escapeHtml(item.chain_execution_status || (item.option_chain_ready ? 'WAIT_CONTRACT' : 'PROXY'))} ${item.chain_option_score ? Math.round(Number(item.chain_option_score)) : ''}</b></span>
-          <span><label>Contract</label><b>${escapeHtml(item.chain_suggested_contract || 'Select/fetch option chain')}</b></span>
-          <span><label>Move upto</label><b class="positive">${formatPrice(item.move_to || item.target_1_hint)}</b></span>
-          <span><label>Breakdown</label><b class="negative">${formatPrice(item.breakdown_to || item.negative_below)}</b></span>
-          <span class="wide"><label>AI Map</label><b>${escapeHtml(item.breakout_explanation || 'Breakout map building from live F&O scan')}</b></span>
-          <span class="wide"><label>Infusion Intel</label><b>${escapeHtml(item.intelligence_summary || item.trade_map_summary || 'Decision intelligence building')}</b></span>
-          <span class="wide"><label>News Confirm</label><b>${escapeHtml(item.news_confirmation?.message || 'Select stock to fetch/cache public news confirmation')}</b></span>
-          <span class="wide"><label>Option Reality</label><b>${escapeHtml(item.chain_score_cap_detail || (item.option_chain_ready ? 'Contract gate data available' : 'Proxy only until Upstox chain is fetched for this stock'))}</b></span>
-          <span class="wide"><label>Intraday/Swing Read</label><b>${escapeHtml(item.mtf_decision_note || item.horizon_reason || 'Historical MTF cache warming')}</b></span>
-          <span class="wide"><label>Primary Trade Map</label><b>${escapeHtml(primaryMap || item.breakout_explanation || 'Primary map building')}</b></span>
-          ${alternateMap ? `<span class="wide"><label>MTF Alternate Map</label><b>${escapeHtml(alternateMap)}</b><small>${escapeHtml(item.mtf_conflict_note || 'Historical MTF alternate trigger')}</small></span>` : ''}
-          <span class="wide"><label>Stable Direction</label><b>${escapeHtml(item.direction_reason || 'CE/PE direction zone building')}</b><small>${escapeHtml(item.direction_switch_note || 'Anti-flip lock active')}</small></span>
-          <span class="wide"><label>Why</label><b>${escapeHtml(why)}</b></span>
-          <span class="wide"><label>Block</label><b>${escapeHtml(block)}</b></span>
-        </details>
-      </div>
-    `;
+    return `<div class="${rowClass}" data-symbol="${escapeHtml(item.symbol)}" style="--sticky-width:${stickyWidth}px">${cells}</div>`;
   }
 
   destroy() {
