@@ -6976,3 +6976,100 @@ body.screener-v4-page{
 .screener-pro-v4 .scanner-table-zone{
   border-radius:0 0 18px 18px!important;
 }
+
+/* ────────────────────────────────────────────────────────────────────────
+   v7.0.0 SIGNAL COCKPIT — new, additive-only. The default view is now this
+   panel + the collapsed "More" drawer (repurposed .trade-workbench markup,
+   styled above). Deliberately reuses .signal-card/.sig-*/.grade-chip rather
+   than inventing a second visual language for cards.
+   ──────────────────────────────────────────────────────────────────────── */
+
+.signal-cockpit-panel{
+  margin:10px 0;
+}
+
+.signal-cockpit{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(280px,1fr));
+  gap:10px;
+  padding:12px;
+}
+
+.cockpit-card{
+  cursor:pointer;
+  transition:transform .12s ease,box-shadow .12s ease;
+}
+.cockpit-card:hover{
+  transform:translateY(-2px);
+  box-shadow:0 6px 18px rgba(0,0,0,.18);
+}
+
+.cockpit-reason{
+  font-size:11px;
+  color:var(--text-secondary);
+  margin:4px 0 8px;
+  line-height:1.4;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  display:-webkit-box;
+  -webkit-line-clamp:2;
+  -webkit-box-orient:vertical;
+}
+
+.cockpit-price-grid{
+  grid-template-columns:repeat(4,1fr)!important;
+}
+
+.cockpit-empty{
+  grid-column:1/-1;
+  flex-direction:column;
+  gap:8px;
+  padding:32px 16px;
+  text-align:center;
+}
+
+/* Header safety chip — replaces the full Safety Cockpit as the always-
+   visible discipline reminder; the full gate checklist is one click away
+   in the More drawer's Safety tab. */
+.safety-chip{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  padding:3px 10px;
+  border-radius:999px;
+  font-family:var(--font-ui);
+  font-size:10px;
+  font-weight:600;
+  border:1px solid var(--border-default);
+  white-space:nowrap;
+}
+.safety-chip .dot{
+  width:7px;
+  height:7px;
+  border-radius:50%;
+  background:var(--text-disabled);
+}
+.safety-chip.ready{
+  color:var(--green);
+  border-color:var(--green);
+}
+.safety-chip.ready .dot{ background:var(--green); }
+.safety-chip.watch{
+  color:var(--gold);
+  border-color:var(--gold);
+}
+.safety-chip.watch .dot{ background:var(--gold); }
+.safety-chip.blocked{
+  color:var(--red);
+  border-color:var(--red);
+}
+.safety-chip.blocked .dot{ background:var(--red); }
+
+@media (max-width:768px){
+  .signal-cockpit{
+    grid-template-columns:1fr;
+  }
+  .cockpit-price-grid{
+    grid-template-columns:repeat(2,1fr)!important;
+  }
+}

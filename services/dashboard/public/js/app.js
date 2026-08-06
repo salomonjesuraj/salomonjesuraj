@@ -4,6 +4,7 @@
  */
 import { Header } from './header.js';
 import { Footer } from './footer.js?v=6.4.4-summary-chip-polish';
+import { CockpitPanel } from './cockpit.js?v=7.0.0-signal-cockpit';
 import { ScannerPanel } from './scanner.js?v=6.4.4-summary-chip-polish';
 import { SignalBoard } from './signals.js?v=2.5.1-options-first-hybrid';
 import { WatchlistPanel } from './watchlist.js';
@@ -79,6 +80,12 @@ class InfusionApp {
     const footer = new Footer(document.getElementById('footer'));
     footer.init();
     this._panels.push(footer);
+
+    // Signal Cockpit — the default view. Mounted before everything else so
+    // it paints first.
+    const cockpit = new CockpitPanel(document.getElementById('signalCockpit'));
+    cockpit.init();
+    this._panels.push(cockpit);
 
     // Scanner (Priority 1)
     const scanner = new ScannerPanel(document.getElementById('scannerPanel'));

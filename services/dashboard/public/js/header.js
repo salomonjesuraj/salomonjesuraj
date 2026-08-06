@@ -38,6 +38,10 @@ export class Header {
         </div>
       </div>
       <div class="header-right">
+        <div class="safety-chip" id="safetyChip" title="Paper-first lock and kill-switch status">
+          <span class="dot"></span>
+          <span id="safetyChipText">Safety --</span>
+        </div>
         <div class="clock" id="clockDisplay">${istClock()}</div>
         <div class="health-dots" id="healthDots" title="Service Health">
           ${SERVICES.map(s => `<span class="health-dot" data-svc="${s}" title="${s}"></span>`).join('')}
@@ -89,6 +93,32 @@ export class Header {
         }
       }
     }, 10000));
+
+    // Safety chip — always-visible discipline reminder (paper-first lock +
+    // kill switch) now that the full Safety Cockpit lives in the "More"
+    // drawer rather than the default view. Same /api/safety/status
+    // endpoint safety-panel.js already uses.
+    this._unsubs.push(api.subscribe('/api/safety/status', (resp) => {
+      const chip = document.getElementById('safetyChip');
+      const text = document.getElementById('safetyChipText');
+      if (!resp || !chip || !text) return;
+      const killed = !!resp.kill_switch?.enabled;
+      const verdict = resp.verdict || 'BLOCKED';
+      let cls = 'blocked';
+      let label = 'Blocked';
+      if (killed) {
+        cls = 'blocked';
+        label = 'Kill switch ON';
+      } else if (verdict === 'PAPER_READY') {
+        cls = 'ready';
+        label = 'Paper-first ready';
+      } else if (verdict === 'WATCH_READY') {
+        cls = 'watch';
+        label = 'Paper-first (check)';
+      }
+      chip.className = 'safety-chip ' + cls;
+      text.textContent = label;
+    }, 5000));
   }
 
   destroy() {

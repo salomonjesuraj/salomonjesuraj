@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="Infusion Pro trading terminal for options-first scanning, breakout setup review, price triggers, and live market health.">
   <title>Infusion Pro - Options Trading Terminal</title>
-  <link rel="stylesheet" href="/css/main.css?v=6.4.4-summary-chip-polish">
+  <link rel="stylesheet" href="/css/main.css?v=7.0.0-signal-cockpit">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ctext y='14' font-size='14'%3EI%3C/text%3E%3C/svg%3E">
 </head>
 <body class="screener-v4-page">
@@ -19,55 +19,40 @@
 
     <div class="quick-controls pro-nav-strip" id="quickControls"></div>
     <footer class="footer-bar top-status-strip" id="footer"></footer>
-    <div class="risk-console pro-risk-console" id="riskConsole" data-collapsible-section="risk-console" data-draggable-section="risk-console"></div>
-    <div class="sector-ribbon pro-sector-deck" id="sectorRibbon" data-collapsible-section="market-pulse" data-draggable-section="market-pulse"></div>
 
     <main class="hybrid-main pro-main">
-      <section class="panel top-setup-panel pro-top-setup-panel" data-collapsible-section="breakout-option" data-draggable-section="breakout-option">
-        <div class="panel-header top-setup-header pro-panel-header">
-          <span class="panel-title"><span class="icon">&#9889;</span> Breakout + Option Command Strip</span>
+      <!--
+        SIGNAL COCKPIT — the only thing shown by default. Symbol, CE/PE
+        direction, conviction grade, one-line reason, entry/SL/T1/T2.
+        Everything else lives behind the "More" drawer below.
+      -->
+      <section class="panel signal-cockpit-panel">
+        <div class="panel-header pro-panel-header">
+          <span class="panel-title"><span class="icon">&#127919;</span> Signal Cockpit</span>
           <span class="panel-header-right">
-            <span class="panel-badge">Pinned above screener for first visibility</span>
-            <span class="section-size-controls">
-              <button type="button" data-section-action="expand" title="Expand section">+</button>
-              <button type="button" data-section-action="collapse" title="Minimize section">&minus;</button>
-            </span>
+            <span class="panel-badge">Ranked by conviction &mdash; act on the top card, or open More to explore</span>
           </span>
         </div>
-        <div class="top-setup-grid">
-          <div class="workbench-section top-breakout-section">
-            <div class="workbench-section-title">Pre-Breakout Watch</div>
-            <div id="watchlistBody" class="workbench-scroll top-watch-scroll"></div>
-          </div>
-          <div class="workbench-section option-merged-section top-option-section">
-            <div class="workbench-section-title">Option Basis</div>
-            <div class="panel-badge option-status-inline" id="optionStatus">READY</div>
-            <div id="optionCockpitBody" class="workbench-scroll top-option-scroll"></div>
-          </div>
+        <div class="panel-body">
+          <div id="signalCockpit" class="signal-cockpit"></div>
         </div>
       </section>
 
-      <section class="panel scanner-command-panel pro-scanner-panel" data-collapsible-section="fo-screener" data-draggable-section="fo-screener">
-        <div class="panel-header scanner-command-header pro-panel-header">
-          <span class="panel-title"><span class="icon">&#9638;</span> F&O Screener</span>
-          <span class="panel-header-right">
-            <span class="panel-badge" id="scannerBadge">Auto-ranked by Strength + Conviction + Momentum</span>
-            <span class="section-size-controls">
-              <button type="button" data-section-action="expand" title="Expand section">+</button>
-              <button type="button" data-section-action="collapse" title="Minimize section">&minus;</button>
-            </span>
-          </span>
-        </div>
-        <div class="panel-body scanner-command-body pro-scanner-body">
-          <div id="scannerPanel" class="scanner-table-zone"></div>
-        </div>
-      </section>
-
-      <section class="panel trade-workbench pro-workbench-panel" data-collapsible-section="trade-workbench" data-draggable-section="trade-workbench">
+      <!--
+        MORE DRAWER — everything else, collapsed by default. Reuses the
+        existing collapsible-section + workbench-tab system verbatim; only
+        the tab/pane contents changed. Screener is the default tab since
+        "go explore the full list" is the most common reason to open this.
+      -->
+      <section class="panel trade-workbench pro-workbench-panel section-collapsed" data-collapsible-section="trade-workbench" data-draggable-section="trade-workbench">
         <div class="panel-header workbench-header pro-panel-header">
-          <span class="panel-title"><span class="icon">&#9889;</span> Trade Workbench</span>
+          <span class="panel-title"><span class="icon">&#8942;&#8942;</span> More</span>
           <div class="workbench-tabs" id="workbenchTabs">
-            <button class="workbench-tab active" data-tab="setup">Breakout + Option</button>
+            <button class="workbench-tab active" data-tab="screener">Screener</button>
+            <button class="workbench-tab" data-tab="watchlist">Watchlist</button>
+            <button class="workbench-tab" data-tab="option-basis">Option Basis</button>
+            <button class="workbench-tab" data-tab="sectors">Sectors</button>
+            <button class="workbench-tab" data-tab="risk">Risk</button>
             <button class="workbench-tab" data-tab="stock-detail">Stock Detail</button>
             <button class="workbench-tab" data-tab="triggers">Triggers</button>
             <button class="workbench-tab" data-tab="news">News</button>
@@ -84,24 +69,32 @@
           </span>
         </div>
         <div class="workbench-body">
-          <div class="workbench-pane active" data-pane="setup">
-            <div class="workbench-section workbench-placeholder">
-              <div class="workbench-section-title">Breakout + Option</div>
-              <div class="setup-placeholder-grid">
-                <div class="setup-guide-card">
-                  <b>Live strip is pinned above scanner</b>
-                  <span>Breakout watch and option basis stay visible before you scan rows.</span>
-                </div>
-                <div class="setup-guide-card">
-                  <b>Select any F&O row</b>
-                  <span>The selected setup explains CE above, PE below, entry, SL, T1/T2 and no-chase blockers.</span>
-                </div>
-                <div class="setup-guide-card">
-                  <b>Use tabs only when needed</b>
-                  <span>Stock Detail, Journal, Safety and Alert Log stay here so the scanner remains clean.</span>
-                </div>
-              </div>
-            </div>
+          <div class="workbench-pane active" data-pane="screener">
+            <div class="workbench-section-title">F&amp;O Screener &mdash; auto-ranked by Strength + Conviction + Momentum</div>
+            <div id="scannerPanel" class="scanner-table-zone"></div>
+          </div>
+
+          <div class="workbench-pane" data-pane="watchlist">
+            <div class="workbench-section-title">Pre-Breakout Watch</div>
+            <div id="watchlistBody" class="workbench-scroll"></div>
+          </div>
+
+          <div class="workbench-pane" data-pane="option-basis">
+            <div class="workbench-section-title">Option Basis</div>
+            <div class="panel-badge option-status-inline" id="optionStatus">READY</div>
+            <div id="optionCockpitBody" class="workbench-scroll"></div>
+          </div>
+
+          <div class="workbench-pane" data-pane="sectors">
+            <!-- sector-ribbon.js renders its own "Market Pulse" header + collapse
+                 controls; keep its own collapsible-section attributes so those
+                 controls stay functional nested inside this pane. -->
+            <div id="sectorRibbon" class="workbench-scroll" data-collapsible-section="market-pulse"></div>
+          </div>
+
+          <div class="workbench-pane" data-pane="risk">
+            <!-- risk-console.js renders its own "Risk Console" title. -->
+            <div id="riskConsole" class="workbench-scroll"></div>
           </div>
 
           <div class="workbench-pane" data-pane="stock-detail">
@@ -166,6 +159,6 @@
   </div>
 
   <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
-  <script type="module" src="/js/app.js?v=6.4.4-summary-chip-polish"></script>
+  <script type="module" src="/js/app.js?v=7.0.0-signal-cockpit"></script>
 </body>
 </html>
