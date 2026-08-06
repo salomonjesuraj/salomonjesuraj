@@ -7229,3 +7229,42 @@ body.screener-v4-page{
 .scanner-inline-advanced .wide{
   grid-column:1/-1;
 }
+
+/* ────────────────────────────────────────────────────────────────────────
+   v7.3.0 — fix: .scanner-inline-detail was `position:absolute` with
+   hardcoded pixel offsets (bottom:5px, height:27-28px, left:var(--sticky-
+   width)) tuned for a specific 22-field content width/row order. Reordering
+   the essential columns shifted the sticky-width math underneath it,
+   causing the overlay to visually collide with row cells instead of sitting
+   past them. Converting to normal flex-wrap flow removes the dependency on
+   exact pixel tuning entirely -- robust to any future column change.
+   ──────────────────────────────────────────────────────────────────────── */
+.screener-pro-v4 .scanner-row.selected-row{
+  flex-wrap:wrap!important;
+  height:auto!important;
+  min-height:0!important;
+  padding-bottom:4px;
+}
+.screener-pro-v4 .scanner-inline-detail{
+  position:static!important;
+  left:auto!important;
+  right:auto!important;
+  bottom:auto!important;
+  flex:1 1 100%!important;
+  width:100%!important;
+  height:auto!important;
+  display:flex!important;
+  flex-wrap:wrap!important;
+  align-items:center!important;
+  padding:8px 10px!important;
+  gap:6px 10px!important;
+  overflow:visible!important;
+  border-left:none!important;
+  border-top:1px solid rgba(59,130,246,.25);
+  margin-top:2px;
+}
+.screener-pro-v4 .scanner-inline-detail span{
+  height:auto!important;
+  min-width:0!important;
+  max-width:none!important;
+}

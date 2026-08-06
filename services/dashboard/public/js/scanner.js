@@ -10,41 +10,46 @@ import { ws } from './ws.js';
 
 // ── Column definitions ─────────────────────────────────────────────────────
 // toggle:true = can be hidden (via the Columns button); defaultHidden:true =
-// hidden on first load. Per direct feedback, only 8 columns are essential by
-// default: Symbol, LTP, Chg%, Sector, Conviction, Bias (CE/PE), Chase, MTF.
-// Everything else still exists and is one click away in the Columns panel —
-// nothing was deleted, just turned off by default.
+// hidden on first load. Essential set per direct spec: Symbol, Sector, LTP,
+// Chg%, Strength, Conviction, MTF, Bias (CE/PE), Entry, T1, T2, T3, SL,
+// Chain (option contract CE/PE favor). Everything else still exists and is
+// one click away in the Columns panel — nothing was deleted, just off by
+// default. Column order below matches that essential order first, then
+// everything hidden-by-default after.
 const COLUMNS = [
   { key: 'symbol',       label: 'Symbol',      align: 'left',   width: '112px',  toggle: false },
-  { key: 'ltp',          label: 'LTP',         align: 'right',  width: '92px',   toggle: false },
-  { key: 'prev_diff',    label: 'Prev close +/-', align: 'right', width: '118px', toggle: true, defaultHidden: true },
-  { key: 'change_pct',   label: 'Chg%',        align: 'right',  width: '70px',   toggle: true },
-  { key: 'rel_vol',      label: 'RVol',        align: 'right',  width: '66px',   toggle: true, defaultHidden: true },
   { key: 'sector_id',    label: 'Sector',      align: 'left',   width: '122px',  toggle: true },
+  { key: 'ltp',          label: 'LTP',         align: 'right',  width: '92px',   toggle: false },
+  { key: 'change_pct',   label: 'Chg%',        align: 'right',  width: '70px',   toggle: true },
+  { key: 'setup_strength', label: 'Strength',  align: 'right',  width: '92px',   toggle: true },
+  { key: 'option_readiness', label: 'Conviction', align: 'right', width: '104px', toggle: true },
+  { key: 'mtf_dots',     label: 'MTF',         align: 'center', width: '124px',  toggle: true },
+  { key: 'trade_decision', label: 'Bias',      align: 'center', width: '88px',   toggle: true },
+  { key: 'entry_price_hint', label: 'Entry',   align: 'right',  width: '88px',   toggle: true },
+  { key: 'target_1_hint', label: 'T1',         align: 'right',  width: '78px',   toggle: true },
+  { key: 'target_2_hint', label: 'T2',         align: 'right',  width: '78px',   toggle: true },
+  { key: 'target_3_hint', label: 'T3',         align: 'right',  width: '78px',   toggle: true },
+  { key: 'stop_loss_hint', label: 'SL',        align: 'right',  width: '78px',   toggle: true },
+  { key: 'chain_execution_status', label: 'Chain', align: 'center', width: '112px', toggle: true },
+
+  { key: 'prev_diff',    label: 'Prev close +/-', align: 'right', width: '118px', toggle: true, defaultHidden: true },
+  { key: 'rel_vol',      label: 'RVol',        align: 'right',  width: '66px',   toggle: true, defaultHidden: true },
   { key: 'smart_rank',   label: 'Rank',        align: 'right',  width: '86px',   toggle: true, defaultHidden: true },
   { key: 'mode_signal',  label: 'Mode Signal', align: 'center', width: '126px',  toggle: true, defaultHidden: true },
   { key: 'gate_score',   label: 'Gates',       align: 'center', width: '108px',  toggle: true, defaultHidden: true },
   { key: 'intelligence_score', label: 'Intel', align: 'right',  width: '92px',   toggle: true, defaultHidden: true },
   { key: 'news_confirmation', label: 'News',   align: 'center', width: '104px',  toggle: true, defaultHidden: true },
   { key: 'trade_horizon', label: 'Horizon',    align: 'center', width: '104px',  toggle: true, defaultHidden: true },
-  { key: 'chase_quality', label: 'Chase',      align: 'center', width: '118px',  toggle: true },
+  { key: 'chase_quality', label: 'Chase',      align: 'center', width: '118px',  toggle: true, defaultHidden: true },
   { key: 'intraday_score', label: 'Intra',     align: 'right',  width: '78px',   toggle: true, defaultHidden: true },
   { key: 'swing_score',  label: 'Swing',       align: 'right',  width: '78px',   toggle: true, defaultHidden: true },
   { key: 'trend_bias',   label: 'Trend',       align: 'center', width: '78px',   toggle: true, defaultHidden: true },
-  { key: 'mtf_dots',     label: 'MTF',         align: 'center', width: '124px',  toggle: true },
   { key: 'mtf_score',    label: 'MTF Score',   align: 'right',  width: '94px',   toggle: true, defaultHidden: true },
   { key: 'mtf_source',   label: 'MTF Src',     align: 'center', width: '82px',   toggle: true, defaultHidden: true },
-  { key: 'setup_strength', label: 'Strength',  align: 'right',  width: '92px',   toggle: true, defaultHidden: true },
-  { key: 'trade_decision', label: 'Bias',      align: 'center', width: '88px',   toggle: true },
   { key: 'direction_zone', label: 'CE / PE Zone', align: 'left', width: '210px', toggle: true, defaultHidden: true },
   { key: 'ce_score',      label: 'CE',         align: 'right',  width: '72px',   toggle: true, defaultHidden: true },
   { key: 'pe_score',      label: 'PE',         align: 'right',  width: '72px',   toggle: true, defaultHidden: true },
-  { key: 'option_readiness', label: 'Conviction', align: 'right', width: '104px', toggle: true },
-  { key: 'chain_execution_status', label: 'Chain', align: 'center', width: '112px', toggle: true, defaultHidden: true },
   { key: 'evidence',     label: 'Why / Block', align: 'left',   width: '176px',  toggle: true, defaultHidden: true },
-  { key: 'entry_price_hint', label: 'Entry',   align: 'right',  width: '88px',   toggle: true, defaultHidden: true },
-  { key: 'stop_loss_hint', label: 'SL',        align: 'right',  width: '78px',   toggle: true, defaultHidden: true },
-  { key: 'target_1_hint', label: 'T1',         align: 'right',  width: '78px',   toggle: true, defaultHidden: true },
   { key: 'positive_above', label: 'Bull above', align: 'right', width: '92px',   toggle: true, defaultHidden: true },
   { key: 'negative_below', label: 'Bear below', align: 'right', width: '92px',   toggle: true, defaultHidden: true },
   { key: 'ai_trade_map', label: 'AI Trade Map', align: 'left',  width: '220px',  toggle: true, defaultHidden: true },
@@ -792,7 +797,7 @@ export class ScannerPanel {
   init() {
     // Load hidden columns from localStorage
     try {
-      const saved = JSON.parse(localStorage.getItem('infusion:scanner:hidden') || '[]');
+      const saved = JSON.parse(localStorage.getItem('infusion:scanner:hidden:v2') || '[]');
       this._hidden = new Set(saved);
     } catch (_) {}
     // Default hidden columns
@@ -1124,7 +1129,7 @@ export class ScannerPanel {
   }
 
   _saveHidden() {
-    try { localStorage.setItem('infusion:scanner:hidden', JSON.stringify([...this._hidden])); } catch (_) {}
+    try { localStorage.setItem('infusion:scanner:hidden:v2', JSON.stringify([...this._hidden])); } catch (_) {}
   }
 
   async _warmMTFCache(button) {
@@ -2110,6 +2115,8 @@ export class ScannerPanel {
       entry_price_hint: `<span class="level-cell">${formatPrice(item.entry_price_hint)}</span>`,
       stop_loss_hint: `<span class="level-cell negative">${formatPrice(item.stop_loss_hint)}</span>`,
       target_1_hint: `<span class="level-cell positive">${formatPrice(item.target_1_hint)}</span>`,
+      target_2_hint: `<span class="level-cell positive">${formatPrice(item.target_2_hint)}</span>`,
+      target_3_hint: `<span class="level-cell positive">${formatPrice(item.target_3_hint)}</span>`,
       positive_above: `<span class="level-cell positive">${formatPrice(item.positive_above)}</span>`,
       negative_below: `<span class="level-cell negative">${formatPrice(item.negative_below)}</span>`,
       ai_trade_map: aiTradeMapCell(item),

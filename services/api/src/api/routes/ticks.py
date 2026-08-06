@@ -159,16 +159,21 @@ def _options_level_plan(
     rr_floor = 1.8 if option_score >= 75 else 1.6 if option_score >= 60 else 1.45
     t1_dist = max(stop_dist * rr_floor, atr_floor * 1.25, entry * 0.0060, 1.00)
     t2_dist = max(stop_dist * 3.0, atr_floor * 2.20, entry * 0.0110, 1.50)
+    # T3 "runner" target — same escalation pattern as T1/T2, matches the
+    # ratio scanner/pine_confidence.py's practical_option_targets() uses.
+    t3_dist = max(stop_dist * 4.5, atr_floor * 3.20, entry * 0.0160, 2.00)
 
     if bullish:
         structure_t1 = max(x for x in [entry + t1_dist, fibo_r2 if fibo_r2 > entry else 0.0, day_high if day_high > entry else 0.0])
         target1 = structure_t1
         target2 = max(entry + t2_dist, target1 + max(stop_dist, atr_floor * 0.75))
+        target3 = max(entry + t3_dist, target2 + max(stop_dist, atr_floor * 0.75))
         stop = entry - stop_dist
     else:
         structure_t1 = min(x for x in [entry - t1_dist, fibo_s2 if 0 < fibo_s2 < entry else entry - t1_dist, day_low if 0 < day_low < entry else entry - t1_dist])
         target1 = structure_t1
         target2 = min(entry - t2_dist, target1 - max(stop_dist, atr_floor * 0.75))
+        target3 = min(entry - t3_dist, target2 - max(stop_dist, atr_floor * 0.75))
         stop = entry + stop_dist
 
     risk = abs(entry - stop)
@@ -178,6 +183,7 @@ def _options_level_plan(
         "stop": stop,
         "target1": target1,
         "target2": target2,
+        "target3": target3,
         "risk": risk,
         "rr1": rr1,
         "method": (
@@ -413,6 +419,7 @@ def _scanner_intel(entry: dict, features: dict, prebreak: dict | None = None, se
         stop_hint = level_plan["stop"]
         target_1 = level_plan["target1"]
         target_2 = level_plan["target2"]
+        target_3 = level_plan["target3"]
         sr_status = "Below support trigger" if ltp < negative_below else "Watching breakdown"
         setup_type = "PE breakdown/rejection"
     else:
@@ -432,6 +439,7 @@ def _scanner_intel(entry: dict, features: dict, prebreak: dict | None = None, se
         stop_hint = level_plan["stop"]
         target_1 = level_plan["target1"]
         target_2 = level_plan["target2"]
+        target_3 = level_plan["target3"]
         sr_status = "Above resistance trigger" if ltp > positive_above else "Watching breakout"
         setup_type = "CE breakout/reclaim" if decision == "BUY CE" else "Neutral trigger watch"
     points_diff = (ltp - prev_close) if prev_close > 0 else 0.0
@@ -684,6 +692,7 @@ def _scanner_intel(entry: dict, features: dict, prebreak: dict | None = None, se
         "stop_loss_hint": round(stop_hint, 2),
         "target_1_hint": round(target_1, 2),
         "target_2_hint": round(target_2, 2),
+        "target_3_hint": round(target_3, 2),
         "underlying_risk_points": round(float(level_plan.get("risk") or abs(entry_hint - stop_hint)), 2),
         "risk_reward_ratio_hint": round(float(level_plan.get("rr1") or 0), 2),
         "target_method": str(level_plan.get("method") or ""),
