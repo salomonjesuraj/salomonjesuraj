@@ -67,6 +67,13 @@ def main():
         return
 
     try:
+        from scanner.scoring import compute_conviction, grade_conviction, CHASEABLE_GRADE_CAP
+        check("scanner.scoring imports", True)
+    except Exception as e:
+        check("scanner.scoring imports", False, str(e))
+        return
+
+    try:
         from api.routes.mtf import _fractal_pivots, _major_blocker, compute_mtf
         check("api.routes.mtf blocker functions import", True)
     except Exception as e:
@@ -182,6 +189,41 @@ def main():
     check("Chaseable flag true on strong aligned setup", chaseable_decision.chaseable is True)
     weak_chase = compute_pine_decision(weak_features | {"ltp": 100.0, "vwap": 101.0}, bullish=True, entry=100.0, invalidation=98.0)
     check("Chaseable flag false on weak setup", weak_chase.chaseable is False)
+
+    # ═══════════════════════════════════════════════
+    # UNIFIED CONVICTION SCORE (technical/pine/strength/structure blend
+    # + chaseable hard cap) — folds the previously-orphaned strength_score
+    # and chaseable flag into the one score the dashboard/Telegram show.
+    # ═══════════════════════════════════════════════
+    print("\n--- UNIFIED CONVICTION SCORE ---")
+    base_technical = {
+        "rel_vol_20d": 5.0, "direction": "bullish", "ltp": 101.0, "vwap": 100.9,
+        "rsi_14": 58, "ema_9": 100, "ema_20": 99, "order_imbalance": 0.4,
+        "bb_upper": 100.5, "bb_width": 0.03, "atr_trend": "BULL",
+        "candle_pattern": "Bullish Engulfing", "spread_bps": 5,
+    }
+    strong = {
+        **base_technical, "pine_confidence": 90.0, "strength_score": 88.0,
+        "chaseable": True, "last_event_label": "Bullish BOS", "trend_state": 1,
+        "anti_chase_ok": True, "rejection_reasons": [],
+    }
+    score_strong, _ = compute_conviction(strong)
+    check("Strong aligned + chaseable setup reaches A/A+", grade_conviction(score_strong) in ("A", "A+"),
+          f"score={score_strong}")
+
+    capped = {**strong, "chaseable": False}
+    score_capped, sub_capped = compute_conviction(capped)
+    check("Not-chaseable setup hard-capped below A", score_capped == CHASEABLE_GRADE_CAP, f"score={score_capped}")
+    check("Cap keeps grade at B even with strong raw inputs", grade_conviction(score_capped) == "B")
+
+    opposing = {**strong, "last_event_label": "Bearish BOS", "trend_state": -1}
+    score_opposed, _ = compute_conviction(opposing)
+    check("Opposing structure scores lower than aligned structure", score_opposed < score_strong,
+          f"opposed={score_opposed} vs aligned={score_strong}")
+
+    no_pine_score, no_pine_sub = compute_conviction(base_technical)
+    check("No pine_confidence -> unaffected legacy technical-only path",
+          "pine_confidence_component" not in no_pine_sub)
 
     # ═══════════════════════════════════════════════
     # PHASE 4 — MTF MAJOR BLOCKER

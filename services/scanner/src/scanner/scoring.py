@@ -3,14 +3,34 @@
 Deterministic scoring: same features → same score → same grade.
 No randomness, no ML, no opaque logic.
 
-Score components (0-100 total):
-  Volume:    0-25 (relative volume magnitude)
-  VWAP:      0-25 (distance from VWAP — fresh reclaim scores highest)
-  RSI:       0-15 (sweet spot 50-65)
-  EMA:       0-10 (alignment: ltp > ema9 > ema20)
-  Flow:      0-10 (order imbalance magnitude)
-  Bollinger: 0-10 (breakout or healthy width)
-  Spread:    0-5  (tighter = more liquid = better)
+The final score blends FOUR components so the single number a trader sees
+is the actual sum of everything the system knows — not one of several
+competing scores that could quietly disagree with each other:
+
+  Technical (0-100, weight 0.45): volume/VWAP/RSI/EMA/flow/bollinger/spread,
+      the original point-sum below.
+  Pine confidence (0-100, weight 0.25): EMA-stack/ATR-trend/MACD/RSI/VWAP/
+      rel-vol/candle/spread proxy — scanner/pine_confidence.py.
+  Strength meter (0-100, weight 0.20): ADX/EMA-stack-spread/Supertrend-VWAP
+      agreement/candle-body — the Pine v6 Strength Meter equivalent.
+      compute_strength_meter() in pine_confidence.py.
+  Structure alignment (0-100, weight 0.10): does the fractal-pivot trend
+      state / most recent BOS-CHOCH event agree with the signal direction —
+      feature_engine/features/structure.py, via ml_features.
+
+  Technical sub-score breakdown (0-100 before blending):
+    Volume:    0-25 (relative volume magnitude)
+    VWAP:      0-25 (distance from VWAP — fresh reclaim scores highest)
+    RSI:       0-15 (sweet spot 50-65)
+    EMA:       0-10 (alignment: ltp > ema9 > ema20)
+    Flow:      0-10 (order imbalance magnitude)
+    Bollinger: 0-10 (breakout or healthy width)
+    Spread:    0-5  (tighter = more liquid = better)
+
+Chaseable is a hard cap, not a cosmetic badge: a setup Pine v6's Rocket
+marker doesn't confirm (weak ADX, no Supertrend/VWAP agreement, indecisive
+candle) cannot score into A/A+ no matter how good the rest looks — it caps
+at the top of B. A high score should mean "act", not "almost."
 
 Grade mapping:
   85-100 → A+  (exceptional)
@@ -21,6 +41,39 @@ Grade mapping:
 """
 
 from __future__ import annotations
+
+CHASEABLE_GRADE_CAP = 69.0  # top of B — below the 70-point A threshold
+
+_BOS_CHOCH_ALIGNED = {
+    "bullish": {"Bullish BOS", "Bullish CHOCH"},
+    "bearish": {"Bearish BOS", "Bearish CHOCH"},
+}
+
+
+def _structure_alignment_score(features: dict, bearish: bool) -> float:
+    """0-100: does the fractal-pivot trend/BOS-CHOCH story agree with the
+    signal's direction? A fresh same-direction break scores highest; an
+    opposing trend scores lowest; "no structure data yet" stays neutral
+    rather than penalizing symbols still warming up.
+    """
+    direction = "bearish" if bearish else "bullish"
+    event = str(features.get("last_event_label") or "").strip()
+    if event and event != "None" and event in _BOS_CHOCH_ALIGNED[direction]:
+        return 100.0
+
+    trend_state = features.get("trend_state")
+    try:
+        trend_state = int(trend_state) if trend_state is not None else None
+    except (TypeError, ValueError):
+        trend_state = None
+    if trend_state is None:
+        return 50.0  # structure engine hasn't confirmed a pivot yet
+    wants = -1 if bearish else 1
+    if trend_state == wants:
+        return 70.0
+    if trend_state == 0:
+        return 50.0
+    return 20.0  # trend_state actively opposes the signal direction
 
 
 def compute_conviction(features: dict) -> tuple[float, dict[str, float]]:
@@ -141,13 +194,31 @@ def compute_conviction(features: dict) -> tuple[float, dict[str, float]]:
     else:
         sub_scores["spread"] = 0.0
 
-    raw_total = min(sum(sub_scores.values()), 100.0)
+    technical = min(sum(sub_scores.values()), 100.0)
+    sub_scores["technical_component"] = round(technical, 2)
+
     if pine_confidence is not None:
-        # Options-first scanner should behave closer to the user's Pine
-        # decision model: trend/volume/VWAP still matter, but MTF confidence and
-        # anti-chase quality must influence the final grade.
-        total = raw_total * 0.58 + pine_confidence * 0.42
-        sub_scores["pine_confidence"] = round(pine_confidence * 0.42, 2)
+        # ── Four-component blend ────────────────────────
+        # One authoritative score instead of technical + pine_confidence +
+        # strength_score + chaseable existing as separate, occasionally-
+        # disagreeing numbers. See module docstring for the weights.
+        strength_score = features.get("strength_score")
+        try:
+            strength_score = float(strength_score) if strength_score is not None else 50.0
+        except (TypeError, ValueError):
+            strength_score = 50.0
+        structure_score = _structure_alignment_score(features, bearish)
+
+        total = (
+            technical * 0.45
+            + pine_confidence * 0.25
+            + strength_score * 0.20
+            + structure_score * 0.10
+        )
+        sub_scores["pine_confidence_component"] = round(pine_confidence * 0.25, 2)
+        sub_scores["strength_component"] = round(strength_score * 0.20, 2)
+        sub_scores["structure_component"] = round(structure_score * 0.10, 2)
+
         if features.get("anti_chase_ok") is False:
             total -= 8.0
             sub_scores["anti_chase_penalty"] = -8.0
@@ -156,8 +227,16 @@ def compute_conviction(features: dict) -> tuple[float, dict[str, float]]:
             total -= min(10.0, len(rejection_reasons) * 3.0)
             sub_scores["rejection_penalty"] = -min(10.0, len(rejection_reasons) * 3.0)
         total = min(max(total, 0.0), 100.0)
+
+        # ── Chaseable hard cap ───────────────────────────
+        # A score this strong should mean "act", not "almost." If Pine v6's
+        # Rocket marker doesn't confirm, the grade cannot reach A/A+ no
+        # matter how good every other component looks.
+        if features.get("chaseable") is False and total > CHASEABLE_GRADE_CAP:
+            sub_scores["chaseable_cap_applied"] = round(CHASEABLE_GRADE_CAP - total, 2)
+            total = CHASEABLE_GRADE_CAP
     else:
-        total = raw_total
+        total = technical
     return total, sub_scores
 
 
