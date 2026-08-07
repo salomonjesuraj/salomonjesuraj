@@ -23,6 +23,34 @@ from api.intelligence import build_intelligence_layer
 
 routes = web.RouteTableDef()
 logger = structlog.get_logger()
+
+TRADE_HORIZON_LABELS = {
+    "INTRADAY": "Intraday",
+    "BTST_1_2D": "Short Term",
+    "SWING": "Medium Term",
+    "AVOID": "Avoid",
+}
+
+
+def _potential_upside_pct(decision: str, ltp: float, target_1: float) -> float:
+    """Broker-card "X% Potential Upside" figure -- measured off current
+    price (LTP), matching how a research-call card frames it: what's
+    achievable from where price is right now, not from a pending entry
+    trigger. For BUY PE (bearish), "upside" means the expected downward
+    move toward target, framed as a positive percentage."""
+    if ltp <= 0:
+        return 0.0
+    if decision == "BUY PE":
+        return round((ltp - target_1) / ltp * 100, 2)
+    return round((target_1 - ltp) / ltp * 100, 2)
+
+
+def _trade_horizon_label(trade_horizon: str) -> str:
+    """Friendly Short/Medium-Term display label over the existing
+    trade_horizon classification (INTRADAY/BTST_1_2D/SWING/AVOID) --
+    matches the vocabulary of a broker research-call card without
+    introducing a second, parallel holding-period classifier."""
+    return TRADE_HORIZON_LABELS.get(trade_horizon, trade_horizon.title())
 NEWS_EDGE_KEY_PREFIX = "infusion:news-edge:"
 
 
@@ -645,6 +673,13 @@ def _scanner_intel(entry: dict, features: dict, prebreak: dict | None = None, se
         sustain_tf = "No entry"
         horizon_reason = "Alignment/volume/contract readiness not sufficient."
 
+    # Broker-style trade-card fields -- see _potential_upside_pct/
+    # _trade_horizon_label docstrings for why downside% isn't included
+    # symmetrically (stop_hint is entry-relative, not LTP-relative, so it
+    # can't be framed the same unambiguous way upside can).
+    potential_upside_pct = _potential_upside_pct(decision, ltp, target_1)
+    trade_horizon_label = _trade_horizon_label(trade_horizon)
+
     if decision == "BUY PE":
         breakout_area = negative_below
         invalidation_area = positive_above
@@ -737,7 +772,9 @@ def _scanner_intel(entry: dict, features: dict, prebreak: dict | None = None, se
         "swing_score": swing_score,
         "btst_score": btst_score,
         "trade_horizon": trade_horizon,
+        "trade_horizon_label": trade_horizon_label,
         "horizon_reason": horizon_reason,
+        "potential_upside_pct": potential_upside_pct,
         "chase_quality": chase_quality,
         "carry_risk": carry_risk,
         "sustain_rule": sustain_tf,

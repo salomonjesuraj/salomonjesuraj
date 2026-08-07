@@ -84,6 +84,13 @@ def main():
         return
 
     try:
+        from api.routes.ticks import _potential_upside_pct, _trade_horizon_label
+        check("api.routes.ticks trade-card helpers import", True)
+    except Exception as e:
+        check("api.routes.ticks trade-card helpers import", False, str(e))
+        return
+
+    try:
         from scanner.scoring import compute_conviction, grade_conviction, CHASEABLE_GRADE_CAP
         check("scanner.scoring imports", True)
     except Exception as e:
@@ -458,6 +465,31 @@ def main():
     check("Virgin CPR: thin history (<2 bars) returns [] without crashing", _virgin_cpr_zones(virgin_bars[:1], 0.0) == [])
     check("Virgin CPR: zones sorted strongest-first", all(vz[i]["strength"] >= vz[i + 1]["strength"] for i in range(len(vz) - 1)), f"got {vz}")
     check("Virgin CPR: capped at 3 zones", len(vz) <= 3)
+
+    # ═══════════════════════════════════════════════
+    # PHASE 3 (NEW) — TRADE-CARD FIELDS
+    # ═══════════════════════════════════════════════
+    print("\n--- PHASE 3 (NEW): POTENTIAL UPSIDE % + HORIZON LABEL ---")
+
+    # Matches the user-supplied reference broker-call cards exactly:
+    # Hindalco (current 1059.60, target 1105) -> 4.28%; Blue Star
+    # (current 1514, target 1665.95) -> 10.04%.
+    up1 = _potential_upside_pct("BUY CE", 1059.60, 1105.0)
+    check("Potential upside % matches reference card 1 (4.28%)", up1 == 4.28, f"got {up1}")
+    up2 = _potential_upside_pct("BUY CE", 1514.0, 1665.95)
+    check("Potential upside % matches reference card 2 (10.04%)", up2 == 10.04, f"got {up2}")
+
+    up_pe = _potential_upside_pct("BUY PE", 100.0, 90.0)
+    check("PE upside is the downward move framed positive", up_pe == 10.0, f"got {up_pe}")
+    up_pe_wrong_side = _potential_upside_pct("BUY PE", 100.0, 110.0)
+    check("PE target above current price gives negative upside (honest, not clamped)", up_pe_wrong_side == -10.0, f"got {up_pe_wrong_side}")
+    check("Zero/negative ltp never raises, returns 0.0", _potential_upside_pct("BUY CE", 0.0, 100.0) == 0.0)
+
+    check("Horizon label: INTRADAY -> Intraday", _trade_horizon_label("INTRADAY") == "Intraday")
+    check("Horizon label: BTST_1_2D -> Short Term", _trade_horizon_label("BTST_1_2D") == "Short Term")
+    check("Horizon label: SWING -> Medium Term", _trade_horizon_label("SWING") == "Medium Term")
+    check("Horizon label: AVOID -> Avoid", _trade_horizon_label("AVOID") == "Avoid")
+    check("Horizon label: unknown value falls back to title-case, no crash", _trade_horizon_label("some_new_state") == "Some_New_State")
 
     # ═══════════════════════════════════════════════
     # SUMMARY

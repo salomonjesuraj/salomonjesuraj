@@ -145,10 +145,13 @@ function mtfDots(dots) {
   }).join('');
 }
 
-function horizonChip(value) {
+function horizonChip(value, friendlyLabel) {
   const v = String(value || 'INTRADAY').toUpperCase();
   const cls = v.includes('SWING') ? 'swing' : v.includes('BTST') ? 'btst' : v.includes('AVOID') ? 'avoid' : 'intraday';
-  const label = v === 'BTST_1_2D' ? 'BTST 1-2D' : v.replaceAll('_', ' ');
+  // Prefer the backend's broker-card-style label (Intraday/Short Term/
+  // Medium Term/Avoid) when supplied; falls back to the raw value for any
+  // caller that hasn't been updated to pass it.
+  const label = friendlyLabel || (v === 'BTST_1_2D' ? 'BTST 1-2D' : v.replaceAll('_', ' '));
   return `<span class="horizon-chip ${cls}">${escapeHtml(label)}</span>`;
 }
 
@@ -2057,6 +2060,7 @@ export class ScannerPanel {
         <div class="trade-plan-metric"><label>Entry</label><b>${formatPrice(entry)}</b><small>${escapeHtml(item.status || 'WATCH')}</small></div>
         <div class="trade-plan-metric"><label>SL</label><b class="negative">${formatPrice(sl)}</b><small>Risk ${underlyingRisk ? formatPrice(underlyingRisk) : '-'}</small></div>
         <div class="trade-plan-metric"><label>T1 / T2</label><b class="positive">${formatPrice(t1)}</b><small>${formatPrice(t2)} · R:R ${rr1}:1</small></div>
+        <div class="trade-plan-metric"><label>Potential Upside</label><b class="positive">${formatPct(item.potential_upside_pct)}</b><small>${escapeHtml(item.trade_horizon_label || '')}</small></div>
         <div class="trade-plan-metric"><label>${escapeHtml(triggerLabel)}</label><b class="${directionClass === 'sell' ? 'negative' : 'positive'}">${formatPrice(trigger)}</b><small>activation</small></div>
         <div class="trade-plan-metric"><label>Risk budget</label><b>${formatPrice(risk.riskAmount)}</b><small>${risk.riskPct.toFixed(1)}% capital</small></div>
         <div class="trade-plan-wide"><label>MTF / Evidence</label><b>${escapeHtml(mtf)}</b><small>Strength ${setup} · ${escapeHtml(reasons || 'Evidence building')}</small></div>
@@ -2074,7 +2078,7 @@ export class ScannerPanel {
           <div class="trade-plan-ai-map">
             <div class="ai-map-head">
               <span>AI Trade Map</span>
-              ${horizonChip(item.trade_horizon)}
+              ${horizonChip(item.trade_horizon, item.trade_horizon_label)}
               ${chaseChip(item.chase_quality)}
             </div>
             <p>${escapeHtml(item.breakout_explanation || 'Awaiting breakout map')}</p>
@@ -2300,7 +2304,7 @@ export class ScannerPanel {
       gate_score: gateScoreCell(item, this._signalMode),
       intelligence_score: intelCell(item),
       news_confirmation: newsCell(item),
-      trade_horizon: horizonChip(item.trade_horizon),
+      trade_horizon: horizonChip(item.trade_horizon, item.trade_horizon_label),
       chase_quality: chaseChip(item.chase_quality),
       intraday_score: scoreMeter(item.intraday_score || 0),
       swing_score: scoreMeter(item.swing_score || 0),
