@@ -67,6 +67,13 @@ def main():
         return
 
     try:
+        from api.routes.ticks import _classify_oi_buildup
+        check("api.routes.ticks OI classification imports", True)
+    except Exception as e:
+        check("api.routes.ticks OI classification imports", False, str(e))
+        return
+
+    try:
         from scanner.scoring import compute_conviction, grade_conviction, CHASEABLE_GRADE_CAP
         check("scanner.scoring imports", True)
     except Exception as e:
@@ -224,6 +231,26 @@ def main():
     no_pine_score, no_pine_sub = compute_conviction(base_technical)
     check("No pine_confidence -> unaffected legacy technical-only path",
           "pine_confidence_component" not in no_pine_sub)
+
+    # ═══════════════════════════════════════════════
+    # OI BUILDUP CLASSIFICATION (Long/Short Buildup, Short Covering,
+    # Long Unwinding) -- was in the original design doc, never implemented.
+    # ═══════════════════════════════════════════════
+    print("\n--- OI BUILDUP CLASSIFICATION ---")
+    check("Price up + OI up -> Long Buildup",
+          _classify_oi_buildup(15.0, 1.2)["label"] == "LONG BUILDUP")
+    check("Price down + OI up -> Short Buildup",
+          _classify_oi_buildup(15.0, -1.2)["label"] == "SHORT BUILDUP")
+    check("Price up + OI down -> Short Covering",
+          _classify_oi_buildup(-15.0, 1.2)["label"] == "SHORT COVERING")
+    check("Price down + OI down -> Long Unwinding",
+          _classify_oi_buildup(-15.0, -1.2)["label"] == "LONG UNWINDING")
+    check("Small OI move -> OI FLAT, not a false signal",
+          _classify_oi_buildup(1.0, 2.0)["label"] == "OI FLAT")
+    check("Missing data never raises",
+          _classify_oi_buildup(None, None)["label"] == "NO_DATA")
+    check("Long Buildup / Short Covering both tag BULLISH bias",
+          _classify_oi_buildup(15.0, 1.2)["bias"] == "BULLISH" == _classify_oi_buildup(-15.0, 1.2)["bias"])
 
     # ═══════════════════════════════════════════════
     # PHASE 4 — MTF MAJOR BLOCKER

@@ -7500,3 +7500,19 @@ body.screener-v4-page{
 .watchlist-row .wl-cell b.conv-85{ color:#4d7c0f; }
 .watchlist-row .wl-cell b.conv-75{ color:#a16207; }
 .watchlist-row .wl-cell b.conv-65{ color:#c2410c; }
+
+/* ────────────────────────────────────────────────────────────────────────
+   v7.9.0 — fix: cells that stack two lines (chain-cell's PROXY badge + a
+   small score number underneath, intel-cell's meter + zone label, etc.)
+   were taller than a 26px Compact row and had no overflow clipping, so the
+   second line visually bled down into the row below it -- looked like
+   header/row misalignment but was actually cross-row content overflow.
+   Clip it, and hide the secondary line entirely at Compact density where
+   there's no room for it (still shown in Comfortable/Spacious).
+   ──────────────────────────────────────────────────────────────────────── */
+.screener-pro-v4 .scanner-row .sc{
+  overflow:hidden!important;
+}
+.screener-pro-v4 .scanner-table-zone.density-compact .scanner-row .sc small{
+  display:none!important;
+}

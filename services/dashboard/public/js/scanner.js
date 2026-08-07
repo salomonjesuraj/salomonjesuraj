@@ -198,12 +198,28 @@ function newsCell(item) {
   </div>`;
 }
 
+// Standard 4-way OI read: does open interest agree with price direction
+// (fresh positioning) or oppose it (positions closing)? Only meaningful
+// once there's live Upstox chain data for this row -- see
+// api/routes/ticks.py:_classify_oi_buildup(). "PROXY" (no live chain yet)
+// is a deliberate scope choice, not a bug: chains are only live-fetched for
+// the highest-priority candidates to stay within Upstox rate limits, not
+// all 208 F&O symbols at once.
+function oiSignalText(item) {
+  const signal = String(item.chain_oi_signal || '').toUpperCase();
+  if (!signal || signal === 'NO_DATA' || signal === 'OI FLAT') return '';
+  const pct = item.chain_oi_change_pct;
+  const pctText = pct != null ? ` ${Number(pct) >= 0 ? '+' : ''}${Number(pct).toFixed(1)}%` : '';
+  return `${signal}${pctText}`;
+}
+
 function chainCell(item) {
   const ready = Boolean(item.option_chain_ready);
   const status = String(item.chain_execution_status || (ready ? 'WAIT_CONTRACT' : 'PROXY')).toUpperCase();
   const score = Math.round(Number(item.chain_option_score || item.option_readiness || 0));
   const raw = item.chain_raw_option_score == null ? '' : `Raw ${Math.round(Number(item.chain_raw_option_score || 0))}`;
   const grade = item.chain_quality_grade || '';
+  const oiSignal = oiSignalText(item);
   const cls = status.includes('TRADE_READY') ? 'buy'
     : status.includes('AVOID') ? 'sell'
     : status.includes('WAIT') || status.includes('PENDING') ? 'hold'
@@ -218,12 +234,14 @@ function chainCell(item) {
     item.chain_score_cap_detail ? `Cap: ${item.chain_score_cap_detail}` : '',
     item.chain_spread_pct != null ? `Spread: ${item.chain_spread_pct}%` : '',
     item.chain_oi != null ? `OI: ${Math.round(Number(item.chain_oi || 0))}` : '',
+    oiSignal ? `OI signal: ${oiSignal}` : '',
     item.chain_iv != null ? `IV: ${item.chain_iv}` : '',
     item.chain_delta != null ? `Delta: ${item.chain_delta}` : '',
   ].filter(Boolean).join('\n');
+  const subText = oiSignal || `${score ? score : '-'}${grade ? ` · ${escapeHtml(String(grade))}` : ''}${raw ? ` · ${escapeHtml(raw)}` : ''}`;
   return `<div class="chain-cell" title="${escapeHtml(title)}">
     <span class="trade-chip ${cls}">${escapeHtml(label)}</span>
-    <small>${score ? score : '-'}${grade ? ` · ${escapeHtml(String(grade))}` : ''}${raw ? ` · ${escapeHtml(raw)}` : ''}</small>
+    <small class="${oiSignal ? (String(item.chain_oi_bias).toUpperCase() === 'BULLISH' ? 'positive' : 'negative') : ''}">${subText}</small>
   </div>`;
 }
 

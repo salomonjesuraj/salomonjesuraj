@@ -26,6 +26,43 @@ logger = structlog.get_logger()
 NEWS_EDGE_KEY_PREFIX = "infusion:news-edge:"
 
 
+def _classify_oi_buildup(oi_change_pct, price_change_pct) -> dict:
+    """Standard 4-way OI interpretation: does open interest agree with price
+    direction (fresh positioning) or oppose it (positions closing)?
+
+      price up   + OI up   -> Long Buildup    (fresh longs, bullish)
+      price down + OI up   -> Short Buildup   (fresh shorts, bearish)
+      price up   + OI down -> Short Covering  (shorts closing, bullish)
+      price down + OI down -> Long Unwinding  (longs closing, bearish)
+
+    Was in the original design (docs/PHASE-3-SCANNER-CONVICTION-ENGINE.md
+    section 9.2) but never actually implemented -- oi_change_pct was already
+    being computed per-contract (market.py's _upstox_option_context) and
+    used only as a pass/fail liquidity gate, never classified or surfaced.
+    Only meaningful once OI has moved enough to mean something -- a +/-3%
+    band is treated as flat/neutral, not a signal.
+    """
+    try:
+        oi_chg = float(oi_change_pct)
+        px_chg = float(price_change_pct)
+    except (TypeError, ValueError):
+        return {"label": "NO_DATA", "bias": "NEUTRAL"}
+
+    FLAT_BAND = 3.0
+    if abs(oi_chg) < FLAT_BAND:
+        return {"label": "OI FLAT", "bias": "NEUTRAL"}
+
+    oi_up = oi_chg > 0
+    price_up = px_chg > 0
+    if oi_up and price_up:
+        return {"label": "LONG BUILDUP", "bias": "BULLISH"}
+    if oi_up and not price_up:
+        return {"label": "SHORT BUILDUP", "bias": "BEARISH"}
+    if not oi_up and price_up:
+        return {"label": "SHORT COVERING", "bias": "BULLISH"}
+    return {"label": "LONG UNWINDING", "bias": "BEARISH"}
+
+
 def _index_snapshot_from_hash(symbol: str, label: str, data: dict) -> dict:
     snap = {"symbol": symbol, "label": label, "available": False}
     if not data:
@@ -1149,11 +1186,15 @@ async def list_ticks(request):
                     entry.update({
                         "chain_spread_pct": metrics.get("spread_pct"),
                         "chain_oi": metrics.get("oi"),
+                        "chain_oi_change_pct": metrics.get("oi_change_pct"),
                         "chain_iv": metrics.get("iv"),
                         "chain_iv_rank": metrics.get("iv_rank"),
                         "chain_delta": metrics.get("delta"),
                         "chain_expiry_days": metrics.get("expiry_days"),
                     })
+                    oi_buildup = _classify_oi_buildup(metrics.get("oi_change_pct"), features.get("change_pct"))
+                    entry["chain_oi_signal"] = oi_buildup["label"]
+                    entry["chain_oi_bias"] = oi_buildup["bias"]
             entry.update(build_intelligence_layer(entry, features, option_summary=option_summary, news_edge=news_edge, event_risk=event_risk))
             mtf_cache = _decode_mtf_cache(mtf_raw)
             if mtf_cache:
