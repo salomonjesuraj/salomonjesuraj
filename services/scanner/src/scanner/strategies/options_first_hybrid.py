@@ -182,6 +182,7 @@ class OptionsFirstHybrid(BaseStrategy):
             explanation.extend([f"Anti-chase: {reason}" for reason in pine.anti_chase_reasons[:2]])
 
         ml = features.get("ml_features") or {}
+        ma_regime = (features.get("mtf_cache") or {}).get("ma_regime") or {}
         snapshot = {
             "ltp": ltp,
             "vwap": vwap,
@@ -245,6 +246,12 @@ class OptionsFirstHybrid(BaseStrategy):
             "fib_targets": pine.fib_targets,
             "fib_cluster_center": ml.get("fib_cluster_center"),
             "fib_cluster_hits": ml.get("fib_cluster_hits"),
+            # Daily golden/death-cross regime (Phase 4) -- informational only,
+            # not wired into conviction score/suppression. See _ma_regime()
+            # in api/routes/mtf.py for why.
+            "ma_regime": ma_regime.get("regime"),
+            "ma_regime_stack": ma_regime.get("stack"),
+            "ma_regime_cross_recent": ma_regime.get("cross_recent"),
         }
 
         return SignalCandidate(

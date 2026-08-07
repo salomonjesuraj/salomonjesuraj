@@ -408,6 +408,100 @@ def _virgin_cpr_zones(daily_bars: list[dict], current_ltp: float) -> list[dict]:
     return zones[:3]
 
 
+CROSS_LOOKBACK_DAYS = 10  # "recent" cross window -- Infusion's own definition; sources don't specify one
+
+
+def _sma_series(closes: list[float], period: int) -> list[float | None]:
+    """Rolling SMA at each index; None until enough history exists."""
+    out: list[float | None] = []
+    window_sum = 0.0
+    for i, c in enumerate(closes):
+        window_sum += c
+        if i >= period:
+            window_sum -= closes[i - period]
+        out.append(window_sum / period if i >= period - 1 else None)
+    return out
+
+
+def _regime_at(sma50: float | None, sma200: float | None) -> str:
+    if sma50 is None or sma200 is None:
+        return "unknown"
+    if sma50 > sma200:
+        return "golden_cross"
+    if sma50 < sma200:
+        return "death_cross"
+    return "neutral"
+
+
+def _ma_regime(daily_bars: list[dict]) -> dict:
+    """Golden Cross / Death Cross regime + MA-stack alignment from daily
+    closes. Three independent sources (Kratter, Moving Average 101, Farley)
+    converge on the 50-SMA vs 200-SMA relationship as the primary
+    structural bull/bear divider -- "bulls live above the 200-day, bears
+    live below" (Farley). MA-stack additionally checks 20/50/200-SMA
+    ordering against price for trend-strength confirmation.
+
+    This is informational only -- NOT wired into the live conviction score
+    or any suppression gate. Consistent with the self-improving-engine
+    principle (new signals get tracked standalone before they're allowed to
+    move the blended score): the existing score/precision-guard thresholds
+    were calibrated without this input, and folding it in silently would
+    shift what "score >= 80" means without re-validation.
+    """
+    closes = [float(b["close"]) for b in daily_bars if b.get("close")]
+    if len(closes) < 20:
+        return {
+            "regime": "unknown", "sma20": None, "sma50": None, "sma200": None,
+            "stack": "unknown", "cross_recent": False,
+            "warning": "Not enough daily history (need 20+ days, 200+ for a real regime read)",
+        }
+
+    sma20_series = _sma_series(closes, 20)
+    sma50_series = _sma_series(closes, 50)
+    sma200_series = _sma_series(closes, 200)
+    sma20, sma50, sma200 = sma20_series[-1], sma50_series[-1], sma200_series[-1]
+    ltp = closes[-1]
+
+    regime = _regime_at(sma50, sma200)
+
+    cross_recent = False
+    if regime in ("golden_cross", "death_cross"):
+        for i in range(2, min(CROSS_LOOKBACK_DAYS, len(closes)) + 1):
+            prior_regime = _regime_at(sma50_series[-i], sma200_series[-i])
+            if prior_regime == "unknown":
+                break
+            # A real crossover typically passes through the two SMAs being
+            # momentarily equal ("neutral") on the way -- that counts as a
+            # differing prior state, not something to skip past. Only
+            # "unknown" (insufficient history, handled above) is excluded.
+            if prior_regime != regime:
+                cross_recent = True
+                break
+
+    if sma20 is not None and sma50 is not None and sma200 is not None:
+        if ltp > sma20 > sma50 > sma200:
+            stack = "strong_bull_stack"
+        elif ltp < sma20 < sma50 < sma200:
+            stack = "strong_bear_stack"
+        elif ltp > sma50 > sma200:
+            stack = "bull_stack"
+        elif ltp < sma50 < sma200:
+            stack = "bear_stack"
+        else:
+            stack = "mixed"
+    else:
+        stack = "unknown"
+
+    return {
+        "regime": regime,
+        "sma20": round(sma20, 2) if sma20 is not None else None,
+        "sma50": round(sma50, 2) if sma50 is not None else None,
+        "sma200": round(sma200, 2) if sma200 is not None else None,
+        "stack": stack,
+        "cross_recent": cross_recent,
+    }
+
+
 def _major_blocker(blocker_bars: dict[str, list[dict]], ltp: float) -> dict:
     """Nearest opposing swing pivot on the higher timeframes, between price
     and either direction's target — matches Pine's "Major Blocker" concept.
@@ -651,6 +745,7 @@ async def compute_mtf(redis, symbol: str, store: bool = True) -> dict:
     pivots = _classic_pivots(daily[-1]["high"], daily[-1]["low"], daily[-1]["close"]) if daily else {}
     pivot_bias = _pivot_bias(current_ltp, pivots) if pivots else "neutral"
     virgin_cpr_zones = _virgin_cpr_zones(daily, current_ltp) if daily else []
+    ma_regime = _ma_regime(daily)
     quality = "historical" if any(row["bars"] for row in timeframes.values()) else "missing"
     if any(row["quality"] == "limited" for row in timeframes.values()) and quality == "historical":
         quality = "limited"
@@ -682,6 +777,7 @@ async def compute_mtf(redis, symbol: str, store: bool = True) -> dict:
         "pivots": pivots,
         "pivot_bias": pivot_bias,
         "virgin_cpr_zones": virgin_cpr_zones,
+        "ma_regime": ma_regime,
         "bull_count": bull_count,
         "bear_count": bear_count,
         "mixed_count": mixed_count,

@@ -112,6 +112,13 @@ def main():
         return
 
     try:
+        from api.routes.mtf import _ma_regime, _sma_series, _regime_at
+        check("api.routes.mtf MA-regime functions import", True)
+    except Exception as e:
+        check("api.routes.mtf MA-regime functions import", False, str(e))
+        return
+
+    try:
         from infusion_common.sizing import compute_position_size
         check("infusion_common.sizing imports", True)
     except Exception as e:
@@ -490,6 +497,43 @@ def main():
     check("Horizon label: SWING -> Medium Term", _trade_horizon_label("SWING") == "Medium Term")
     check("Horizon label: AVOID -> Avoid", _trade_horizon_label("AVOID") == "Avoid")
     check("Horizon label: unknown value falls back to title-case, no crash", _trade_horizon_label("some_new_state") == "Some_New_State")
+
+    # ═══════════════════════════════════════════════
+    # PHASE 4 (NEW) — GOLDEN/DEATH CROSS + MA-STACK REGIME
+    # ═══════════════════════════════════════════════
+    print("\n--- PHASE 4 (NEW): GOLDEN/DEATH CROSS + MA-STACK REGIME ---")
+
+    def flat_then_jump(base, target, jump_days):
+        return [{"close": c} for c in [base] * 200 + [target] * jump_days]
+
+    check("_sma_series returns None before enough history", _sma_series([1.0, 2.0, 3.0], 5) == [None, None, None])
+    sma3 = _sma_series([1.0, 2.0, 3.0, 4.0, 5.0], 3)
+    check("_sma_series computes correctly once warmed up", sma3 == [None, None, 2.0, 3.0, 4.0], f"got {sma3}")
+    check("_regime_at: sma50>sma200 -> golden_cross", _regime_at(110.0, 100.0) == "golden_cross")
+    check("_regime_at: sma50<sma200 -> death_cross", _regime_at(90.0, 100.0) == "death_cross")
+    check("_regime_at: equal -> neutral", _regime_at(100.0, 100.0) == "neutral")
+    check("_regime_at: missing data -> unknown", _regime_at(None, 100.0) == "unknown")
+
+    r_recent = _ma_regime(flat_then_jump(100.0, 200.0, 8))
+    check("Golden cross detected on a clean crossover series", r_recent["regime"] == "golden_cross", f"got {r_recent}")
+    check("Cross flagged recent when it happened 7 trading days ago", r_recent["cross_recent"] is True, f"got {r_recent}")
+    check("Strong bull stack detected (price > 20 > 50 > 200 SMA)", r_recent["stack"] == "strong_bull_stack", f"got {r_recent}")
+
+    r_old = _ma_regime(flat_then_jump(100.0, 200.0, 15))
+    check("Same crossover NOT flagged recent once 14 days old", r_old["cross_recent"] is False, f"got {r_old}")
+    check(
+        "A real crossover passing through equal-SMA (neutral) still counts as a differing prior state",
+        r_recent["cross_recent"] is True,
+        "regression guard for the neutral-exclusion bug found during Phase 4 testing",
+    )
+
+    r_death = _ma_regime(flat_then_jump(200.0, 100.0, 8))
+    check("Death cross detected on the mirror-image series", r_death["regime"] == "death_cross", f"got {r_death}")
+    check("Death cross also flagged recent", r_death["cross_recent"] is True, f"got {r_death}")
+    check("Strong bear stack detected on death-cross series", r_death["stack"] == "strong_bear_stack", f"got {r_death}")
+
+    thin = _ma_regime([{"close": 100.0}] * 5)
+    check("Thin history (<20 days) returns unknown regime, never crashes", thin["regime"] == "unknown" and thin["sma50"] is None, f"got {thin}")
 
     # ═══════════════════════════════════════════════
     # SUMMARY
