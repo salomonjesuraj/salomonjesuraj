@@ -7435,3 +7435,68 @@ body.screener-v4-page{
 }
 .sector-ribbon-ad .up{ color:var(--green); }
 .sector-ribbon-ad .down{ color:var(--red); }
+
+/* ────────────────────────────────────────────────────────────────────────
+   v7.8.0 — Pre-Breakout Watchlist rewritten from a stacked card (badge row
+   + progress-bar row + 2x3 stat grid + reason line, ~5 rows tall and using
+   the old dark-navy palette) to a single row, light-theme colours matching
+   the rest of the dashboard. Full reasoning is still there, just as a
+   hover tooltip instead of an always-visible line.
+   ──────────────────────────────────────────────────────────────────────── */
+.watchlist-row{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:6px 10px;
+  margin:0;
+  border-bottom:1px solid rgba(148,163,184,.16);
+  background:#fff;
+  cursor:pointer;
+  font-size:11px;
+  white-space:nowrap;
+  overflow-x:auto;
+  transition:background var(--transition-fast,120ms);
+}
+.watchlist-row:hover{
+  background:#f8fafc;
+}
+.watchlist-row .wl-state-badge{
+  font-size:9px;
+  font-weight:700;
+  padding:2px 7px;
+  border-radius:999px;
+  letter-spacing:.2px;
+  font-family:var(--font-ui);
+  flex-shrink:0;
+}
+.watchlist-row .wl-symbol{
+  font-size:12px;
+  font-weight:800;
+  color:#0f172a;
+  flex-shrink:0;
+  min-width:64px;
+}
+.watchlist-row .wl-cell{
+  display:flex;
+  align-items:baseline;
+  gap:4px;
+  flex-shrink:0;
+}
+.watchlist-row .wl-cell label{
+  font-size:8px;
+  color:#94a3b8;
+  text-transform:uppercase;
+  letter-spacing:.3px;
+  font-family:var(--font-ui);
+}
+.watchlist-row .wl-cell b{
+  font-size:11px;
+  font-weight:700;
+  color:#1e293b;
+  font-variant-numeric:tabular-nums;
+}
+.watchlist-row .wl-cell b.positive{ color:var(--green); }
+.watchlist-row .wl-cell b.conv-95{ color:#15803d; }
+.watchlist-row .wl-cell b.conv-85{ color:#4d7c0f; }
+.watchlist-row .wl-cell b.conv-75{ color:#a16207; }
+.watchlist-row .wl-cell b.conv-65{ color:#c2410c; }

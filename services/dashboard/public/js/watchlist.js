@@ -6,12 +6,15 @@ import { formatPrice, escapeHtml } from './utils.js';
 
 const DASH = '—';
 
+// Light-theme colours (the rest of the dashboard moved to a light chrome
+// tonight; these were still the old dark-navy-card palette, which is what
+// read as "wrong color" sitting inside an otherwise light page).
 const STATE_META = {
-  coiled: { label: 'COILED', color: '#4ade80', bg: '#14532d', icon: '🔥', priority: 4 },
-  accumulating: { label: 'ACCUM', color: '#60a5fa', bg: '#1e3a5f', icon: '📈', priority: 3 },
-  compressing: { label: 'COMP', color: '#facc15', bg: '#2d2a14', icon: '🗜️', priority: 2 },
-  triggered: { label: 'TRIGGERED', color: '#e879f9', bg: '#3b0764', icon: '⚡', priority: 5 },
-  idle: { label: 'IDLE', color: '#94a3b8', bg: '#1e293b', icon: '', priority: 1 },
+  coiled: { label: 'COILED', color: '#15803d', bg: '#dcfce7', icon: '🔥', priority: 4 },
+  accumulating: { label: 'ACCUM', color: '#1d4ed8', bg: '#dbeafe', icon: '📈', priority: 3 },
+  compressing: { label: 'COMP', color: '#a16207', bg: '#fef9c3', icon: '🗜️', priority: 2 },
+  triggered: { label: 'TRIGGERED', color: '#a21caf', bg: '#fae8ff', icon: '⚡', priority: 5 },
+  idle: { label: 'IDLE', color: '#475569', bg: '#f1f5f9', icon: '', priority: 1 },
 };
 
 function convClass(score) {
@@ -108,7 +111,7 @@ export class WatchlistPanel {
 
     this._el.innerHTML = active.map(w => this._renderCard(w)).join('');
 
-    this._el.querySelectorAll('.watchlist-card').forEach(card => {
+    this._el.querySelectorAll('.watchlist-row').forEach(card => {
       card.addEventListener('click', () => {
         const sym = card.dataset.sym;
         document.dispatchEvent(new CustomEvent('chart:load', { detail: { symbol: sym } }));
@@ -130,64 +133,32 @@ export class WatchlistPanel {
     const hasSignal = Boolean(w.has_signal);
 
     const secStrength = this._sectorStrength.get(sector) || 0;
-    const secStrColor = secStrength >= 70 ? '#4ade80' : secStrength >= 50 ? '#fbbf24' : '#f87171';
-    const rColor = readiness >= 75 ? '#4ade80' : readiness >= 50 ? '#facc15' : '#f97316';
+    const secStrColor = secStrength >= 70 ? '#15803d' : secStrength >= 50 ? '#a16207' : '#b91c1c';
+    const rColor = readiness >= 75 ? '#15803d' : readiness >= 50 ? '#a16207' : '#c2410c';
     const cc = convClass(conv);
     const triggerPrice = hasSignal && w.entry_price > 0 ? formatPrice(w.entry_price) : DASH;
+    const reasonText = w.transition_reason ? prettyReason(w.transition_reason) : '';
 
     const gradeHtml = w.conviction_grade
       ? `<span class="grade-chip grade-${(w.conviction_grade || '').toLowerCase().replace('+', 'plus')}">${escapeHtml(w.conviction_grade)}</span>`
       : '';
 
+    // Single row per stock -- everything visible at a glance, no
+    // stacked/wrapped card. Full reasoning still available on hover.
     return `
-    <div class="watchlist-card ${cc}" data-sym="${escapeHtml(w.symbol)}" style="cursor:pointer">
-      <div class="wl-header">
-        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-          <span class="wl-state-badge" style="background:${meta.bg};color:${meta.color}">${meta.icon} ${meta.label}</span>
-          <span class="wl-symbol">${escapeHtml(w.symbol)}</span>
-          ${gradeHtml}
-        </div>
-        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px">
-          <span class="wl-sector">${escapeHtml(sector)}</span>
-          ${secStrength > 0 ? `<span style="font-size:9px;color:${secStrColor};font-weight:600">Str ${Math.round(secStrength)}</span>` : ''}
-        </div>
-      </div>
-
-      <div class="wl-readiness">
-        <div class="wl-readiness-track">
-          <div class="wl-readiness-fill" style="width:${readiness}%;background:${rColor}"></div>
-        </div>
-        <span class="wl-readiness-val" style="color:${rColor}">${readiness}</span>
-      </div>
-
-      <div class="wl-stats">
-        <div class="wl-stat">
-          <span class="wl-stat-label">Conviction</span>
-          <span class="wl-stat-val ${cc}">${conv > 0 ? conv : DASH}</span>
-        </div>
-        <div class="wl-stat">
-          <span class="wl-stat-label">Trigger</span>
-          <span class="wl-stat-val ${hasSignal ? 'positive' : ''}">${triggerPrice}</span>
-        </div>
-        <div class="wl-stat">
-          <span class="wl-stat-label">RelVol</span>
-          <span class="wl-stat-val ${rvol > 1.5 ? 'positive' : ''}">${rvol > 0 ? rvol.toFixed(1) + 'x' : DASH}</span>
-        </div>
-        <div class="wl-stat">
-          <span class="wl-stat-label">Compress</span>
-          <span class="wl-stat-val ${comp > 70 ? 'positive' : ''}">${comp}%</span>
-        </div>
-        <div class="wl-stat">
-          <span class="wl-stat-label">RSI</span>
-          <span class="wl-stat-val">${rsi > 0 ? rsi.toFixed(1) : DASH}</span>
-        </div>
-        <div class="wl-stat">
-          <span class="wl-stat-label">Time</span>
-          <span class="wl-stat-val">${dur}</span>
-        </div>
-      </div>
-
-      ${w.transition_reason ? `<div class="wl-reason" title="${escapeHtml(prettyReason(w.transition_reason))}">${escapeHtml(prettyReason(w.transition_reason))}</div>` : ''}
+    <div class="watchlist-row ${cc}" data-sym="${escapeHtml(w.symbol)}" title="${escapeHtml(reasonText)}">
+      <span class="wl-state-badge" style="background:${meta.bg};color:${meta.color}">${meta.icon} ${meta.label}</span>
+      <span class="wl-symbol">${escapeHtml(w.symbol)}</span>
+      ${gradeHtml}
+      <span class="wl-cell"><label>Sector</label><b>${escapeHtml(sector)}</b></span>
+      <span class="wl-cell"><label>Ready</label><b style="color:${rColor}">${readiness}</b></span>
+      <span class="wl-cell"><label>Conv</label><b class="${cc}">${conv > 0 ? conv : DASH}</b></span>
+      <span class="wl-cell"><label>Trigger</label><b class="${hasSignal ? 'positive' : ''}">${triggerPrice}</b></span>
+      <span class="wl-cell"><label>RelVol</label><b class="${rvol > 1.5 ? 'positive' : ''}">${rvol > 0 ? rvol.toFixed(1) + 'x' : DASH}</b></span>
+      <span class="wl-cell"><label>Compress</label><b class="${comp > 70 ? 'positive' : ''}">${comp}%</b></span>
+      <span class="wl-cell"><label>RSI</label><b>${rsi > 0 ? rsi.toFixed(1) : DASH}</b></span>
+      <span class="wl-cell"><label>Time</label><b>${dur}</b></span>
+      ${secStrength > 0 ? `<span class="wl-cell"><label>Sector Str</label><b style="color:${secStrColor}">${Math.round(secStrength)}</b></span>` : ''}
     </div>`;
   }
 
