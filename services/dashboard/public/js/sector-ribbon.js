@@ -72,16 +72,18 @@ export class SectorRibbon {
   _sectorHeatmap() {
     const list = [...this._sectors].sort((a, b) => Number(b.strength_score || 0) - Number(a.strength_score || 0));
     if (!list.length) return '<div class="pulse-empty">Loading sector heatmap…</div>';
-    return `<div class="sector-ribbon-grid pulse-grid sector-heatmap-grid">
+    // Compact A/D format per feedback: name + score + advancing/declining
+    // count, no bar -- one glance, no wasted vertical space.
+    return `<div class="sector-ribbon-grid pulse-grid sector-heatmap-grid compact">
       ${list.map(s => {
         const name = String(s.sector_id || '—');
         const score = Math.round(Number(s.strength_score || 0));
-        const delta = Number(s.strength_delta || 0);
+        const advancing = Math.round(Number(s.advancing || 0));
+        const declining = Math.round(Number(s.declining || 0));
         const c = sectorColor(score);
-        return `<button class="sector-ribbon-card pulse-heat-card" data-sector="${escapeHtml(name)}" title="${escapeHtml(name)} strength ${score}">
+        return `<button class="sector-ribbon-card pulse-heat-card" data-sector="${escapeHtml(name)}" title="${escapeHtml(name)} strength ${score} — ${advancing} advancing / ${declining} declining">
           <span class="sector-ribbon-top"><b>${escapeHtml(name.replace('_', ' '))}</b><strong style="color:${c}">${score}</strong></span>
-          <span class="sector-ribbon-bar"><i style="width:${Math.max(4, score)}%;background:${c}"></i></span>
-          <span class="sector-ribbon-meta ${delta >= 0 ? 'positive' : 'negative'}">${delta >= 0 ? '▲' : '▼'}${Math.abs(delta).toFixed(0)}</span>
+          <span class="sector-ribbon-ad"><i class="up">${advancing}▲</i><i class="down">${declining}▼</i></span>
         </button>`;
       }).join('')}
     </div>`;

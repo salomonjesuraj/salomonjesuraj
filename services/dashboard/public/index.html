@@ -20,17 +20,13 @@
     <div class="quick-controls pro-nav-strip" id="quickControls"></div>
     <footer class="footer-bar top-status-strip" id="footer"></footer>
 
-    <!-- Sector map — pinned below the status bar (ambient market context,
-         not a per-signal panel). Self-contained: sector-ribbon.js renders
-         its own "Market Pulse" header + collapse/drag controls. -->
-    <div class="sector-ribbon pro-sector-deck" id="sectorRibbon" data-collapsible-section="market-pulse" data-draggable-section="market-pulse"></div>
+    <!-- Sector map + Signal Cockpit side by side, below the status bar.
+         Sector map is ambient market context (ribbon.js owns its own
+         "Market Pulse" header + collapse/drag controls); cockpit is the
+         one thing shown by default for per-signal action. -->
+    <div class="top-pulse-cockpit-row" id="topPulseCockpitRow">
+      <div class="sector-ribbon pro-sector-deck" id="sectorRibbon" data-collapsible-section="market-pulse" data-draggable-section="market-pulse"></div>
 
-    <main class="hybrid-main pro-main">
-      <!--
-        SIGNAL COCKPIT — the only thing shown by default. Symbol, CE/PE
-        direction, conviction grade, one-line reason, entry/SL/T1/T2.
-        Everything else lives behind the "More" drawer below.
-      -->
       <section class="panel signal-cockpit-panel">
         <div class="panel-header pro-panel-header">
           <span class="panel-title"><span class="icon">&#127919;</span> Signal Cockpit</span>
@@ -42,7 +38,9 @@
           <div id="signalCockpit" class="signal-cockpit"></div>
         </div>
       </section>
+    </div>
 
+    <main class="hybrid-main pro-main main-drawer-only">
       <!--
         MORE DRAWER — everything else, collapsed by default. Reuses the
         existing collapsible-section + workbench-tab system verbatim; only
