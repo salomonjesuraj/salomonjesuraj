@@ -83,7 +83,9 @@ class SuppressionGate:
         self._precision_guard_enabled = settings.precision_guard_enabled
         self._precision_guard_min_score = settings.precision_guard_min_score
         self._precision_guard_min_rr = settings.precision_guard_min_rr
-        self._precision_guard_session = settings.precision_guard_session
+        self._precision_guard_sessions = {
+            s.strip() for s in str(settings.precision_guard_sessions).split(",") if s.strip()
+        }
         self._precision_guard_strategy_ids = {
             s.strip() for s in str(settings.precision_guard_strategy_ids).split(",") if s.strip()
         }
@@ -168,9 +170,9 @@ class SuppressionGate:
                     reason="precision_guard_rr",
                     gate="precision_guard",
                 )
-            if self._precision_guard_session:
+            if self._precision_guard_sessions:
                 current_session = _current_session()
-                if current_session != self._precision_guard_session:
+                if current_session not in self._precision_guard_sessions:
                     return SuppressionResult(
                         passed=False,
                         reason=f"precision_guard_session_{current_session}",

@@ -27,12 +27,17 @@ class ScannerSettings(InfusionSettings):
     min_sector_strength: float = 30.0       # below this → sector_weak
 
     # ─── Phase 5.1 precision guard ───────────────────
-    # Backtest winner on archived active regular-session signals:
-    # score >= 80, R:R >= 1.2, closing session only → ~85.9% precision on 333 decided trades.
+    # Re-backtested 2026-08-07 against 90 days of live outcomes at score >= 80, R:R >= 1.2:
+    #   closing      81.0% precision (358 decided, ~4.0/day)
+    #   mid_morning  63.2% precision (380 decided, ~4.2/day)
+    #   midday       61.5% precision (364 decided, ~4.0/day)
+    #   opening      41.4% precision (99 decided,  ~1.1/day) — BELOW breakeven at 1.2 R:R (45.5%), excluded
+    # Widened per user decision to trade precision for signal volume outside the closing-only window,
+    # while keeping the session gate on opening/pre_market/post_market where the edge doesn't hold.
     precision_guard_enabled: bool = True
     precision_guard_min_score: float = 80.0
     precision_guard_min_rr: float = 1.2
-    precision_guard_session: str = "closing"
+    precision_guard_sessions: str = "mid_morning,midday,closing"
     precision_guard_strategy_ids: str = "options_first_hybrid,vol_vwap_breakout"
 
     # ─── Vol-VWAP Breakout strategy ─────────────────
