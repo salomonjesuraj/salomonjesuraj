@@ -174,11 +174,20 @@ async def populate_redis(
 
 
 async def fetch_upstox_equity_master() -> dict[str, dict]:
-    """Fetch current Upstox NSE equity instrument keys.
+    """Fetch current Upstox NSE equity instrument keys, with live F&O lot sizes.
 
     Upstox refreshes the instrument files daily.  Local symbol JSON is useful
     for sectors/tier metadata, but the broker instrument_key must be current.
     If the download fails, we safely fall back to the checked-in keys.
+
+    The single NSE.json.gz payload bundles every NSE segment (NSE_EQ, NSE_FO,
+    NSE_INDEX, ...), not just equities. lot_size on an NSE_EQ row is always 1
+    (cash-market shares) — it is NOT the F&O contract lot size. We separately
+    scan the NSE_FO rows in the same payload for each underlying's current lot
+    size (keyed by underlying_symbol, which is consistent across strikes/
+    expiries for a given underlying) and stamp that onto the returned equity
+    row instead, so downstream lot_size consumers (position sizing, risk)
+    get the real derivatives lot size rather than the cash-market default of 1.
     """
     try:
         async with aiohttp.ClientSession() as session:
@@ -203,16 +212,42 @@ async def fetch_upstox_equity_master() -> dict[str, dict]:
         logger.warning("upstox_master_decode_error", error=str(exc))
         return {}
 
+    # F&O lot size per underlying: NSE_EQ.lot_size is always 1 (cash shares),
+    # so the real derivatives lot size must come from NSE_FO rows instead.
+    # Pick the lot size from the nearest-expiry contract per underlying, in
+    # case multiple live expiries momentarily disagree during a lot-size
+    # transition window.
+    fo_lot_by_underlying: dict[str, tuple[int, int]] = {}  # symbol -> (expiry, lot_size)
+    for row in rows:
+        if row.get("segment") != "NSE_FO":
+            continue
+        underlying = row.get("underlying_symbol", "")
+        lot_size = row.get("lot_size")
+        expiry = row.get("expiry") or 0
+        if not underlying or not lot_size:
+            continue
+        prev = fo_lot_by_underlying.get(underlying)
+        if prev is None or expiry < prev[0]:
+            fo_lot_by_underlying[underlying] = (expiry, int(lot_size))
+
     out = {}
     for row in rows:
         if row.get("segment") != "NSE_EQ" or row.get("instrument_type") != "EQ":
             continue
         symbol = row.get("trading_symbol", "")
         instrument_key = row.get("instrument_key", "")
-        if symbol and instrument_key:
-            out[symbol] = row
+        if not (symbol and instrument_key):
+            continue
+        fo_lot = fo_lot_by_underlying.get(symbol)
+        if fo_lot:
+            row = {**row, "lot_size": fo_lot[1]}
+        out[symbol] = row
 
-    logger.info("upstox_equity_master_loaded", count=len(out))
+    logger.info(
+        "upstox_equity_master_loaded",
+        count=len(out),
+        fo_lot_sizes_matched=sum(1 for s in out if s in fo_lot_by_underlying),
+    )
     return out
 
 
