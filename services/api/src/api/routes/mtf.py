@@ -12,10 +12,16 @@ import json
 import math
 import time
 from dataclasses import dataclass
+from datetime import datetime, time as dt_time
+from zoneinfo import ZoneInfo
 
 from aiohttp import web
 
 routes = web.RouteTableDef()
+
+_IST = ZoneInfo("Asia/Kolkata")
+_SESSION_OPEN = dt_time(9, 15)
+_SESSION_CLOSE = dt_time(15, 30)
 
 TIMEFRAMES = {
     "1M": ("intraday", 1),
@@ -262,6 +268,146 @@ def _fractal_pivots(bars: list[dict], left: int = 2, right: int = 2) -> tuple[li
     return highs, lows
 
 
+def _classic_pivots(prev_high: float, prev_low: float, prev_close: float) -> dict:
+    """Standard floor-trader pivot points (John Person / Vikram Prabhu),
+    computed from the prior COMPLETE trading day's H/L/C. This is distinct
+    from ticks.py's "fibo_pivot" proxy, which uses the CURRENT session's
+    still-forming day_high/day_low mid-session -- that's a live-tick
+    approximation, not the classic day-ahead pivot Prabhu's methodology and
+    the wider Indian intraday-trading convention are actually built on.
+
+    CPR (Central Pivot Range) is the 3-line P/BCPR/TCPR variant his
+    intraday setups use as the day's primary bias line and S/R width read.
+    """
+    if prev_high <= 0 or prev_low <= 0 or prev_close <= 0 or prev_high < prev_low:
+        return {}
+    pivot = (prev_high + prev_low + prev_close) / 3.0
+    rng = prev_high - prev_low
+    r1 = 2 * pivot - prev_low
+    s1 = 2 * pivot - prev_high
+    r2 = pivot + rng
+    s2 = pivot - rng
+    r3 = prev_high + 2 * (pivot - prev_low)
+    s3 = prev_low - 2 * (prev_high - pivot)
+    bcpr = (prev_high + prev_low) / 2.0
+    tcpr = (pivot - bcpr) + pivot
+    cpr_top = max(bcpr, tcpr)
+    cpr_bottom = min(bcpr, tcpr)
+    cpr_width_pct = (cpr_top - cpr_bottom) / pivot * 100.0 if pivot else 0.0
+
+    # Narrow/wide cutoffs are Infusion's own calibration, not from the
+    # source: Prabhu states the *effect* (narrow CPR -> higher odds of a
+    # trend day; wide CPR -> range/mean-revert day, stronger S/R) without
+    # giving exact numeric thresholds.
+    if cpr_width_pct < 0.15:
+        day_type = "narrow_trend_bias"
+    elif cpr_width_pct > 0.50:
+        day_type = "wide_range_bias"
+    else:
+        day_type = "neutral"
+
+    return {
+        "pivot": round(pivot, 2),
+        "r1": round(r1, 2), "r2": round(r2, 2), "r3": round(r3, 2),
+        "s1": round(s1, 2), "s2": round(s2, 2), "s3": round(s3, 2),
+        "cpr_top": round(cpr_top, 2),
+        "cpr_bottom": round(cpr_bottom, 2),
+        "cpr_width_pct": round(cpr_width_pct, 3),
+        "day_type": day_type,
+        "prev_high": round(prev_high, 2),
+        "prev_low": round(prev_low, 2),
+        "prev_close": round(prev_close, 2),
+    }
+
+
+def _pivot_bias(ltp: float, pivots: dict) -> str:
+    """Price > CPR pivot -> bullish day bias; < -> bearish (Prabhu)."""
+    pivot = pivots.get("pivot")
+    if not pivot or ltp <= 0:
+        return "neutral"
+    if ltp > pivot:
+        return "bullish"
+    if ltp < pivot:
+        return "bearish"
+    return "neutral"
+
+
+def _session_time_factor() -> float:
+    """Virgin-CPR strength multiplier by time of day. Prabhu's book states
+    virgin CPR is strongest near session open and weakens by late afternoon
+    without giving an exact curve -- this is Infusion's own linear
+    calibration (1.0 at 9:15 open, 0.5 by 15:30 close; 1.0 outside market
+    hours where "time of day" doesn't meaningfully apply)."""
+    now = datetime.now(tz=_IST).time()
+    if now < _SESSION_OPEN or now > _SESSION_CLOSE:
+        return 1.0
+    open_s = _SESSION_OPEN.hour * 3600 + _SESSION_OPEN.minute * 60
+    close_s = _SESSION_CLOSE.hour * 3600 + _SESSION_CLOSE.minute * 60
+    now_s = now.hour * 3600 + now.minute * 60
+    frac = (now_s - open_s) / max(close_s - open_s, 1)
+    return round(1.0 - 0.5 * max(0.0, min(1.0, frac)), 3)
+
+
+VIRGIN_CPR_MAX_AGE_DAYS = 5    # Prabhu: valid S/R for ~4-5 trading days after formation
+VIRGIN_CPR_LOOKBACK_DAYS = 8   # how many recent days' CPRs are worth checking at all
+
+
+def _virgin_cpr_zones(daily_bars: list[dict], current_ltp: float) -> list[dict]:
+    """CPR zones from recent sessions that no candle body (a wick touching
+    is not enough -- Prabhu's own definition) has closed back through since
+    formation. A virgin zone stays valid S/R for ~4-5 trading days; the
+    strength decay below is Infusion's own calibration since the source
+    gives the shape (strong at formation, weak by expiry) without an exact
+    formula.
+
+    age=1 is TODAY's own CPR -- the same one returned in the `pivots` field
+    (both use daily_bars[-1], the most recent complete day, as the prior
+    H/L/C). age=2 is the CPR that was active for daily_bars[-1]'s own
+    session (formed from daily_bars[-2]), and so on. This keeps the "age=1"
+    entry consistent with `pivots` rather than silently one day behind it.
+    """
+    zones: list[dict] = []
+    n = len(daily_bars)
+    if n < 2:
+        return zones
+
+    max_age = min(VIRGIN_CPR_MAX_AGE_DAYS, VIRGIN_CPR_LOOKBACK_DAYS, n)
+    time_factor = _session_time_factor()
+    for age in range(1, max_age + 1):
+        prior_idx = n - age
+        prior = daily_bars[prior_idx]
+        pivots = _classic_pivots(prior["high"], prior["low"], prior["close"])
+        if not pivots:
+            continue
+        top, bottom = pivots["cpr_top"], pivots["cpr_bottom"]
+
+        touched = False
+        for j in range(prior_idx + 1, n):
+            body_lo = min(daily_bars[j]["open"], daily_bars[j]["close"])
+            body_hi = max(daily_bars[j]["open"], daily_bars[j]["close"])
+            if body_hi >= bottom and body_lo <= top:
+                touched = True
+                break
+        # Today's still-forming session: price currently inside the zone
+        # counts as a touch too, not just a completed day's body.
+        if not touched and current_ltp > 0 and bottom <= current_ltp <= top:
+            touched = True
+
+        if touched:
+            continue
+
+        strength = max(0.0, 100.0 - (age - 1) * 20.0) * time_factor
+        zones.append({
+            "cpr_top": top,
+            "cpr_bottom": bottom,
+            "formed_days_ago": age,
+            "strength": round(strength, 0),
+        })
+
+    zones.sort(key=lambda z: -z["strength"])
+    return zones[:3]
+
+
 def _major_blocker(blocker_bars: dict[str, list[dict]], ltp: float) -> dict:
     """Nearest opposing swing pivot on the higher timeframes, between price
     and either direction's target — matches Pine's "Major Blocker" concept.
@@ -499,6 +645,12 @@ async def compute_mtf(redis, symbol: str, store: bool = True) -> dict:
         "blocker_up_level": None, "blocker_up_source": None,
         "blocker_down_level": None, "blocker_down_source": None,
     }
+
+    # Classic floor pivots + CPR, from the prior complete day's H/L/C
+    # (daily[-1]) -- and virgin-CPR zones from the last several sessions.
+    pivots = _classic_pivots(daily[-1]["high"], daily[-1]["low"], daily[-1]["close"]) if daily else {}
+    pivot_bias = _pivot_bias(current_ltp, pivots) if pivots else "neutral"
+    virgin_cpr_zones = _virgin_cpr_zones(daily, current_ltp) if daily else []
     quality = "historical" if any(row["bars"] for row in timeframes.values()) else "missing"
     if any(row["quality"] == "limited" for row in timeframes.values()) and quality == "historical":
         quality = "limited"
@@ -527,6 +679,9 @@ async def compute_mtf(redis, symbol: str, store: bool = True) -> dict:
         "trade_bias": trade_bias,
         "score": round(weighted, 1) if math.isfinite(weighted) else 50.0,
         **blocker,
+        "pivots": pivots,
+        "pivot_bias": pivot_bias,
+        "virgin_cpr_zones": virgin_cpr_zones,
         "bull_count": bull_count,
         "bear_count": bear_count,
         "mixed_count": mixed_count,

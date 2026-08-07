@@ -98,6 +98,13 @@ def main():
         return
 
     try:
+        from api.routes.mtf import _classic_pivots, _pivot_bias, _virgin_cpr_zones
+        check("api.routes.mtf pivot/CPR functions import", True)
+    except Exception as e:
+        check("api.routes.mtf pivot/CPR functions import", False, str(e))
+        return
+
+    try:
         from infusion_common.sizing import compute_position_size
         check("infusion_common.sizing imports", True)
     except Exception as e:
@@ -407,6 +414,50 @@ def main():
     decision = compute_pine_decision(decision_features, bullish=True, entry=100.0, invalidation=98.0)
     check("PineDecision.fib_targets is None with no fib data", decision.fib_targets is None)
     check("PineDecision.as_snapshot includes fib_targets key", "fib_targets" in decision.as_snapshot())
+
+    # ═══════════════════════════════════════════════
+    # PHASE 2 (NEW) — CLASSIC PIVOTS / CPR / VIRGIN CPR
+    # ═══════════════════════════════════════════════
+    print("\n--- PHASE 2 (NEW): CLASSIC PIVOTS + CPR + VIRGIN CPR ---")
+
+    piv = _classic_pivots(110.0, 100.0, 108.0)
+    check("Pivot formula P=(H+L+C)/3", piv.get("pivot") == 106.0, f"got {piv.get('pivot')}")
+    check("R1 formula 2P-L", piv.get("r1") == 112.0, f"got {piv.get('r1')}")
+    check("S1 formula 2P-H", piv.get("s1") == 102.0, f"got {piv.get('s1')}")
+    check("R2 formula P+range", piv.get("r2") == 116.0, f"got {piv.get('r2')}")
+    check("S2 formula P-range", piv.get("s2") == 96.0, f"got {piv.get('s2')}")
+    check("R3 formula H+2(P-L)", piv.get("r3") == 122.0, f"got {piv.get('r3')}")
+    check("S3 formula L-2(H-P)", piv.get("s3") == 92.0, f"got {piv.get('s3')}")
+    check("CPR top/bottom from BCPR/TCPR", piv.get("cpr_top") == 107.0 and piv.get("cpr_bottom") == 105.0, f"got {piv}")
+    check("Wide CPR classified correctly", piv.get("day_type") == "wide_range_bias", f"got {piv.get('day_type')}")
+    check("Degenerate/invalid input returns {}", _classic_pivots(0, 0, 0) == {})
+    check("Pivot bias bullish above pivot", _pivot_bias(110.0, piv) == "bullish")
+    check("Pivot bias bearish below pivot", _pivot_bias(100.0, piv) == "bearish")
+    check("Pivot bias neutral with no pivots", _pivot_bias(100.0, {}) == "neutral")
+
+    virgin_bars = [
+        {"time": 1, "open": 99, "high": 100, "low": 90, "close": 98, "volume": 0},
+        {"time": 2, "open": 101, "high": 103, "low": 99, "close": 102, "volume": 0},
+        {"time": 3, "open": 104, "high": 106, "low": 102, "close": 105, "volume": 0},
+        {"time": 4, "open": 107, "high": 109, "low": 104, "close": 108, "volume": 0},
+        {"time": 5, "open": 104.3, "high": 105, "low": 103, "close": 104.5, "volume": 0},  # touches the age=3 zone
+    ]
+    # Regression guard: age=1 must be TODAY's own CPR -- i.e. exactly what
+    # _classic_pivots(daily[-1]...) returns, the same value the live `pivots`
+    # field uses. An earlier version of this function was off-by-one here
+    # (age=1 silently meant "yesterday's CPR" instead of "today's").
+    live_pivots = _classic_pivots(virgin_bars[-1]["high"], virgin_bars[-1]["low"], virgin_bars[-1]["close"])
+    vz = _virgin_cpr_zones(virgin_bars, current_ltp=0.0)
+    age1 = next((z for z in vz if z["formed_days_ago"] == 1), None)
+    check("Virgin CPR age=1 matches the live pivots CPR exactly", age1 is not None and age1["cpr_top"] == live_pivots["cpr_top"] and age1["cpr_bottom"] == live_pivots["cpr_bottom"], f"age1={age1} vs pivots={live_pivots}")
+    ages = sorted(z["formed_days_ago"] for z in vz)
+    check("Virgin CPR: subsequent-day body touch excludes that zone", ages == [1, 2, 4], f"got {ages}")
+    vz_ltp = _virgin_cpr_zones(virgin_bars, current_ltp=107.0)
+    ages_ltp = sorted(z["formed_days_ago"] for z in vz_ltp)
+    check("Virgin CPR: current_ltp inside a zone also counts as touched", ages_ltp == [1, 4, 5], f"got {ages_ltp}")
+    check("Virgin CPR: thin history (<2 bars) returns [] without crashing", _virgin_cpr_zones(virgin_bars[:1], 0.0) == [])
+    check("Virgin CPR: zones sorted strongest-first", all(vz[i]["strength"] >= vz[i + 1]["strength"] for i in range(len(vz) - 1)), f"got {vz}")
+    check("Virgin CPR: capped at 3 zones", len(vz) <= 3)
 
     # ═══════════════════════════════════════════════
     # SUMMARY
