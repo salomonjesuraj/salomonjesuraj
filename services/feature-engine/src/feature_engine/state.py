@@ -132,6 +132,14 @@ class SymbolState:
     last_break_low: float | None = None
     structure_event: bool = False        # True only on the bar a break just fired
 
+    # Extended swing-point history for Fibonacci retracement/extension/
+    # projection confluence (features/fibonacci.py). BOS/CHOCH above only
+    # needs the latest 2 highs/lows; Fibonacci confluence needs several
+    # confirmed swings to find where independent levels cluster, so this is
+    # tracked separately rather than widening swing_high_1/2. Each entry is
+    # (price, "high"|"low", completed_1m_bars index at confirmation).
+    swing_points: deque = field(default_factory=lambda: deque(maxlen=10))
+
     # Candlestick pattern sizing baseline (EMA of body size, matches Pine v6's
     # bodyAvgEma — used by Marubozu / Three Soldiers-Crows thresholds).
     body_size_ema: float = 0.0

@@ -23,6 +23,7 @@ from feature_engine.features.microstructure import get_spread_bps, get_order_imb
 from feature_engine.features.structure import update_structure, structure_snapshot
 from feature_engine.features.candles import update_body_ema, detect_candle_pattern, body_pct
 from feature_engine.features.zones import update_zones, zone_snapshot
+from feature_engine.features.fibonacci import fib_snapshot
 from infusion_models.feature import FeatureVectorV1
 from infusion_common.timing import now_us
 
@@ -314,6 +315,7 @@ class FeatureEngine:
         ml_features = {
             **structure_snapshot(state),
             **zone_snapshot(state),
+            **fib_snapshot(state, ltp),
             "di_plus": di_plus,
             "di_minus": di_minus,
             "adx": adx,

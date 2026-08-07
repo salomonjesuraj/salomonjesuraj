@@ -59,10 +59,12 @@ def update_structure(state, left: int = DEFAULT_LEFT, right: int = DEFAULT_RIGHT
     if cand_high == max(highs) and highs.count(cand_high) == 1:
         state.swing_high_2 = state.swing_high_1
         state.swing_high_1 = cand_high
+        state.swing_points.append((cand_high, "high", state.completed_1m_bars))
 
     if cand_low == min(lows) and lows.count(cand_low) == 1:
         state.swing_low_2 = state.swing_low_1
         state.swing_low_1 = cand_low
+        state.swing_points.append((cand_low, "low", state.completed_1m_bars))
 
     close = items[-1]["c"]
     buf = max(state.atr, 0.0) * BREAK_BUFFER_ATR

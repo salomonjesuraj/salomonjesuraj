@@ -239,6 +239,12 @@ class OptionsFirstHybrid(BaseStrategy):
             "supply_zone_bottom": ml.get("supply_zone_bottom"),
             "demand_zone_top": ml.get("demand_zone_top"),
             "demand_zone_bottom": ml.get("demand_zone_bottom"),
+            # Fibonacci confluence — alternate T1/T2/T3 mode alongside the
+            # ATR-based one above; None until a >=3-level cluster forms near
+            # price (see pine_confidence.compute_fib_targets).
+            "fib_targets": pine.fib_targets,
+            "fib_cluster_center": ml.get("fib_cluster_center"),
+            "fib_cluster_hits": ml.get("fib_cluster_hits"),
         }
 
         return SignalCandidate(

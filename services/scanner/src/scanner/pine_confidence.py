@@ -120,6 +120,54 @@ def practical_option_targets(
     return t1, t2, t3, effective_risk, method
 
 
+def compute_fib_targets(ml_features: dict, *, bullish: bool, entry: float) -> dict | None:
+    """Alternate T1/T2/T3 target mode using Boroden's confluence-cluster
+    extension rule (1.272 / 1.618 / 2.618 of the swing leading into the
+    cluster) alongside the existing ATR-based practical_option_targets().
+
+    ml_features is FeatureVectorV1.ml_features (structure_snapshot +
+    fib_snapshot already merged in by feature-engine). Returns None when no
+    confluence cluster exists near current price yet -- thin swing history
+    early in a symbol's session, or price just isn't near a genuine
+    convergence zone right now -- callers should keep using the ATR-based
+    targets in that case rather than force a Fib target that doesn't exist.
+    """
+    cluster_center = ml_features.get("fib_cluster_center")
+    cluster_hits = ml_features.get("fib_cluster_hits") or 0
+    swing_high = ml_features.get("swing_high_1")
+    swing_low = ml_features.get("swing_low_1")
+    if cluster_center is None or cluster_hits < 3:
+        return None
+    if not swing_high or not swing_low or swing_high <= swing_low or entry <= 0:
+        return None
+
+    span = swing_high - swing_low
+    sign = 1.0 if bullish else -1.0
+    t1 = cluster_center + sign * span * 1.272
+    t2 = cluster_center + sign * span * 1.618
+    t3 = cluster_center + sign * span * 2.618
+
+    # The cluster has to actually sit ahead of entry in the trade direction
+    # -- otherwise it's behind price (already-passed S/R, not a target zone
+    # for this specific trade) and the ATR-based mode is the honest fallback.
+    if bullish and t1 <= entry:
+        return None
+    if not bullish and t1 >= entry:
+        return None
+
+    return {
+        "fib_t1_price": round(t1, 2),
+        "fib_t2_price": round(t2, 2),
+        "fib_t3_price": round(t3, 2),
+        "fib_cluster_center": round(float(cluster_center), 2),
+        "fib_cluster_hits": int(cluster_hits),
+        "fib_target_method": (
+            f"Fibonacci confluence: {cluster_hits} levels near {cluster_center:.2f}, "
+            f"extensions off swing {swing_low:.2f}-{swing_high:.2f}"
+        ),
+    }
+
+
 ROCKET_ADX_THRESHOLD = 32.0     # Pine's rocketAdxThreshold default
 ROCKET_BODY_PCT = 0.65          # Pine's rocketBodyPct default
 
@@ -171,6 +219,7 @@ class PineDecision:
     signal_candle_atr: float
     vwap_distance_atr: float
     stop_distance_atr: float
+    fib_targets: dict | None  # alternate target mode, see compute_fib_targets(); None if no cluster yet
 
     def as_snapshot(self) -> dict:
         return {
@@ -195,6 +244,7 @@ class PineDecision:
             "signal_candle_atr": round(self.signal_candle_atr, 2),
             "vwap_distance_atr": round(self.vwap_distance_atr, 2),
             "stop_distance_atr": round(self.stop_distance_atr, 2),
+            "fib_targets": self.fib_targets,
         }
 
 
@@ -359,6 +409,9 @@ def compute_pine_decision(
         )
         dominant = "PE" if bear >= bull else "CE"
 
+    ml_features = features.get("ml_features") or {}
+    fib_targets = compute_fib_targets(ml_features, bullish=bullish, entry=entry)
+
     return PineDecision(
         bull_confidence=clamp(bull),
         bear_confidence=clamp(bear),
@@ -381,4 +434,5 @@ def compute_pine_decision(
         signal_candle_atr=signal_candle_atr,
         vwap_distance_atr=vwap_distance_atr,
         stop_distance_atr=stop_distance_atr,
+        fib_targets=fib_targets,
     )

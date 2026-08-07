@@ -60,10 +60,20 @@ def main():
         return
 
     try:
-        from scanner.pine_confidence import compute_pine_decision, compute_strength_meter, MTF_CACHE_STALE_SEC
+        from scanner.pine_confidence import compute_pine_decision, compute_strength_meter, MTF_CACHE_STALE_SEC, compute_fib_targets
         check("scanner.pine_confidence imports", True)
     except Exception as e:
         check("scanner.pine_confidence imports", False, str(e))
+        return
+
+    try:
+        from feature_engine.features.fibonacci import (
+            retracement_levels, resistance_retracement_levels, extension_levels,
+            projection_levels, find_confluence_clusters, fib_snapshot,
+        )
+        check("feature_engine.features.fibonacci imports", True)
+    except Exception as e:
+        check("feature_engine.features.fibonacci imports", False, str(e))
         return
 
     try:
@@ -305,6 +315,98 @@ def main():
     check("Formatter includes Sizing line", "Sizing: 3 lot" in text)
     check("Formatter stays short (<= 10 lines)", text.count("\n") <= 9, f"lines={text.count(chr(10))+1}")
     check("Formatter does not crash on missing fields", format_signal({"symbol": "X"}) is not None)
+
+    # ═══════════════════════════════════════════════
+    # PHASE 1 (NEW) — FIBONACCI CONFLUENCE
+    # ═══════════════════════════════════════════════
+    print("\n--- PHASE 1 (NEW): FIBONACCI CONFLUENCE + ALTERNATE T1/T2/T3 ---")
+
+    # Formula checks against hand-computable values (Boroden's ratios).
+    r = retracement_levels(100.0, 200.0)
+    check("Retracement 61.8% formula", abs(r[0.618] - 138.2) < 1e-9, f"got {r[0.618]}")
+    check("Retracement 50% formula", abs(r[0.5] - 150.0) < 1e-9, f"got {r[0.5]}")
+    rr = resistance_retracement_levels(100.0, 200.0)
+    check("Resistance retracement 61.8% formula", abs(rr[0.618] - 161.8) < 1e-9, f"got {rr[0.618]}")
+    e_bull = extension_levels(100.0, 200.0, bullish=True)
+    check("Extension 1.618 bullish formula", abs(e_bull[1.618] - 361.8) < 1e-9, f"got {e_bull[1.618]}")
+    e_bear = extension_levels(100.0, 200.0, bullish=False)
+    check("Extension 1.618 bearish formula", abs(e_bear[1.618] - (100.0 - 100.0 * 1.618)) < 1e-9, f"got {e_bear[1.618]}")
+    p = projection_levels(100.0, 200.0, 150.0)
+    check("Projection 1.0 (symmetry) formula", abs(p[1.0] - 250.0) < 1e-9, f"got {p[1.0]}")
+    check("Projection 1.618 formula", abs(p[1.618] - (150.0 + 100.0 * 1.618)) < 1e-9, f"got {p[1.618]}")
+
+    # Confluence cluster: repeated 100<->200 swings put a 50%-retracement
+    # level at exactly 150 six times over -- must cluster with >=3 hits.
+    convergent_swings = [
+        (100.0, "low", 1), (200.0, "high", 2), (100.0, "low", 3),
+        (200.0, "high", 4), (100.0, "low", 5), (200.0, "high", 6),
+    ]
+    clusters = find_confluence_clusters(convergent_swings, current_price=150.0, atr=2.0)
+    check("Confluence cluster found near repeated 50% level", bool(clusters) and clusters[0]["hits"] >= 3, f"got {clusters}")
+    if clusters:
+        check("Nearest cluster centers on 150.0", abs(clusters[0]["center"] - 150.0) < 1.0, f"got {clusters[0]['center']}")
+
+    # No swing history / too few points -> no crash, empty result.
+    check("Confluence scan on empty history returns []", find_confluence_clusters([], 100.0, 1.0) == [])
+    check("Confluence scan on single point returns []", find_confluence_clusters([(100.0, "low", 1)], 100.0, 1.0) == [])
+
+    # Integration: feed a real bar sequence through update_structure and
+    # confirm swing_points accumulates (not just swing_high_1/2) and
+    # fib_snapshot() reads it without crashing.
+    fib_state = SymbolState(symbol="TESTFIB")
+    fib_state.atr = 1.5
+    fib_bars = [
+        {"o": 100, "h": 101, "l": 99, "c": 100}, {"o": 100, "h": 102, "l": 100, "c": 101},
+        {"o": 101, "h": 110, "l": 101, "c": 108}, {"o": 108, "h": 108, "l": 105, "c": 106},
+        {"o": 106, "h": 107, "l": 95, "c": 96}, {"o": 96, "h": 97, "l": 94, "c": 95},
+        {"o": 95, "h": 105, "l": 95, "c": 104}, {"o": 104, "h": 104, "l": 100, "c": 101},
+        {"o": 101, "h": 102, "l": 98, "c": 99}, {"o": 99, "h": 112, "l": 99, "c": 111},
+        {"o": 111, "h": 111, "l": 107, "c": 108}, {"o": 108, "h": 109, "l": 104, "c": 105},
+    ]
+    for b in fib_bars:
+        fib_state.recent_1m_bars.append(b)
+        update_structure(fib_state)
+    check("swing_points accumulates beyond the 2 BOS/CHOCH slots", len(fib_state.swing_points) >= 2, f"got {len(fib_state.swing_points)}")
+    snap = fib_snapshot(fib_state, ltp=105.0)
+    check("fib_snapshot returns expected keys", set(snap) == {
+        "fib_cluster_center", "fib_cluster_low", "fib_cluster_high",
+        "fib_cluster_hits", "fib_cluster_sources", "fib_swing_count",
+    }, f"got {set(snap)}")
+    check("fib_snapshot swing count matches state", snap["fib_swing_count"] == len(fib_state.swing_points))
+
+    # compute_fib_targets: no cluster -> None (thin/no history), never crashes.
+    check("compute_fib_targets None when no cluster in ml_features", compute_fib_targets({}, bullish=True, entry=100.0) is None)
+
+    # compute_fib_targets: synthetic ml_features simulating a confirmed
+    # cluster ahead of entry for a bullish trade -> valid, ordered T1<T2<T3.
+    fib_ml = {
+        "fib_cluster_center": 100.0, "fib_cluster_hits": 4,
+        "swing_high_1": 120.0, "swing_low_1": 100.0,
+    }
+    ft = compute_fib_targets(fib_ml, bullish=True, entry=95.0)
+    check("compute_fib_targets returns targets for a valid ahead-of-entry cluster", ft is not None, f"got {ft}")
+    if ft:
+        check("Fib targets ordered T1 < T2 < T3 (bullish)", ft["fib_t1_price"] < ft["fib_t2_price"] < ft["fib_t3_price"], f"got {ft}")
+        check("Fib T1 matches 1.272 extension formula", abs(ft["fib_t1_price"] - (100.0 + 20.0 * 1.272)) < 1e-6, f"got {ft['fib_t1_price']}")
+
+    # compute_fib_targets: entry already sits past where the bullish T1
+    # would project to (target already behind price) -> None (honest
+    # fallback to ATR-based targets), not a nonsense already-hit target.
+    ft_behind = compute_fib_targets(fib_ml, bullish=True, entry=130.0)
+    check("compute_fib_targets None when target is already behind entry", ft_behind is None, f"got {ft_behind}")
+
+    # compute_pine_decision must not crash when ml_features has no fib data
+    # at all (new symbol, thin swing history) -- fib_targets should be None.
+    decision_features = {
+        "ltp": 100.0, "vwap": 99.5, "ema_5": 100.5, "ema_9": 100.0, "ema_20": 99.0, "ema_50": 98.0,
+        "rsi_14": 60.0, "macd": 0.5, "macd_signal": 0.3, "macd_hist": 0.2, "rel_vol_20d": 1.2,
+        "atr_14": 1.0, "spread_bps": 20.0, "change_pct": 1.0, "bb_width": 0.02,
+        "atr_trend": "BULL", "candle_pattern": "", "squeeze_state": "", "nr_pattern": "",
+        "ml_features": {},
+    }
+    decision = compute_pine_decision(decision_features, bullish=True, entry=100.0, invalidation=98.0)
+    check("PineDecision.fib_targets is None with no fib data", decision.fib_targets is None)
+    check("PineDecision.as_snapshot includes fib_targets key", "fib_targets" in decision.as_snapshot())
 
     # ═══════════════════════════════════════════════
     # SUMMARY
