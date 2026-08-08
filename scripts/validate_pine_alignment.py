@@ -142,6 +142,17 @@ async def main():
         return
 
     try:
+        from api.signal_snapshot import build_symbol_snapshot, decode_hash
+        from api.ai_query import (
+            classify_intents, find_mentioned_symbols, find_mentioned_ablation_field,
+            gather_facts, format_facts_as_text, load_known_symbols,
+        )
+        check("api.ai_query (Phase 12 NL query layer) imports", True)
+    except Exception as e:
+        check("api.ai_query (Phase 12 NL query layer) imports", False, str(e))
+        return
+
+    try:
         from api.routes.mtf import _classic_pivots, _pivot_bias, _virgin_cpr_zones
         check("api.routes.mtf pivot/CPR functions import", True)
     except Exception as e:
@@ -1219,6 +1230,228 @@ async def main():
 
     proposal_no_pool = await compute_optimizer_proposal(None, diverged_redis, days=120, target=80.0)
     check("compute_optimizer_proposal: no Postgres pool is reported as unavailable, not a crash", not proposal_no_pool["available"])
+
+    # ═══════════════════════════════════════════════
+    # NL QUERY LAYER (NEW) — Phase 12
+    # ═══════════════════════════════════════════════
+    print("\n--- NL QUERY LAYER (NEW): intent routing + grounded fact-gathering (Phase 12) ---")
+
+    known_symbols = {"RELIANCE", "TCS"}
+
+    check(
+        "find_mentioned_symbols: matches whole-word tickers, ignores prose",
+        find_mentioned_symbols("How is RELIANCE doing vs TCS today?", known_symbols) == ["RELIANCE", "TCS"],
+        f"got {find_mentioned_symbols('How is RELIANCE doing vs TCS today?', known_symbols)}",
+    )
+    check(
+        "find_mentioned_symbols: no false positive on ordinary prose",
+        find_mentioned_symbols("I think it's a good time to review the plan", known_symbols) == [],
+    )
+
+    check(
+        "find_mentioned_ablation_field: natural phrase resolves to the real field + column",
+        find_mentioned_ablation_field("does chart patterns actually help precision?") == ("chart_patterns", "features_snapshot"),
+        f"got {find_mentioned_ablation_field('does chart patterns actually help precision?')}",
+    )
+    check(
+        "find_mentioned_ablation_field: sub_scores field resolves to the sub_scores column",
+        find_mentioned_ablation_field("what about cross confirmation") == ("cross_confirmation", "sub_scores"),
+        f"got {find_mentioned_ablation_field('what about cross confirmation')}",
+    )
+    check("find_mentioned_ablation_field: no match on unrelated text", find_mentioned_ablation_field("what's the weather") is None)
+
+    check(
+        "classify_intents: market regime question",
+        [i["type"] for i in classify_intents("what's the market regime right now?", known_symbols)] == ["regime"],
+    )
+    check(
+        "classify_intents: sector rankings question",
+        [i["type"] for i in classify_intents("show me sector rankings", known_symbols)] == ["sectors"],
+    )
+    signal_intents = classify_intents("any active PE signals right now?", known_symbols)
+    check(
+        "classify_intents: signals question with PE direction detected",
+        len(signal_intents) == 1 and signal_intents[0] == {"type": "signals", "direction": "BUY PE"},
+        f"got {signal_intents}",
+    )
+    check(
+        "classify_intents: bare symbol mention -> symbol intent",
+        classify_intents("how is RELIANCE doing", known_symbols) == [{"type": "symbol", "symbol": "RELIANCE"}],
+    )
+    check(
+        "classify_intents: symbol + PCR/max-pain wording -> options_analytics intent, not a plain symbol lookup",
+        classify_intents("what's the PCR and max pain for RELIANCE", known_symbols) == [{"type": "options_analytics", "symbol": "RELIANCE"}],
+    )
+    check(
+        "classify_intents: walk-forward question",
+        [i["type"] for i in classify_intents("is walk-forward hitting target?", known_symbols)] == ["walkforward"],
+    )
+    check(
+        "classify_intents: optimizer drift question",
+        [i["type"] for i in classify_intents("any optimizer drift proposal?", known_symbols)] == ["optimizer_proposal"],
+    )
+    check(
+        "classify_intents: feature-evidence question",
+        classify_intents("does chart patterns actually help precision?", known_symbols) == [{"type": "feature_ablation", "field": "chart_patterns", "column": "features_snapshot"}],
+    )
+    combo = classify_intents("what's the market regime and how is RELIANCE doing", known_symbols)
+    check(
+        "classify_intents: combo question matches both intents",
+        {i["type"] for i in combo} == {"regime", "symbol"},
+        f"got {combo}",
+    )
+    check("classify_intents: unrelated gibberish matches nothing", classify_intents("asdkjaslkdj qqweoiu", known_symbols) == [])
+
+    # --- gather_facts + format_facts_as_text: full synthetic Redis double ---
+    class _FakePipeline:
+        def __init__(self, redis):
+            self._redis = redis
+            self._ops = []
+
+        def hgetall(self, key):
+            self._ops.append(key)
+            return self
+
+        async def execute(self):
+            return [self._redis._hashes.get(k, {}) for k in self._ops]
+
+    class _FakeRedis2:
+        def __init__(self):
+            self._hashes = {}
+            self._strings = {}
+            self._zsets = {}
+
+        async def hgetall(self, key):
+            return self._hashes.get(key, {})
+
+        async def scan(self, cursor=0, match="*", count=100):
+            prefix = match.rstrip("*")
+            return 0, [k for k in self._hashes if k.startswith(prefix)]
+
+        async def zrevrange(self, key, start, end, withscores=False):
+            items = sorted(self._zsets.get(key, []), key=lambda kv: -kv[1])
+            sliced = items[start:] if end == -1 else items[start:end + 1]
+            return sliced if withscores else [m for m, s in sliced]
+
+        async def exists(self, key):
+            return 1 if (key in self._hashes or key in self._strings) else 0
+
+        async def get(self, key):
+            return self._strings.get(key)
+
+        async def set(self, key, value, ex=None):
+            self._strings[key] = value
+
+        def pipeline(self):
+            return _FakePipeline(self)
+
+    fr = _FakeRedis2()
+    fr._hashes["infusion:regime"] = {"regime": "bullish", "reason": "broad_advance"}
+    fr._hashes["infusion:sector:FINANCIALS"] = {"sector_id": "FINANCIALS", "rank": "1", "strength_score": "72.5", "trend": "up"}
+    fr._hashes["infusion:sector:IT"] = {"sector_id": "IT", "rank": "2", "strength_score": "55.0", "trend": "flat"}
+    fr._zsets["infusion:signals:active"] = [("RELIANCE:options_first_hybrid", 88.0)]
+    fr._hashes["infusion:signal:RELIANCE:options_first_hybrid"] = {
+        "conviction_grade": "A+", "conviction_score": "88", "option_bias": "BUY CE", "symbol": "RELIANCE",
+    }
+    fr._hashes["infusion:tick:RELIANCE"] = {"ltp": "2500.5", "change_pct": "1.2", "sector_id": "FINANCIALS"}
+    fr._hashes["infusion:feature:RELIANCE"] = {"ltp": "2500.5", "change_pct": "1.2"}
+
+    regime_fact = await gather_facts({"type": "regime"}, redis=fr, pool=None, options_chain_fn=None)
+    check("gather_facts(regime): reads the real regime hash", regime_fact["regime"]["regime"] == "bullish", f"got {regime_fact}")
+
+    sectors_fact = await gather_facts({"type": "sectors"}, redis=fr, pool=None, options_chain_fn=None)
+    check(
+        "gather_facts(sectors): sorted by rank, FINANCIALS (rank 1) first",
+        sectors_fact["sectors"][0]["sector_id"] == "FINANCIALS" and sectors_fact["total"] == 2,
+        f"got {sectors_fact}",
+    )
+
+    signals_all = await gather_facts({"type": "signals", "direction": None}, redis=fr, pool=None, options_chain_fn=None)
+    check("gather_facts(signals, no direction filter): finds the one active signal", signals_all["total"] == 1 and signals_all["signals"][0]["symbol"] == "RELIANCE", f"got {signals_all}")
+
+    signals_pe = await gather_facts({"type": "signals", "direction": "BUY PE"}, redis=fr, pool=None, options_chain_fn=None)
+    check("gather_facts(signals, PE filter): correctly excludes the BUY CE signal", signals_pe["total"] == 0, f"got {signals_pe}")
+
+    symbol_fact = await gather_facts({"type": "symbol", "symbol": "RELIANCE"}, redis=fr, pool=None, options_chain_fn=None)
+    check("gather_facts(symbol): builds a real snapshot with live LTP", symbol_fact["snapshot"]["market"]["ltp"] == 2500.5, f"got {symbol_fact}")
+
+    async def _fake_options_chain_ready(redis, symbol):
+        return {"ready": True, "pcr": {"pcr": 0.8, "sentiment": "neutral_bullish"}, "oi_support_resistance": {"resistance": 2600, "support": 2400}, "max_pain": {"max_pain_strike": 2500}}
+
+    async def _fake_options_chain_not_ready(redis, symbol):
+        return {"ready": False, "reason": "Upstox auth token missing"}
+
+    options_fact = await gather_facts({"type": "options_analytics", "symbol": "RELIANCE"}, redis=fr, pool=None, options_chain_fn=_fake_options_chain_ready)
+    check("gather_facts(options_analytics): passes through the injected chain function's result", options_fact["result"]["pcr"]["pcr"] == 0.8, f"got {options_fact}")
+
+    wf_fact_none = await gather_facts({"type": "walkforward"}, redis=fr, pool=None, options_chain_fn=None)
+    check("gather_facts(walkforward) with no pool: unavailable, not a crash", not wf_fact_none["result"]["available"])
+
+    opt_fact_none = await gather_facts({"type": "optimizer_proposal"}, redis=fr, pool=None, options_chain_fn=None)
+    check("gather_facts(optimizer_proposal) with no pool: unavailable, not a crash", not opt_fact_none["result"]["available"])
+
+    abl_fact_none = await gather_facts({"type": "feature_ablation", "field": "chart_patterns", "column": "features_snapshot"}, redis=fr, pool=None, options_chain_fn=None)
+    check("gather_facts(feature_ablation) with no pool: unavailable, not a crash", not abl_fact_none["result"]["available"])
+
+    # --- format_facts_as_text: deterministic text grounds every branch ---
+    empty_text = format_facts_as_text("asdkjaslkdj", [], [])
+    check("format_facts_as_text: no-intent question returns the capabilities help message", "I couldn't match" in empty_text, empty_text)
+
+    single_intents = [{"type": "regime"}]
+    single_facts = [regime_fact]
+    regime_text = format_facts_as_text("what's the regime", single_intents, single_facts)
+    check("format_facts_as_text: regime fact renders the actual regime value", "bullish" in regime_text, regime_text)
+
+    options_text = format_facts_as_text(
+        "PCR for RELIANCE",
+        [{"type": "options_analytics", "symbol": "RELIANCE"}],
+        [options_fact],
+    )
+    check("format_facts_as_text: options fact renders PCR/support/resistance/max-pain numbers", "0.8" in options_text and "2600" in options_text and "2500" in options_text, options_text)
+
+    options_unavailable_fact = await gather_facts({"type": "options_analytics", "symbol": "RELIANCE"}, redis=fr, pool=None, options_chain_fn=_fake_options_chain_not_ready)
+    options_unavail_text = format_facts_as_text(
+        "PCR for RELIANCE",
+        [{"type": "options_analytics", "symbol": "RELIANCE"}],
+        [options_unavailable_fact],
+    )
+    check("format_facts_as_text: unready options chain reports unavailable + real reason, not fabricated numbers", "unavailable" in options_unavail_text and "Upstox auth token missing" in options_unavail_text, options_unavail_text)
+
+    # --- full pipeline: classify -> gather -> format, multi-intent question ---
+    combo_question = "What's the market regime and how is RELIANCE doing, any PCR data for RELIANCE too?"
+    combo_intents = classify_intents(combo_question, known_symbols)
+    combo_facts = [
+        await gather_facts(i, redis=fr, pool=None, options_chain_fn=_fake_options_chain_ready)
+        for i in combo_intents
+    ]
+    combo_text = format_facts_as_text(combo_question, combo_intents, combo_facts)
+    # "PCR data for RELIANCE" correctly routes RELIANCE to options_analytics
+    # only (not redundantly also a plain symbol lookup) -- see the
+    # wants_options branch in classify_intents. So the combo here is
+    # regime + options_analytics, not regime + symbol + options_analytics.
+    check(
+        "Full pipeline: multi-intent question produces a grounded answer covering every matched intent",
+        {i["type"] for i in combo_intents} == {"regime", "options_analytics"}
+        and "Market regime:" in combo_text and "RELIANCE options:" in combo_text,
+        combo_text,
+    )
+
+    plain_combo_question = "What's the market regime and how is RELIANCE doing?"
+    plain_combo_intents = classify_intents(plain_combo_question, known_symbols)
+    plain_combo_facts = [
+        await gather_facts(i, redis=fr, pool=None, options_chain_fn=_fake_options_chain_ready)
+        for i in plain_combo_intents
+    ]
+    plain_combo_text = format_facts_as_text(plain_combo_question, plain_combo_intents, plain_combo_facts)
+    check(
+        "Full pipeline: regime + plain symbol combo (no PCR wording) renders both facts",
+        {i["type"] for i in plain_combo_intents} == {"regime", "symbol"}
+        and "Market regime:" in plain_combo_text and "RELIANCE: LTP" in plain_combo_text,
+        plain_combo_text,
+    )
+
+    load_symbols_fake = await load_known_symbols(fr)
+    check("load_known_symbols: no infusion:symbols hash returns an empty set, never crashes", load_symbols_fake == set())
 
     # ═══════════════════════════════════════════════
     # SUMMARY

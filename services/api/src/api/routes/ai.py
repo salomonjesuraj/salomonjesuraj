@@ -6,148 +6,26 @@ from deterministic Redis-backed Infusion data.
 
 from __future__ import annotations
 
+import hashlib
 import json
 
 from aiohttp import web
 
+from api import ai_query
 from api.ai_advisor import snapshot_digest
+from api.signal_snapshot import build_symbol_snapshot, decode_hash
 
 routes = web.RouteTableDef()
 
-
-def _decode_hash(data: dict) -> dict:
-    out = {}
-    for key, value in data.items():
-        key = key.decode() if isinstance(key, bytes) else key
-        value = value.decode() if isinstance(value, bytes) else value
-        if value in {"True", "False"}:
-            out[key] = value == "True"
-            continue
-        try:
-            out[key] = float(value)
-        except (TypeError, ValueError):
-            try:
-                out[key] = json.loads(value) if value and value[0] in "[{" else value
-            except (json.JSONDecodeError, IndexError):
-                out[key] = value
-    return out
-
-
-async def _first_signal(redis, symbol: str) -> dict:
-    direct = await redis.hgetall(f"infusion:signal:{symbol}")
-    if direct:
-        return _decode_hash(direct)
-    members = await redis.zrevrange("infusion:signals:active", 0, -1)
-    for raw in members:
-        member = raw.decode() if isinstance(raw, bytes) else raw
-        if member.split(":", 1)[0] == symbol:
-            data = await redis.hgetall(f"infusion:signal:{member}")
-            if data:
-                return _decode_hash(data)
-    return {}
+# Kept as thin aliases -- this module's own route handlers below were
+# written against these names before the Phase 12 extraction into
+# api/signal_snapshot.py (shared with ai_query.py). Not removed to avoid
+# touching every call site for a pure rename.
+_decode_hash = decode_hash
 
 
 async def _snapshot(request: web.Request, symbol: str) -> dict:
-    redis = request.app["redis"]
-    tick_raw, feature_raw, prebreak_raw, regime_raw, signal = await _snapshot_reads(redis, symbol)
-    tick = _decode_hash(tick_raw)
-    features = _decode_hash(feature_raw)
-    prebreak = _decode_hash(prebreak_raw)
-    regime = _decode_hash(regime_raw)
-
-    sector_id = str(tick.get("sector_id") or "")
-    sector = {}
-    if sector_id:
-        sector = _decode_hash(await redis.hgetall(f"infusion:sector:{sector_id}"))
-
-    bias = (
-        signal.get("option_bias")
-        or ("BUY CE" if features.get("change_pct", 0) > 0 else "BUY PE")
-    )
-    option_chain_ready = bool(
-        await redis.exists(f"infusion:option-chain:{symbol}")
-        or await redis.exists(f"infusion:options:{symbol}")
-    )
-
-    # Structure/strength story from feature_engine + scanner (Pine v6
-    # alignment). Prefer the signal's frozen features_snapshot when a signal
-    # exists; fall back to the live raw feature vector's ml_features dict
-    # otherwise, so this section still has something for "explain this
-    # stock" queries with no fired signal yet.
-    signal_fs = signal.get("features_snapshot")
-    signal_fs = signal_fs if isinstance(signal_fs, dict) else {}
-    ml = features.get("ml_features")
-    ml = ml if isinstance(ml, dict) else {}
-    sub_scores = signal.get("sub_scores")
-    sub_scores = sub_scores if isinstance(sub_scores, dict) else {}
-    sizing = sub_scores.get("position_sizing")
-    sizing = sizing if isinstance(sizing, dict) else {}
-
-    return {
-        "symbol": symbol,
-        "scanner": {
-            "decision": bias,
-            "signal_type": signal.get("signal_type", ""),
-            "conviction_score": signal.get("conviction_score", 0),
-            "conviction_grade": signal.get("conviction_grade", ""),
-            "entry_price": signal.get("entry_price", 0),
-            "invalidation_price": signal.get("invalidation_price", 0),
-            "target_price": signal.get("target_price", 0),
-            "conditions_met": signal.get("conditions_met", {}),
-            "explanation": signal.get("explanation", ""),
-        },
-        "market": {
-            "ltp": tick.get("ltp", features.get("ltp", 0)),
-            "change_pct": tick.get("change_pct", features.get("change_pct", 0)),
-            "sector": sector_id,
-            "regime": regime.get("regime", "neutral"),
-        },
-        "technical": {
-            key: features.get(key)
-            for key in (
-                "vwap", "ema_5", "ema_9", "ema_20", "ema_50",
-                "rsi_14", "macd", "macd_signal", "macd_hist",
-                "rel_vol_20d", "bb_width", "squeeze_state", "nr_pattern",
-                "candle_pattern", "atr_14", "atr_trail_stop", "atr_trend",
-                "spread_bps", "order_imbalance",
-            )
-        },
-        "setup": {
-            "state": prebreak.get("state", ""),
-            "readiness_score": prebreak.get("readiness_score", 0),
-            "sector_strength": sector.get("strength_score", 0),
-            "sector_trend": sector.get("trend", ""),
-        },
-        "structure": {
-            "trend_text": signal_fs.get("trend_text") or ml.get("trend_text", ""),
-            "last_event_label": signal_fs.get("last_event_label") or ml.get("last_event_label", ""),
-            "supply_zone_top": signal_fs.get("supply_zone_top", ml.get("supply_zone_top")),
-            "demand_zone_bottom": signal_fs.get("demand_zone_bottom", ml.get("demand_zone_bottom")),
-            "strength_score": signal_fs.get("strength_score"),
-            "mtf_text": signal_fs.get("mtf_text", ""),
-            "mtf_source": signal_fs.get("mtf_source", ""),
-            "recommended_lots": sizing.get("lot_count"),
-            "recommended_quantity": sizing.get("quantity"),
-        },
-        "option_execution": {
-            "chain_ready": option_chain_ready,
-            "oi_available": False,
-            "iv_available": False,
-            "contract_spread_available": False,
-            "selected_strike_available": False,
-        },
-    }
-
-
-async def _snapshot_reads(redis, symbol: str):
-    pipe = redis.pipeline()
-    pipe.hgetall(f"infusion:tick:{symbol}")
-    pipe.hgetall(f"infusion:feature:{symbol}")
-    pipe.hgetall(f"infusion:prebreak:{symbol}")
-    pipe.hgetall("infusion:regime")
-    tick, feature, prebreak, regime = await pipe.execute()
-    signal = await _first_signal(redis, symbol)
-    return tick, feature, prebreak, regime, signal
+    return await build_symbol_snapshot(request.app["redis"], symbol)
 
 
 def _fallback(snapshot: dict, reason: str = "") -> dict:
@@ -261,4 +139,84 @@ async def analyze_symbol(request):
         json.dumps(result),
         ex=request.app["config"].openai_cache_ttl_sec,
     )
+    return web.json_response(result)
+
+
+@routes.post("/api/ai/query")
+async def ai_query_route(request):
+    """Phase 12: free-text question -> grounded answer over live Infusion
+    state. See api/ai_query.py for the intent router + fact gathering and
+    api/ai_advisor.py's answer_query() for the optional LLM phrasing pass.
+    Works with no OpenAI key configured -- returns the deterministic answer
+    directly (source: "deterministic"), same degrade path as /api/ai/analyze.
+    """
+    try:
+        body = await request.json()
+    except (json.JSONDecodeError, web.HTTPBadRequest):
+        body = {}
+    question = str(body.get("question") or "").strip()
+    if not question:
+        return web.json_response({"error": "question_required"}, status=400)
+    if len(question) > 500:
+        return web.json_response({"error": "question_too_long_max_500_chars"}, status=400)
+
+    redis = request.app["redis"]
+    pool = request.app.get("pg_pool")
+
+    digest = hashlib.sha256(question.strip().lower().encode()).hexdigest()[:20]
+    cache_key = f"infusion:ai:query:{digest}"
+    cached = await redis.get(cache_key)
+    if cached:
+        data = json.loads(cached.decode() if isinstance(cached, bytes) else cached)
+        data["cached"] = True
+        return web.json_response(data)
+
+    known_symbols = await ai_query.load_known_symbols(redis)
+    intents = ai_query.classify_intents(question, known_symbols)[:6]
+
+    # Local import: routes/market.py pulls in the heavier Upstox-auth
+    # import chain (aiohttp session helpers, instrument-key resolution)
+    # that only matters when a question actually needs options analytics.
+    from api.routes.market import compute_options_chain_analytics
+
+    facts = [
+        await ai_query.gather_facts(intent, redis=redis, pool=pool, options_chain_fn=compute_options_chain_analytics)
+        for intent in intents
+    ]
+    deterministic_answer = ai_query.format_facts_as_text(question, intents, facts)
+    intent_types = [i["type"] for i in intents]
+
+    advisor = request.app["openai_advisor"]
+    if not intents or not advisor.enabled:
+        result = {
+            "answer": deterministic_answer,
+            "data_sources_used": intent_types,
+            "caveats": [] if intents else ["No matching data source found for this question."],
+            "source": "deterministic",
+            "model": "",
+        }
+    else:
+        try:
+            result = await advisor.answer_query(question, facts, deterministic_answer)
+        except Exception as exc:
+            result = {
+                "answer": deterministic_answer,
+                "data_sources_used": intent_types,
+                "caveats": [f"AI phrasing unavailable, showing the deterministic answer: {str(exc)[:120]}"],
+                "source": "deterministic_fallback",
+                "model": "",
+            }
+
+    result.update({
+        "question": question,
+        "intents_matched": intent_types,
+        "deterministic_answer": deterministic_answer,
+        "facts": facts,
+        "cached": False,
+        "advisory_only": True,
+    })
+    # Short TTL -- unlike the per-symbol advisory's 5-minute cache, this
+    # covers live-changing aggregate state (sectors, regime, active
+    # signals) that shouldn't go stale for long if asked again soon.
+    await redis.set(cache_key, json.dumps(result, default=str), ex=45)
     return web.json_response(result)
