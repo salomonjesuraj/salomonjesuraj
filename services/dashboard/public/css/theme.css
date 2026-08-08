@@ -783,45 +783,98 @@
 .ifx-scanner .scanner-decision-legend { display: flex; gap: var(--ifx-space-4); padding: 6px 10px; font-size: var(--ifx-text-2xs); color: var(--ifx-content-text-faint); }
 .ifx-scanner .scanner-decision-legend .go { color: var(--ifx-bull); } .ifx-scanner .scanner-decision-legend .wait { color: var(--ifx-warn); } .ifx-scanner .scanner-decision-legend .reject { color: var(--ifx-bear); }
 
-/* ── Selected Trade Plan hero card ─────────────────────────────────── */
-.ifx-scanner .trade-plan-hero {
-  display: flex; align-items: center; justify-content: space-between; gap: var(--ifx-space-3);
-  padding: var(--ifx-space-3) var(--ifx-space-4);
-  background: var(--ifx-content-surface); border: 1px solid var(--ifx-content-border); border-radius: var(--ifx-radius-lg) var(--ifx-radius-lg) 0 0;
-  font-family: var(--ifx-font-mono); font-weight: 700; font-size: var(--ifx-text-lg);
+/* ── Selected Trade Plan card ───────────────────────────────────────
+   Real DOM (confirmed by reading scanner.js's _updateMiniTradeCard(),
+   not assumed): #scannerTradePlan/.scanner-trade-plan has exactly ONE
+   child, .trade-plan-card -- which itself contains
+   .trade-plan-decision, .trade-plan-hero, .trade-plan-action,
+   .trade-plan-mode, seven .trade-plan-metric cards, one .trade-plan-wide,
+   and the <details>, all as direct siblings. The first CSS pass here
+   treated .scanner-trade-plan itself as the multi-column grid (as if the
+   metric cards were its direct children) -- since it actually only ever
+   has the one .trade-plan-card child, that grid's other columns stayed
+   permanently empty, and everything real got squeezed into the first
+   column with a large stretch of unused space next to it (reported
+   directly: "there is lot of unused spaces... realign everything").
+   .trade-plan-decision and .trade-plan-mode had no rules at all before
+   this pass (rendering with the OLD file's leftover styling, including
+   a stray red border) -- also fixed here. */
+.ifx-scanner .scanner-trade-plan { display: block; margin-bottom: var(--ifx-space-3); }
+.ifx-scanner .trade-plan-card {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px;
+  padding: var(--ifx-space-4);
+  background: var(--ifx-content-surface); border: 1px solid var(--ifx-content-border);
+  border-radius: var(--ifx-radius-lg);
 }
+.ifx-scanner .trade-plan-card.buy { border-left: 3px solid var(--ifx-bull); }
+.ifx-scanner .trade-plan-card.sell { border-left: 3px solid var(--ifx-bear); }
+.ifx-scanner .trade-plan-card.hold { border-left: 3px solid var(--ifx-warn); }
+.ifx-scanner .trade-plan-card.avoid { border-left: 3px solid var(--ifx-content-text-faint); }
+
+.ifx-scanner .trade-plan-decision,
+.ifx-scanner .trade-plan-hero,
+.ifx-scanner .trade-plan-wide,
+.ifx-scanner .trade-plan-advanced { grid-column: 1 / -1; }
+
+.ifx-scanner .trade-plan-decision {
+  display: flex; align-items: center; gap: var(--ifx-space-3); flex-wrap: wrap;
+  padding-bottom: var(--ifx-space-3); border-bottom: 1px dashed var(--ifx-content-border); margin-bottom: 2px;
+}
+.ifx-scanner .trade-plan-decision > div { display: flex; flex-direction: column; gap: 1px; }
+.ifx-scanner .trade-plan-decision > div span { font-size: 9px; text-transform: uppercase; letter-spacing: .4px; color: var(--ifx-content-text-faint); }
+.ifx-scanner .trade-plan-decision > div b { font-family: var(--ifx-font-mono); font-size: var(--ifx-text-2xl); font-weight: 800; }
+.ifx-scanner .trade-plan-decision.wait > div b { color: var(--ifx-warn); }
+.ifx-scanner .trade-plan-decision.watch > div b { color: var(--ifx-info); }
+.ifx-scanner .trade-plan-decision.ce > div b { color: var(--ifx-bull); }
+.ifx-scanner .trade-plan-decision.pe > div b { color: var(--ifx-bear); }
+.ifx-scanner .trade-plan-decision p { flex: 1 1 260px; margin: 0; font-size: var(--ifx-text-sm); color: var(--ifx-content-text-muted); }
+.ifx-scanner .trade-plan-decision em { flex-basis: 100%; font-style: normal; font-size: var(--ifx-text-2xs); color: var(--ifx-content-text-faint); }
+
+.ifx-scanner .trade-plan-hero { display: flex; align-items: center; gap: var(--ifx-space-2) var(--ifx-space-3); flex-wrap: wrap; }
+.ifx-scanner .trade-plan-hero > span:first-child { font-size: 9px; text-transform: uppercase; letter-spacing: .4px; color: var(--ifx-content-text-faint); }
+.ifx-scanner .trade-plan-hero b { font-family: var(--ifx-font-mono); font-size: var(--ifx-text-xl); font-weight: 700; color: var(--ifx-content-text); }
+.ifx-scanner .trade-plan-hero small { font-size: var(--ifx-text-2xs); color: var(--ifx-content-text-faint); margin-right: auto; }
+.ifx-scanner .trade-plan-hero button,
+.ifx-scanner .trade-plan-log-btn {
+  font-size: var(--ifx-text-2xs); font-weight: 700; padding: 4px 12px; border-radius: var(--ifx-radius-pill);
+  cursor: pointer; white-space: nowrap;
+}
+.ifx-scanner .trade-plan-hero button[data-open-tv] { border: 1px solid var(--ifx-info); color: var(--ifx-info); background: var(--ifx-info-dim); }
+.ifx-scanner .trade-plan-log-btn { border: none; background: var(--ifx-bull); color: #fff; }
+
 .ifx-scanner .trade-plan-action {
   display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
-  padding: 6px 14px; border-radius: var(--ifx-radius-md);
+  padding: 8px 12px; border-radius: var(--ifx-radius-md);
   background: var(--ifx-content-bg); border: 1px solid var(--ifx-content-border);
 }
-.ifx-scanner .scanner-trade-plan {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 6px;
-  padding: var(--ifx-space-3); background: var(--ifx-content-surface);
-  border: 1px solid var(--ifx-content-border); border-top: none; border-radius: 0 0 var(--ifx-radius-lg) var(--ifx-radius-lg);
-  margin-bottom: var(--ifx-space-3);
+.ifx-scanner .trade-plan-action span { font-size: 9px; text-transform: uppercase; letter-spacing: .4px; color: var(--ifx-content-text-faint); }
+.ifx-scanner .trade-plan-action b { font-family: var(--ifx-font-mono); font-size: var(--ifx-text-xl); font-weight: 800; color: var(--ifx-accent-strong); }
+.ifx-scanner .trade-plan-action small { font-size: 9px; color: var(--ifx-content-text-faint); }
+
+.ifx-scanner .trade-plan-mode {
+  display: flex; flex-direction: column; gap: 2px; padding: 8px 12px;
+  background: var(--ifx-content-bg); border: 1px solid var(--ifx-content-border); border-radius: var(--ifx-radius-md);
 }
+.ifx-scanner .trade-plan-mode label { font-size: 9px; text-transform: uppercase; letter-spacing: .4px; color: var(--ifx-content-text-faint); }
+.ifx-scanner .trade-plan-mode b { font-family: var(--ifx-font-mono); font-size: var(--ifx-text-base); font-weight: 700; }
+.ifx-scanner .trade-plan-mode small { font-size: 9px; color: var(--ifx-content-text-faint); }
+.ifx-scanner .trade-plan-mode.go b, .ifx-scanner .trade-plan-mode.ready b { color: var(--ifx-bull); }
+.ifx-scanner .trade-plan-mode.watch b { color: var(--ifx-info); }
+.ifx-scanner .trade-plan-mode.wait b { color: var(--ifx-warn); }
+.ifx-scanner .trade-plan-mode.reject b, .ifx-scanner .trade-plan-mode.avoid b { color: var(--ifx-bear); }
+
 .ifx-scanner .trade-plan-metric, .ifx-scanner .trade-plan-wide {
   display: flex; flex-direction: column; gap: 2px; padding: 8px 10px;
   background: var(--ifx-content-bg); border: 1px solid var(--ifx-content-border); border-radius: var(--ifx-radius-sm);
 }
-.ifx-scanner .trade-plan-wide { grid-column: 1 / -1; }
 .ifx-scanner .trade-plan-metric label, .ifx-scanner .trade-plan-wide label {
   font-size: 9px; text-transform: uppercase; letter-spacing: .4px; color: var(--ifx-content-text-faint);
 }
 .ifx-scanner .trade-plan-metric b, .ifx-scanner .trade-plan-wide b { font-family: var(--ifx-font-mono); font-size: var(--ifx-text-base); font-weight: 700; color: var(--ifx-content-text); }
 .ifx-scanner .trade-plan-metric small, .ifx-scanner .trade-plan-wide small { font-size: 9px; color: var(--ifx-content-text-faint); }
 .ifx-scanner .trade-plan-empty { padding: var(--ifx-space-4); text-align: center; color: var(--ifx-content-text-faint); }
-.ifx-scanner .trade-plan-advanced { grid-column: 1 / -1; }
-.ifx-scanner .trade-plan-advanced summary { cursor: pointer; font-size: var(--ifx-text-2xs); font-weight: 700; color: var(--ifx-content-text-muted); text-transform: uppercase; letter-spacing: .4px; padding: 4px 0; }
-.ifx-scanner .trade-plan-log-btn {
-  font-size: var(--ifx-text-2xs); font-weight: 700; padding: 4px 12px; border-radius: var(--ifx-radius-pill);
-  border: none; cursor: pointer; background: var(--ifx-bull); color: #fff;
-}
-.ifx-scanner .tv-open-btn {
-  font-size: var(--ifx-text-2xs); font-weight: 700; padding: 4px 12px; border-radius: var(--ifx-radius-pill);
-  border: 1px solid var(--ifx-info); color: var(--ifx-info); background: var(--ifx-info-dim); cursor: pointer;
-}
+.ifx-scanner .trade-plan-advanced summary { cursor: pointer; font-size: var(--ifx-text-2xs); font-weight: 700; color: var(--ifx-content-text-muted); text-transform: uppercase; letter-spacing: .4px; padding: 6px 0; border-top: 1px dashed var(--ifx-content-border); margin-top: 4px; }
+.ifx-scanner .trade-plan-advanced[open] summary { border-bottom: 1px dashed var(--ifx-content-border); margin-bottom: 8px; padding-bottom: 8px; }
 
 /* ── Command Answers, AI Trade Map, Option Pick (advanced details) ───── */
 .ifx-scanner .command-answer-block { padding: var(--ifx-space-3); background: var(--ifx-content-bg); border-radius: var(--ifx-radius-md); margin-top: 6px; }

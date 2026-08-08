@@ -1979,6 +1979,13 @@ export class ScannerPanel {
   _updateMiniTradeCard() {
     const el = this._el.querySelector('#scannerTradePlan') || this._el.querySelector('#scannerMiniCard');
     if (!el) return;
+    // This panel re-renders via innerHTML on every poll tick (a few
+    // seconds apart -- see the call sites above). A plain <details> loses
+    // its open state on every innerHTML replacement since the fresh
+    // markup has no `open` attribute, which read as "Advanced keeps
+    // closing itself" when reported. Read the current open state before
+    // wiping the DOM and reapply it to the new markup below.
+    const wasAdvancedOpen = el.querySelector('details.trade-plan-advanced')?.open ?? false;
     const item = this._currentSelected();
     if (!item) {
       el.innerHTML = `<div class="trade-plan-empty">No stock matches current filters</div>`;
@@ -2038,7 +2045,7 @@ export class ScannerPanel {
         <div class="trade-plan-metric"><label>Risk budget</label><b>${formatPrice(risk.riskAmount)}</b><small>${risk.riskPct.toFixed(1)}% capital</small></div>
         <div class="trade-plan-wide"><label>MTF / Evidence</label><b>${escapeHtml(mtf)}</b><small>Strength ${setup} · ${escapeHtml(reasons || 'Evidence building')}</small></div>
 
-        <details class="trade-plan-advanced">
+        <details class="trade-plan-advanced"${wasAdvancedOpen ? ' open' : ''}>
           <summary>Advanced ▾</summary>
           ${commandCenterBlock(item)}
           ${selectedTradeChecklist(item, this._signalMode)}
