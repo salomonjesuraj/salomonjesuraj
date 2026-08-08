@@ -15,6 +15,7 @@ Startup sequence:
 """
 
 import asyncio
+import time
 
 import msgpack
 import redis.asyncio as aioredis
@@ -37,6 +38,24 @@ from infusion_streams.constants import (
 )
 
 logger = structlog.get_logger()
+
+# Phase 11: mirror the scanner's live precision-guard config to Redis so
+# other services (api's /api/backtest/optimizer-proposal) can read what's
+# actually running without importing ScannerSettings directly. Static
+# env-var settings, republished periodically only so a Redis restart/flush
+# self-heals rather than needing a scanner restart to reappear.
+KEY_LIVE_CONFIG = "infusion:scanner:live_config"
+
+
+async def publish_live_config(redis: aioredis.Redis, settings: ScannerSettings) -> None:
+    await redis.hset(KEY_LIVE_CONFIG, mapping={
+        "precision_guard_enabled": str(settings.precision_guard_enabled),
+        "precision_guard_min_score": str(settings.precision_guard_min_score),
+        "precision_guard_min_rr": str(settings.precision_guard_min_rr),
+        "precision_guard_sessions": settings.precision_guard_sessions,
+        "precision_guard_strategy_ids": settings.precision_guard_strategy_ids,
+        "published_at_us": str(int(time.time() * 1_000_000)),
+    })
 
 
 async def load_symbol_sectors(redis: aioredis.Redis) -> dict[str, str]:
@@ -90,6 +109,10 @@ async def run() -> None:
     r = aioredis.from_url(settings.redis_url, decode_responses=False)
     await r.ping()
     logger.info("redis_connected", url=settings.redis_url)
+
+    # Phase 11: publish live precision-guard config for the optimizer-proposal endpoint
+    await publish_live_config(r, settings)
+    logger.info("live_config_published", key=KEY_LIVE_CONFIG)
 
     # Load symbol→sector mapping
     symbol_sectors = await load_symbol_sectors(r)
@@ -156,10 +179,21 @@ async def run() -> None:
             except Exception as e:
                 logger.warning("sector_persist_error", error=str(e))
 
+    # Periodic live-config republish (Phase 11) -- self-heals after a Redis
+    # flush/restart without needing a scanner restart.
+    async def live_config_publish_loop():
+        while not lifecycle.shutdown_event.is_set():
+            await asyncio.sleep(300)
+            try:
+                await publish_live_config(r, settings)
+            except Exception as e:
+                logger.warning("live_config_publish_error", error=str(e))
+
     # Main consume loop
     async def main_loop():
         cleanup_task = asyncio.create_task(cleanup_loop())
         sector_task = asyncio.create_task(sector_persist_loop())
+        live_config_task = asyncio.create_task(live_config_publish_loop())
         try:
             async for event_type, version, rx_us, payload, ack in consumer.consume():
                 if lifecycle.shutdown_event.is_set():
@@ -180,6 +214,7 @@ async def run() -> None:
         finally:
             cleanup_task.cancel()
             sector_task.cancel()
+            live_config_task.cancel()
             for t in [cleanup_task, sector_task]:
                 try:
                     await t

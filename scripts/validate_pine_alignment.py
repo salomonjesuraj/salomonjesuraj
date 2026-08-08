@@ -9,6 +9,8 @@ Usage:
     python -X utf8 scripts/validate_pine_alignment.py
 """
 
+import asyncio
+import json
 import os
 import sys
 import time
@@ -37,7 +39,7 @@ def check(label, condition, detail=""):
         print(f"  [FAIL]   {label}{' -- ' + detail if detail else ''}")
 
 
-def main():
+async def main():
     print("=" * 70)
     print("INFUSION — PINE v6 ALIGNMENT VALIDATION")
     print(f"Time: {time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())}")
@@ -125,6 +127,18 @@ def main():
         check("api.routes.mtf blocker functions import", True)
     except Exception as e:
         check("api.routes.mtf blocker functions import", False, str(e))
+        return
+
+    try:
+        from api.routes.backtest import (
+            compute_walkforward, compute_feature_ablation, compute_optimizer_proposal,
+            _ablation_field_present, _ablation_group_metrics, _read_live_config,
+            KNOWN_ABLATION_FIELDS, KNOWN_ABLATION_FIELDS_SUB_SCORES,
+            LIVE_CONFIG_KEY, OPTIMIZER_PROPOSAL_KEY,
+        )
+        check("api.routes.backtest optimizer-scheduler functions import", True)
+    except Exception as e:
+        check("api.routes.backtest optimizer-scheduler functions import", False, str(e))
         return
 
     try:
@@ -974,6 +988,239 @@ def main():
     check("Max Pain: empty chain returns None, never crashes", compute_max_pain([]) is None)
 
     # ═══════════════════════════════════════════════
+    # SELF-IMPROVING OPTIMIZER SCHEDULER (NEW) — Phase 11
+    # ═══════════════════════════════════════════════
+    print("\n--- OPTIMIZER SCHEDULER (NEW): feature-ablation + walk-forward-vs-live proposal (Phase 11) ---")
+
+    class _FakeConn:
+        def __init__(self, rows):
+            self._rows = rows
+
+        async def fetch(self, query, *args):
+            return self._rows
+
+    class _FakeAcquire:
+        def __init__(self, conn):
+            self._conn = conn
+
+        async def __aenter__(self):
+            return self._conn
+
+        async def __aexit__(self, *exc):
+            return False
+
+    class _FakePool:
+        def __init__(self, rows):
+            self._conn = _FakeConn(rows)
+
+        def acquire(self):
+            return _FakeAcquire(self._conn)
+
+    class _FakeRedis:
+        def __init__(self, hash_data=None):
+            self._hash = hash_data or {}
+            self._strings = {}
+
+        async def hgetall(self, key):
+            return self._hash.get(key, {})
+
+        async def set(self, key, value):
+            self._strings[key] = value
+
+        async def get(self, key):
+            return self._strings.get(key)
+
+    check(
+        "KNOWN_ABLATION_FIELDS / KNOWN_ABLATION_FIELDS_SUB_SCORES are non-empty and disjoint",
+        len(KNOWN_ABLATION_FIELDS) > 0
+        and len(KNOWN_ABLATION_FIELDS_SUB_SCORES) > 0
+        and not (set(KNOWN_ABLATION_FIELDS) & set(KNOWN_ABLATION_FIELDS_SUB_SCORES)),
+    )
+
+    # --- _ablation_field_present: Python-truthy matrix ---
+    truthy_cases = [
+        (None, False), (0, False), (0.0, False), ("", False), ({}, False), ([], False), (False, False),
+        ("x", True), (1, True), (-1, True), ({"a": 1}, True), ([1], True), (True, True),
+    ]
+    truthy_ok = all(_ablation_field_present(v) == expected for v, expected in truthy_cases)
+    check("_ablation_field_present matches Python truthy semantics across types", truthy_ok, str(truthy_cases))
+
+    # --- _ablation_group_metrics: hand-computed win/loss split ---
+    def fs_row(present, outcome):
+        snapshot = json.dumps({"chart_patterns": ["double_top"]}) if present else json.dumps({})
+        return {"outcome_label": outcome, "features_snapshot": snapshot}
+
+    small_rows = (
+        [fs_row(True, "TARGET_HIT")] * 4 + [fs_row(True, "STOP_HIT")] * 1
+        + [fs_row(False, "TARGET_HIT")] * 3 + [fs_row(False, "STOP_HIT")] * 2
+    )
+    present_metrics = _ablation_group_metrics(small_rows, "features_snapshot", "chart_patterns", True)
+    absent_metrics = _ablation_group_metrics(small_rows, "features_snapshot", "chart_patterns", False)
+    check(
+        "_ablation_group_metrics: present group wins/losses/precision hand-computed correctly",
+        present_metrics == {"wins": 4, "losses": 1, "decided": 5, "precision_pct": 80.0},
+        f"got {present_metrics}",
+    )
+    check(
+        "_ablation_group_metrics: absent group wins/losses/precision hand-computed correctly",
+        absent_metrics == {"wins": 3, "losses": 2, "decided": 5, "precision_pct": 60.0},
+        f"got {absent_metrics}",
+    )
+
+    # --- compute_feature_ablation: small-sample note (both groups < 20 decided) ---
+    result_small = await compute_feature_ablation(_FakePool(small_rows), field="chart_patterns", column="features_snapshot", days=90)
+    check(
+        "compute_feature_ablation: small sample flagged as not-yet-meaningful",
+        result_small["available"] and "fewer than" in result_small["note"],
+        f"got {result_small}",
+    )
+    check(
+        "compute_feature_ablation: precision_lift_pct matches hand-computed groups (80 - 60 = 20)",
+        result_small["precision_lift_pct"] == 20.0,
+        f"got {result_small['precision_lift_pct']}",
+    )
+
+    # --- compute_feature_ablation: adequate-sample note (both groups >= 20 decided) ---
+    big_rows = (
+        [fs_row(True, "TARGET_HIT")] * 20 + [fs_row(True, "STOP_HIT")] * 5
+        + [fs_row(False, "TARGET_HIT")] * 12 + [fs_row(False, "STOP_HIT")] * 13
+    )
+    result_big = await compute_feature_ablation(_FakePool(big_rows), field="chart_patterns", column="features_snapshot", days=90)
+    check(
+        "compute_feature_ablation: adequate sample surfaces a human-review note when lift is large",
+        result_big["available"] and "human-reviewed follow-up" in result_big["note"],
+        f"got {result_big}",
+    )
+    check("compute_feature_ablation: total_decided matches row count", result_big["total_decided"] == len(big_rows))
+
+    # --- compute_feature_ablation: sub_scores column + unknown column rejected ---
+    def ss_row(present, outcome):
+        snapshot = json.dumps({"cross_confirmation": {"agree": 3}}) if present else json.dumps({})
+        return {"outcome_label": outcome, "sub_scores": snapshot}
+
+    ss_rows = [ss_row(True, "TARGET_HIT")] * 25 + [ss_row(False, "STOP_HIT")] * 25
+    result_ss = await compute_feature_ablation(_FakePool(ss_rows), field="cross_confirmation", column="sub_scores", days=90)
+    check(
+        "compute_feature_ablation: sub_scores column works (cross_confirmation lives there, not features_snapshot)",
+        result_ss["available"] and result_ss["present"]["precision_pct"] == 100.0 and result_ss["absent"]["precision_pct"] == 0.0,
+        f"got {result_ss}",
+    )
+    result_bad_col = await compute_feature_ablation(_FakePool([]), field="x", column="not_a_real_column", days=90)
+    check("compute_feature_ablation: unknown column is rejected, not silently accepted", not result_bad_col["available"])
+    result_no_field = await compute_feature_ablation(_FakePool([]), field="", column="features_snapshot", days=90)
+    check("compute_feature_ablation: missing field param is rejected", not result_no_field["available"])
+
+    # --- _read_live_config: parses a real Redis hash shape (bytes keys/values, decode_responses=False) ---
+    live_hash_bytes = {
+        b"precision_guard_enabled": b"True",
+        b"precision_guard_min_score": b"80.0",
+        b"precision_guard_min_rr": b"1.2",
+        b"precision_guard_sessions": b"mid_morning,midday,closing",
+        b"precision_guard_strategy_ids": b"options_first_hybrid,vol_vwap_breakout",
+        b"published_at_us": b"1234567890",
+    }
+    live_parsed = await _read_live_config(_FakeRedis({LIVE_CONFIG_KEY: live_hash_bytes}))
+    check(
+        "_read_live_config: parses bytes hash into typed dict (bool/float/str)",
+        live_parsed == {
+            "precision_guard_enabled": True,
+            "precision_guard_min_score": 80.0,
+            "precision_guard_min_rr": 1.2,
+            "precision_guard_sessions": "mid_morning,midday,closing",
+            "precision_guard_strategy_ids": "options_first_hybrid,vol_vwap_breakout",
+            "published_at_us": 1234567890,
+        },
+        f"got {live_parsed}",
+    )
+    check("_read_live_config: missing key returns None, not a crash", await _read_live_config(_FakeRedis({})) is None)
+
+    # --- compute_optimizer_proposal: end-to-end against a synthetic walk-forward dataset ---
+    # 200 decided signals, identical score/rr/grade/session (90 / 2.0 / A+ / closing),
+    # 10% STOP_HIT evenly distributed so both the train and test walk-forward
+    # splits land at ~90% precision -- comfortably above the 80% target, so a
+    # profile reliably reaches FORWARD_TARGET_MET regardless of exact split index.
+    from datetime import datetime, timedelta, timezone as _tz
+
+    def wf_row(i):
+        outcome = "STOP_HIT" if i % 10 == 0 else "TARGET_HIT"
+        return {
+            "created_at": datetime(2026, 1, 1, tzinfo=_tz.utc) + timedelta(hours=i),
+            "symbol": "RELIANCE",
+            "sector_id": "energy",
+            "session_hour": "closing",
+            "conviction_score": 90.0,
+            "conviction_grade": "A+",
+            "risk_reward_ratio": 2.0,
+            "outcome_label": outcome,
+            "suppressed": False,
+            "strategy": "options_first_hybrid",
+            "pre_breakout_state": "-",
+            "market_regime": "-",
+        }
+
+    wf_rows = [wf_row(i) for i in range(200)]
+    wf_pool = _FakePool(wf_rows)
+
+    wf_result = await compute_walkforward(wf_pool, days=120, target=80.0)
+    check(
+        "compute_walkforward (fake pool): reaches FORWARD_TARGET_MET on a ~90% precision synthetic dataset",
+        wf_result.get("status") == "FORWARD_TARGET_MET" and wf_result.get("target_met") is True,
+        f"got status={wf_result.get('status')}",
+    )
+
+    diverged_redis = _FakeRedis({LIVE_CONFIG_KEY: {
+        b"precision_guard_enabled": b"True",
+        b"precision_guard_min_score": b"80.0",
+        b"precision_guard_min_rr": b"1.2",
+        b"precision_guard_sessions": b"mid_morning,midday,closing",
+        b"precision_guard_strategy_ids": b"options_first_hybrid,vol_vwap_breakout",
+        b"published_at_us": b"1000000",
+    }})
+    proposal_diverged = await compute_optimizer_proposal(_FakePool(wf_rows), diverged_redis, days=120, target=80.0)
+    check(
+        "compute_optimizer_proposal: divergent live config produces a PROPOSED status",
+        proposal_diverged["available"] and proposal_diverged["status"] == "PROPOSED",
+        f"got {proposal_diverged.get('status')}, score_diff={proposal_diverged.get('score_diff')}",
+    )
+    check(
+        "compute_optimizer_proposal: never mutates anything but the proposal record -- live_config in the response echoes what was read, unchanged",
+        proposal_diverged["live_config"]["precision_guard_min_score"] == 80.0,
+    )
+    stored_raw = diverged_redis._strings.get(OPTIMIZER_PROPOSAL_KEY)
+    check(
+        "compute_optimizer_proposal: writes a JSON-decodable proposal to Redis matching the returned result",
+        stored_raw is not None and json.loads(stored_raw) == proposal_diverged,
+        f"got {stored_raw}",
+    )
+
+    recommended = proposal_diverged.get("recommended") or {}
+    matching_redis = _FakeRedis({LIVE_CONFIG_KEY: {
+        b"precision_guard_enabled": b"True",
+        b"precision_guard_min_score": str(recommended.get("min_score", 50)).encode(),
+        b"precision_guard_min_rr": str(recommended.get("min_rr", 0)).encode(),
+        b"precision_guard_sessions": b"regular,mid_morning,midday,closing",
+        b"precision_guard_strategy_ids": b"options_first_hybrid,vol_vwap_breakout",
+        b"published_at_us": b"1000000",
+    }})
+    proposal_matching = await compute_optimizer_proposal(_FakePool(wf_rows), matching_redis, days=120, target=80.0)
+    check(
+        "compute_optimizer_proposal: live config matching the recommendation produces NO_DRIFT",
+        proposal_matching["available"] and proposal_matching["status"] == "NO_DRIFT",
+        f"got {proposal_matching.get('status')}, score_diff={proposal_matching.get('score_diff')}, rr_diff={proposal_matching.get('rr_diff')}",
+    )
+
+    empty_redis = _FakeRedis({})
+    proposal_no_config = await compute_optimizer_proposal(_FakePool(wf_rows), empty_redis, days=120, target=80.0)
+    check(
+        "compute_optimizer_proposal: missing live config is reported as unavailable, not a crash/default guess",
+        not proposal_no_config["available"] and LIVE_CONFIG_KEY in proposal_no_config["reason"],
+        f"got {proposal_no_config}",
+    )
+
+    proposal_no_pool = await compute_optimizer_proposal(None, diverged_redis, days=120, target=80.0)
+    check("compute_optimizer_proposal: no Postgres pool is reported as unavailable, not a crash", not proposal_no_pool["available"])
+
+    # ═══════════════════════════════════════════════
     # SUMMARY
     # ═══════════════════════════════════════════════
     print("\n" + "=" * 70)
@@ -987,4 +1234,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
