@@ -150,6 +150,22 @@ class SymbolState:
     supply_zone: tuple[float, float, int] | None = None
     demand_zone: tuple[float, float, int] | None = None
 
+    # ICT: Fair Value Gaps (3-candle imbalance, BISI/SIBI) — see features/ict.py.
+    # Each is (bottom, top, formed_at_bar) or None when no gap is active.
+    fvg_bullish: tuple[float, float, int] | None = None
+    fvg_bearish: tuple[float, float, int] | None = None
+    fvg_bullish_touches: int = 0
+    fvg_bearish_touches: int = 0
+
+    # ICT: most recent liquidity sweep event — set only on the bar it fires,
+    # cleared every bar (a point-in-time event, not a standing state).
+    last_liquidity_sweep: str | None = None  # "sellside" | "buyside" | None
+
+    # ICT: Order Blocks (liquidity-sweep precondition + close validation,
+    # not just a big candle). Each is (low, high, formed_at_bar, validated).
+    order_block_bullish: tuple[float, float, int, bool] | None = None
+    order_block_bearish: tuple[float, float, int, bool] | None = None
+
     # Timing
     last_tick_exchange_ms: int = 0
     last_feature_compute_us: int = 0

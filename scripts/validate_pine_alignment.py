@@ -54,6 +54,7 @@ def main():
         from feature_engine.features.zones import update_zones, zone_snapshot
         from feature_engine.features.momentum import update_adx, get_adx
         from feature_engine.features.volatility import update_supertrend, get_supertrend
+        from feature_engine.features.ict import update_ict, ict_snapshot
         check("feature_engine Pine-alignment modules import", True)
     except Exception as e:
         check("feature_engine Pine-alignment modules import", False, str(e))
@@ -600,6 +601,68 @@ def main():
         {"high": 108, "low": 105}, {"high": 107, "low": 104},
     ])
     check("fractal_pivots_indexed returns chronologically ordered tuples", idx_pivots == sorted(idx_pivots, key=lambda t: t[2]), f"got {idx_pivots}")
+
+    # ═══════════════════════════════════════════════
+    # PHASE 6 (NEW) — ICT: FVG / LIQUIDITY SWEEP / ORDER BLOCK
+    # ═══════════════════════════════════════════════
+    print("\n--- PHASE 6 (NEW): ICT (FVG, LIQUIDITY SWEEP, ORDER BLOCK) ---")
+
+    def feed(state, bar):
+        state.recent_1m_bars.append(bar)
+        state.completed_1m_bars += 1
+        update_ict(state)
+
+    ict1 = SymbolState(symbol="ICT1")
+    for b in [
+        {"o": 99, "h": 100, "l": 98, "c": 99.5},
+        {"o": 100, "h": 103, "l": 99, "c": 102},
+        {"o": 103, "h": 106, "l": 105, "c": 105.5},
+    ]:
+        feed(ict1, b)
+    check("FVG (BISI) detected: candle1.high < candle3.low", ict1.fvg_bullish == (100, 105, 3), f"got {ict1.fvg_bullish}")
+    ict1_snap = ict_snapshot(ict1)
+    check("FVG CE is the 50% midpoint", ict1_snap["fvg_bullish_ce"] == 102.5, f"got {ict1_snap['fvg_bullish_ce']}")
+    for _ in range(3):
+        feed(ict1, {"o": 102, "h": 103, "l": 101, "c": 102.5})  # closes inside the gap each time
+    check("FVG fully rebalances on the 3rd touch (ICT's own rule)", ict1.fvg_bullish is None)
+
+    ict2 = SymbolState(symbol="ICT2")
+    ict2.swing_low_1 = 100.0
+    for b in [{"o": 101, "h": 102, "l": 100.5, "c": 101.5}] * 3:
+        feed(ict2, b)
+    feed(ict2, {"o": 101, "h": 101.5, "l": 99.0, "c": 101.2})  # wicks below the swing low, closes back above
+    check("Liquidity sweep: sellside detected on wick-through-close-back-above", ict2.last_liquidity_sweep == "sellside", f"got {ict2.last_liquidity_sweep}")
+
+    ict3 = SymbolState(symbol="ICT3")
+    ict3.swing_low_1 = 100.0
+    for b in [{"o": 101, "h": 102, "l": 100.5, "c": 101.5}] * 3:
+        feed(ict3, b)
+    feed(ict3, {"o": 101.5, "h": 102.0, "l": 99.0, "c": 100.5})  # down-close candle sweeping sellside
+    check("Order Block candidate forms on sweep + down-close", ict3.order_block_bullish == (99.0, 102.0, ict3.completed_1m_bars, False), f"got {ict3.order_block_bullish}")
+    check("Order Block NOT validated on formation (needs a later close beyond its high)", ict3.order_block_bullish[3] is False)
+    feed(ict3, {"o": 102.0, "h": 103.5, "l": 102.0, "c": 103.0})  # close above OB high
+    check("Order Block validates once price closes above its high", ict3.order_block_bullish is not None and ict3.order_block_bullish[3] is True, f"got {ict3.order_block_bullish}")
+    feed(ict3, {"o": 101.0, "h": 101.0, "l": 99.5, "c": 100.0})  # close below the 50% mean threshold (100.5)
+    check("Order Block invalidates on a close below its mean threshold", ict3.order_block_bullish is None)
+
+    ict4 = SymbolState(symbol="ICT4")
+    ict4.swing_low_1 = 100.0
+    for b in [{"o": 101, "h": 102, "l": 100.5, "c": 101.5}] * 3:
+        feed(ict4, b)
+    feed(ict4, {"o": 101.5, "h": 102.0, "l": 99.0, "c": 100.5})  # candidate forms (99, 102)
+    feed(ict4, {"o": 100.0, "h": 100.0, "l": 97.0, "c": 98.0})   # closes below the candidate's own low before ever validating
+    check("Order Block fails outright if price closes below its low before validating", ict4.order_block_bullish is None)
+
+    ict5 = SymbolState(symbol="ICT5")
+    ict5.swing_high_1 = 100.0
+    for b in [{"o": 99, "h": 99.5, "l": 98.5, "c": 99.2}] * 3:
+        feed(ict5, b)
+    feed(ict5, {"o": 99.5, "h": 101.0, "l": 99.0, "c": 99.8})  # up-close candle sweeping buyside
+    check("Bearish mirror: buyside sweep detected", ict5.last_liquidity_sweep == "buyside")
+    check("Bearish Order Block candidate forms on the mirror conditions", ict5.order_block_bearish == (99.0, 101.0, ict5.completed_1m_bars, False), f"got {ict5.order_block_bearish}")
+
+    ict6 = SymbolState(symbol="ICT6")
+    check("update_ict never crashes on thin history (<3 bars)", update_ict(ict6) is None and ict6.fvg_bullish is None)
 
     # ═══════════════════════════════════════════════
     # SUMMARY

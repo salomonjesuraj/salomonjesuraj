@@ -257,6 +257,17 @@ class OptionsFirstHybrid(BaseStrategy):
             # Chart-pattern geometry (Phase 5) -- daily-timeframe only, see
             # api/chart_patterns.py. Informational, not wired into score.
             "chart_patterns": chart_patterns,
+            # ICT: FVG + proper Order Block + liquidity sweep (Phase 6), see
+            # feature_engine/features/ict.py. Also informational only.
+            "fvg_bullish_ce": ml.get("fvg_bullish_ce"),
+            "fvg_bearish_ce": ml.get("fvg_bearish_ce"),
+            "last_liquidity_sweep": ml.get("last_liquidity_sweep"),
+            "order_block_bullish_low": ml.get("order_block_bullish_low"),
+            "order_block_bullish_high": ml.get("order_block_bullish_high"),
+            "order_block_bullish_validated": ml.get("order_block_bullish_validated"),
+            "order_block_bearish_low": ml.get("order_block_bearish_low"),
+            "order_block_bearish_high": ml.get("order_block_bearish_high"),
+            "order_block_bearish_validated": ml.get("order_block_bearish_validated"),
         }
 
         return SignalCandidate(
