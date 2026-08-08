@@ -851,12 +851,20 @@
    with a max card width spreads few cards evenly and wraps to a second
    row instead of scrolling once there are many, so the strip always
    looks intentionally composed regardless of how many cards there are. */
+/* flex, not grid: the previous grid (auto-fit + 1fr tracks) created one
+   wide TRACK per card when there were only a few, but each card's own
+   max-width capped it well short of that track's width -- since a
+   grid item aligns to the start of its track by default, that left a
+   big blank gap after every card instead of one at the end of the row
+   (reported directly: "still i can see the line" -- these gaps read the
+   same as the outline bug even though the cause was different). Flexbox
+   grows the cards THEMSELVES to fill the row (no separate track to leave
+   a gap in), and wraps to a new line once they hit their min basis. */
 .ifx-scanner .leader-cards, .ifx-scanner .trigger-radar-cards {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 6px; max-width: 100%;
+  display: flex; flex-wrap: wrap; gap: 6px;
 }
 .ifx-scanner .leader-cards > *, .ifx-scanner .trigger-radar-cards > * {
-  max-width: 220px; padding: 8px 10px;
+  flex: 1 1 150px; max-width: 260px; padding: 8px 10px;
   background: var(--ifx-content-surface); border: 1px solid var(--ifx-content-border); border-radius: var(--ifx-radius-md);
   cursor: pointer; transition: transform var(--ifx-fast) var(--ifx-ease);
 }
