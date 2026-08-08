@@ -465,21 +465,32 @@
   border-radius: var(--ifx-radius-lg);
   min-height: 200px;
 }
-.ifx-cockpit { background: transparent; flex: 1; min-height: 0; overflow-y: auto; color: inherit; }
+.ifx-cockpit { background: transparent; flex: 1; min-height: 0; overflow-y: auto; color: inherit; display: flex; }
 .ifx-cockpit-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: var(--ifx-space-3);
   padding: var(--ifx-space-1);
+  width: 100%;
 }
+/* Fills the whole cockpit area (not just its own content height) and
+   centers both axes -- the empty state used to sit at the top of a tall,
+   mostly-white card with no visual reason for all that surrounding
+   space. Sized and weighted to feel like a deliberate calm state (a
+   quiet market, not a bug), not an orphaned message. */
 .ifx-cockpit-empty {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 6px; padding: var(--ifx-space-8);
+  gap: var(--ifx-space-2); width: 100%; min-height: 220px; padding: var(--ifx-space-8);
   color: var(--ifx-content-text-faint);
 }
-.ifx-cockpit-empty-icon { font-size: 28px; opacity: .5; }
-.ifx-cockpit-empty-title { font-size: var(--ifx-text-base); font-weight: 700; color: var(--ifx-content-text-muted); }
-.ifx-cockpit-empty-sub { font-size: var(--ifx-text-xs); text-align: center; max-width: 320px; }
+.ifx-cockpit-empty-icon {
+  display: flex; align-items: center; justify-content: center;
+  width: 56px; height: 56px; border-radius: 50%;
+  background: var(--ifx-content-bg); border: 1px solid var(--ifx-content-border);
+  font-size: 24px; opacity: .7; margin-bottom: 4px;
+}
+.ifx-cockpit-empty-title { font-size: var(--ifx-text-lg); font-weight: 700; color: var(--ifx-content-text-muted); }
+.ifx-cockpit-empty-sub { font-size: var(--ifx-text-sm); text-align: center; max-width: 360px; line-height: 1.5; }
 
 .ifx-ticket {
   display: flex; flex-direction: column; gap: 10px;
@@ -822,9 +833,18 @@
 .ifx-scanner .leader-title, .ifx-scanner .trigger-radar-title {
   font-size: var(--ifx-text-2xs); font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--ifx-content-text-faint);
 }
-.ifx-scanner .leader-cards, .ifx-scanner .trigger-radar-cards { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+/* Grid, not a horizontal-scroll flex row: with only 2-3 cards (a quiet
+   market) a flex row leaves them stranded on the left with a wide dead
+   gap to the right -- reported directly as wasted space. A wrapping grid
+   with a max card width spreads few cards evenly and wraps to a second
+   row instead of scrolling once there are many, so the strip always
+   looks intentionally composed regardless of how many cards there are. */
+.ifx-scanner .leader-cards, .ifx-scanner .trigger-radar-cards {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 6px; max-width: 100%;
+}
 .ifx-scanner .leader-cards > *, .ifx-scanner .trigger-radar-cards > * {
-  flex: 0 0 auto; min-width: 150px; padding: 8px 10px;
+  max-width: 220px; padding: 8px 10px;
   background: var(--ifx-content-surface); border: 1px solid var(--ifx-content-border); border-radius: var(--ifx-radius-md);
   cursor: pointer; transition: transform var(--ifx-fast) var(--ifx-ease);
 }
