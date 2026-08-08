@@ -2,7 +2,14 @@
    INFUSION Trading Command Center — Design System
    Premium dark terminal aesthetic (Bloomberg/Refinitiv inspired)
    ═══════════════════════════════════════════════════════════════ */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+/* v8.0.0: font loading moved to index.html's <head> as <link
+   rel="preconnect"> + <link rel="stylesheet"> -- a CSS @import here was
+   render-blocking (the browser can't start painting until it fetches and
+   parses this whole file, discovers the @import, then fetches THAT before
+   continuing), adding a full extra network round-trip to first paint on a
+   trading terminal where that matters. <link> tags in <head> let the
+   browser discover and start the font fetch in parallel with this
+   stylesheet instead of serially after it. */
 
 /* ── Design Tokens ──────────────────────────────────────────── */
 :root {
@@ -7516,3 +7523,40 @@ body.screener-v4-page{
 .screener-pro-v4 .scanner-table-zone.density-compact .scanner-row .sc small{
   display:none!important;
 }
+
+/* ────────────────────────────────────────────────────────────────────────
+   v8.0.0 — UI overhaul Phase A: design-system foundation.
+
+   Bug fix, confirmed live via getComputedStyle() before writing this patch
+   (not guessed): body.screener-v4-page's background was switched to a
+   light color (#eef2f7) by the "v4.1 long light screener" pass (see the
+   `body.screener-v4-page{background:#eef2f7}` rule above) but its text
+   color was never updated to match -- body still inherits the base dark
+   theme's --text-primary (#e2e8f0, a light gray meant for a DARK
+   background), producing near-invisible light-on-near-white text. Same
+   root cause hit .pro-sector-deck (the sector ribbon/"Market Pulse"
+   strip): its background was switched to light (#f1f5f9) without a
+   matching color fix, so it inherits .screener-pro-v4's light chrome text
+   color (#e5edf8) instead. Fixed here, last in the cascade so it wins
+   regardless of how many earlier passes reopened these selectors.
+   ──────────────────────────────────────────────────────────────────────── */
+body.screener-v4-page{
+  color:#0f172a;
+}
+.screener-pro-v4 .pro-sector-deck{
+  color:#0f172a;
+}
+
+/* Grade-class naming fix: cockpit.js's gradeClass() emits "grade-aplus"/
+   "grade-bplus" (no hyphen before "plus" -- see cockpit.js's
+   `'grade-' + grade.toLowerCase().replace('+','plus')`), but the
+   .signal-card grade-border-color rules only ever defined the hyphenated
+   "grade-a-plus"/"grade-b-plus" variants (see .signal-card.grade-a-plus
+   etc above) -- so a cockpit card's grade-colored left border never
+   actually applied. Confirmed by reading cockpit.js's own class-name
+   generator against every existing .grade-* selector in this file, not
+   assumed. Adding the non-hyphenated aliases here, mapped to the same
+   colors as their hyphenated counterparts, rather than touching the
+   original (still-used-by-signals.js-style-markup) selectors. */
+.signal-card.grade-aplus{border-left-color:var(--gold)}
+.signal-card.grade-bplus{border-left-color:var(--blue)}

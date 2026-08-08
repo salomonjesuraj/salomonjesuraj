@@ -1965,44 +1965,16 @@ export class ScannerPanel {
     return this._sorted[0] || null;
   }
 
-  _updateMiniTradeCard() {
-    const el = this._el.querySelector('#scannerMiniCard');
-    if (!el) return;
-    const item = this._currentSelected();
-    if (!item) {
-      el.innerHTML = `<div class="mini-empty">No stock matches current filters</div>`;
-      return;
-    }
-    const cls = actionClass(item);
-    const decision = item.direction_bias || item.trade_decision || 'WAIT';
-    const mtf = item.mtf_text || 'MTF building';
-    const optionReady = Math.round(Number(item.option_readiness || 0));
-    const setup = Math.round(Number(item.setup_strength || 0));
-    const reasons = Array.isArray(item.strength_reasons) ? item.strength_reasons.slice(0, 2).join(' · ') : '';
-    const blockers = Array.isArray(item.rejection_reasons) && item.rejection_reasons.length
-      ? item.rejection_reasons.slice(0, 2).join(' · ')
-      : item.anti_chase_ok ? 'Anti-chase clean' : 'Check blockers';
-    el.innerHTML = `
-      <div class="mini-card-main ${cls}">
-        <div class="mini-symbol">
-          <span>${escapeHtml(item.symbol || '-')}</span>
-          <b class="${decisionClass(decision)}">${escapeHtml(decision)}</b>
-          <small>${escapeHtml(item.sector_id || '-')}</small>
-        </div>
-        <div class="mini-metric"><label>LTP</label><b>${formatPrice(item.ltp)}</b><small class="${Number(item.change_pct || 0) >= 0 ? 'positive' : 'negative'}">${formatPct(item.change_pct)}</small></div>
-        <div class="mini-metric"><label>Entry</label><b>${formatPrice(item.entry_price_hint)}</b><small>${escapeHtml(item.status || 'WATCH')}</small></div>
-        <div class="mini-metric"><label>SL</label><b class="negative">${formatPrice(item.stop_loss_hint)}</b><small>Risk line</small></div>
-        <div class="mini-metric"><label>T1 / T2</label><b class="positive">${formatPrice(item.target_1_hint)}</b><small>${formatPrice(item.target_2_hint)}</small></div>
-        <div class="mini-metric"><label>Bull above</label><b class="positive">${formatPrice(item.positive_above)}</b><small>trigger</small></div>
-        <div class="mini-metric"><label>Bear below</label><b class="negative">${formatPrice(item.negative_below)}</b><small>trigger</small></div>
-        <div class="mini-metric wide"><label>MTF / Conviction</label><b>${escapeHtml(mtf)}</b><small>Opt ${optionReady} · Strength ${setup}</small></div>
-        <div class="mini-metric wide"><label>Why / Block</label><b>${escapeHtml(reasons || 'Evidence building')}</b><small>${escapeHtml(blockers)}</small></div>
-      </div>
-    `;
-  }
-
-
   // Row Rendering
+  //
+  // v8.0.0 UI overhaul Phase A: this class used to define _updateMiniTradeCard()
+  // twice. JS class bodies allow that silently -- the second definition
+  // simply shadows the first at the prototype level, making the first one
+  // entirely uncallable. Confirmed the first (deleted) definition was
+  // already fully dead code even before the shadowing: it only ever
+  // targeted `#scannerMiniCard`, an element id that is never rendered
+  // anywhere in this file or index.html (only `#scannerTradePlan` exists,
+  // which is what the surviving definition below targets).
   _updateMiniTradeCard() {
     const el = this._el.querySelector('#scannerTradePlan') || this._el.querySelector('#scannerMiniCard');
     if (!el) return;
