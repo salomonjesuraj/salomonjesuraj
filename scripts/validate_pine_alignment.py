@@ -119,6 +119,16 @@ def main():
         return
 
     try:
+        from api.chart_patterns import (
+            detect_double_top, detect_double_bottom, detect_triple_top, detect_triple_bottom,
+            detect_rectangle, detect_chart_patterns, fractal_pivots_indexed, _similar,
+        )
+        check("api.chart_patterns functions import", True)
+    except Exception as e:
+        check("api.chart_patterns functions import", False, str(e))
+        return
+
+    try:
         from infusion_common.sizing import compute_position_size
         check("infusion_common.sizing imports", True)
     except Exception as e:
@@ -534,6 +544,62 @@ def main():
 
     thin = _ma_regime([{"close": 100.0}] * 5)
     check("Thin history (<20 days) returns unknown regime, never crashes", thin["regime"] == "unknown" and thin["sma50"] is None, f"got {thin}")
+
+    # ═══════════════════════════════════════════════
+    # PHASE 5 (NEW) — CHART-PATTERN GEOMETRY (DAILY TIMEFRAME)
+    # ═══════════════════════════════════════════════
+    print("\n--- PHASE 5 (NEW): CHART-PATTERN GEOMETRY (DOUBLE/TRIPLE TOP-BOTTOM, RECTANGLE) ---")
+
+    check("_similar: within tolerance", _similar(150.0, 151.0) is True)
+    check("_similar: outside tolerance", _similar(100.0, 120.0) is False)
+    check("_similar: non-positive input never raises", _similar(0.0, 100.0) is False)
+
+    piv_dt = [(100.0, "low", 0), (150.0, "high", 1), (110.0, "low", 2), (151.0, "high", 3)]
+    dt = detect_double_top(piv_dt, current_price=105.0)
+    check("Double top: height computed correctly", dt is not None and dt["height"] == 41.0, f"got {dt}")
+    check("Double top: half-height target (Bulkowski correction)", dt is not None and dt["target"] == 89.5, f"got {dt}")
+    check("Double top: confirmed when price closes below the valley", dt is not None and dt["confirmed"] is True)
+    dt_unconfirmed = detect_double_top(piv_dt, current_price=130.0)
+    check("Double top: NOT confirmed while price sits above the valley", dt_unconfirmed is not None and dt_unconfirmed["confirmed"] is False)
+
+    piv_db = [(150.0, "high", 0), (100.0, "low", 1), (140.0, "high", 2), (101.0, "low", 3)]
+    db = detect_double_bottom(piv_db, current_price=145.0)
+    check("Double bottom: height + half-height target", db is not None and db["height"] == 40.0 and db["target"] == 160.0, f"got {db}")
+    check("Double bottom: confirmed above the peak", db is not None and db["confirmed"] is True)
+
+    piv_tt = [(150.0, "high", 0), (120.0, "low", 1), (151.0, "high", 2), (118.0, "low", 3), (149.0, "high", 4)]
+    tt = detect_triple_top(piv_tt, current_price=110.0)
+    check("Triple top: uses the LOWER intervening valley as confirmation line", tt is not None and tt["confirmation_line"] == 118.0, f"got {tt}")
+    check("Triple top: full-height target (no half-height correction)", tt is not None and tt["target"] == 85.0, f"got {tt}")
+
+    piv_tb = [(100.0, "low", 0), (130.0, "high", 1), (99.0, "low", 2), (132.0, "high", 3), (101.0, "low", 4)]
+    tb = detect_triple_bottom(piv_tb, current_price=140.0)
+    check("Triple bottom: uses the HIGHER intervening peak as confirmation line", tb is not None and tb["confirmation_line"] == 132.0, f"got {tb}")
+    check("Triple bottom: full-height target", tb is not None and tb["target"] == 165.0, f"got {tb}")
+
+    piv_rect = [(150.0, "high", 0), (100.0, "low", 1), (151.0, "high", 2), (99.0, "low", 3), (150.5, "high", 4)]
+    rect_inside = detect_rectangle(piv_rect, current_price=125.0)
+    check("Rectangle: no target while price sits inside the channel", rect_inside is not None and rect_inside["breakout"] == "inside" and rect_inside["target"] is None, f"got {rect_inside}")
+    rect_up = detect_rectangle(piv_rect, current_price=160.0)
+    check("Rectangle: full-height target on an upside breakout", rect_up is not None and rect_up["breakout"] == "up" and rect_up["target"] == 201.5, f"got {rect_up}")
+
+    noise = [(100.0, "high", 0), (90.0, "low", 1), (120.0, "high", 2)]
+    check("No pattern forced on dissimilar peaks (honest None, not a false positive)", detect_double_top(noise, 95.0) is None)
+    check("Thin/empty pivot list never crashes", detect_chart_patterns([], 100.0) == [])
+
+    overlap = detect_chart_patterns(piv_rect, current_price=160.0)
+    overlap_names = sorted(m["pattern"] for m in overlap)
+    check(
+        "Known double/triple/rectangle overlap on the same swing sequence (documented, not a bug)",
+        "rectangle" in overlap_names and "double_top" in overlap_names,
+        f"got {overlap_names}",
+    )
+
+    idx_pivots = fractal_pivots_indexed([
+        {"high": 101, "low": 99}, {"high": 102, "low": 100}, {"high": 110, "low": 101},
+        {"high": 108, "low": 105}, {"high": 107, "low": 104},
+    ])
+    check("fractal_pivots_indexed returns chronologically ordered tuples", idx_pivots == sorted(idx_pivots, key=lambda t: t[2]), f"got {idx_pivots}")
 
     # ═══════════════════════════════════════════════
     # SUMMARY

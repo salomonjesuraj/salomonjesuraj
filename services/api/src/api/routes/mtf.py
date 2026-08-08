@@ -17,6 +17,8 @@ from zoneinfo import ZoneInfo
 
 from aiohttp import web
 
+from api.chart_patterns import fractal_pivots_indexed, detect_chart_patterns
+
 routes = web.RouteTableDef()
 
 _IST = ZoneInfo("Asia/Kolkata")
@@ -746,6 +748,8 @@ async def compute_mtf(redis, symbol: str, store: bool = True) -> dict:
     pivot_bias = _pivot_bias(current_ltp, pivots) if pivots else "neutral"
     virgin_cpr_zones = _virgin_cpr_zones(daily, current_ltp) if daily else []
     ma_regime = _ma_regime(daily)
+    daily_pivots = fractal_pivots_indexed(daily) if daily else []
+    chart_patterns = detect_chart_patterns(daily_pivots, current_ltp) if current_ltp else []
     quality = "historical" if any(row["bars"] for row in timeframes.values()) else "missing"
     if any(row["quality"] == "limited" for row in timeframes.values()) and quality == "historical":
         quality = "limited"
@@ -778,6 +782,7 @@ async def compute_mtf(redis, symbol: str, store: bool = True) -> dict:
         "pivot_bias": pivot_bias,
         "virgin_cpr_zones": virgin_cpr_zones,
         "ma_regime": ma_regime,
+        "chart_patterns": chart_patterns,
         "bull_count": bull_count,
         "bear_count": bear_count,
         "mixed_count": mixed_count,

@@ -156,7 +156,9 @@ class VolVwapBreakout(BaseStrategy):
         explanation.append(f"Strength meter: {pine.strength_score:.0f}/100")
 
         ml = features.get("ml_features") or {}
-        ma_regime = (features.get("mtf_cache") or {}).get("ma_regime") or {}
+        mtf_cache = features.get("mtf_cache") or {}
+        ma_regime = mtf_cache.get("ma_regime") or {}
+        chart_patterns = mtf_cache.get("chart_patterns") or []
         return SignalCandidate(
             symbol=state.symbol,
             strategy_id=self.strategy_id,
@@ -206,6 +208,7 @@ class VolVwapBreakout(BaseStrategy):
                 "ma_regime": ma_regime.get("regime"),
                 "ma_regime_stack": ma_regime.get("stack"),
                 "ma_regime_cross_recent": ma_regime.get("cross_recent"),
+                "chart_patterns": chart_patterns,
             },
             entry_price=entry,
             invalidation_price=invalidation,

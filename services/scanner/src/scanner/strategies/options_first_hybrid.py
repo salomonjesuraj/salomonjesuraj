@@ -182,7 +182,9 @@ class OptionsFirstHybrid(BaseStrategy):
             explanation.extend([f"Anti-chase: {reason}" for reason in pine.anti_chase_reasons[:2]])
 
         ml = features.get("ml_features") or {}
-        ma_regime = (features.get("mtf_cache") or {}).get("ma_regime") or {}
+        mtf_cache = features.get("mtf_cache") or {}
+        ma_regime = mtf_cache.get("ma_regime") or {}
+        chart_patterns = mtf_cache.get("chart_patterns") or []
         snapshot = {
             "ltp": ltp,
             "vwap": vwap,
@@ -252,6 +254,9 @@ class OptionsFirstHybrid(BaseStrategy):
             "ma_regime": ma_regime.get("regime"),
             "ma_regime_stack": ma_regime.get("stack"),
             "ma_regime_cross_recent": ma_regime.get("cross_recent"),
+            # Chart-pattern geometry (Phase 5) -- daily-timeframe only, see
+            # api/chart_patterns.py. Informational, not wired into score.
+            "chart_patterns": chart_patterns,
         }
 
         return SignalCandidate(
