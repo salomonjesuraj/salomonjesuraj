@@ -665,7 +665,19 @@
 }
 .ifx-scanner .scanner-row { display: flex; align-items: center; border-bottom: 1px solid var(--ifx-content-border); transition: background var(--ifx-fast) var(--ifx-ease); }
 .ifx-scanner .scanner-row:hover { background: var(--ifx-content-bg); }
-.ifx-scanner .scanner-row.selected-row { background: var(--ifx-accent-dim); }
+/* outline:none explicitly needed: main.css's ".screener-pro-v4 .scanner-row
+   .selected-row{outline:2px solid #60a5fa;outline-offset:-2px}" (a stray
+   blue box left over from a removed inline-detail-overlay feature, per
+   that file's own v7.4.0 comment) is equal specificity to this rule and
+   sets a property this rule never touched, so it was never overridden --
+   it rendered as an unexplained blue line across the selected row.
+   Reported directly by the user ("why there is blue line in between
+   stocks"), root-caused via grep to that exact old rule, not guessed. */
+.ifx-scanner .scanner-row.selected-row {
+  background: var(--ifx-accent-dim);
+  outline: none;
+  border-left: 2px solid var(--ifx-accent-strong);
+}
 .ifx-scanner .scanner-row.has-signal { border-left: 2px solid var(--ifx-bull); }
 .ifx-scanner .scanner-row.grade-highlight-aplus { background: var(--ifx-bull-dim); }
 .ifx-scanner .scanner-row.grade-highlight-a { background: var(--ifx-info-dim); }
