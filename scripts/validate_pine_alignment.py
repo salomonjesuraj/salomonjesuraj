@@ -99,6 +99,13 @@ def main():
         return
 
     try:
+        from scanner.sector import SectorEngine, SectorState, SymbolSnapshot
+        check("scanner.sector imports", True)
+    except Exception as e:
+        check("scanner.sector imports", False, str(e))
+        return
+
+    try:
         from api.routes.mtf import _fractal_pivots, _major_blocker, compute_mtf
         check("api.routes.mtf blocker functions import", True)
     except Exception as e:
@@ -762,6 +769,56 @@ def main():
     normal_bars = sos_window + [{"high": 108, "low": 102, "close": 107, "volume": 1000}]
     check("No SOS/SOW on an ordinary (not wide, not high-volume) bar", detect_sos_sow_bar(normal_bars) is None)
     check("SOS/SOW: thin history returns None, never crashes", detect_sos_sow_bar(sos_bars[:5]) is None)
+
+    # ═══════════════════════════════════════════════
+    # PHASE 9 (NEW) — CROSS-INDEX CONFIRMATION (DOW-STYLE 2-OF-3)
+    # ═══════════════════════════════════════════════
+    print("\n--- PHASE 9 (NEW): CROSS-INDEX CONFIRMATION + CONCENTRATION FLAG ---")
+
+    eng = SectorEngine.__new__(SectorEngine)  # bypass __init__ (needs a real redis/settings) -- pure unit test of the new method only
+    eng._sectors = {}
+    eng._index_snapshot = SymbolSnapshot(symbol="INDEX")
+
+    genuine = SectorState(sector_id="IT")
+    for i, chg in enumerate([1.0, 1.5, 0.8, 1.2, 0.9]):
+        genuine.constituents[f"S{i}"] = SymbolSnapshot(symbol=f"S{i}", change_pct=chg)
+    genuine.positive_change_pct = 100.0
+    genuine.avg_change_pct = sum([1.0, 1.5, 0.8, 1.2, 0.9]) / 5
+    eng._sectors["IT"] = genuine
+    eng._index_snapshot.change_pct = 0.5
+
+    r_genuine = eng.compute_cross_confirmation("IT", "S0", "bullish")
+    check("Genuine broad sector move: all 3 measures confirm", r_genuine["confirmation_count"] == 3, f"got {r_genuine}")
+    check("Genuine broad move: confirmed (>=2 of 3)", r_genuine["confirmed"] is True)
+    check("Genuine broad move: no concentration flag", r_genuine["concentration_flag"] is False)
+
+    masquerade = SectorState(sector_id="DEFENCE")
+    changes = [8.0, -0.2, -0.3, 0.1]
+    for i, chg in enumerate(changes):
+        masquerade.constituents[f"D{i}"] = SymbolSnapshot(symbol=f"D{i}", change_pct=chg)
+    masquerade.positive_change_pct = 25.0
+    masquerade.avg_change_pct = sum(changes) / len(changes)  # still net-positive only because of the 8% outlier
+    eng._sectors["DEFENCE"] = masquerade
+    eng._index_snapshot.change_pct = -0.3
+
+    r_mask = eng.compute_cross_confirmation("DEFENCE", "D0", "bullish")
+    check(
+        "Single-stock masquerade: concentration flag fires (avg flips sign once top mover excluded)",
+        r_mask["concentration_flag"] is True, f"got {r_mask}",
+    )
+    check("Single-stock masquerade: top mover share correctly dominant", r_mask["top_mover_share_pct"] > 80, f"got {r_mask}")
+    check(
+        "Single-stock masquerade: NOT confirmed bullish once breadth/market/concentration are all checked",
+        r_mask["confirmed"] is False, f"got {r_mask}",
+    )
+
+    r_unknown = eng.compute_cross_confirmation("NOPE", "X", "bullish")
+    check("Unknown sector returns a safe empty result, never crashes", r_unknown["confirmed"] is False and r_unknown["confirmation_count"] == 0, f"got {r_unknown}")
+
+    empty_sector = SectorState(sector_id="EMPTY")
+    eng._sectors["EMPTY"] = empty_sector
+    r_empty = eng.compute_cross_confirmation("EMPTY", "X", "bullish")
+    check("Sector with zero constituents never crashes (division-by-zero guard)", r_empty["confirmed"] is False, f"got {r_empty}")
 
     # ═══════════════════════════════════════════════
     # SUMMARY

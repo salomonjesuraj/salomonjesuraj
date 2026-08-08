@@ -243,6 +243,14 @@ class ScannerEngine:
         if sector_adj != 0:
             sub_scores["sector_adjustment"] = sector_adj
 
+        # ── Cross-index confirmation (Phase 9, informational) ──
+        # Dow-Theory-style 2-of-3 multi-measure check + NSE concentration-cap
+        # awareness. Does NOT adjust `score` -- see compute_cross_confirmation's
+        # docstring for why not wiring this into the already-tuned score yet.
+        sub_scores["cross_confirmation"] = self.sector.compute_cross_confirmation(
+            state.sector_id, candidate.symbol, candidate.signal_type
+        )
+
         grade = grade_conviction(score)
         rr = compute_risk_reward(
             candidate.entry_price,

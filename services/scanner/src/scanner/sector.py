@@ -540,6 +540,91 @@ class SectorEngine:
 
         return adjustment, explanations
 
+    def compute_cross_confirmation(self, sector_id: str, symbol: str, signal_type: str = "bullish") -> dict:
+        """Dow-Theory-style multi-measure confirmation (Schannep's 2-of-3
+        index rule, translated to NSE) — is this signal happening in an
+        environment where multiple INDEPENDENT measures agree, or is it an
+        isolated single-stock move? Also operationalizes the NSE index
+        concentration-cap finding from the corpus report (SEBI allows a
+        single stock up to 33% of a sector index's weight): a
+        concentration_flag fires when the sector's apparent average move
+        reverses sign once the single largest mover is excluded — i.e.,
+        "sector strength" that's really one stock in disguise.
+
+        Three measures, independent of each other and of the signal itself:
+          1. sector_breadth: direction implied by the MAJORITY of
+             constituent names (>50% positive/negative) — already
+             count-based, not cap-weighted, so less concentration-prone
+             than a real NSE sector index to start with.
+          2. concentration_adjusted: sector_breadth's average with the
+             single largest mover excluded — a second, independent read
+             specifically checking whether breadth survives without that
+             one name.
+          3. broad_market: NIFTY50 index direction (self._index_snapshot).
+
+        Informational only — this does NOT modify compute_sector_adjustment
+        or the live conviction score. Wiring a new confirmation signal into
+        an already-tuned, already-backtested score without separate
+        walk-forward validation first is exactly the mistake this session
+        has deliberately avoided in every phase since Phase 4.
+        """
+        sector = self._sectors.get(sector_id)
+        empty = {
+            "measures": {}, "confirmations": [], "confirmation_count": 0,
+            "required": 2, "confirmed": False,
+            "concentration_flag": False, "top_mover_share_pct": 0.0,
+        }
+        if sector is None or not sector.constituents:
+            return empty
+
+        breadth_dir = (
+            "bullish" if sector.positive_change_pct > 50
+            else "bearish" if sector.positive_change_pct < 50
+            else "neutral"
+        )
+
+        constituents = list(sector.constituents.values())
+        total_abs_move = sum(abs(c.change_pct) for c in constituents)
+        if total_abs_move > 0:
+            top_mover = max(constituents, key=lambda c: abs(c.change_pct))
+            top_mover_share_pct = abs(top_mover.change_pct) / total_abs_move * 100
+            excl = [c for c in constituents if c is not top_mover]
+            excl_avg = sum(c.change_pct for c in excl) / len(excl) if excl else 0.0
+            concentration_dir = (
+                "bullish" if excl_avg > 0.1 else "bearish" if excl_avg < -0.1 else "neutral"
+            )
+            concentration_flag = (
+                (sector.avg_change_pct > 0) != (excl_avg > 0)
+                and top_mover_share_pct > 40.0
+            )
+        else:
+            top_mover_share_pct = 0.0
+            concentration_dir = "neutral"
+            concentration_flag = False
+
+        idx = self._index_snapshot
+        market_dir = (
+            "bullish" if idx.change_pct > 0.1 else "bearish" if idx.change_pct < -0.1 else "neutral"
+        )
+
+        measures = {
+            "sector_breadth": breadth_dir,
+            "concentration_adjusted": concentration_dir,
+            "broad_market": market_dir,
+        }
+        signal_dir = "bearish" if str(signal_type).lower() == "bearish" else "bullish"
+        confirmations = [name for name, direction in measures.items() if direction == signal_dir]
+
+        return {
+            "measures": measures,
+            "confirmations": confirmations,
+            "confirmation_count": len(confirmations),
+            "required": 2,
+            "confirmed": len(confirmations) >= 2,
+            "concentration_flag": concentration_flag,
+            "top_mover_share_pct": round(top_mover_share_pct, 1),
+        }
+
     @property
     def stats(self) -> dict:
         return {
