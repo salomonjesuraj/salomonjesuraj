@@ -107,6 +107,13 @@ def main():
         return
 
     try:
+        from scanner.suppression import _current_session
+        check("scanner.suppression imports", True)
+    except Exception as e:
+        check("scanner.suppression imports", False, str(e))
+        return
+
+    try:
         from api.routes.mtf import _fractal_pivots, _major_blocker, compute_mtf
         check("api.routes.mtf blocker functions import", True)
     except Exception as e:
@@ -883,6 +890,23 @@ def main():
     vstate_empty.atr = atr
     vsnap_empty = volman_snapshot(vstate_empty)
     check("volman_snapshot with no active zones returns safe empty fields", vsnap_empty["volman_source"] is None and vsnap_empty["volman_entry_triggered"] is False, f"got {vsnap_empty}")
+
+    # ═══════════════════════════════════════════════
+    # SESSION BOUNDARIES (NEW) — CAS (CLOSING AUCTION SESSION)
+    # ═══════════════════════════════════════════════
+    print("\n--- SESSION BOUNDARIES (NEW): CAS-AWARE SESSION SPLIT ---")
+    from datetime import time as dt_time_local
+
+    check("14:00 is closing", _current_session(dt_time_local(14, 0)) == "closing")
+    check("15:14 is still closing (just before the CAS cut)", _current_session(dt_time_local(15, 14)) == "closing")
+    check("15:15 is cas_auction, not closing (the actual regression this session guards)", _current_session(dt_time_local(15, 15)) == "cas_auction")
+    check("15:29 is still cas_auction", _current_session(dt_time_local(15, 29)) == "cas_auction")
+    check("15:30 is post_market", _current_session(dt_time_local(15, 30)) == "post_market")
+    check("09:15 is opening", _current_session(dt_time_local(9, 15)) == "opening")
+    check("09:14 is pre_market", _current_session(dt_time_local(9, 14)) == "pre_market")
+    check("10:00 is mid_morning", _current_session(dt_time_local(10, 0)) == "mid_morning")
+    check("12:00 is midday", _current_session(dt_time_local(12, 0)) == "midday")
+    check("No-arg call never crashes (falls back to real wall-clock time)", isinstance(_current_session(), str))
 
     # ═══════════════════════════════════════════════
     # SUMMARY

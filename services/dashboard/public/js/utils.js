@@ -21,13 +21,24 @@
 /** IST is UTC +05:30, i.e. +330 minutes */
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;  // 19_800_000
 
-/** Market session boundaries (hours * 100 + minutes for fast comparison) */
+/**
+ * Market session boundaries (hours * 100 + minutes for fast comparison).
+ *
+ * CLOSING ends at 15:15, not 15:30 -- SEBI's Closing Auction Session (CAS),
+ * effective 3 Aug 2026, stops continuous trading of F&O-eligible stocks'
+ * cash equity at 15:15 (halt, then restricted auction order entry through
+ * 15:30, single-price match 15:30-15:35). F&O contracts themselves still
+ * trade normally to 15:40, but every feature this system displays is
+ * derived from the underlying stock's own tick feed. Matches
+ * scanner/suppression.py's _current_session() -- keep both in sync.
+ */
 const SESSION = {
   PRE_OPEN  :  915,   // 09:15 — market opens
   MID_MORN  : 1000,   // 10:00
   MIDDAY    : 1200,   // 12:00
   CLOSING   : 1400,   // 14:00
-  CLOSE     : 1530,   // 15:30 — market closes
+  CAS_START : 1515,   // 15:15 — continuous trading stops for F&O stocks (CAS)
+  CLOSE     : 1530,   // 15:30 — CAS auction order entry ends
 };
 
 /* ────────────────────────────────────────────────────────────────────────── */
@@ -204,10 +215,11 @@ export function istClock() {
  *   opening      — 09:15 – 10:00
  *   mid_morning  — 10:00 – 12:00
  *   midday       — 12:00 – 14:00
- *   closing      — 14:00 – 15:30
+ *   closing      — 14:00 – 15:15
+ *   cas_auction  — 15:15 – 15:30 (CAS halt + auction window, F&O stocks)
  *   post_market  — after 15:30
  *
- * @returns {'pre_market'|'opening'|'mid_morning'|'midday'|'closing'|'post_market'}
+ * @returns {'pre_market'|'opening'|'mid_morning'|'midday'|'closing'|'cas_auction'|'post_market'}
  */
 export function currentSession() {
   const d = istNow();
@@ -217,7 +229,8 @@ export function currentSession() {
   if (hhmm < SESSION.MID_MORN)  return 'opening';
   if (hhmm < SESSION.MIDDAY)    return 'mid_morning';
   if (hhmm < SESSION.CLOSING)   return 'midday';
-  if (hhmm < SESSION.CLOSE)     return 'closing';
+  if (hhmm < SESSION.CAS_START) return 'closing';
+  if (hhmm < SESSION.CLOSE)     return 'cas_auction';
   return 'post_market';
 }
 

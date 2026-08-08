@@ -35,16 +35,37 @@ logger = structlog.get_logger()
 _IST = ZoneInfo("Asia/Kolkata")
 
 
-def _current_session() -> str:
-    now = datetime.now(tz=_IST).time()
+def _current_session(now: dt_time | None = None) -> str:
+    """IST session boundaries.
+
+    "closing" ends at 15:15, not 15:30 -- SEBI's Closing Auction Session
+    (CAS), effective 3 Aug 2026, stops continuous trading of F&O-eligible
+    stocks' cash equity at 15:15 (halt 15:15-15:20, auction order entry
+    15:20-15:30, single-price match 15:30-15:35; F&O contracts themselves
+    still trade normally to 15:40, but every feature this system computes
+    -- RSI/VWAP/EMA/ATR/structure/pivots -- is derived from the underlying
+    stock's own tick feed, which stops reflecting genuine continuous
+    trading at 15:15). 15:15-15:30 is its own "cas_auction" session,
+    deliberately NOT folded into "closing" and NOT in
+    precision_guard_sessions' default allow-list -- the 81% closing-session
+    precision backtest predates CAS entirely, so that number doesn't (yet)
+    say anything about signal quality during the new auction window.
+
+    `now` is injectable (IST wall-clock time) for testing; omitted in
+    production, where it defaults to the real current time.
+    """
+    if now is None:
+        now = datetime.now(tz=_IST).time()
     if dt_time(9, 15) <= now < dt_time(10, 0):
         return "opening"
     if dt_time(10, 0) <= now < dt_time(12, 0):
         return "mid_morning"
     if dt_time(12, 0) <= now < dt_time(14, 0):
         return "midday"
-    if dt_time(14, 0) <= now < dt_time(15, 30):
+    if dt_time(14, 0) <= now < dt_time(15, 15):
         return "closing"
+    if dt_time(15, 15) <= now < dt_time(15, 30):
+        return "cas_auction"
     if now < dt_time(9, 15):
         return "pre_market"
     return "post_market"
