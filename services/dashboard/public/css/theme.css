@@ -543,3 +543,266 @@
   outline: none;
   box-shadow: var(--ifx-focus-ring);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   F&O Scanner table (services/dashboard/public/js/scanner.js) — a re-skin,
+   not a rewrite. scanner.js's rendering logic (~2,380 lines: 15+ cell-type
+   renderers, VirtualScroll row-height coupling, sticky-column math) is
+   left untouched -- every risk here is visual/CSS only. The ONE class
+   this file's own JS gained is `.ifx-scanner` on the root container
+   (marking these rules' scope) plus the pre-existing `.has-signal` class
+   (already computed correctly from item.signal_active, reused here for
+   the live-vs-frozen distinction rather than adding new JS logic for it).
+   ═══════════════════════════════════════════════════════════════════════ */
+.ifx-scanner {
+  display: flex; flex-direction: column; gap: var(--ifx-space-2);
+  /* Explicit background, not just color -- the exact bug found twice
+     already in this rebuild (cockpit panel, sector ribbon): a light text
+     color with no background inherits whatever's behind it, which can be
+     the dark chrome gradient several ancestors up, making everything
+     invisible. Belt-and-suspenders here even though the drawer's existing
+     ancestor chain already happens to be light. */
+  background: var(--ifx-content-bg);
+  color: var(--ifx-content-text);
+  font-family: var(--ifx-font-ui);
+}
+.ifx-scanner ::selection { background: var(--ifx-accent); color: var(--ifx-accent-ink); }
+
+/* ── Filter bar ─────────────────────────────────────────────────────── */
+.ifx-scanner .filter-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  padding: 8px; background: var(--ifx-content-surface);
+  border: 1px solid var(--ifx-content-border); border-radius: var(--ifx-radius-md);
+}
+.ifx-scanner .filter-input,
+.ifx-scanner .filter-select {
+  font-family: var(--ifx-font-ui); font-size: var(--ifx-text-xs);
+  padding: 5px 9px; border-radius: var(--ifx-radius-sm);
+  border: 1px solid var(--ifx-content-border);
+  background: var(--ifx-content-bg); color: var(--ifx-content-text);
+}
+.ifx-scanner .filter-input { flex: 1 1 160px; min-width: 120px; }
+.ifx-scanner .filter-input:focus-visible,
+.ifx-scanner .filter-select:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--ifx-content-surface), 0 0 0 4px var(--ifx-accent-strong); }
+.ifx-scanner .scanner-presets { display: flex; flex-wrap: wrap; gap: 4px; }
+.ifx-scanner .scanner-presets button,
+.ifx-scanner .density-toggle button,
+.ifx-scanner .scanner-action-btn,
+.ifx-scanner .col-toggle-btn {
+  font-family: var(--ifx-font-ui); font-size: var(--ifx-text-2xs); font-weight: 600;
+  padding: 4px 10px; border-radius: var(--ifx-radius-pill);
+  border: 1px solid var(--ifx-content-border); background: transparent;
+  color: var(--ifx-content-text-muted); cursor: pointer; white-space: nowrap;
+  transition: all var(--ifx-fast) var(--ifx-ease);
+}
+.ifx-scanner .scanner-presets button:hover,
+.ifx-scanner .density-toggle button:hover,
+.ifx-scanner .scanner-action-btn:hover,
+.ifx-scanner .col-toggle-btn:hover { color: var(--ifx-content-text); border-color: var(--ifx-content-text-faint); }
+.ifx-scanner .density-toggle button.active { background: var(--ifx-accent-dim); border-color: var(--ifx-accent-strong); color: var(--ifx-accent-strong); }
+.ifx-scanner .density-toggle { display: flex; gap: 3px; }
+.ifx-scanner .filter-count { font-size: var(--ifx-text-2xs); color: var(--ifx-content-text-faint); white-space: nowrap; margin-left: auto; }
+.ifx-scanner .col-toggle-panel {
+  display: flex; flex-wrap: wrap; gap: 4px; padding: 8px;
+  background: var(--ifx-content-surface); border: 1px solid var(--ifx-content-border); border-radius: var(--ifx-radius-md);
+}
+.ifx-scanner .col-toggle-label { display: flex; align-items: center; gap: 4px; font-size: var(--ifx-text-2xs); color: var(--ifx-content-text-muted); cursor: pointer; padding: 2px 6px; }
+
+/* ── Table: header + rows ───────────────────────────────────────────── */
+.ifx-scanner .scanner-head-scroll { background: var(--ifx-content-surface); border: 1px solid var(--ifx-content-border); border-radius: var(--ifx-radius-md) var(--ifx-radius-md) 0 0; overflow: hidden; }
+.ifx-scanner .scanner-head { display: flex; border-bottom: 2px solid var(--ifx-content-border); }
+.ifx-scanner .sh {
+  padding: 6px 8px; font-family: var(--ifx-font-ui); font-size: 9px; font-weight: 700;
+  color: var(--ifx-content-text-faint); text-transform: uppercase; letter-spacing: .5px;
+  cursor: pointer; user-select: none; white-space: nowrap; flex-shrink: 0;
+}
+.ifx-scanner .sh:hover { color: var(--ifx-content-text-muted); }
+.ifx-scanner .sh.sorted { color: var(--ifx-accent-strong); }
+.ifx-scanner .sort-arrow { font-size: 8px; margin-left: 2px; }
+.ifx-scanner .scanner-table-zone,
+.ifx-scanner .vscroll-viewport {
+  background: var(--ifx-content-surface);
+  border: 1px solid var(--ifx-content-border); border-top: none;
+  border-radius: 0 0 var(--ifx-radius-md) var(--ifx-radius-md);
+}
+.ifx-scanner .scanner-row { display: flex; align-items: center; border-bottom: 1px solid var(--ifx-content-border); transition: background var(--ifx-fast) var(--ifx-ease); }
+.ifx-scanner .scanner-row:hover { background: var(--ifx-content-bg); }
+.ifx-scanner .scanner-row.selected-row { background: var(--ifx-accent-dim); }
+.ifx-scanner .scanner-row.has-signal { border-left: 2px solid var(--ifx-bull); }
+.ifx-scanner .scanner-row.grade-highlight-aplus { background: var(--ifx-bull-dim); }
+.ifx-scanner .scanner-row.grade-highlight-a { background: var(--ifx-info-dim); }
+.ifx-scanner .sc {
+  padding: 2px 8px; font-size: var(--ifx-text-2xs); font-family: var(--ifx-font-mono);
+  font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0;
+}
+.ifx-scanner .sc.sticky-freeze { position: sticky; background: inherit; z-index: 5; }
+.ifx-scanner .sym-link { font-weight: 700; color: var(--ifx-content-text); cursor: pointer; font-family: var(--ifx-font-mono); }
+.ifx-scanner .sym-link:hover { color: var(--ifx-accent-strong); }
+.ifx-scanner .row-quick-stage {
+  margin-left: 6px; font-size: 8px; padding: 1px 5px; border-radius: 3px;
+  border: 1px solid var(--ifx-content-border); background: transparent; color: var(--ifx-content-text-faint); cursor: pointer;
+}
+.ifx-scanner .text-muted { color: var(--ifx-content-text-faint); }
+/* !important required: main.css's ".positive{color:var(--green)!important}
+   .negative{color:var(--red)!important}" (a global, non-scoped rule) would
+   otherwise win regardless of specificity and leak the old hardcoded
+   red/green into every positive/negative value in this table. */
+.ifx-scanner .positive { color: var(--ifx-bull) !important; }
+.ifx-scanner .negative { color: var(--ifx-bear) !important; }
+
+/* ── Price level cells: live projection vs frozen signal ──────────────
+   The core Phase B fix. Same word ("Entry"/"SL"/"T1"...) either way, but
+   now visually unmistakable which kind of number it is -- see the plan's
+   Context section for the full live-vs-frozen investigation. */
+.ifx-scanner .scanner-row:not(.has-signal) .level-cell {
+  color: var(--ifx-info);
+  font-style: italic;
+  border-bottom: 1px dashed var(--ifx-info);
+  padding-bottom: 1px;
+}
+.ifx-scanner .scanner-row:not(.has-signal) .level-cell.positive { color: var(--ifx-bull); border-bottom-color: var(--ifx-bull); }
+.ifx-scanner .scanner-row:not(.has-signal) .level-cell.negative { color: var(--ifx-bear); border-bottom-color: var(--ifx-bear); }
+.ifx-scanner .scanner-row.has-signal .level-cell {
+  color: var(--ifx-content-text); font-weight: 700; font-style: normal; border-bottom: none;
+}
+.ifx-scanner .scanner-row.has-signal .level-cell.positive { color: var(--ifx-bull-strong); }
+.ifx-scanner .scanner-row.has-signal .level-cell.negative { color: var(--ifx-bear-strong); }
+.ifx-scanner .scanner-head .sh[data-col="entry_price_hint"]::after,
+.ifx-scanner .scanner-head .sh[data-col="stop_loss_hint"]::after,
+.ifx-scanner .scanner-head .sh[data-col="target_1_hint"]::after {
+  content: " ⚡"; font-size: 8px;
+}
+
+/* ── Chips / badges / meters (mtf dots, grade chips, state chips, etc) ─ */
+.ifx-scanner .trade-chip {
+  display: inline-flex; align-items: center; padding: 2px 7px; border-radius: var(--ifx-radius-pill);
+  font-family: var(--ifx-font-ui); font-size: 9px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase;
+}
+.ifx-scanner .trade-chip.buy, .ifx-scanner .trade-chip.go { background: var(--ifx-bull-dim); color: var(--ifx-bull-strong); }
+.ifx-scanner .trade-chip.sell, .ifx-scanner .trade-chip.reject { background: var(--ifx-bear-dim); color: var(--ifx-bear-strong); }
+.ifx-scanner .trade-chip.hold, .ifx-scanner .trade-chip.wait { background: var(--ifx-warn-dim); color: var(--ifx-warn); }
+.ifx-scanner .trade-chip.avoid { background: rgba(0,0,0,.06); color: var(--ifx-content-text-faint); }
+
+.ifx-scanner .grade-chip {
+  display: inline-flex; align-items: center; justify-content: center; min-width: 22px;
+  padding: 1px 5px; border-radius: 4px; font-family: var(--ifx-font-mono); font-size: 9px; font-weight: 800;
+}
+.ifx-scanner .grade-chip.grade-aplus { background: var(--ifx-grade-aplus); color: #fff; }
+.ifx-scanner .grade-chip.grade-a { background: var(--ifx-grade-a); color: #fff; }
+.ifx-scanner .grade-chip.grade-b { background: var(--ifx-grade-bplus); color: #fff; }
+.ifx-scanner .grade-chip.grade-c { background: var(--ifx-grade-c); color: #fff; }
+
+.ifx-scanner .mtf-dot {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 16px; border-radius: 3px; font-size: 8px; font-weight: 700; margin: 0 1px;
+}
+.ifx-scanner .mtf-dot.buy { background: var(--ifx-bull-dim); color: var(--ifx-bull-strong); }
+.ifx-scanner .mtf-dot.sell { background: var(--ifx-bear-dim); color: var(--ifx-bear-strong); }
+.ifx-scanner .mtf-dot.hold { background: rgba(0,0,0,.05); color: var(--ifx-content-text-faint); }
+
+.ifx-scanner .horizon-chip, .ifx-scanner .chase-chip, .ifx-scanner .mtf-source-chip, .ifx-scanner .intel-badge {
+  display: inline-flex; align-items: center; padding: 2px 6px; border-radius: 3px;
+  font-family: var(--ifx-font-ui); font-size: 8px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase;
+  background: var(--ifx-content-bg); color: var(--ifx-content-text-muted);
+}
+.ifx-scanner .horizon-chip.swing { color: var(--ifx-info); } .ifx-scanner .horizon-chip.btst { color: var(--ifx-accent-strong); }
+.ifx-scanner .horizon-chip.avoid { color: var(--ifx-bear); }
+.ifx-scanner .chase-chip.hot { color: var(--ifx-bull-strong); } .ifx-scanner .chase-chip.clean { color: var(--ifx-bull); }
+.ifx-scanner .chase-chip.wait { color: var(--ifx-warn); } .ifx-scanner .chase-chip.avoid { color: var(--ifx-bear); }
+.ifx-scanner .mtf-source-chip.historical { color: var(--ifx-bull); } .ifx-scanner .mtf-source-chip.proxy { color: var(--ifx-content-text-faint); }
+
+.ifx-scanner .scanner-score-meter { display: flex; align-items: center; gap: 5px; justify-content: flex-end; }
+.ifx-scanner .scanner-score-track { width: 34px; height: 4px; border-radius: 2px; background: var(--ifx-content-border); overflow: hidden; }
+.ifx-scanner .scanner-score-fill { height: 100%; border-radius: 2px; }
+.ifx-scanner .conv-val { font-family: var(--ifx-font-mono); font-weight: 700; }
+
+.ifx-scanner .scanner-evidence { display: flex; flex-direction: column; gap: 1px; font-size: 9px; }
+.ifx-scanner .evidence-why { color: var(--ifx-bull); } .ifx-scanner .evidence-block { color: var(--ifx-bear); }
+.ifx-scanner .ai-map-cell { display: flex; flex-direction: column; gap: 1px; font-size: 9px; }
+.ifx-scanner .ai-map-cell b { color: var(--ifx-content-text); } .ifx-scanner .ai-map-cell span { color: var(--ifx-content-text-faint); overflow: hidden; text-overflow: ellipsis; }
+.ifx-scanner .chain-cell, .ifx-scanner .intel-score-cell, .ifx-scanner .news-confirm-cell { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; }
+.ifx-scanner .mini-state { font-size: 8px; padding: 1px 4px; border-radius: 3px; background: var(--ifx-content-bg); color: var(--ifx-content-text-muted); }
+
+/* ── Decision legend, command summary ──────────────────────────────── */
+.ifx-scanner .scanner-decision-legend { display: flex; gap: var(--ifx-space-4); padding: 6px 10px; font-size: var(--ifx-text-2xs); color: var(--ifx-content-text-faint); }
+.ifx-scanner .scanner-decision-legend .go { color: var(--ifx-bull); } .ifx-scanner .scanner-decision-legend .wait { color: var(--ifx-warn); } .ifx-scanner .scanner-decision-legend .reject { color: var(--ifx-bear); }
+
+/* ── Selected Trade Plan hero card ─────────────────────────────────── */
+.ifx-scanner .trade-plan-hero {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--ifx-space-3);
+  padding: var(--ifx-space-3) var(--ifx-space-4);
+  background: var(--ifx-content-surface); border: 1px solid var(--ifx-content-border); border-radius: var(--ifx-radius-lg) var(--ifx-radius-lg) 0 0;
+  font-family: var(--ifx-font-mono); font-weight: 700; font-size: var(--ifx-text-lg);
+}
+.ifx-scanner .trade-plan-action {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  padding: 6px 14px; border-radius: var(--ifx-radius-md);
+  background: var(--ifx-content-bg); border: 1px solid var(--ifx-content-border);
+}
+.ifx-scanner .scanner-trade-plan {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 6px;
+  padding: var(--ifx-space-3); background: var(--ifx-content-surface);
+  border: 1px solid var(--ifx-content-border); border-top: none; border-radius: 0 0 var(--ifx-radius-lg) var(--ifx-radius-lg);
+  margin-bottom: var(--ifx-space-3);
+}
+.ifx-scanner .trade-plan-metric, .ifx-scanner .trade-plan-wide {
+  display: flex; flex-direction: column; gap: 2px; padding: 8px 10px;
+  background: var(--ifx-content-bg); border: 1px solid var(--ifx-content-border); border-radius: var(--ifx-radius-sm);
+}
+.ifx-scanner .trade-plan-wide { grid-column: 1 / -1; }
+.ifx-scanner .trade-plan-metric label, .ifx-scanner .trade-plan-wide label {
+  font-size: 9px; text-transform: uppercase; letter-spacing: .4px; color: var(--ifx-content-text-faint);
+}
+.ifx-scanner .trade-plan-metric b, .ifx-scanner .trade-plan-wide b { font-family: var(--ifx-font-mono); font-size: var(--ifx-text-base); font-weight: 700; color: var(--ifx-content-text); }
+.ifx-scanner .trade-plan-metric small, .ifx-scanner .trade-plan-wide small { font-size: 9px; color: var(--ifx-content-text-faint); }
+.ifx-scanner .trade-plan-empty { padding: var(--ifx-space-4); text-align: center; color: var(--ifx-content-text-faint); }
+.ifx-scanner .trade-plan-advanced { grid-column: 1 / -1; }
+.ifx-scanner .trade-plan-advanced summary { cursor: pointer; font-size: var(--ifx-text-2xs); font-weight: 700; color: var(--ifx-content-text-muted); text-transform: uppercase; letter-spacing: .4px; padding: 4px 0; }
+.ifx-scanner .trade-plan-log-btn {
+  font-size: var(--ifx-text-2xs); font-weight: 700; padding: 4px 12px; border-radius: var(--ifx-radius-pill);
+  border: none; cursor: pointer; background: var(--ifx-bull); color: #fff;
+}
+.ifx-scanner .tv-open-btn {
+  font-size: var(--ifx-text-2xs); font-weight: 700; padding: 4px 12px; border-radius: var(--ifx-radius-pill);
+  border: 1px solid var(--ifx-info); color: var(--ifx-info); background: var(--ifx-info-dim); cursor: pointer;
+}
+
+/* ── Command Answers, AI Trade Map, Option Pick (advanced details) ───── */
+.ifx-scanner .command-answer-block { padding: var(--ifx-space-3); background: var(--ifx-content-bg); border-radius: var(--ifx-radius-md); margin-top: 6px; }
+.ifx-scanner .command-answer-head { display: flex; align-items: center; gap: 8px; font-size: var(--ifx-text-xs); color: var(--ifx-content-text-muted); margin-bottom: 4px; }
+.ifx-scanner .command-answer-head b { color: var(--ifx-accent-strong); }
+.ifx-scanner .command-answer-block p { font-size: var(--ifx-text-sm); color: var(--ifx-content-text); margin-bottom: 8px; }
+.ifx-scanner .command-answer-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 6px; }
+.ifx-scanner .command-answer-grid span { display: flex; flex-direction: column; gap: 1px; padding: 6px 8px; background: var(--ifx-content-surface); border: 1px solid var(--ifx-content-border); border-radius: var(--ifx-radius-sm); }
+.ifx-scanner .command-answer-grid label { font-size: 8px; text-transform: uppercase; color: var(--ifx-content-text-faint); }
+.ifx-scanner .command-answer-grid b { font-family: var(--ifx-font-mono); font-size: var(--ifx-text-sm); color: var(--ifx-content-text); }
+.ifx-scanner .command-answer-grid small { font-size: 8px; color: var(--ifx-content-text-faint); }
+.ifx-scanner .command-answer-next { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--ifx-content-border); font-size: var(--ifx-text-xs); color: var(--ifx-content-text-muted); }
+.ifx-scanner .ai-map-head, .ifx-scanner .ai-map-levels, .ifx-scanner .option-pick-head, .ifx-scanner .option-pick-grid, .ifx-scanner .gate-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px; margin-top: 6px;
+}
+.ifx-scanner .gate-verdict { font-weight: 700; }
+.ifx-scanner .gate-verdict.buy { color: var(--ifx-bull); } .ifx-scanner .gate-verdict.sell { color: var(--ifx-bear); }
+
+/* ── Leadership Queue / Trigger Radar strips ───────────────────────── */
+.ifx-scanner .scanner-leader-strip { display: flex; flex-direction: column; gap: 6px; margin-bottom: var(--ifx-space-3); }
+.ifx-scanner .leader-title, .ifx-scanner .trigger-radar-title {
+  font-size: var(--ifx-text-2xs); font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--ifx-content-text-faint);
+}
+.ifx-scanner .leader-cards, .ifx-scanner .trigger-radar-cards { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+.ifx-scanner .leader-cards > *, .ifx-scanner .trigger-radar-cards > * {
+  flex: 0 0 auto; min-width: 150px; padding: 8px 10px;
+  background: var(--ifx-content-surface); border: 1px solid var(--ifx-content-border); border-radius: var(--ifx-radius-md);
+  cursor: pointer; transition: transform var(--ifx-fast) var(--ifx-ease);
+}
+.ifx-scanner .leader-cards > *:hover, .ifx-scanner .trigger-radar-cards > *:hover { transform: translateY(-1px); box-shadow: var(--ifx-shadow-sm); }
+.ifx-scanner .leader-pos {
+  display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px;
+  border-radius: 50%; background: var(--ifx-accent-dim); color: var(--ifx-accent-strong); font-size: 8px; font-weight: 800;
+}
+.ifx-scanner .leader-empty, .ifx-scanner .trigger-radar-empty, .ifx-scanner .filter-empty { padding: var(--ifx-space-3); text-align: center; color: var(--ifx-content-text-faint); font-size: var(--ifx-text-xs); }
+.ifx-scanner .summary-total { font-family: var(--ifx-font-mono); font-weight: 700; color: var(--ifx-content-text); }
+.ifx-scanner .summary-caption { font-size: var(--ifx-text-2xs); color: var(--ifx-content-text-faint); }
+.ifx-scanner .smart-rank-cell { display: flex; align-items: center; gap: 4px; justify-content: flex-end; }
+.ifx-scanner .smart-rank-track { width: 24px; height: 4px; background: var(--ifx-content-border); border-radius: 2px; overflow: hidden; }
+.ifx-scanner .target-method-note { font-size: 9px; color: var(--ifx-content-text-faint); font-style: italic; }

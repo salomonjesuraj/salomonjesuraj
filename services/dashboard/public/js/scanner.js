@@ -847,6 +847,7 @@ export class ScannerPanel {
       if (savedDensity && DENSITY[savedDensity]) this._density = savedDensity;
     } catch (_) {}
 
+    this._el.classList.add('ifx-scanner');
     this._el.innerHTML = `
       <div class="filter-bar">
         <input type="text" class="filter-input" id="scannerSearch" placeholder="Search symbol..." />
