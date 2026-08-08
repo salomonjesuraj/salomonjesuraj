@@ -610,9 +610,36 @@
 
 /* ── Table: header + rows ───────────────────────────────────────────── */
 .ifx-scanner .scanner-head-scroll { background: var(--ifx-content-surface); border: 1px solid var(--ifx-content-border); border-radius: var(--ifx-radius-md) var(--ifx-radius-md) 0 0; overflow: hidden; }
-.ifx-scanner .scanner-head { display: flex; border-bottom: 2px solid var(--ifx-content-border); }
-.ifx-scanner .sh {
-  padding: 6px 8px; font-family: var(--ifx-font-ui); font-size: 9px; font-weight: 700;
+/* width:100% !important is the actual fix for the remaining drift after
+   the padding fix below: virtual-scroll.js explicitly sets its
+   row-content wrapper to style.width="100%" (see _contentEl in
+   virtual-scroll.js), which is what lets .scanner-row's flex:1 1 <width>
+   columns actually grow to fill available space. main.css has
+   ".scanner-head,.scanner-grid{width:max-content!important}" (a bare
+   class selector, 0,1,0, but !important) which was sizing .scanner-head
+   to the bare sum of its columns' natural widths instead of stretching --
+   meaning its columns never grew at all while the row's did, producing
+   the exact same kind of proportional drift as the padding bug, from a
+   different cause. !important required to beat that rule; confirmed live
+   before this fix: .scanner-head rendered 1316px wide while .scanner-row
+   rendered 1364px in the same 1381px-wide container. */
+.ifx-scanner .scanner-head { display: flex; width: 100% !important; border-bottom: 2px solid var(--ifx-content-border); }
+/* Header/row column-alignment fix: main.css has
+   ".screener-pro-v4 .scanner-row .sc{padding-left:6px!important;
+   padding-right:6px!important}" (specificity 0,3,0) which beat a plain
+   ".ifx-scanner .sc" (0,2,0) even with !important on both sides --
+   confirmed live via getComputedStyle() that header cells landed at 8px
+   horizontal padding while row cells landed at 7px, and because columns
+   are flex:1 1 <width> (not fixed width), that per-cell mismatch
+   compounds across every column, producing up to 58px of header/row
+   drift by the last column (reported directly by the user, root-caused
+   by measuring each column's rect, not guessed). Fixed by matching the
+   old rule's specificity exactly (.screener-pro-v4 ancestor + 2 more
+   classes = 0,3,0) and relying on theme.css loading after main.css to
+   win the tie. */
+.screener-pro-v4 .ifx-scanner .sh {
+  padding: 6px 8px !important;
+  font-family: var(--ifx-font-ui); font-size: 9px; font-weight: 700;
   color: var(--ifx-content-text-faint); text-transform: uppercase; letter-spacing: .5px;
   cursor: pointer; user-select: none; white-space: nowrap; flex-shrink: 0;
 }
@@ -631,8 +658,14 @@
 .ifx-scanner .scanner-row.has-signal { border-left: 2px solid var(--ifx-bull); }
 .ifx-scanner .scanner-row.grade-highlight-aplus { background: var(--ifx-bull-dim); }
 .ifx-scanner .scanner-row.grade-highlight-a { background: var(--ifx-info-dim); }
-.ifx-scanner .sc {
-  padding: 2px 8px; font-size: var(--ifx-text-2xs); font-family: var(--ifx-font-mono);
+/* Horizontal padding must exactly match .sh's above, at the same 0,3,0
+   specificity -- see the comment there for the full header/row-drift bug.
+   Vertical padding intentionally differs (row height != header height);
+   horizontal must not, or columns drift out of alignment with their
+   headers. */
+.screener-pro-v4 .ifx-scanner .sc {
+  padding: 2px 8px !important;
+  font-size: var(--ifx-text-2xs); font-family: var(--ifx-font-mono);
   font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0;
 }
 .ifx-scanner .sc.sticky-freeze { position: sticky; background: inherit; z-index: 5; }
