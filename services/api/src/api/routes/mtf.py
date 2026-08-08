@@ -18,6 +18,7 @@ from zoneinfo import ZoneInfo
 from aiohttp import web
 
 from api.chart_patterns import fractal_pivots_indexed, detect_chart_patterns
+from api.wyckoff import detect_structural_failure, detect_shortening_of_thrust, detect_sos_sow_bar
 
 routes = web.RouteTableDef()
 
@@ -784,6 +785,9 @@ async def compute_mtf(redis, symbol: str, store: bool = True) -> dict:
     daily_pivots = fractal_pivots_indexed(daily) if daily else []
     chart_patterns = detect_chart_patterns(daily_pivots, current_ltp) if current_ltp else []
     donchian = _donchian_channel(daily) if daily else {"period": DONCHIAN_PERIOD, "high": None, "low": None, "fresh_high_breakout": False, "fresh_low_breakout": False}
+    wyckoff_structural_failure = detect_structural_failure(daily_pivots)
+    wyckoff_sot = detect_shortening_of_thrust(daily_pivots)
+    wyckoff_sos_sow = detect_sos_sow_bar(daily) if daily else None
     quality = "historical" if any(row["bars"] for row in timeframes.values()) else "missing"
     if any(row["quality"] == "limited" for row in timeframes.values()) and quality == "historical":
         quality = "limited"
@@ -818,6 +822,9 @@ async def compute_mtf(redis, symbol: str, store: bool = True) -> dict:
         "ma_regime": ma_regime,
         "chart_patterns": chart_patterns,
         "donchian": donchian,
+        "wyckoff_structural_failure": wyckoff_structural_failure,
+        "wyckoff_sot": wyckoff_sot,
+        "wyckoff_sos_sow": wyckoff_sos_sow,
         "bull_count": bull_count,
         "bear_count": bear_count,
         "mixed_count": mixed_count,

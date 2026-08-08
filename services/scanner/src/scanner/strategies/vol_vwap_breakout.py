@@ -160,6 +160,9 @@ class VolVwapBreakout(BaseStrategy):
         ma_regime = mtf_cache.get("ma_regime") or {}
         chart_patterns = mtf_cache.get("chart_patterns") or []
         donchian = mtf_cache.get("donchian") or {}
+        wyckoff_failure = mtf_cache.get("wyckoff_structural_failure")
+        wyckoff_sot = mtf_cache.get("wyckoff_sot")
+        wyckoff_sos_sow = mtf_cache.get("wyckoff_sos_sow")
         return SignalCandidate(
             symbol=state.symbol,
             strategy_id=self.strategy_id,
@@ -223,6 +226,9 @@ class VolVwapBreakout(BaseStrategy):
                 "donchian_low": donchian.get("low"),
                 "donchian_fresh_high_breakout": donchian.get("fresh_high_breakout"),
                 "donchian_fresh_low_breakout": donchian.get("fresh_low_breakout"),
+                "wyckoff_structural_failure": wyckoff_failure,
+                "wyckoff_sot": wyckoff_sot,
+                "wyckoff_sos_sow": wyckoff_sos_sow,
             },
             entry_price=entry,
             invalidation_price=invalidation,

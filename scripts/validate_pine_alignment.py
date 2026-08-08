@@ -144,6 +144,13 @@ def main():
         return
 
     try:
+        from api.wyckoff import detect_structural_failure, detect_shortening_of_thrust, detect_sos_sow_bar
+        check("api.wyckoff functions import", True)
+    except Exception as e:
+        check("api.wyckoff functions import", False, str(e))
+        return
+
+    try:
         from alerter.formatter import format_signal
         check("alerter.formatter imports", True)
     except Exception as e:
@@ -705,6 +712,56 @@ def main():
 
     thin_dc = _donchian_channel(donchian_bars[:5], period=DONCHIAN_PERIOD)
     check("Thin history returns None channel values, never crashes", thin_dc["high"] is None and thin_dc["low"] is None)
+
+    # ═══════════════════════════════════════════════
+    # PHASE 8 (NEW) — WYCKOFF (STRUCTURAL FAILURE, SOT, SOS/SOW)
+    # ═══════════════════════════════════════════════
+    print("\n--- PHASE 8 (NEW): WYCKOFF STRUCTURAL FAILURE / SOT / SOS-SOW BAR ---")
+
+    piv_weak = [(150.0, "high", 0), (100.0, "low", 1), (151.0, "high", 2), (99.0, "low", 3), (140.0, "high", 4)]
+    weak = detect_structural_failure(piv_weak)
+    check("Structural weakness: rally fails to reach validated range top", weak is not None and weak["type"] == "weakness", f"got {weak}")
+
+    piv_strong = [(100.0, "low", 0), (150.0, "high", 1), (99.0, "low", 2), (151.0, "high", 3), (110.0, "low", 4)]
+    strong = detect_structural_failure(piv_strong)
+    check("Structural strength: decline fails to reach validated range bottom", strong is not None and strong["type"] == "strength", f"got {strong}")
+
+    piv_no_range = [(100.0, "low", 0), (150.0, "high", 1), (105.0, "low", 2)]
+    check("No structural failure without a validated (>=2 touch) range", detect_structural_failure(piv_no_range) is None)
+
+    piv_reached = [(150.0, "high", 0), (100.0, "low", 1), (151.0, "high", 2), (99.0, "low", 3), (149.5, "high", 4)]
+    check("No structural failure when the swing actually reaches the extreme", detect_structural_failure(piv_reached) is None)
+
+    piv_sot = [
+        (100.0, "low", 0), (150.0, "high", 1), (120.0, "low", 2), (155.0, "high", 3),
+        (125.0, "low", 4), (145.0, "high", 5), (115.0, "low", 6),
+    ]
+    sot = detect_shortening_of_thrust(piv_sot)
+    check("SOT: bullish exhaustion detected on 3 shrinking up-legs", sot is not None and sot["type"] == "bullish_exhaustion", f"got {sot}")
+    check("SOT: leg sizes reported in shrinking order", sot is not None and sot["leg_sizes"] == [50.0, 35.0, 20.0], f"got {sot}")
+    check("SOT: too few pivots returns None, not a crash", detect_shortening_of_thrust(piv_sot[:4]) is None)
+
+    piv_no_sot = [
+        (100.0, "low", 0), (150.0, "high", 1), (120.0, "low", 2), (148.0, "high", 3),
+        (118.0, "low", 4), (151.0, "high", 5), (116.0, "low", 6),
+    ]
+    check("SOT: non-monotonic legs correctly return None (no forced match)", detect_shortening_of_thrust(piv_no_sot) is None)
+
+    sos_window = [{"high": 110, "low": 100, "close": 105, "volume": 1000} for _ in range(20)]
+    sos_bars = sos_window + [{"high": 125, "low": 100, "close": 122, "volume": 1500}]
+    sos = detect_sos_sow_bar(sos_bars)
+    check("SOS bar: wide range + high volume + close in upper third", sos is not None and sos["type"] == "SOS", f"got {sos}")
+
+    sow_bars = sos_window + [{"high": 110, "low": 85, "close": 88, "volume": 1500}]
+    sow = detect_sos_sow_bar(sow_bars)
+    check("SOW bar: wide range + high volume + close in lower third", sow is not None and sow["type"] == "SOW", f"got {sow}")
+
+    mid_bars = sos_window + [{"high": 125, "low": 100, "close": 112, "volume": 1500}]
+    check("No SOS/SOW when wide/high-volume bar closes in the middle third", detect_sos_sow_bar(mid_bars) is None)
+
+    normal_bars = sos_window + [{"high": 108, "low": 102, "close": 107, "volume": 1000}]
+    check("No SOS/SOW on an ordinary (not wide, not high-volume) bar", detect_sos_sow_bar(normal_bars) is None)
+    check("SOS/SOW: thin history returns None, never crashes", detect_sos_sow_bar(sos_bars[:5]) is None)
 
     # ═══════════════════════════════════════════════
     # SUMMARY
