@@ -1,9 +1,11 @@
 /**
- * Header Bar — regime, session, WS status, clock, health dots
+ * Header Bar — regime, session, WS status, clock, health dots, theme toggle.
+ * v2 design system (ifx-* classes, theme.css) — see theme.js for the toggle.
  */
-import { istClock, currentSession, regimeClass, escapeHtml } from './utils.js';
+import { istClock, currentSession, escapeHtml } from './utils.js';
 import { api } from './api.js';
 import { ws } from './ws.js';
+import { theme } from './theme.js';
 
 const SESSION_LABELS = {
   pre_market: 'Pre-Market',
@@ -11,10 +13,18 @@ const SESSION_LABELS = {
   mid_morning: 'Mid-Morning',
   midday: 'Midday',
   closing: 'Closing',
+  cas_auction: 'Closing Auction',
   post_market: 'Post-Market',
 };
 
 const SERVICES = ['ingestion', 'normalizer', 'feature-engine', 'scanner', 'alerter', 'archiver'];
+
+function regimeBadgeClass(regime) {
+  const r = String(regime || '').toLowerCase();
+  if (r.includes('bull') || r.includes('risk-on')) return 'ifx-badge--bull';
+  if (r.includes('bear') || r.includes('risk-off')) return 'ifx-badge--bear';
+  return 'ifx-badge--neutral';
+}
 
 export class Header {
   constructor(containerEl) {
@@ -24,28 +34,33 @@ export class Header {
   }
 
   init() {
+    this._el.classList.add('ifx-shell', 'ifx-header');
     this._el.innerHTML = `
-      <div class="header-brand">INFUSION</div>
-      <div class="header-center">
-        <div class="regime-badge neutral" id="regimeBadge">
-          <span class="dot"></span>
-          <span id="regimeText">NEUTRAL</span>
-        </div>
-        <div class="session-badge" id="sessionBadge">${SESSION_LABELS[currentSession()]}</div>
-        <div class="ws-indicator">
-          <span class="ws-dot connecting" id="wsDot"></span>
-          <span id="wsLabel">Connecting</span>
-        </div>
+      <div class="ifx-header-brand">
+        <span class="ifx-brand-mark">IF</span>
+        <span class="ifx-brand-word">INFUSION</span>
       </div>
-      <div class="header-right">
-        <div class="safety-chip" id="safetyChip" title="Paper-first lock and kill-switch status">
-          <span class="dot"></span>
-          <span id="safetyChipText">Safety --</span>
-        </div>
-        <div class="clock" id="clockDisplay">${istClock()}</div>
-        <div class="health-dots" id="healthDots" title="Service Health">
-          ${SERVICES.map(s => `<span class="health-dot" data-svc="${s}" title="${s}"></span>`).join('')}
-        </div>
+      <div class="ifx-header-center">
+        <span class="ifx-badge ${regimeBadgeClass('neutral')}" id="regimeBadge">
+          <span class="ifx-dot"></span><span id="regimeText">NEUTRAL</span>
+        </span>
+        <span class="ifx-badge ifx-badge--info" id="sessionBadge">${escapeHtml(SESSION_LABELS[currentSession()] || currentSession())}</span>
+        <span class="ifx-ws-indicator" id="wsIndicator" title="Live data connection">
+          <span class="ifx-dot ifx-dot--pulse" id="wsDot"></span>
+          <span id="wsLabel">Connecting</span>
+        </span>
+      </div>
+      <div class="ifx-header-right">
+        <span class="ifx-badge ifx-badge--neutral" id="safetyChip" title="Paper-first lock and kill-switch status">
+          <span class="ifx-dot"></span><span id="safetyChipText">Safety --</span>
+        </span>
+        <span class="ifx-header-clock ifx-mono" id="clockDisplay">${istClock()}</span>
+        <span class="ifx-health-dots" id="healthDots" title="Service Health">
+          ${SERVICES.map(s => `<span class="ifx-health-dot" data-svc="${s}" title="${escapeHtml(s)}"></span>`).join('')}
+        </span>
+        <button type="button" class="ifx-theme-toggle" id="themeToggle" aria-label="Toggle light/dark theme" title="Toggle light/dark theme">
+          <span class="ifx-theme-toggle-icon">${theme.current === 'dark' ? '☀' : '☽'}</span>
+        </button>
       </div>
     `;
 
@@ -54,15 +69,26 @@ export class Header {
       const clockEl = document.getElementById('clockDisplay');
       const sessEl = document.getElementById('sessionBadge');
       if (clockEl) clockEl.textContent = istClock();
-      if (sessEl) sessEl.textContent = SESSION_LABELS[currentSession()];
+      if (sessEl) sessEl.textContent = SESSION_LABELS[currentSession()] || currentSession();
     }, 1000);
+
+    // Theme toggle
+    const toggleBtn = document.getElementById('themeToggle');
+    if (toggleBtn) {
+      toggleBtn.addEventListener('click', () => {
+        theme.toggle();
+        const icon = toggleBtn.querySelector('.ifx-theme-toggle-icon');
+        if (icon) icon.textContent = theme.current === 'dark' ? '☀' : '☽';
+      });
+    }
 
     // WS status
     ws.onStatus((status) => {
       const dot = document.getElementById('wsDot');
       const label = document.getElementById('wsLabel');
       if (dot) {
-        dot.className = 'ws-dot ' + status;
+        dot.className = 'ifx-dot' + (status === 'connected' ? '' : ' ifx-dot--pulse');
+        dot.style.color = status === 'connected' ? 'var(--ifx-bull)' : status === 'connecting' ? 'var(--ifx-warn)' : 'var(--ifx-bear)';
       }
       if (label) {
         label.textContent = status === 'connected' ? 'Live' : status === 'connecting' ? 'Connecting' : 'Disconnected';
@@ -76,7 +102,7 @@ export class Header {
       const badge = document.getElementById('regimeBadge');
       const text = document.getElementById('regimeText');
       if (badge) {
-        badge.className = 'regime-badge ' + regimeClass(regime);
+        badge.className = 'ifx-badge ' + regimeBadgeClass(regime);
       }
       if (text) {
         text.textContent = regime.replace(/_/g, ' ').toUpperCase();
@@ -89,7 +115,8 @@ export class Header {
       for (const [svc, info] of Object.entries(resp.services)) {
         const dot = this._el.querySelector(`[data-svc="${svc}"]`);
         if (dot) {
-          dot.className = 'health-dot ' + ((info.status === 'healthy') ? 'healthy' : 'unhealthy');
+          dot.classList.toggle('ifx-health-dot--healthy', info.status === 'healthy');
+          dot.classList.toggle('ifx-health-dot--unhealthy', info.status !== 'healthy');
         }
       }
     }, 10000));
@@ -104,19 +131,19 @@ export class Header {
       if (!resp || !chip || !text) return;
       const killed = !!resp.kill_switch?.enabled;
       const verdict = resp.verdict || 'BLOCKED';
-      let cls = 'blocked';
+      let variant = 'ifx-badge--bear';
       let label = 'Blocked';
       if (killed) {
-        cls = 'blocked';
+        variant = 'ifx-badge--bear';
         label = 'Kill switch ON';
       } else if (verdict === 'PAPER_READY') {
-        cls = 'ready';
+        variant = 'ifx-badge--bull';
         label = 'Paper-first ready';
       } else if (verdict === 'WATCH_READY') {
-        cls = 'watch';
+        variant = 'ifx-badge--warn';
         label = 'Paper-first (check)';
       }
-      chip.className = 'safety-chip ' + cls;
+      chip.className = 'ifx-badge ' + variant;
       text.textContent = label;
     }, 5000));
   }

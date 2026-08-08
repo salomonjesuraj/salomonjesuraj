@@ -1,30 +1,30 @@
 /**
- * Tabbed market pulse heatmap for v4 screener UI.
+ * Market Pulse — tabbed sector/stock heatmap (v2 design system).
  * Inspired by market-pulse products: sector strength, stock heat, gainers/losers.
  */
 import { api } from './api.js';
 import { escapeHtml, formatPct, formatPrice, formatRelVol } from './utils.js';
 
-function sectorColor(score) {
+function sectorTone(score) {
   const s = Number(score || 0);
-  if (s >= 75) return '#059669';
-  if (s >= 60) return '#65a30d';
-  if (s >= 45) return '#d97706';
-  if (s >= 30) return '#ea580c';
-  return '#dc2626';
+  if (s >= 75) return 'var(--ifx-bull-strong)';
+  if (s >= 60) return 'var(--ifx-bull)';
+  if (s >= 45) return 'var(--ifx-warn)';
+  if (s >= 30) return 'var(--ifx-accent-strong)';
+  return 'var(--ifx-bear)';
 }
 
-function stockColor(item) {
+function stockTone(item) {
   const decision = String(item.trade_decision || '').toUpperCase();
   const chg = Number(item.change_pct || 0);
-  if (decision.includes('BUY CE') || chg >= 1.25) return '#059669';
-  if (decision.includes('BUY PE') || chg <= -1.25) return '#dc2626';
-  if (chg > 0) return '#65a30d';
-  if (chg < 0) return '#ea580c';
-  return '#94a3b8';
+  if (decision.includes('BUY CE') || chg >= 1.25) return 'var(--ifx-bull-strong)';
+  if (decision.includes('BUY PE') || chg <= -1.25) return 'var(--ifx-bear-strong)';
+  if (chg > 0) return 'var(--ifx-bull)';
+  if (chg < 0) return 'var(--ifx-bear)';
+  return 'var(--ifx-content-text-faint)';
 }
 
-function heatSize(value, min = 70, max = 170) {
+function heatSize(value, min = 68, max = 156) {
   const n = Math.max(0, Math.min(100, Number(value || 0)));
   return Math.round(min + (max - min) * (n / 100));
 }
@@ -40,6 +40,7 @@ export class SectorRibbon {
 
   init() {
     if (!this._el) return;
+    this._el.classList.add('ifx-pulse');
     this._render();
     this._unsubs.push(api.subscribe('/api/sectors', (resp) => {
       this._sectors = Array.isArray(resp?.sectors) ? resp.sectors : [];
@@ -59,31 +60,28 @@ export class SectorRibbon {
 
   _renderTabs() {
     const tabs = [
-      ['sectors', 'Sector Heatmap'],
-      ['stocks', 'Stock Heatmap'],
-      ['gainers', 'Top Gainers'],
-      ['losers', 'Top Losers'],
+      ['sectors', 'Sectors'],
+      ['stocks', 'Stocks'],
+      ['gainers', 'Gainers'],
+      ['losers', 'Losers'],
     ];
-    return `<div class="pulse-tabs">
-      ${tabs.map(([key, label]) => `<button class="pulse-tab ${this._active === key ? 'active' : ''}" data-pulse-tab="${key}">${label}</button>`).join('')}
+    return `<div class="ifx-pulse-tabs">
+      ${tabs.map(([key, label]) => `<button type="button" class="ifx-pulse-tab${this._active === key ? ' ifx-pulse-tab--active' : ''}" data-pulse-tab="${key}">${label}</button>`).join('')}
     </div>`;
   }
 
   _sectorHeatmap() {
     const list = [...this._sectors].sort((a, b) => Number(b.strength_score || 0) - Number(a.strength_score || 0));
-    if (!list.length) return '<div class="pulse-empty">Loading sector heatmap…</div>';
-    // Compact A/D format per feedback: name + score + advancing/declining
-    // count, no bar -- one glance, no wasted vertical space.
-    return `<div class="sector-ribbon-grid pulse-grid sector-heatmap-grid compact">
+    if (!list.length) return '<div class="ifx-pulse-empty">Loading sector heatmap…</div>';
+    return `<div class="ifx-pulse-grid ifx-pulse-grid--sectors">
       ${list.map(s => {
         const name = String(s.sector_id || '—');
         const score = Math.round(Number(s.strength_score || 0));
         const advancing = Math.round(Number(s.advancing || 0));
         const declining = Math.round(Number(s.declining || 0));
-        const c = sectorColor(score);
-        return `<button class="sector-ribbon-card pulse-heat-card" data-sector="${escapeHtml(name)}" title="${escapeHtml(name)} strength ${score} — ${advancing} advancing / ${declining} declining">
-          <span class="sector-ribbon-top"><b>${escapeHtml(name.replace('_', ' '))}</b><strong style="color:${c}">${score}</strong></span>
-          <span class="sector-ribbon-ad"><i class="up">${advancing}▲</i><i class="down">${declining}▼</i></span>
+        return `<button type="button" class="ifx-pulse-card" data-sector="${escapeHtml(name)}" title="${escapeHtml(name)} strength ${score} — ${advancing} advancing / ${declining} declining" style="--ifx-heat:${sectorTone(score)}">
+          <span class="ifx-pulse-card-top"><b>${escapeHtml(name.replace(/_/g, ' '))}</b><strong class="ifx-mono">${score}</strong></span>
+          <span class="ifx-pulse-card-ad"><i class="ifx-tone-good">${advancing}▲</i><i class="ifx-tone-bad">${declining}▼</i></span>
         </button>`;
       }).join('')}
     </div>`;
@@ -95,15 +93,14 @@ export class SectorRibbon {
     else if (mode === 'losers') list.sort((a, b) => Number(a.change_pct || 0) - Number(b.change_pct || 0));
     else list.sort((a, b) => Number(b.option_readiness || 0) - Number(a.option_readiness || 0));
     list = list.slice(0, mode === 'stocks' ? 45 : 24);
-    if (!list.length) return '<div class="pulse-empty">Loading stock heatmap…</div>';
-    return `<div class="stock-heatmap-grid">
+    if (!list.length) return '<div class="ifx-pulse-empty">Loading stock heatmap…</div>';
+    return `<div class="ifx-pulse-grid ifx-pulse-grid--stocks">
       ${list.map(item => {
-        const c = stockColor(item);
         const conv = Math.round(Number(item.option_readiness || item.conviction_score || 0));
         const size = heatSize(mode === 'stocks' ? conv : Math.min(100, Math.abs(Number(item.change_pct || 0)) * 22));
-        return `<button class="stock-heat-tile" data-symbol="${escapeHtml(item.symbol || '')}" style="--heat:${c};--tile:${size}px" title="${escapeHtml(item.symbol || '')} ${formatPct(item.change_pct)} · Conv ${conv}">
+        return `<button type="button" class="ifx-pulse-tile" data-symbol="${escapeHtml(item.symbol || '')}" style="--ifx-heat:${stockTone(item)};--ifx-tile:${size}px" title="${escapeHtml(item.symbol || '')} ${formatPct(item.change_pct)} · Conv ${conv}">
           <b>${escapeHtml(item.symbol || '—')}</b>
-          <span>${formatPrice(item.ltp)} · ${formatPct(item.change_pct)}</span>
+          <span class="ifx-mono">${formatPrice(item.ltp)} · ${formatPct(item.change_pct)}</span>
           <small>${escapeHtml(item.sector_id || '-')} · RV ${formatRelVol(item.rel_vol)} · C${conv}</small>
         </button>`;
       }).join('')}
@@ -116,15 +113,15 @@ export class SectorRibbon {
       ? this._sectorHeatmap()
       : this._stockHeatmap(this._active);
     this._el.innerHTML = `
-      <div class="pulse-head">
-        <span class="section-title"><span class="section-drag-handle" title="Drag section">⋮⋮</span>Market Pulse</span>
+      <div class="ifx-pulse-head">
+        <span class="ifx-pulse-title"><span class="ifx-drag-handle" title="Drag section">⋮⋮</span>Market Pulse</span>
         ${this._renderTabs()}
-        <span class="section-size-controls">
+        <span class="ifx-section-size-controls">
           <button type="button" data-section-action="expand" title="Expand section">+</button>
           <button type="button" data-section-action="collapse" title="Minimize section">−</button>
         </span>
       </div>
-      <div class="pulse-body">${body}</div>
+      <div class="ifx-pulse-body">${body}</div>
     `;
     this._el.querySelectorAll('[data-pulse-tab]').forEach(btn => {
       btn.addEventListener('click', () => this._setTab(btn.dataset.pulseTab));

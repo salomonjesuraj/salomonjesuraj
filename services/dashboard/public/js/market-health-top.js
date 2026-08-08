@@ -1,6 +1,6 @@
 /**
- * Compact top-row market health strip.
- * Keeps the regime, breadth, A/D, leader, and laggard visible while trading options.
+ * Compact top-row market health strip — regime, breadth, A/D, leader/laggard.
+ * v2 design system (ifx-* classes, theme.css).
  */
 import { api } from './api.js';
 
@@ -9,11 +9,11 @@ function fmtPct(value) {
   return Number.isFinite(n) ? `${Math.round(n)}%` : '—';
 }
 
-function cls(value) {
+function regimeBadgeClass(value) {
   const text = String(value || '').toLowerCase();
-  if (text.includes('risk-on')) return 'risk-on';
-  if (text.includes('risk-off')) return 'risk-off';
-  return 'neutral';
+  if (text.includes('risk-on') || text.includes('bull')) return 'ifx-badge--bull';
+  if (text.includes('risk-off') || text.includes('bear')) return 'ifx-badge--bear';
+  return 'ifx-badge--neutral';
 }
 
 export class MarketHealthTop {
@@ -23,6 +23,7 @@ export class MarketHealthTop {
   }
 
   init() {
+    this._el.classList.add('ifx-shell', 'ifx-market-health');
     this._renderLoading();
     this._refresh();
     this._timer = setInterval(() => this._refresh(), 15000);
@@ -49,22 +50,21 @@ export class MarketHealthTop {
       const adv = regime?.advancers ?? regime?.advance ?? regime?.advancing ?? (totalAdv || '—');
       const dec = regime?.decliners ?? regime?.decline ?? regime?.declining ?? (totalDec || '—');
       const status = String(regime?.regime || regime?.status || 'NEUTRAL').toUpperCase();
-      const statusClass = cls(status);
 
       this._el.innerHTML = `
-        <div class="mht-regime ${statusClass}"><span></span>${status}</div>
-        <div class="mht-stat"><label>A/D</label><b class="positive">▲${adv}</b><b class="negative">▼${dec}</b></div>
-        <div class="mht-stat"><label>BREADTH</label><b>${fmtPct(breadth)}</b></div>
-        <div class="mht-stat"><label>LEADER</label><b class="positive">${leader}</b></div>
-        <div class="mht-stat"><label>LAGGARD</label><b class="negative">${laggard}</b></div>
+        <span class="ifx-badge ${regimeBadgeClass(status)}">${status}</span>
+        <span class="ifx-mh-stat"><label>A/D</label><b class="ifx-mono ifx-tone-good">▲${adv}</b><b class="ifx-mono ifx-tone-bad">▼${dec}</b></span>
+        <span class="ifx-mh-stat"><label>BREADTH</label><b class="ifx-mono">${fmtPct(breadth)}</b></span>
+        <span class="ifx-mh-stat"><label>LEADER</label><b class="ifx-tone-good">${leader}</b></span>
+        <span class="ifx-mh-stat"><label>LAGGARD</label><b class="ifx-tone-bad">${laggard}</b></span>
       `;
     } catch (err) {
-      this._el.innerHTML = '<div class="mht-muted">Market health unavailable</div>';
+      this._el.innerHTML = '<div class="ifx-mh-muted">Market health unavailable</div>';
     }
   }
 
   _renderLoading() {
-    if (this._el) this._el.innerHTML = '<div class="mht-muted">Loading market health…</div>';
+    if (this._el) this._el.innerHTML = '<div class="ifx-mh-muted">Loading market health…</div>';
   }
 
   destroy() {

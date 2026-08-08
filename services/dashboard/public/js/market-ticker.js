@@ -1,31 +1,30 @@
 /**
- * Top market ticker strip — NIFTY, BANKNIFTY, selected stock/index.
+ * Top market ticker strip — NIFTY, BANKNIFTY, GIFT NIFTY, selected stock.
+ * v2 design system (ifx-* classes, theme.css).
  */
 import { api } from './api.js';
 import { formatPrice, formatPct, escapeHtml } from './utils.js';
 
 const DEFAULT_SYMBOLS = ['NIFTY50', 'NIFTYBANK', 'GIFTNIFTY'];
 
-function pctClass(value) {
+function pctTone(value) {
   const n = Number(value || 0);
-  return n > 0 ? 'positive' : n < 0 ? 'negative' : 'text-muted';
+  return n > 0 ? 'ifx-tone-good' : n < 0 ? 'ifx-tone-bad' : 'ifx-tone-faint';
 }
 
 function renderTile(item, label = null) {
   if (!item || item.error) {
-    return `<div class="ticker-tile muted">
-      <span class="ticker-name">${escapeHtml(label || item?.symbol || '—')}</span>
-      <span class="ticker-price">—</span>
-      <span class="ticker-pct">No data</span>
+    return `<div class="ifx-ticker-tile ifx-ticker-tile--muted">
+      <span class="ifx-ticker-name">${escapeHtml(label || item?.symbol || '—')}</span>
+      <span class="ifx-ticker-price ifx-mono">—</span>
+      <span class="ifx-ticker-pct">No data</span>
     </div>`;
   }
-
   const chg = Number(item.change_pct || 0);
-  const cls = pctClass(chg);
-  return `<div class="ticker-tile">
-    <span class="ticker-name">${escapeHtml(label || item.label || item.symbol)}</span>
-    <span class="ticker-price">${formatPrice(item.ltp)}</span>
-    <span class="ticker-pct ${cls}">${formatPct(chg, 2)}</span>
+  return `<div class="ifx-ticker-tile">
+    <span class="ifx-ticker-name">${escapeHtml(label || item.label || item.symbol)}</span>
+    <span class="ifx-ticker-price ifx-mono">${formatPrice(item.ltp)}</span>
+    <span class="ifx-ticker-pct ifx-mono ${pctTone(chg)}">${formatPct(chg, 2)}</span>
   </div>`;
 }
 
@@ -37,6 +36,7 @@ export class MarketTicker {
   }
 
   init() {
+    this._el.classList.add('ifx-shell', 'ifx-ticker');
     this._renderEmpty();
 
     this._unsubs.push(api.subscribe('/api/market/indices', (resp) => {
@@ -77,13 +77,13 @@ export class MarketTicker {
 
   _renderEmpty() {
     this._el.innerHTML = `
-      <div class="ticker-title">MARKET</div>
+      <div class="ifx-ticker-title">MARKET</div>
       ${DEFAULT_SYMBOLS.map(s => renderTile(
         { symbol: s, error: true },
         s === 'NIFTYBANK' ? 'BANKNIFTY' : s === 'GIFTNIFTY' ? 'GIFT NIFTY' : 'NIFTY'
       )).join('')}
-      <div class="ticker-spacer"></div>
-      <div class="ticker-tile muted"><span class="ticker-name">SELECTED</span><span class="ticker-price">—</span><span class="ticker-pct">Click a symbol</span></div>
+      <div class="ifx-ticker-spacer"></div>
+      <div class="ifx-ticker-tile ifx-ticker-tile--muted"><span class="ifx-ticker-name">SELECTED</span><span class="ifx-ticker-price ifx-mono">—</span><span class="ifx-ticker-pct">Click a symbol</span></div>
     `;
   }
 
@@ -95,13 +95,13 @@ export class MarketTicker {
     const selected = this._selected || null;
 
     this._el.innerHTML = `
-      <div class="ticker-title">MARKET</div>
+      <div class="ifx-ticker-title">MARKET</div>
       ${renderTile(nifty, 'NIFTY')}
       ${renderTile(bank, 'BANKNIFTY')}
       ${renderTile(gift, 'GIFT NIFTY')}
-      <div class="ticker-spacer"></div>
-      ${selected ? renderTile(selected, selected.symbol) : `<div class="ticker-tile muted"><span class="ticker-name">SELECTED</span><span class="ticker-price">—</span><span class="ticker-pct">Click a symbol</span></div>`}
-      <div class="ticker-note">Options mode: CE/PE bias uses underlying + chain readiness</div>
+      <div class="ifx-ticker-spacer"></div>
+      ${selected ? renderTile(selected, selected.symbol) : `<div class="ifx-ticker-tile ifx-ticker-tile--muted"><span class="ifx-ticker-name">SELECTED</span><span class="ifx-ticker-price ifx-mono">—</span><span class="ifx-ticker-pct">Click a symbol</span></div>`}
+      <div class="ifx-ticker-note">Options mode: CE/PE bias uses underlying + chain readiness</div>
     `;
   }
 

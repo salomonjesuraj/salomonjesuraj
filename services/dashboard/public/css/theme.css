@@ -1,0 +1,545 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   INFUSION — Design System v2 ("ifx-" namespace)
+
+   Ground-up rebuild, loaded ALONGSIDE the legacy main.css (which still
+   styles panels not yet rebuilt). Every class here is prefixed `ifx-` so
+   nothing collides with a legacy selector — as more panels get rebuilt,
+   main.css shrinks until it can be deleted outright, instead of becoming
+   a 23rd accreted "remodel" layer on top of the old one.
+
+   Design plan:
+   - Color: a deep violet-charcoal ink scale (not the generic near-black+
+     emerald "AI SaaS dashboard" look) with a warm amber-gold accent —
+     evokes a trading-floor ticker rather than a generic dark admin panel.
+     Bull/bear stay close to universal green/red convention (traders read
+     that at a glance; this is not where to be clever) but in refined,
+     specific shades, not stock Tailwind hex.
+   - Type: Inter (UI chrome) + JetBrains Mono (every number — prices,
+     scores, tickers) — monospace tabular numerals are load-bearing for a
+     terminal where price columns must align and a trader scans fast.
+   - Layout: a dark "console" shell (header/nav/footer) holding light
+     "paper" content panels — a considered choice, not an accident (see
+     Phase A's commit for how this was previously an unintentional bug;
+     v2 makes it deliberate and consistent both ways).
+   ═══════════════════════════════════════════════════════════════════════ */
+
+:root,
+[data-theme="dark"] {
+  /* Ink scale */
+  --ifx-ink-950: #0a0a12;
+  --ifx-ink-900: #12121e;
+  --ifx-ink-850: #171729;
+  --ifx-ink-800: #1c1d33;
+  --ifx-ink-700: #262740;
+  --ifx-ink-600: #363758;
+  --ifx-ink-500: #4d4e78;
+  --ifx-ink-400: #6f7099;
+  --ifx-ink-300: #9899bb;
+  --ifx-ink-200: #c3c4dc;
+  --ifx-ink-100: #e6e6f2;
+  --ifx-ink-50:  #f5f5fa;
+
+  /* Paper scale (light content surfaces, used inside the dark console shell) */
+  --ifx-paper-0: #ffffff;
+  --ifx-paper-50: #f8f7f4;
+  --ifx-paper-100: #f1efe9;
+  --ifx-paper-200: #e5e2d8;
+  --ifx-paper-ink: #1a1b29;
+  --ifx-paper-ink-muted: #52536e;
+  --ifx-paper-ink-faint: #86869e;
+  --ifx-paper-border: #e2e0d5;
+
+  /* Console shell (chrome — header/nav/footer/sector strip) */
+  --ifx-shell-bg: var(--ifx-ink-950);
+  --ifx-shell-surface: var(--ifx-ink-900);
+  --ifx-shell-raised: var(--ifx-ink-850);
+  --ifx-shell-border: var(--ifx-ink-700);
+  --ifx-shell-text: var(--ifx-ink-100);
+  --ifx-shell-text-muted: var(--ifx-ink-300);
+  --ifx-shell-text-faint: var(--ifx-ink-400);
+
+  /* Content (cockpit + everything inside "paper" panels) */
+  --ifx-content-bg: var(--ifx-paper-50);
+  --ifx-content-surface: var(--ifx-paper-0);
+  --ifx-content-raised: var(--ifx-paper-0);
+  --ifx-content-border: var(--ifx-paper-border);
+  --ifx-content-text: var(--ifx-paper-ink);
+  --ifx-content-text-muted: var(--ifx-paper-ink-muted);
+  --ifx-content-text-faint: var(--ifx-paper-ink-faint);
+
+  /* Accent — warm amber-gold, not the generic SaaS blue */
+  --ifx-accent: #e8a33d;
+  --ifx-accent-strong: #c9821e;
+  --ifx-accent-dim: rgba(232,163,61,.16);
+  --ifx-accent-ink: #241a06;
+
+  /* Semantic (financial convention preserved; refined shades) */
+  --ifx-bull: #14b88a;
+  --ifx-bull-strong: #0e9c73;
+  --ifx-bull-dim: rgba(20,184,138,.14);
+  --ifx-bear: #ee4360;
+  --ifx-bear-strong: #d5304c;
+  --ifx-bear-dim: rgba(238,67,96,.14);
+  --ifx-warn: #e8a33d;
+  --ifx-warn-dim: rgba(232,163,61,.16);
+  --ifx-info: #4d8ef0;
+  --ifx-info-dim: rgba(77,142,240,.14);
+
+  /* Grade / conviction — single source of truth, used everywhere a grade
+     or conviction tier is shown (cards, badges, table rows). */
+  --ifx-grade-aplus: #14b88a;
+  --ifx-grade-a: #4d8ef0;
+  --ifx-grade-bplus: #e8a33d;
+  --ifx-grade-b: #9899bb;
+  --ifx-grade-c: #6f7099;
+
+  --ifx-shadow-sm: 0 1px 3px rgba(6,6,14,.30);
+  --ifx-shadow-md: 0 10px 28px rgba(6,6,14,.34);
+  --ifx-shadow-lg: 0 20px 48px rgba(6,6,14,.40);
+  --ifx-focus-ring: 0 0 0 2px var(--ifx-shell-bg), 0 0 0 4px var(--ifx-accent);
+}
+
+[data-theme="light"] {
+  --ifx-shell-bg: #14152a;
+  --ifx-shell-surface: #1a1b33;
+  --ifx-shell-raised: #21223d;
+  --ifx-shell-border: #33355a;
+  --ifx-shell-text: var(--ifx-ink-100);
+  --ifx-shell-text-muted: var(--ifx-ink-300);
+  --ifx-shell-text-faint: var(--ifx-ink-400);
+
+  --ifx-content-bg: #faf9f6;
+  --ifx-content-surface: #ffffff;
+  --ifx-content-raised: #ffffff;
+  --ifx-content-border: #e6e3d9;
+  --ifx-content-text: #1a1b29;
+  --ifx-content-text-muted: #52536e;
+  --ifx-content-text-faint: #86869e;
+
+  --ifx-bull: #0e9c73;
+  --ifx-bear: #d5304c;
+  --ifx-accent-ink: #fff8ec;
+  --ifx-shadow-sm: 0 1px 2px rgba(20,21,42,.08);
+  --ifx-shadow-md: 0 8px 20px rgba(20,21,42,.10);
+  --ifx-shadow-lg: 0 16px 36px rgba(20,21,42,.14);
+  --ifx-focus-ring: 0 0 0 2px var(--ifx-content-surface), 0 0 0 4px var(--ifx-accent-strong);
+}
+
+:root {
+  /* Type */
+  --ifx-font-ui: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --ifx-font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
+  --ifx-text-2xs: 10px;
+  --ifx-text-xs: 11px;
+  --ifx-text-sm: 12.5px;
+  --ifx-text-base: 14px;
+  --ifx-text-lg: 16px;
+  --ifx-text-xl: 19px;
+  --ifx-text-2xl: 24px;
+  --ifx-text-3xl: 32px;
+  --ifx-text-4xl: 44px;
+
+  /* Space */
+  --ifx-space-1: 4px;
+  --ifx-space-2: 8px;
+  --ifx-space-3: 12px;
+  --ifx-space-4: 16px;
+  --ifx-space-5: 20px;
+  --ifx-space-6: 24px;
+  --ifx-space-8: 32px;
+
+  --ifx-radius-sm: 6px;
+  --ifx-radius-md: 10px;
+  --ifx-radius-lg: 16px;
+  --ifx-radius-pill: 999px;
+
+  --ifx-ease: cubic-bezier(.2,.8,.2,1);
+  --ifx-fast: 140ms;
+  --ifx-normal: 220ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --ifx-fast: 0ms; --ifx-normal: 0ms; }
+}
+
+/* ── Reset scoped to the new shell (does not touch legacy-rendered panels) ── */
+.ifx-shell, .ifx-shell *, .ifx-shell *::before, .ifx-shell *::after {
+  box-sizing: border-box;
+}
+.ifx-shell {
+  font-family: var(--ifx-font-ui);
+  color: var(--ifx-shell-text);
+}
+.ifx-mono { font-family: var(--ifx-font-mono); font-variant-numeric: tabular-nums; }
+
+/* ── Primitives ─────────────────────────────────────────────────────── */
+.ifx-btn {
+  font-family: var(--ifx-font-ui);
+  font-size: var(--ifx-text-xs);
+  font-weight: 600;
+  letter-spacing: .2px;
+  padding: 6px 12px;
+  border-radius: var(--ifx-radius-sm);
+  border: 1px solid var(--ifx-shell-border);
+  background: transparent;
+  color: var(--ifx-shell-text-muted);
+  cursor: pointer;
+  transition: background var(--ifx-fast) var(--ifx-ease), color var(--ifx-fast) var(--ifx-ease), border-color var(--ifx-fast) var(--ifx-ease);
+}
+.ifx-btn:hover { color: var(--ifx-shell-text); border-color: var(--ifx-shell-text-faint); }
+.ifx-btn:focus-visible { outline: none; box-shadow: var(--ifx-focus-ring); }
+.ifx-btn.ifx-btn--active {
+  background: var(--ifx-accent-dim);
+  border-color: var(--ifx-accent);
+  color: var(--ifx-accent);
+}
+.ifx-btn.ifx-btn--on-paper {
+  color: var(--ifx-content-text-muted);
+  border-color: var(--ifx-content-border);
+}
+.ifx-btn.ifx-btn--on-paper:hover { color: var(--ifx-content-text); border-color: var(--ifx-content-text-faint); }
+.ifx-btn.ifx-btn--on-paper:focus-visible { box-shadow: 0 0 0 2px var(--ifx-content-surface), 0 0 0 4px var(--ifx-accent-strong); }
+
+.ifx-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--ifx-font-ui);
+  font-size: var(--ifx-text-2xs);
+  font-weight: 700;
+  letter-spacing: .4px;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: var(--ifx-radius-pill);
+  line-height: 1.6;
+}
+.ifx-badge--bull { background: var(--ifx-bull-dim); color: var(--ifx-bull); }
+.ifx-badge--bear { background: var(--ifx-bear-dim); color: var(--ifx-bear); }
+.ifx-badge--warn { background: var(--ifx-warn-dim); color: var(--ifx-warn); }
+.ifx-badge--info { background: var(--ifx-info-dim); color: var(--ifx-info); }
+.ifx-badge--neutral { background: rgba(255,255,255,.06); color: var(--ifx-shell-text-muted); }
+.ifx-badge--on-paper.ifx-badge--neutral { background: var(--ifx-content-border); color: var(--ifx-content-text-muted); }
+
+.ifx-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; background: currentColor; }
+.ifx-dot--pulse { animation: ifx-pulse 1.6s var(--ifx-ease) infinite; }
+@keyframes ifx-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .35; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ifx-dot--pulse { animation: none; }
+}
+
+.ifx-card {
+  background: var(--ifx-content-surface);
+  border: 1px solid var(--ifx-content-border);
+  border-radius: var(--ifx-radius-lg);
+  box-shadow: var(--ifx-shadow-sm);
+}
+
+/* Tone utility — good/warn/bad/faint, used by footer stats, market-health,
+   ticker %, etc. instead of ad-hoc inline style.color= assignments. */
+.ifx-tone-good { color: var(--ifx-bull); }
+.ifx-tone-warn { color: var(--ifx-warn); }
+.ifx-tone-bad  { color: var(--ifx-bear); }
+.ifx-tone-faint{ color: var(--ifx-shell-text-faint); }
+
+.ifx-health-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  display: inline-block;
+  background: var(--ifx-shell-text-faint);
+  transition: background var(--ifx-fast) var(--ifx-ease);
+}
+.ifx-health-dot--healthy { background: var(--ifx-bull); }
+.ifx-health-dot--unhealthy { background: var(--ifx-bear); }
+
+/* ── Header ─────────────────────────────────────────────────────────── */
+.ifx-header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--ifx-space-4);
+  padding: 0 var(--ifx-space-4);
+  height: 44px;
+  background: linear-gradient(180deg, var(--ifx-shell-surface), var(--ifx-shell-bg));
+  border-bottom: 1px solid var(--ifx-shell-border);
+}
+.ifx-header-brand { display: flex; align-items: center; gap: 8px; }
+.ifx-brand-mark {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: var(--ifx-radius-sm);
+  background: var(--ifx-accent-dim); color: var(--ifx-accent);
+  font-family: var(--ifx-font-mono); font-weight: 700; font-size: 11px;
+}
+.ifx-brand-word {
+  font-family: var(--ifx-font-ui); font-weight: 700; font-size: var(--ifx-text-base);
+  letter-spacing: 2px; color: var(--ifx-shell-text);
+}
+.ifx-header-center, .ifx-header-right { display: flex; align-items: center; gap: var(--ifx-space-2); }
+.ifx-ws-indicator { display: inline-flex; align-items: center; gap: 5px; font-size: var(--ifx-text-xs); color: var(--ifx-shell-text-muted); }
+.ifx-header-clock { font-size: var(--ifx-text-sm); color: var(--ifx-shell-text-muted); }
+.ifx-health-dots { display: inline-flex; align-items: center; gap: 4px; padding: 0 4px; }
+.ifx-theme-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border-radius: var(--ifx-radius-sm);
+  background: transparent; border: 1px solid var(--ifx-shell-border);
+  color: var(--ifx-shell-text-muted); cursor: pointer; font-size: 13px;
+  transition: border-color var(--ifx-fast) var(--ifx-ease), color var(--ifx-fast) var(--ifx-ease);
+}
+.ifx-theme-toggle:hover { color: var(--ifx-accent); border-color: var(--ifx-accent); }
+.ifx-theme-toggle:focus-visible { outline: none; box-shadow: var(--ifx-focus-ring); }
+
+.ifx-shell-row { display: flex; flex-wrap: wrap; }
+.ifx-shell-row > * { flex: 1 1 auto; min-width: 0; }
+
+/* ── Ticker strip ───────────────────────────────────────────────────── */
+.ifx-ticker {
+  display: flex; align-items: center; gap: var(--ifx-space-3);
+  padding: 0 var(--ifx-space-4);
+  height: 30px;
+  background: var(--ifx-shell-surface);
+  border-bottom: 1px solid var(--ifx-shell-border);
+  overflow-x: auto;
+}
+.ifx-ticker-title { font-size: var(--ifx-text-2xs); font-weight: 700; letter-spacing: 1px; color: var(--ifx-shell-text-faint); flex-shrink: 0; }
+.ifx-ticker-tile { display: flex; align-items: baseline; gap: 6px; flex-shrink: 0; white-space: nowrap; }
+.ifx-ticker-tile--muted { opacity: .55; }
+.ifx-ticker-name { font-size: var(--ifx-text-2xs); font-weight: 600; color: var(--ifx-shell-text-muted); }
+.ifx-ticker-price { font-size: var(--ifx-text-sm); font-weight: 600; color: var(--ifx-shell-text); }
+.ifx-ticker-pct { font-size: var(--ifx-text-xs); font-weight: 600; }
+.ifx-ticker-spacer { flex: 1; min-width: 8px; }
+.ifx-ticker-note { font-size: var(--ifx-text-2xs); color: var(--ifx-shell-text-faint); flex-shrink: 0; white-space: nowrap; }
+
+/* ── Market health strip ────────────────────────────────────────────── */
+.ifx-market-health {
+  display: flex; align-items: center; gap: var(--ifx-space-3);
+  padding: 0 var(--ifx-space-4);
+  height: 30px;
+  background: var(--ifx-shell-surface);
+  border-bottom: 1px solid var(--ifx-shell-border);
+  overflow-x: auto;
+}
+.ifx-mh-stat { display: flex; align-items: baseline; gap: 4px; font-size: var(--ifx-text-2xs); color: var(--ifx-shell-text-faint); white-space: nowrap; }
+.ifx-mh-stat b { font-size: var(--ifx-text-xs); font-weight: 700; }
+.ifx-mh-muted { font-size: var(--ifx-text-xs); color: var(--ifx-shell-text-faint); }
+
+/* ── Nav / quick controls ───────────────────────────────────────────── */
+.ifx-nav {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px var(--ifx-space-4);
+  background: var(--ifx-shell-bg);
+  border-bottom: 1px solid var(--ifx-shell-border);
+  overflow-x: auto;
+}
+.ifx-nav-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 10px;
+  border-radius: var(--ifx-radius-pill);
+  border: 1px solid var(--ifx-shell-border);
+  background: transparent;
+  color: var(--ifx-shell-text-faint);
+  font-family: var(--ifx-font-ui); font-size: var(--ifx-text-2xs); font-weight: 600;
+  cursor: pointer; white-space: nowrap;
+  transition: all var(--ifx-fast) var(--ifx-ease);
+}
+.ifx-nav-btn-icon { font-size: 10px; }
+.ifx-nav-btn:hover { color: var(--ifx-shell-text-muted); }
+.ifx-nav-btn:focus-visible { outline: none; box-shadow: var(--ifx-focus-ring); }
+.ifx-nav-btn--active { background: var(--ifx-accent-dim); border-color: var(--ifx-accent); color: var(--ifx-accent); }
+
+/* ── Footer diagnostics bar ─────────────────────────────────────────── */
+.ifx-footer {
+  display: flex; align-items: center; gap: var(--ifx-space-3);
+  padding: 0 var(--ifx-space-4);
+  height: 24px;
+  background: var(--ifx-shell-bg);
+  border-top: 1px solid var(--ifx-shell-border);
+  font-size: var(--ifx-text-2xs);
+  color: var(--ifx-shell-text-faint);
+  overflow-x: auto;
+  /* Kept pinned across scroll -- replaces the old .top-status-strip's
+     position:sticky behavior, which no longer applies now that this
+     element dropped that class. */
+  position: sticky;
+  top: 0;
+  z-index: 80;
+}
+.ifx-footer-stat { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+.ifx-footer-phase, .ifx-footer-version { margin-left: auto; color: var(--ifx-shell-text-faint); }
+.ifx-footer-version { opacity: .7; }
+
+/* ── Market Pulse (sector/stock heatmap) ────────────────────────────── */
+.ifx-pulse {
+  display: flex; flex-direction: column; min-height: 0;
+  background: var(--ifx-content-surface);
+  color: var(--ifx-content-text);
+  border: 1px solid var(--ifx-content-border);
+  border-radius: var(--ifx-radius-lg);
+  overflow: hidden;
+  max-height: 260px;
+  /* !important justified and targeted, not blind: confirmed live via
+     getComputedStyle() that main.css's ".screener-pro-v4
+     [data-draggable-section]{width:100%;flex:0 0 auto}" (a generic
+     attribute-selector rule, specificity 0,2,0) was beating this class
+     selector (0,1,0) and forcing this element to balloon to ~100% of the
+     row, squeezing .ifx-cockpit-panel down to nothing next to it. */
+  flex: 0 0 340px !important;
+  width: 340px !important;
+}
+.ifx-pulse.section-expanded { flex: 1 1 auto !important; width: auto !important; max-height: none; }
+.ifx-pulse.section-collapsed { max-height: 40px; }
+.ifx-pulse.section-collapsed .ifx-pulse-body { display: none; }
+@media (max-width: 1100px) {
+  .ifx-pulse { flex-basis: auto !important; width: 100% !important; }
+}
+.ifx-pulse-head {
+  display: flex; align-items: center; gap: var(--ifx-space-3);
+  padding: 8px var(--ifx-space-3);
+  border-bottom: 1px solid var(--ifx-content-border);
+  flex-wrap: wrap;
+}
+.ifx-pulse-title {
+  display: flex; align-items: center; gap: 6px;
+  font-family: var(--ifx-font-ui); font-size: var(--ifx-text-xs); font-weight: 700;
+  text-transform: uppercase; letter-spacing: .6px; color: var(--ifx-content-text-muted);
+}
+.ifx-drag-handle { cursor: grab; color: var(--ifx-content-text-faint); }
+.ifx-pulse-tabs { display: flex; gap: 4px; margin-left: auto; flex-wrap: wrap; }
+.ifx-pulse-tab {
+  padding: 3px 9px; border-radius: var(--ifx-radius-pill);
+  border: 1px solid var(--ifx-content-border); background: transparent;
+  color: var(--ifx-content-text-faint); font-size: var(--ifx-text-2xs); font-weight: 600;
+  cursor: pointer;
+}
+.ifx-pulse-tab--active { background: var(--ifx-accent-dim); border-color: var(--ifx-accent-strong); color: var(--ifx-accent-strong); }
+.ifx-section-size-controls { display: flex; gap: 2px; }
+.ifx-section-size-controls button {
+  width: 18px; height: 18px; border-radius: 4px; border: 1px solid var(--ifx-content-border);
+  background: transparent; color: var(--ifx-content-text-faint); cursor: pointer; font-size: 11px; line-height: 1;
+}
+.ifx-pulse-body { flex: 1; overflow: auto; min-height: 0; padding: var(--ifx-space-2); }
+.ifx-pulse-empty { padding: var(--ifx-space-4); text-align: center; color: var(--ifx-content-text-faint); font-size: var(--ifx-text-sm); }
+
+.ifx-pulse-grid--sectors { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+.ifx-pulse-card {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 7px 9px; border-radius: var(--ifx-radius-sm);
+  border: 1px solid var(--ifx-content-border);
+  border-left: 3px solid var(--ifx-heat, var(--ifx-content-border));
+  background: var(--ifx-content-bg);
+  cursor: pointer; text-align: left;
+  transition: transform var(--ifx-fast) var(--ifx-ease), box-shadow var(--ifx-fast) var(--ifx-ease);
+}
+.ifx-pulse-card:hover { transform: translateY(-1px); box-shadow: var(--ifx-shadow-sm); }
+.ifx-pulse-card-top { display: flex; justify-content: space-between; align-items: baseline; font-size: var(--ifx-text-xs); color: var(--ifx-content-text); }
+.ifx-pulse-card-top strong { color: var(--ifx-heat, var(--ifx-content-text)); }
+.ifx-pulse-card-ad { display: flex; gap: 8px; font-size: var(--ifx-text-2xs); font-weight: 600; }
+
+.ifx-pulse-grid--stocks { display: flex; flex-wrap: wrap; gap: 5px; }
+.ifx-pulse-tile {
+  display: flex; flex-direction: column; justify-content: center; gap: 2px;
+  width: var(--ifx-tile, 100px); height: var(--ifx-tile, 100px);
+  padding: 6px; border-radius: var(--ifx-radius-sm); border: none;
+  background: var(--ifx-heat, var(--ifx-content-text-faint));
+  color: #fff; text-align: left; cursor: pointer;
+  transition: transform var(--ifx-fast) var(--ifx-ease);
+}
+.ifx-pulse-tile:hover { transform: scale(1.03); }
+.ifx-pulse-tile b { font-size: var(--ifx-text-sm); }
+.ifx-pulse-tile span { font-size: var(--ifx-text-2xs); opacity: .92; }
+.ifx-pulse-tile small { font-size: 9px; opacity: .8; }
+
+/* ── Signal Cockpit ─────────────────────────────────────────────────── */
+.ifx-cockpit-panel {
+  /* Mirrors main.css's ".top-pulse-cockpit-row .signal-cockpit-panel"
+     flex-sizing (that rule targets a class this element no longer has) so
+     the cockpit still fills the row next to the sector ribbon.
+     Explicit background+color (not just relying on every descendant) so
+     nothing here can end up transparent-over-the-dark-page-gradient with
+     dark text on top -- i.e. invisible. Found exactly this live: the
+     panel had color set but no background, making it a dark-text-on-dark-
+     background void that looked like the cockpit wasn't rendering at all. */
+  display: flex; flex-direction: column;
+  flex: 1 1 auto; min-width: 260px; margin: 0;
+  background: var(--ifx-content-bg);
+  color: var(--ifx-content-text);
+  border: 1px solid var(--ifx-content-border);
+  border-radius: var(--ifx-radius-lg);
+  min-height: 200px;
+}
+.ifx-cockpit { background: transparent; flex: 1; min-height: 0; overflow-y: auto; color: inherit; }
+.ifx-cockpit-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--ifx-space-3);
+  padding: var(--ifx-space-1);
+}
+.ifx-cockpit-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 6px; padding: var(--ifx-space-8);
+  color: var(--ifx-content-text-faint);
+}
+.ifx-cockpit-empty-icon { font-size: 28px; opacity: .5; }
+.ifx-cockpit-empty-title { font-size: var(--ifx-text-base); font-weight: 700; color: var(--ifx-content-text-muted); }
+.ifx-cockpit-empty-sub { font-size: var(--ifx-text-xs); text-align: center; max-width: 320px; }
+
+.ifx-ticket {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: var(--ifx-space-4);
+  background: var(--ifx-content-surface);
+  border: 1px solid var(--ifx-content-border);
+  border-top: 3px solid var(--ifx-content-border);
+  border-radius: var(--ifx-radius-lg);
+  box-shadow: var(--ifx-shadow-sm);
+  cursor: pointer;
+  transition: transform var(--ifx-fast) var(--ifx-ease), box-shadow var(--ifx-fast) var(--ifx-ease), border-color var(--ifx-fast) var(--ifx-ease);
+}
+.ifx-ticket:hover, .ifx-ticket:focus-visible { transform: translateY(-2px); box-shadow: var(--ifx-shadow-md); outline: none; }
+.ifx-ticket:focus-visible { box-shadow: var(--ifx-shadow-md), var(--ifx-focus-ring); }
+.ifx-ticket--bull { border-top-color: var(--ifx-bull); }
+.ifx-ticket--bear { border-top-color: var(--ifx-bear); }
+
+.ifx-ticket-head { display: flex; justify-content: space-between; align-items: flex-start; }
+.ifx-ticket-symbol-block { display: flex; align-items: center; gap: 8px; }
+.ifx-ticket-symbol { font-family: var(--ifx-font-mono); font-weight: 700; font-size: var(--ifx-text-lg); color: var(--ifx-content-text); letter-spacing: .2px; }
+.ifx-ticket-head-right { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.ifx-ticket-locked { font-size: 9px; color: var(--ifx-content-text-faint); white-space: nowrap; }
+.ifx-ticket-age { font-size: 9px; color: var(--ifx-content-text-faint); }
+
+.ifx-ticket-conviction { display: flex; align-items: center; gap: 12px; }
+.ifx-score-arc-wrap { position: relative; width: 64px; height: 64px; flex-shrink: 0; }
+.ifx-score-arc circle { transition: stroke-dashoffset var(--ifx-normal) var(--ifx-ease); }
+.ifx-score-arc-value {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: var(--ifx-text-xl);
+}
+.ifx-ticket-conviction-meta { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.ifx-ticket-grade { font-family: var(--ifx-font-mono); font-weight: 700; font-size: var(--ifx-text-lg); }
+
+.ifx-mtf-row { display: flex; justify-content: space-between; gap: 2px; padding: 6px 8px; background: var(--ifx-content-bg); border-radius: var(--ifx-radius-sm); }
+.ifx-mtf-dot { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.ifx-mtf-dot-mark { width: 7px; height: 7px; border-radius: 50%; }
+.ifx-mtf-dot-label { font-size: 8px; font-weight: 700; letter-spacing: .3px; color: var(--ifx-content-text-faint); }
+.ifx-mtf-dot--bull .ifx-mtf-dot-mark { background: var(--ifx-bull); }
+.ifx-mtf-dot--bear .ifx-mtf-dot-mark { background: var(--ifx-bear); }
+.ifx-mtf-dot--flat .ifx-mtf-dot-mark { background: var(--ifx-content-text-faint); }
+
+.ifx-ticket-prices { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px 6px; }
+.ifx-ticket-price { display: flex; flex-direction: column; gap: 1px; }
+.ifx-ticket-price-label { font-size: 9px; text-transform: uppercase; letter-spacing: .3px; color: var(--ifx-content-text-faint); }
+.ifx-ticket-price-val { font-size: var(--ifx-text-sm); font-weight: 700; color: var(--ifx-content-text); }
+.ifx-ticket-price--entry .ifx-ticket-price-val { color: var(--ifx-info); }
+.ifx-ticket-price--sl .ifx-ticket-price-val { color: var(--ifx-bear); }
+.ifx-ticket-price--t1 .ifx-ticket-price-val { color: var(--ifx-bull); }
+
+@media (max-width: 768px) {
+  .ifx-cockpit-grid { grid-template-columns: 1fr; }
+  .ifx-header-center { display: none; }
+}
+
+/* Visible keyboard focus everywhere in the new shell — the audit found no
+   systematic focus styling in the legacy file. */
+.ifx-shell a:focus-visible,
+.ifx-shell button:focus-visible,
+.ifx-shell [tabindex]:focus-visible {
+  outline: none;
+  box-shadow: var(--ifx-focus-ring);
+}

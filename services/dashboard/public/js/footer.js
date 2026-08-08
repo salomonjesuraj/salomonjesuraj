@@ -1,5 +1,6 @@
 /**
  * Footer Diagnostics Bar - pipeline health + data freshness.
+ * v2 design system (ifx-* classes, theme.css).
  */
 import { ws } from './ws.js';
 import { api } from './api.js';
@@ -9,7 +10,7 @@ import {
   DASHBOARD_PHASE,
   DASHBOARD_PENDING_PHASES,
   DASHBOARD_PHASE_LABEL,
-} from './version.js?v=6.4.0-index-pine-drag';
+} from './version.js?v=8.0.0-ui-overhaul';
 
 function istTime() {
   const now = new Date(Date.now() + 5.5 * 3600000);
@@ -39,6 +40,10 @@ function ageLabel(ageMs) {
   return `${Math.floor(h / 24)}d ago`;
 }
 
+function sessionTone(session) {
+  return session === 'OPEN' ? 'good' : session === 'PRE' ? 'warn' : 'faint';
+}
+
 export class Footer {
   constructor(containerEl) {
     this._el = containerEl;
@@ -51,6 +56,7 @@ export class Footer {
   }
 
   init() {
+    this._el.classList.add('ifx-shell', 'ifx-footer');
     this._render();
 
     this._unsubs.push(api.subscribe('/api/diagnostics', (resp) => {
@@ -82,42 +88,30 @@ export class Footer {
       this._setVal('ftClock', istTime());
       const stats = ws.stats;
       const wsDot = document.getElementById('ftWsDot');
-      if (wsDot) wsDot.className = 'health-dot ' + (stats.connected ? 'healthy' : 'unhealthy');
+      if (wsDot) {
+        wsDot.classList.toggle('ifx-health-dot--healthy', !!stats.connected);
+        wsDot.classList.toggle('ifx-health-dot--unhealthy', !stats.connected);
+      }
     }, 1000);
   }
 
   _render() {
     const session = marketSession();
-    const sessColor = session === 'OPEN' ? 'var(--green)' : session === 'PRE' ? 'var(--gold)' : 'var(--text-disabled)';
-
     this._el.innerHTML = `
-      <div class="footer-stat" title="Current IST time">
-        <span class="value" id="ftClock" style="font-family:var(--font-mono)">${istTime()}</span>
-      </div>
-      <div class="footer-stat" title="NSE market session">
-        <span style="color:${sessColor};font-weight:600;font-size:10px" id="ftSession">${session}</span>
-      </div>
-      <div class="footer-stat" title="Upstox WebSocket: is live data flowing?">
-        Upstox <span class="health-dot unknown" id="ftKiteDot"></span>
-        <span class="value" id="ftKiteState" style="font-size:9px">-</span>
-      </div>
-      <div class="footer-stat" title="Age of most recent feature data in Redis">
-        Data <span class="value" id="ftDataAge" style="font-size:9px">-</span>
-      </div>
-      <div class="footer-stat">Syms <span class="value" id="ftSymbols">-</span></div>
-      <div class="footer-stat">Sectors <span class="value" id="ftSectors">-</span></div>
-      <div class="footer-stat">Signals <span class="value" id="ftSignals">0</span></div>
-      <div class="footer-stat">Watch <span class="value" id="ftWatch">-</span></div>
-      <div class="footer-stat" title="Smart option-chain queue: refreshed / candidates / failures">ChainQ <span class="value" id="ftChainQ">-</span></div>
-      <div class="footer-stat">WS <span class="health-dot unknown" id="ftWsDot"></span></div>
-      <div class="footer-stat">API <span class="health-dot unknown" id="ftApiDot"></span></div>
-      <div class="footer-stat">Feature <span class="health-dot unknown" id="ftFeatureDot"></span></div>
-      <div class="footer-stat footer-phase" title="${DASHBOARD_PHASE_LABEL}">
-        ${DASHBOARD_PHASE} - Pending <span class="value">${DASHBOARD_PENDING_PHASES}</span>
-      </div>
-      <div class="footer-stat footer-version" title="Dashboard build/version">
-        ${DASHBOARD_VERSION} - Updated ${DASHBOARD_UPDATED_AT_IST}
-      </div>
+      <div class="ifx-footer-stat ifx-mono" title="Current IST time"><span id="ftClock">${istTime()}</span></div>
+      <div class="ifx-footer-stat" title="NSE market session"><span class="ifx-tone-${sessionTone(session)}" id="ftSession">${session}</span></div>
+      <div class="ifx-footer-stat" title="Upstox WebSocket: is live data flowing?">Upstox <span class="ifx-health-dot" id="ftKiteDot"></span><span class="ifx-mono" id="ftKiteState">-</span></div>
+      <div class="ifx-footer-stat" title="Age of most recent feature data in Redis">Data <span class="ifx-mono" id="ftDataAge">-</span></div>
+      <div class="ifx-footer-stat">Syms <span class="ifx-mono" id="ftSymbols">-</span></div>
+      <div class="ifx-footer-stat">Sectors <span class="ifx-mono" id="ftSectors">-</span></div>
+      <div class="ifx-footer-stat">Signals <span class="ifx-mono" id="ftSignals">0</span></div>
+      <div class="ifx-footer-stat">Watch <span class="ifx-mono" id="ftWatch">-</span></div>
+      <div class="ifx-footer-stat" title="Smart option-chain queue: refreshed / candidates / failures">ChainQ <span class="ifx-mono" id="ftChainQ">-</span></div>
+      <div class="ifx-footer-stat">WS <span class="ifx-health-dot" id="ftWsDot"></span></div>
+      <div class="ifx-footer-stat">API <span class="ifx-health-dot" id="ftApiDot"></span></div>
+      <div class="ifx-footer-stat">Feature <span class="ifx-health-dot" id="ftFeatureDot"></span></div>
+      <div class="ifx-footer-stat ifx-footer-phase" title="${DASHBOARD_PHASE_LABEL}">${DASHBOARD_PHASE} · Pending <span class="ifx-mono">${DASHBOARD_PENDING_PHASES}</span></div>
+      <div class="ifx-footer-stat ifx-footer-version">${DASHBOARD_VERSION} · Updated ${DASHBOARD_UPDATED_AT_IST}</div>
     `;
   }
 
@@ -126,11 +120,18 @@ export class Footer {
     if (el) el.textContent = val;
   }
 
+  _setTone(id, tone) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.className = el.className.replace(/ifx-tone-\w+/g, '').trim();
+    el.classList.add(`ifx-tone-${tone}`);
+  }
+
   _updateStats() {
     const d = this._diag;
     this._setVal('ftSectors', d.sectors_loaded || 0);
     const apiDot = document.getElementById('ftApiDot');
-    if (apiDot) apiDot.className = 'health-dot healthy';
+    if (apiDot) { apiDot.classList.add('ifx-health-dot--healthy'); apiDot.classList.remove('ifx-health-dot--unhealthy'); }
   }
 
   _updateOptionQueue() {
@@ -139,14 +140,14 @@ export class Footer {
     if (!el) return;
     if (q.enabled === false) {
       el.textContent = 'OFF';
-      el.style.color = 'var(--red)';
+      this._setTone('ftChainQ', 'bad');
       return;
     }
     const refreshed = Number(q.refreshed_count || 0);
     const candidates = Number(q.candidate_count || 0);
     const failed = Number(q.failed_count || 0);
     el.textContent = `${refreshed}/${candidates}${failed ? ` !${failed}` : ''}`;
-    el.style.color = failed ? 'var(--gold)' : refreshed ? 'var(--green)' : 'var(--text-muted)';
+    this._setTone('ftChainQ', failed ? 'warn' : refreshed ? 'good' : 'faint');
   }
 
   _updateHealth() {
@@ -154,7 +155,9 @@ export class Footer {
 
     const featDot = document.getElementById('ftFeatureDot');
     if (featDot && h['feature-engine']) {
-      featDot.className = 'health-dot ' + (h['feature-engine'].status === 'healthy' ? 'healthy' : 'unhealthy');
+      const healthy = h['feature-engine'].status === 'healthy';
+      featDot.classList.toggle('ifx-health-dot--healthy', healthy);
+      featDot.classList.toggle('ifx-health-dot--unhealthy', !healthy);
     }
 
     const kiteDot = document.getElementById('ftKiteDot');
@@ -163,7 +166,10 @@ export class Footer {
     if (ing) {
       const isLive = ing.state === 'streaming' && Number(ing.last_tick_age_ms || 999999) < 10000;
       const isStale = ing.state === 'disconnected';
-      if (kiteDot) kiteDot.className = 'health-dot ' + (isLive ? 'healthy' : isStale ? 'unhealthy' : 'unknown');
+      if (kiteDot) {
+        kiteDot.classList.toggle('ifx-health-dot--healthy', isLive);
+        kiteDot.classList.toggle('ifx-health-dot--unhealthy', isStale);
+      }
       if (kiteState) {
         const auth = ing.auth_error ? String(ing.auth_error).replace(/_/g, ' ') : '';
         kiteState.textContent = isLive
@@ -171,7 +177,7 @@ export class Footer {
           : auth ? auth.toUpperCase()
           : ing.state ? String(ing.state).toUpperCase()
           : 'No token';
-        kiteState.style.color = isLive ? 'var(--green)' : 'var(--red)';
+        this._setTone('ftKiteState', isLive ? 'good' : 'bad');
         if (ing.token_expiry_ist) {
           kiteState.title = `Token source: ${ing.token_source || '-'} - Expires: ${ing.token_expiry_ist}`;
         }
@@ -202,17 +208,14 @@ export class Footer {
     if (ageEl && ageMs !== undefined) {
       const label = ageMs < 0 ? 'Stale / re-login' : ageLabel(ageMs);
       ageEl.textContent = label;
-      ageEl.style.color = ageMs < 0 ? 'var(--red)' :
-        ageMs < 5000 ? 'var(--green)' :
-        ageMs < 60000 ? 'var(--gold)' : 'var(--red)';
+      this._setTone('ftDataAge', ageMs < 0 ? 'bad' : ageMs < 5000 ? 'good' : ageMs < 60000 ? 'warn' : 'bad');
     }
 
     const session = marketSession();
     const sessEl = document.getElementById('ftSession');
     if (sessEl) {
       sessEl.textContent = session;
-      sessEl.style.color = session === 'OPEN' ? 'var(--green)' :
-        session === 'PRE' ? 'var(--gold)' : 'var(--text-disabled)';
+      this._setTone('ftSession', sessionTone(session));
     }
   }
 
