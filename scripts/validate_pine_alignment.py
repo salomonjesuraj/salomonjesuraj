@@ -137,6 +137,13 @@ def main():
         return
 
     try:
+        from api.routes.mtf import _donchian_channel, DONCHIAN_PERIOD
+        check("api.routes.mtf Donchian channel function imports", True)
+    except Exception as e:
+        check("api.routes.mtf Donchian channel function imports", False, str(e))
+        return
+
+    try:
         from alerter.formatter import format_signal
         check("alerter.formatter imports", True)
     except Exception as e:
@@ -663,6 +670,41 @@ def main():
 
     ict6 = SymbolState(symbol="ICT6")
     check("update_ict never crashes on thin history (<3 bars)", update_ict(ict6) is None and ict6.fvg_bullish is None)
+
+    # ═══════════════════════════════════════════════
+    # PHASE 7 (NEW) — ATR-SCALED POSITION SIZING + DONCHIAN CHANNEL
+    # ═══════════════════════════════════════════════
+    print("\n--- PHASE 7 (NEW): ATR-SCALED POSITION SIZING (TURTLE) + DONCHIAN CHANNEL ---")
+
+    no_atr = compute_position_size(5000, 2, 50, max_lots=5)
+    check("No-ATR call preserves the exact original 2-key result shape", no_atr == {"quantity": 250, "lot_count": 5}, f"got {no_atr}")
+    check("No-ATR call never adds a sizing_method key (backward compat)", "sizing_method" not in no_atr)
+
+    tight_stop = compute_position_size(5000, 2, 50, max_lots=100, atr=50)
+    check("ATR cap kicks in when a tight stop implies oversizing", tight_stop.get("sizing_method") == "atr_capped", f"got {tight_stop}")
+    check("ATR-capped size matches risk_amount/(multiplier*atr)/lot_size", tight_stop["lot_count"] == 1, f"got {tight_stop}")
+
+    wide_stop = compute_position_size(5000, 100, 50, max_lots=100, atr=1.0)
+    check("Risk-distance sizing still wins when it's the tighter constraint", wide_stop.get("sizing_method") == "risk_distance", f"got {wide_stop}")
+
+    zero_atr = compute_position_size(5000, 2, 50, max_lots=5, atr=0.0)
+    check("atr=0.0 is treated as not supplied, not a division by zero", zero_atr == {"quantity": 250, "lot_count": 5}, f"got {zero_atr}")
+    none_input = compute_position_size(0, 2, 50, atr=10.0)
+    check("Degenerate risk_amount never raises even with ATR supplied", none_input == {"quantity": 0, "lot_count": 0})
+
+    donchian_bars = [{"high": 100 + i, "low": 90 + i, "close": 95 + i} for i in range(25)]
+    dc = _donchian_channel(donchian_bars, period=20)
+    check("Donchian channel high/low computed correctly over the window", dc["high"] == 124 and dc["low"] == 95, f"got {dc}")
+    check("Fresh high breakout flagged when today set the window's extreme", dc["fresh_high_breakout"] is True, f"got {dc}")
+    check("Fresh low breakout correctly false (today's low isn't the window min)", dc["fresh_low_breakout"] is False, f"got {dc}")
+
+    pullback_bars = list(donchian_bars)
+    pullback_bars[-1] = {"high": 110, "low": 108, "close": 109}
+    dc_pullback = _donchian_channel(pullback_bars, period=20)
+    check("A pullback day (not setting a new extreme) is NOT flagged as a fresh breakout", dc_pullback["fresh_high_breakout"] is False, f"got {dc_pullback}")
+
+    thin_dc = _donchian_channel(donchian_bars[:5], period=DONCHIAN_PERIOD)
+    check("Thin history returns None channel values, never crashes", thin_dc["high"] is None and thin_dc["low"] is None)
 
     # ═══════════════════════════════════════════════
     # SUMMARY

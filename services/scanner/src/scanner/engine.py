@@ -142,12 +142,25 @@ class ScannerEngine:
         # Update state AFTER evaluation (so prev_* reflects pre-evaluation)
         state.update_from_features(payload)
 
-    async def _recommended_lots(self, symbol: str, entry_price: float, invalidation_price: float) -> dict:
+    async def _recommended_lots(
+        self, symbol: str, entry_price: float, invalidation_price: float, atr: float | None = None
+    ) -> dict:
         """Signal-time position-size estimate using underlying entry/stop —
         matches simple_structure_pivot_ma_plan_v6.pine's Position Sizing
         (1% Rule). This is an early estimate for the dashboard/alert to show
         immediately; api/routes/execution.py recomputes the authoritative
         number once real option premium/delta are available at staging.
+
+        `atr` (underlying ATR, price terms) is optional and, when supplied,
+        activates the Turtle-style volatility cap in compute_position_size —
+        see libs/infusion_common/sizing.py for why this exists (a tight
+        stop alone can imply a larger size than the instrument's actual
+        volatility supports). Not threaded into api/routes/execution.py's
+        call: that one sizes off option PREMIUM risk, a different unit from
+        the underlying's ATR, and would need a delta-scaled ATR proxy to be
+        correct there rather than the raw underlying value — left as a
+        separate, not-yet-done enhancement rather than wiring in a
+        unit-mismatched number.
         """
         per_unit_risk = abs(entry_price - invalidation_price)
         lot_size = self._symbol_lot_sizes.get(symbol, 1)
@@ -162,7 +175,7 @@ class ScannerEngine:
             risk_pct = float(settings.get("risk_per_trade_pct") or 1.0)
             risk_amount = capital * risk_pct / 100.0
         max_lots = int(settings.get("max_lots") or 5)
-        sizing = compute_position_size(risk_amount, per_unit_risk, lot_size, max_lots=max_lots)
+        sizing = compute_position_size(risk_amount, per_unit_risk, lot_size, max_lots=max_lots, atr=atr)
         return {**sizing, "lot_size": lot_size, "risk_amount": round(risk_amount, 2)}
 
     async def _fetch_mtf_cache(self, symbol: str) -> dict | None:
@@ -238,8 +251,9 @@ class ScannerEngine:
         )
 
         # ── Position sizing (early estimate) ───────────
+        atr_for_sizing = candidate.features_snapshot.get("atr_14")
         sub_scores["position_sizing"] = await self._recommended_lots(
-            candidate.symbol, candidate.entry_price, candidate.invalidation_price
+            candidate.symbol, candidate.entry_price, candidate.invalidation_price, atr=atr_for_sizing
         )
 
         created_us = now_us()

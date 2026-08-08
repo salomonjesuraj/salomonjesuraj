@@ -504,6 +504,39 @@ def _ma_regime(daily_bars: list[dict]) -> dict:
     }
 
 
+DONCHIAN_PERIOD = 20  # Donchian's own original 4-week channel convention, not Turtle's later 89-day/13-day variant
+
+
+def _donchian_channel(daily_bars: list[dict], period: int = DONCHIAN_PERIOD) -> dict:
+    """N-day high/low channel + fresh-breakout flag (Covel, Trend
+    Following, Appendix F — the Turtle system). Deliberately using
+    Donchian's original ~4-week (20 trading day) window here rather than
+    the Turtle variant's 89-day entry / 13-day exit channels: those were
+    calibrated for multi-month futures positions (Covel's cited backtest
+    averaged a 305-day hold), a poor match for Infusion's weekly/monthly
+    options. This is informational channel data, not a new live-firing
+    entry strategy — see the Phase 7 commit for why.
+    """
+    if len(daily_bars) < period:
+        return {"period": period, "high": None, "low": None, "fresh_high_breakout": False, "fresh_low_breakout": False}
+
+    window = daily_bars[-period:]
+    channel_high = max(b["high"] for b in window)
+    channel_low = min(b["low"] for b in window)
+    latest = daily_bars[-1]
+
+    return {
+        "period": period,
+        "high": round(channel_high, 2),
+        "low": round(channel_low, 2),
+        # "Fresh" = today's own bar is what set the extreme -- a breakout
+        # happening now, not just price sitting at/above a channel it set
+        # days ago.
+        "fresh_high_breakout": latest["high"] >= channel_high,
+        "fresh_low_breakout": latest["low"] <= channel_low,
+    }
+
+
 def _major_blocker(blocker_bars: dict[str, list[dict]], ltp: float) -> dict:
     """Nearest opposing swing pivot on the higher timeframes, between price
     and either direction's target — matches Pine's "Major Blocker" concept.
@@ -750,6 +783,7 @@ async def compute_mtf(redis, symbol: str, store: bool = True) -> dict:
     ma_regime = _ma_regime(daily)
     daily_pivots = fractal_pivots_indexed(daily) if daily else []
     chart_patterns = detect_chart_patterns(daily_pivots, current_ltp) if current_ltp else []
+    donchian = _donchian_channel(daily) if daily else {"period": DONCHIAN_PERIOD, "high": None, "low": None, "fresh_high_breakout": False, "fresh_low_breakout": False}
     quality = "historical" if any(row["bars"] for row in timeframes.values()) else "missing"
     if any(row["quality"] == "limited" for row in timeframes.values()) and quality == "historical":
         quality = "limited"
@@ -783,6 +817,7 @@ async def compute_mtf(redis, symbol: str, store: bool = True) -> dict:
         "virgin_cpr_zones": virgin_cpr_zones,
         "ma_regime": ma_regime,
         "chart_patterns": chart_patterns,
+        "donchian": donchian,
         "bull_count": bull_count,
         "bear_count": bear_count,
         "mixed_count": mixed_count,

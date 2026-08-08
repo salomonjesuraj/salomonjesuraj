@@ -159,6 +159,7 @@ class VolVwapBreakout(BaseStrategy):
         mtf_cache = features.get("mtf_cache") or {}
         ma_regime = mtf_cache.get("ma_regime") or {}
         chart_patterns = mtf_cache.get("chart_patterns") or []
+        donchian = mtf_cache.get("donchian") or {}
         return SignalCandidate(
             symbol=state.symbol,
             strategy_id=self.strategy_id,
@@ -218,6 +219,10 @@ class VolVwapBreakout(BaseStrategy):
                 "order_block_bearish_low": ml.get("order_block_bearish_low"),
                 "order_block_bearish_high": ml.get("order_block_bearish_high"),
                 "order_block_bearish_validated": ml.get("order_block_bearish_validated"),
+                "donchian_high": donchian.get("high"),
+                "donchian_low": donchian.get("low"),
+                "donchian_fresh_high_breakout": donchian.get("fresh_high_breakout"),
+                "donchian_fresh_low_breakout": donchian.get("fresh_low_breakout"),
             },
             entry_price=entry,
             invalidation_price=invalidation,
