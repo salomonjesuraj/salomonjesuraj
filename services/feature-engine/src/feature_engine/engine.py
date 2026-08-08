@@ -25,6 +25,7 @@ from feature_engine.features.candles import update_body_ema, detect_candle_patte
 from feature_engine.features.zones import update_zones, zone_snapshot
 from feature_engine.features.fibonacci import fib_snapshot
 from feature_engine.features.ict import update_ict, ict_snapshot
+from feature_engine.features.volman import volman_snapshot
 from infusion_models.feature import FeatureVectorV1
 from infusion_common.timing import now_us
 
@@ -322,6 +323,7 @@ class FeatureEngine:
             **zone_snapshot(state),
             **fib_snapshot(state, ltp),
             **ict_snapshot(state),
+            **volman_snapshot(state),
             "di_plus": di_plus,
             "di_minus": di_minus,
             "adx": adx,

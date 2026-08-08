@@ -272,6 +272,11 @@ class OptionsFirstHybrid(BaseStrategy):
             "order_block_bearish_low": ml.get("order_block_bearish_low"),
             "order_block_bearish_high": ml.get("order_block_bearish_high"),
             "order_block_bearish_validated": ml.get("order_block_bearish_validated"),
+            # Volman entry-timing layer (Phase 10) -- see
+            # feature_engine/features/volman.py. Informational only.
+            "volman_source": ml.get("volman_source"),
+            "volman_quality": ml.get("volman_quality"),
+            "volman_entry_triggered": ml.get("volman_entry_triggered"),
             # Donchian N-day channel (Phase 7), informational -- see
             # api/routes/mtf.py's _donchian_channel().
             "donchian_high": donchian.get("high"),

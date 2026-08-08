@@ -55,6 +55,7 @@ def main():
         from feature_engine.features.momentum import update_adx, get_adx
         from feature_engine.features.volatility import update_supertrend, get_supertrend
         from feature_engine.features.ict import update_ict, ict_snapshot
+        from feature_engine.features.volman import detect_buildup, check_entry_trigger, volman_snapshot
         check("feature_engine Pine-alignment modules import", True)
     except Exception as e:
         check("feature_engine Pine-alignment modules import", False, str(e))
@@ -819,6 +820,69 @@ def main():
     eng._sectors["EMPTY"] = empty_sector
     r_empty = eng.compute_cross_confirmation("EMPTY", "X", "bullish")
     check("Sector with zero constituents never crashes (division-by-zero guard)", r_empty["confirmed"] is False, f"got {r_empty}")
+
+    # ═══════════════════════════════════════════════
+    # PHASE 10 (NEW) — VOLMAN ENTRY-TIMING LAYER
+    # ═══════════════════════════════════════════════
+    print("\n--- PHASE 10 (NEW): VOLMAN BUILDUP + SIGNAL-BAR ENTRY TRIGGER ---")
+
+    atr = 2.0
+    boundary = 100.5
+    proper_bars = [
+        {"o": 100.0, "h": 100.4, "l": 99.8, "c": 100.2},
+        {"o": 100.2, "h": 100.6, "l": 100.0, "c": 100.5},
+        {"o": 100.5, "h": 100.7, "l": 100.1, "c": 100.6},   # signal bar, close_pos=0.833
+        {"o": 100.6, "h": 101.0, "l": 100.5, "c": 100.9},   # trigger bar
+    ]
+    proper = detect_buildup(proper_bars, boundary, atr, bullish=True)
+    check("Proper break: tight cluster directly at the boundary", proper is not None and proper["quality"] == "proper", f"got {proper}")
+    check("Proper break: entry trigger fires on the break bar", check_entry_trigger(proper_bars, proper, bullish=True) is True)
+
+    tease = detect_buildup(proper_bars, boundary=200.0, atr=atr, bullish=True)
+    check("Tease break: same tight cluster, but far from the boundary", tease is not None and tease["quality"] == "tease", f"got {tease}")
+
+    wide_bars = [
+        {"o": 100.0, "h": 103.0, "l": 97.0, "c": 101.0},
+        {"o": 101.0, "h": 104.0, "l": 98.0, "c": 102.0},
+        {"o": 102.0, "h": 105.0, "l": 99.0, "c": 103.0},
+        {"o": 103.0, "h": 106.0, "l": 100.0, "c": 104.0},
+    ]
+    check("False break: no buildup at all (bars not tight) -> None, not traded", detect_buildup(wide_bars, boundary, atr, bullish=True) is None)
+
+    wrong_close_bars = list(proper_bars)
+    wrong_close_bars[2] = {"o": 100.5, "h": 100.7, "l": 100.1, "c": 100.15}  # signal bar closes near its own low
+    check("Signal bar rejected when its own close opposes the anticipated direction", detect_buildup(wrong_close_bars, boundary, atr, bullish=True) is None)
+
+    no_trigger_bars = list(proper_bars)
+    no_trigger_bars[-1] = {"o": 100.6, "h": 100.65, "l": 100.5, "c": 100.6}  # stays inside the signal bar's range
+    buildup_ready = detect_buildup(no_trigger_bars, boundary, atr, bullish=True)
+    check("Buildup can be valid while the trigger hasn't fired yet", buildup_ready is not None and check_entry_trigger(no_trigger_bars, buildup_ready, bullish=True) is False, f"got {buildup_ready}")
+
+    bear_bars = [
+        {"o": 100.0, "h": 100.2, "l": 99.6, "c": 99.8},
+        {"o": 99.8, "h": 100.0, "l": 99.4, "c": 99.5},
+        {"o": 99.5, "h": 99.9, "l": 99.3, "c": 99.4},   # signal bar close_pos=0.167
+        {"o": 99.4, "h": 99.5, "l": 99.0, "c": 99.1},   # breaks below signal_bar_low
+    ]
+    bear = detect_buildup(bear_bars, boundary=99.5, atr=atr, bullish=False)
+    check("Bearish mirror: proper break detected", bear is not None and bear["quality"] == "proper", f"got {bear}")
+    check("Bearish mirror: entry trigger fires on the break below", check_entry_trigger(bear_bars, bear, bullish=False) is True)
+
+    check("Thin history returns None, never crashes", detect_buildup(proper_bars[:2], boundary, atr, bullish=True) is None)
+    check("check_entry_trigger on empty bars/None buildup never crashes", check_entry_trigger([], None, True) is False)
+
+    vstate = SymbolState(symbol="TESTVOLMAN")
+    vstate.atr = atr
+    vstate.demand_zone = (boundary, 98.0, 0)
+    for b in proper_bars:
+        vstate.recent_1m_bars.append(b)
+    vsnap = volman_snapshot(vstate)
+    check("volman_snapshot finds the buildup against an active demand zone", vsnap["volman_source"] == "demand_zone" and vsnap["volman_entry_triggered"] is True, f"got {vsnap}")
+
+    vstate_empty = SymbolState(symbol="TESTVOLMAN2")
+    vstate_empty.atr = atr
+    vsnap_empty = volman_snapshot(vstate_empty)
+    check("volman_snapshot with no active zones returns safe empty fields", vsnap_empty["volman_source"] is None and vsnap_empty["volman_entry_triggered"] is False, f"got {vsnap_empty}")
 
     # ═══════════════════════════════════════════════
     # SUMMARY
