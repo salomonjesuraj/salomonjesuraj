@@ -114,6 +114,13 @@ def main():
         return
 
     try:
+        from api.options_analytics import compute_pcr, compute_oi_support_resistance, compute_max_pain, classify_pcr
+        check("api.options_analytics imports", True)
+    except Exception as e:
+        check("api.options_analytics imports", False, str(e))
+        return
+
+    try:
         from api.routes.mtf import _fractal_pivots, _major_blocker, compute_mtf
         check("api.routes.mtf blocker functions import", True)
     except Exception as e:
@@ -907,6 +914,64 @@ def main():
     check("10:00 is mid_morning", _current_session(dt_time_local(10, 0)) == "mid_morning")
     check("12:00 is midday", _current_session(dt_time_local(12, 0)) == "midday")
     check("No-arg call never crashes (falls back to real wall-clock time)", isinstance(_current_session(), str))
+
+    # ═══════════════════════════════════════════════
+    # OPTIONS ANALYTICS (NEW) — PCR / OI SUPPORT-RESISTANCE / MAX PAIN
+    # ═══════════════════════════════════════════════
+    print("\n--- OPTIONS ANALYTICS (NEW): PCR / OI SUPPORT-RESISTANCE / MAX PAIN (Upstox-sourced) ---")
+
+    def oi_row(strike, call_oi, put_oi):
+        return {"strike_price": strike, "call_options": {"market_data": {"oi": call_oi}}, "put_options": {"market_data": {"oi": put_oi}}}
+
+    check("classify_pcr: <0.7 strong bullish", classify_pcr(0.5) == "strong_bullish")
+    check("classify_pcr: 0.7-0.95 neutral bullish", classify_pcr(0.85) == "neutral_bullish")
+    check("classify_pcr: ~1.0 balanced", classify_pcr(1.0) == "balanced")
+    check("classify_pcr: 1.0-1.3 mild bearish", classify_pcr(1.2) == "mild_bearish")
+    check("classify_pcr: >1.3 strong bearish", classify_pcr(1.5) == "strong_bearish")
+
+    pcr_rows = [oi_row(100, 1000, 500), oi_row(110, 2000, 1000), oi_row(120, 500, 1500)]
+    pcr = compute_pcr(pcr_rows)
+    check("PCR: Put OI / Call OI computed correctly", pcr is not None and pcr["pcr"] == round(3000 / 3500, 3), f"got {pcr}")
+    check("PCR: sentiment matches classify_pcr on the same value", pcr is not None and pcr["sentiment"] == classify_pcr(pcr["pcr"]))
+    check("PCR: zero call OI returns None, not a division error", compute_pcr([oi_row(100, 0, 500)]) is None)
+
+    sr = compute_oi_support_resistance(pcr_rows)
+    check("OI S/R: max Call-OI strike is resistance", sr is not None and sr["resistance"] == 110 and sr["resistance_oi"] == 2000, f"got {sr}")
+    check("OI S/R: max Put-OI strike is support", sr is not None and sr["support"] == 120 and sr["support_oi"] == 1500, f"got {sr}")
+    check("OI S/R: empty chain returns None, never crashes", compute_oi_support_resistance([]) is None)
+
+    mp_single = compute_max_pain([oi_row(100, 0, 0), oi_row(110, 1000, 1000), oi_row(120, 0, 0)])
+    check("Max Pain: single OI concentration wins with zero payout there", mp_single is not None and mp_single["max_pain_strike"] == 110 and mp_single["min_total_payout"] == 0.0, f"got {mp_single}")
+
+    # Cross-checked against an independently-written brute-force calculation
+    # of the same sourced formula (not just re-deriving the same code path).
+    spread_rows = [oi_row(80, 100, 800), oi_row(90, 300, 1200), oi_row(100, 600, 600), oi_row(110, 1500, 300), oi_row(120, 900, 100)]
+    mp_spread = compute_max_pain(spread_rows)
+    strikes = [80, 90, 100, 110, 120]
+    call_oi_map = {80: 100, 90: 300, 100: 600, 110: 1500, 120: 900}
+    put_oi_map = {80: 800, 90: 1200, 100: 600, 110: 300, 120: 100}
+
+    def brute_pain(c):
+        total = 0.0
+        for k in strikes:
+            if c > k:
+                total += call_oi_map[k] * (c - k)
+            elif c < k:
+                total += put_oi_map[k] * (k - c)
+        return total
+
+    expected = min(strikes, key=brute_pain)
+    check(
+        "Max Pain matches an independently-written brute-force calc (not just internally self-consistent)",
+        mp_spread is not None and mp_spread["max_pain_strike"] == expected and abs(mp_spread["min_total_payout"] - brute_pain(expected)) < 1e-6,
+        f"got {mp_spread}, expected strike {expected}",
+    )
+    check(
+        "Max Pain finds a genuine balance point, not just the raw highest-OI strike",
+        mp_spread is not None and mp_spread["max_pain_strike"] != 110,
+        f"got {mp_spread} -- 110 is the raw max-OI (resistance) strike, max pain should differ",
+    )
+    check("Max Pain: empty chain returns None, never crashes", compute_max_pain([]) is None)
 
     # ═══════════════════════════════════════════════
     # SUMMARY

@@ -19,6 +19,7 @@ from aiohttp import web
 from api.cost_model import estimate_entry_costs_per_unit
 from api.event_calendar import get_event_risk
 from api.option_reality import breakeven_gate, delta_band_gate, derive_option_sl, iv_rank_gate
+from api.options_analytics import compute_max_pain, compute_oi_support_resistance, compute_pcr
 
 routes = web.RouteTableDef()
 
@@ -561,6 +562,96 @@ async def _resolve_upstox_expiry(session, headers: dict, instrument_key: str) ->
     return "", last_error or "Unable to resolve Upstox option expiry."
 
 
+async def _fetch_full_option_chain(redis, symbol: str) -> dict:
+    """Fetch the FULL Upstox option chain (every strike, both call and put
+    OI) for chain-wide analytics (PCR, OI-based S/R, Max Pain) -- separate
+    from _upstox_option_context()'s near-ATM-only (+/-6%), bias-filtered
+    fetch below, which exists for per-signal scoring and is left untouched.
+    Cached under its own bias-independent key so a symbol with both a CE
+    and PE signal live doesn't fetch the same full chain twice.
+    """
+    access_token = await _upstox_access_token(redis)
+    if not access_token:
+        return {"ready": False, "reason": "Upstox auth token missing; login at http://localhost:5100/auth/login."}
+
+    instrument_key = await _instrument_key_for_symbol(redis, symbol)
+    if not instrument_key:
+        return {"ready": False, "reason": f"No Upstox instrument key found for {symbol}."}
+
+    cache_key = f"infusion:option-chain-full:{symbol}"
+    cached = await redis.get(cache_key)
+    if cached:
+        try:
+            payload = json.loads(cached.decode() if isinstance(cached, bytes) else cached)
+            payload["cached"] = True
+            return payload
+        except Exception:
+            pass
+
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {access_token}",
+    }
+    try:
+        async with aiohttp.ClientSession() as session:
+            expiry, expiry_error = await _resolve_upstox_expiry(session, headers, instrument_key)
+            if not expiry:
+                return {"ready": False, "reason": expiry_error or "Unable to resolve Upstox option expiry."}
+            async with session.get(
+                f"{UPSTOX_API_V2_BASE}/option/chain",
+                headers=headers,
+                params={"instrument_key": instrument_key, "expiry_date": expiry},
+                timeout=8,
+            ) as resp:
+                data = await resp.json()
+                if resp.status != 200 or data.get("status") != "success":
+                    return {
+                        "ready": False,
+                        "reason": data.get("message", f"Upstox option chain HTTP {resp.status}"),
+                    }
+    except Exception as exc:
+        return {"ready": False, "reason": f"Upstox option chain error: {exc}"}
+
+    rows = data.get("data") or []
+    if not rows:
+        return {"ready": False, "reason": "Upstox option chain returned no rows."}
+
+    spot = float(rows[0].get("underlying_spot_price") or 0)
+    result = {"ready": True, "symbol": symbol, "expiry": expiry, "spot": spot, "rows": rows}
+    try:
+        await redis.setex(cache_key, 30, json.dumps(result, default=str))
+    except Exception:
+        pass
+    return result
+
+
+async def compute_options_chain_analytics(redis, symbol: str) -> dict:
+    """PCR + OI-based support/resistance + Max Pain for one symbol, off
+    the full option chain. See api/options_analytics.py for the sourced
+    formulas (Upstox's own learning-center methodology)."""
+    chain = await _fetch_full_option_chain(redis, symbol)
+    if not chain.get("ready"):
+        return {"ready": False, "reason": chain.get("reason", "Option chain unavailable.")}
+
+    rows = chain["rows"]
+    pcr = compute_pcr(rows)
+    oi_sr = compute_oi_support_resistance(rows)
+    max_pain = compute_max_pain(rows)
+
+    return {
+        "ready": True,
+        "symbol": symbol,
+        "expiry": chain.get("expiry"),
+        "spot": chain.get("spot"),
+        "strikes_in_chain": len(rows),
+        "pcr": pcr,
+        "oi_support_resistance": oi_sr,
+        "max_pain": max_pain,
+        "cached": bool(chain.get("cached")),
+    }
+
+
 async def _upstox_option_context(redis, symbol: str, bias: str, features: dict | None = None, signal: dict | None = None) -> dict:
     if bias not in {"CE", "PE"}:
         return {"ready": False, "reason": "Option chain waits until scanner has CE/PE bias."}
@@ -764,6 +855,25 @@ async def market_indices(request):
                 indices[idx] = fixed
 
     return web.json_response({"count": len(indices), "indices": indices})
+
+
+@routes.get("/api/options/chain-analytics")
+async def options_chain_analytics(request):
+    """PCR + OI-based support/resistance + Max Pain for one symbol.
+
+    Sourced from Upstox's own learning-center methodology (the actual
+    broker Infusion integrates with), not generic textbook convention --
+    see api/options_analytics.py's module docstring for exact source URLs.
+    """
+    redis = request.app["redis"]
+    symbol = request.query.get("symbol", "").upper().strip()
+    if not symbol:
+        symbol = await _default_symbol(redis)
+    if not symbol:
+        return web.json_response({"ready": False, "reason": "No symbol provided and no default symbol available."})
+
+    result = await compute_options_chain_analytics(redis, symbol)
+    return web.json_response(result)
 
 
 @routes.get("/api/options/summary")
