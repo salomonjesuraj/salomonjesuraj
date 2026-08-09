@@ -84,6 +84,21 @@
   --ifx-warn-dim: rgba(232,163,61,.16);
   --ifx-info: #4d8ef0;
   --ifx-info-dim: rgba(77,142,240,.14);
+  /* Phase N2 -- added for Chain Favour (New shell only, Phase N4): a
+     4-state PCR-derived read (Bullish/Flatish/Risk/Bearish) needs two
+     tones bull/bear/warn/info don't cover. --ifx-warn is already used
+     for the WAIT bias pill elsewhere, so reusing it for "Risk" here
+     would make two different meanings look identical in the same row --
+     a distinct violet keeps them visually separate. --ifx-flat is a
+     deliberately quiet neutral (not shell-text-faint, which already
+     means "de-emphasized/disabled" elsewhere) for "no read, not a
+     signal." Exact hex values carried over from the approved mockup for
+     continuity, not re-derived. */
+  --ifx-risk: #b07cf7;
+  --ifx-risk-strong: #8b4fe8;
+  --ifx-risk-dim: rgba(176,124,247,.16);
+  --ifx-flat: #8488ab;
+  --ifx-flat-dim: rgba(132,136,171,.14);
 
   /* Grade / conviction — single source of truth, used everywhere a grade
      or conviction tier is shown (cards, badges, table rows). */
@@ -219,6 +234,9 @@
 .ifx-badge--info { background: var(--ifx-info-dim); color: var(--ifx-info); }
 .ifx-badge--neutral { background: rgba(255,255,255,.06); color: var(--ifx-shell-text-muted); }
 .ifx-badge--on-paper.ifx-badge--neutral { background: var(--ifx-content-border); color: var(--ifx-content-text-muted); }
+/* Phase N2 -- risk/flat variants for Chain Favour (New shell, Phase N4). */
+.ifx-badge--risk { background: var(--ifx-risk-dim); color: var(--ifx-risk-strong); }
+.ifx-badge--flat { background: var(--ifx-flat-dim); color: var(--ifx-flat); }
 
 .ifx-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; background: currentColor; }
 .ifx-dot--pulse { animation: ifx-pulse 1.6s var(--ifx-ease) infinite; }
