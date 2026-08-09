@@ -1430,3 +1430,51 @@
 .ifx-pane-title { font-size: var(--ifx-text-sm); font-weight: 700; color: var(--ifx-shell-text-muted); margin-bottom: 8px; }
 .ifx-pane-badge { display: inline-block; margin-bottom: 8px; padding: 2px 9px; border-radius: var(--ifx-radius-pill); font-size: var(--ifx-text-2xs); font-weight: 700; background: var(--ifx-bull-dim); color: var(--ifx-bull); }
 #paneViewV2 [data-pane-v2] { display: none; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   NEW SHELL -- Phase N6: Track Record strip. Proof, not decoration -- see
+   track-record-v2.js's header comment for exactly which real endpoint
+   backs each number. Placed at the very top of #newShell, same
+   prominence-as-trust-signal reasoning as the approved mockup.
+   ═══════════════════════════════════════════════════════════════════════ */
+.ifx-tr-strip {
+  display: flex; align-items: stretch; gap: 1px; background: var(--ifx-shell-border);
+  border-bottom: 1px solid var(--ifx-shell-border); flex-wrap: wrap;
+}
+.ifx-tr-stat { flex: 1 1 160px; min-width: 140px; display: flex; flex-direction: column; gap: 2px; padding: 8px 16px; background: var(--ifx-shell-surface); }
+.ifx-tr-stat label { display: flex; align-items: center; gap: 4px; font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--ifx-shell-text-faint); }
+.ifx-tr-stat b { font-family: var(--ifx-font-mono); font-size: 16px; font-weight: 800; }
+.ifx-tr-stat small { font-size: 9.5px; color: var(--ifx-shell-text-faint); }
+.ifx-tr-info { cursor: help; opacity: .7; }
+.ifx-tr-source { flex: 0 0 auto; display: flex; align-items: center; padding: 8px 16px; background: var(--ifx-shell-surface); font-size: 9.5px; color: var(--ifx-shell-text-faint); font-style: italic; }
+@media (max-width: 900px) { .ifx-tr-source { display: none; } }
+
+/* ── Signal-fire alert: toast + mute + card glow (Phase N6) ─────────── */
+.ifx-toast-stack { position: fixed; top: 12px; right: 12px; display: flex; flex-direction: column; gap: 8px; z-index: 60; width: 300px; }
+.ifx-toast {
+  display: flex; align-items: flex-start; gap: 10px; padding: 11px 13px; border-radius: var(--ifx-radius-md);
+  background: var(--ifx-shell-raised); border: 1px solid var(--ifx-shell-border); border-left: 3px solid var(--ifx-accent);
+  box-shadow: var(--ifx-shadow-lg); animation: ifx-toast-in .25s var(--ifx-ease); color: var(--ifx-shell-text);
+}
+.ifx-toast.out { animation: ifx-toast-out .18s var(--ifx-ease) forwards; }
+@keyframes ifx-toast-in { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes ifx-toast-out { to { opacity: 0; transform: translateX(24px); } }
+.ifx-toast-icon { font-size: 15px; flex: none; }
+.ifx-toast-body b { display: block; font-size: 12.5px; margin-bottom: 1px; }
+.ifx-toast-body span { font-size: 11px; color: var(--ifx-shell-text-muted); }
+
+.ifx-sound-switch {
+  position: fixed; bottom: 54px; right: 14px; z-index: 999; width: 30px; height: 30px;
+  border-radius: 50%; border: 1px solid var(--ifx-shell-border); background: var(--ifx-shell-surface);
+  color: var(--ifx-shell-text); cursor: pointer; font-size: 13px; box-shadow: var(--ifx-shadow-sm);
+}
+.ifx-sound-switch:hover { border-color: var(--ifx-accent); }
+
+.ifx-deck-card.just-fired { animation: ifx-card-fire 1.4s var(--ifx-ease); }
+@keyframes ifx-card-fire {
+  0% { box-shadow: 0 0 0 2px var(--ifx-glow, var(--ifx-accent)), 0 0 40px 6px var(--ifx-glow, var(--ifx-accent)); transform: scale(1.015); }
+  100% { box-shadow: none; transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ifx-toast, .ifx-toast.out, .ifx-deck-card.just-fired { animation: none; }
+}
