@@ -1222,3 +1222,101 @@
 [data-dashboard-mode="new"] .ifx-mode-switch {
   background: transparent; color: var(--ifx-shell-text, #e6e6f2); border-color: var(--ifx-shell-border, #262740);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   NEW SHELL -- Phase N3: Command Center v2 (deck cards + Pre-Breakout
+   Watchers). Deliberately styled with --ifx-shell-* tokens (dark
+   violet-charcoal), not --ifx-content-*/paper tokens like the rest of
+   this file's "dark chrome holding light paper panels" convention --
+   the approved mockup's Command Center is a dark "hero" surface
+   throughout (cards glow via a radial accent against a dark ground),
+   and --ifx-shell-* already IS that same palette (Phase A's original
+   design intent literally says "evokes a trading-floor ticker"), so
+   this reuses it rather than inventing a third token set. Only Command
+   Center gets this treatment; later phases (rail, screener table) can
+   still choose paper tokens where that reads better -- not a
+   whole-shell decision made here.
+   ═══════════════════════════════════════════════════════════════════════ */
+.ifx-new-shell { background: var(--ifx-shell-bg); min-height: 100vh; }
+.ifx-new-shell-inner { max-width: 1680px; margin: 0 auto; padding: 20px 24px 60px; }
+
+.ifx-section-label {
+  display: flex; align-items: center; gap: 8px;
+  font-size: var(--ifx-text-xs); font-weight: 800; letter-spacing: .5px; text-transform: uppercase;
+  color: var(--ifx-shell-text-faint); margin: 0 0 10px;
+}
+.ifx-section-rule { flex: 1; height: 1px; background: var(--ifx-shell-border); }
+.ifx-section-count { font-family: var(--ifx-font-mono); color: var(--ifx-accent); text-transform: none; letter-spacing: 0; }
+
+.ifx-deck-wrap { color: var(--ifx-shell-text); }
+.ifx-deck { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; }
+.ifx-deck-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  min-height: 160px; padding: var(--ifx-space-6); text-align: center;
+  border: 1px dashed var(--ifx-shell-border); border-radius: var(--ifx-radius-lg); color: var(--ifx-shell-text-faint);
+}
+.ifx-deck-empty-icon { font-size: 30px; }
+.ifx-deck-empty-title { font-weight: 700; color: var(--ifx-shell-text-muted); }
+.ifx-deck-empty-sub { font-size: var(--ifx-text-xs); max-width: 40ch; }
+
+.ifx-deck-card {
+  position: relative; overflow: hidden;
+  border-radius: var(--ifx-radius-lg); border: 1px solid var(--ifx-shell-border);
+  background: linear-gradient(155deg, var(--ifx-shell-raised), var(--ifx-shell-surface));
+  padding: var(--ifx-space-4);
+}
+.ifx-deck-card::before {
+  content: ''; position: absolute; inset: 0; opacity: .5; pointer-events: none;
+  background: radial-gradient(420px 200px at 85% -10%, var(--ifx-glow, var(--ifx-bear-dim)), transparent 70%);
+}
+.ifx-deck-card--bull { --ifx-glow: var(--ifx-bull-dim); border-left: 3px solid var(--ifx-bull); }
+.ifx-deck-card--bear { --ifx-glow: var(--ifx-bear-dim); border-left: 3px solid var(--ifx-bear); }
+.ifx-deck-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; position: relative; }
+.ifx-deck-symbol { font-family: var(--ifx-font-mono); font-size: 19px; font-weight: 800; letter-spacing: .3px; }
+.ifx-deck-sector { font-size: var(--ifx-text-2xs); color: var(--ifx-shell-text-faint); margin-top: 2px; text-transform: uppercase; letter-spacing: .3px; }
+.ifx-deck-lock { font-size: var(--ifx-text-2xs); color: var(--ifx-shell-text-faint); white-space: nowrap; }
+.ifx-deck-mid { display: flex; align-items: center; gap: 16px; margin: 14px 0; position: relative; }
+.ifx-deck-gauge { position: relative; width: 76px; height: 76px; flex: none; }
+.ifx-deck-gauge svg { width: 100%; height: 100%; }
+.ifx-deck-gauge-track { fill: none; stroke: var(--ifx-shell-border); stroke-width: 7; }
+.ifx-deck-gauge-fill { fill: none; stroke-width: 7; stroke-linecap: round; }
+.ifx-deck-gauge-num { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.ifx-deck-gauge-num b { font-family: var(--ifx-font-mono); font-size: 20px; font-weight: 800; line-height: 1; }
+.ifx-deck-gauge-num span { font-size: 8px; color: var(--ifx-shell-text-faint); text-transform: uppercase; letter-spacing: .4px; margin-top: 2px; }
+.ifx-deck-verdict { flex: 1; min-width: 0; }
+.ifx-deck-verdict-word { font-size: 21px; font-weight: 900; letter-spacing: .2px; line-height: 1.1; }
+.ifx-deck-verdict-word--bull { color: var(--ifx-bull); }
+.ifx-deck-verdict-word--bear { color: var(--ifx-bear); }
+.ifx-deck-verdict-reason { font-size: var(--ifx-text-xs); color: var(--ifx-shell-text-muted); margin-top: 3px; }
+.ifx-deck-levels { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; position: relative; }
+.ifx-deck-lvl {
+  display: flex; flex-direction: column; gap: 2px; padding: 8px 9px;
+  border-radius: var(--ifx-radius-sm); background: rgba(255,255,255,.03); border: 1px solid var(--ifx-shell-border);
+}
+.ifx-deck-lvl label { font-size: 8.5px; text-transform: uppercase; letter-spacing: .4px; color: var(--ifx-shell-text-faint); }
+.ifx-deck-lvl b { font-family: var(--ifx-font-mono); font-size: 13px; font-weight: 700; color: var(--ifx-shell-text); }
+.ifx-deck-spark { margin-top: 12px; height: 34px; position: relative; }
+.ifx-deck-spark svg { width: 100%; height: 100%; }
+.ifx-deck-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; position: relative; }
+.ifx-deck-foot-note { font-size: var(--ifx-text-2xs); color: var(--ifx-shell-text-faint); text-transform: capitalize; }
+.ifx-deck-actions { display: flex; gap: 6px; }
+.ifx-deck-mark-btn { background: var(--ifx-bull); border-color: var(--ifx-bull-strong); color: #06231a; }
+.ifx-deck-mark-btn:hover { background: var(--ifx-bull-strong); color: #fff; }
+.ifx-deck-mark-btn:disabled { opacity: .6; cursor: default; }
+
+/* ── Pre-Breakout Watchers strip ────────────────────────────────────── */
+.ifx-watch-strip-wrap { color: var(--ifx-shell-text); }
+.ifx-watch-empty { padding: var(--ifx-space-4); text-align: center; color: var(--ifx-shell-text-faint); font-size: var(--ifx-text-xs); border: 1px dashed var(--ifx-shell-border); border-radius: var(--ifx-radius-md); }
+.ifx-watch-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+.ifx-watch-card {
+  display: flex; flex-direction: column; gap: 6px; padding: 11px 13px;
+  border-radius: var(--ifx-radius-md); border: 1px dashed var(--ifx-shell-border); background: var(--ifx-shell-surface);
+  cursor: pointer; transition: transform var(--ifx-fast) var(--ifx-ease);
+}
+.ifx-watch-card:hover { transform: translateY(-1px); }
+.ifx-watch-top { display: flex; align-items: center; justify-content: space-between; }
+.ifx-watch-symbol { font-family: var(--ifx-font-mono); font-weight: 700; font-size: 13px; }
+.ifx-watch-progress { height: 4px; border-radius: 2px; background: var(--ifx-shell-border); overflow: hidden; }
+.ifx-watch-progress > i { display: block; height: 100%; background: var(--ifx-accent); }
+.ifx-watch-foot { display: flex; justify-content: space-between; gap: 6px; font-size: 10px; color: var(--ifx-shell-text-faint); }
+.ifx-watch-foot b { color: var(--ifx-shell-text); font-family: var(--ifx-font-mono); font-weight: 700; white-space: nowrap; }

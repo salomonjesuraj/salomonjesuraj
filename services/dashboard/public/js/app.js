@@ -32,6 +32,8 @@ import { OptionsAnalyticsPanel } from './options-analytics-panel.js?v=8.0.0-phas
 import { OptimizerPanel } from './optimizer-panel.js?v=8.0.0-phase-d';
 import { AiQueryPanel } from './ai-query-panel.js?v=8.0.0-phase-d';
 import { initModeSwitch } from './mode-switch.js?v=8.0.0-new-shell';
+import { CockpitV2Panel } from './cockpit-v2.js?v=8.0.0-new-shell';
+import { WatchStripV2Panel } from './watch-strip-v2.js?v=8.0.0-new-shell';
 
 class InfusionApp {
   constructor() {
@@ -97,6 +99,19 @@ class InfusionApp {
     const cockpit = new CockpitPanel(document.getElementById('signalCockpit'));
     cockpit.init();
     this._panels.push(cockpit);
+
+    // New shell (Phase N3) -- mounted unconditionally alongside Classic's
+    // panels, same reasoning as everywhere else in this rollout: both
+    // shells stay live at all times so the toggle is instant, and
+    // api.js's subscribe() already dedupes polling per endpoint so this
+    // costs nothing extra on the backend even while New is hidden.
+    const cockpitV2 = new CockpitV2Panel(document.getElementById('cockpitV2'));
+    cockpitV2.init();
+    this._panels.push(cockpitV2);
+
+    const watchStripV2 = new WatchStripV2Panel(document.getElementById('watchStripV2'));
+    watchStripV2.init();
+    this._panels.push(watchStripV2);
 
     // Scanner (Priority 1)
     const scanner = new ScannerPanel(document.getElementById('scannerPanel'));
