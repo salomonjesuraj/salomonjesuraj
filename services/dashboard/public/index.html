@@ -88,6 +88,9 @@
             <button class="workbench-tab" data-tab="safety">Safety</button>
             <button class="workbench-tab" data-tab="alerts">Alert Log</button>
             <button class="workbench-tab" data-tab="diagnostics">Diagnostics</button>
+            <button class="workbench-tab" data-tab="options-analytics">Options Analytics</button>
+            <button class="workbench-tab" data-tab="optimizer">Optimizer</button>
+            <button class="workbench-tab" data-tab="ask-infusion">Ask Infusion</button>
           </div>
           <span class="section-size-controls">
             <button type="button" data-section-action="expand" title="Expand section">+</button>
@@ -159,6 +162,21 @@
           <div class="workbench-pane" data-pane="diagnostics">
             <div class="workbench-section-title">Diagnostics + Precision</div>
             <div id="analyticsBody" class="workbench-scroll"></div>
+          </div>
+
+          <div class="workbench-pane" data-pane="options-analytics">
+            <div class="workbench-section-title">Options Analytics &mdash; PCR, OI Levels, Max Pain</div>
+            <div id="optionsAnalyticsPanel" class="workbench-scroll"></div>
+          </div>
+
+          <div class="workbench-pane" data-pane="optimizer">
+            <div class="workbench-section-title">Optimizer &mdash; Walk-Forward, Proposal Drift, Feature Ablation</div>
+            <div id="optimizerPanel" class="workbench-scroll"></div>
+          </div>
+
+          <div class="workbench-pane" data-pane="ask-infusion">
+            <div class="workbench-section-title">Ask Infusion</div>
+            <div id="aiQueryPanel" class="workbench-scroll"></div>
           </div>
         </div>
       </section>

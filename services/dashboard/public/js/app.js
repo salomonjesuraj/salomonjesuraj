@@ -28,6 +28,9 @@ import { JournalPanel } from './journal-panel.js?v=6.4.4-summary-chip-polish';
 import { ExecutionPanel } from './execution-panel.js?v=6.4.4-summary-chip-polish';
 import { SafetyPanel } from './safety-panel.js?v=6.4.4-summary-chip-polish';
 import { SectionControls } from './section-controls.js?v=6.4.4-summary-chip-polish';
+import { OptionsAnalyticsPanel } from './options-analytics-panel.js?v=8.0.0-phase-d';
+import { OptimizerPanel } from './optimizer-panel.js?v=8.0.0-phase-d';
+import { AiQueryPanel } from './ai-query-panel.js?v=8.0.0-phase-d';
 
 class InfusionApp {
   constructor() {
@@ -158,6 +161,20 @@ class InfusionApp {
     const safetyPanel = new SafetyPanel(document.getElementById('safetyBody'));
     safetyPanel.init();
     this._panels.push(safetyPanel);
+
+    // Phase D: Options Analytics / Optimizer / Ask Infusion -- surfaces
+    // Phase 11/12 backend endpoints that had no UI until now.
+    const optionsAnalyticsPanel = new OptionsAnalyticsPanel(document.getElementById('optionsAnalyticsPanel'));
+    optionsAnalyticsPanel.init();
+    this._panels.push(optionsAnalyticsPanel);
+
+    const optimizerPanel = new OptimizerPanel(document.getElementById('optimizerPanel'));
+    optimizerPanel.init();
+    this._panels.push(optimizerPanel);
+
+    const aiQueryPanel = new AiQueryPanel(document.getElementById('aiQueryPanel'));
+    aiQueryPanel.init();
+    this._panels.push(aiQueryPanel);
 
     // TradingView Chart
     const chart = new ChartPanel(
