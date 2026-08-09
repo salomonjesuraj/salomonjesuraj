@@ -920,6 +920,19 @@
 .ifx-scanner .command-answer-grid b { font-family: var(--ifx-font-mono); font-size: var(--ifx-text-sm); color: var(--ifx-content-text); }
 .ifx-scanner .command-answer-grid small { font-size: 8px; color: var(--ifx-content-text-faint); }
 .ifx-scanner .command-answer-next { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--ifx-content-border); font-size: var(--ifx-text-xs); color: var(--ifx-content-text-muted); }
+/* main.css's `.screener-pro-v4 .trade-plan-ai-map{display:grid;
+   grid-template-columns:1.25fr repeat(5,minmax(120px,1fr))}` (same 0,2,0
+   specificity, but this file loads after main.css so it wins) was never
+   overridden here -- .trade-plan-ai-map's own children (.ai-map-head,
+   the <p>, .ai-map-levels) were silently auto-placed one-per-column
+   into that 6-column legacy grid instead of stacking, so .ai-map-levels
+   (itself a grid) got squeezed into a single ~1fr track and everything
+   inside it stacked vertically in a narrow strip -- 4-5 empty tracks
+   sat unused to the right the whole time. Reported directly: "why this
+   much unused space". Forcing a plain column stack here lets each
+   child's OWN width rule (.ai-map-head/.ai-map-levels below) use the
+   full row instead of one slice of a stale legacy template. */
+.ifx-scanner .trade-plan-ai-map { display: flex; flex-direction: column; gap: 6px; }
 .ifx-scanner .ai-map-head, .ifx-scanner .ai-map-levels, .ifx-scanner .option-pick-head, .ifx-scanner .option-pick-grid, .ifx-scanner .gate-grid {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px; margin-top: 6px;
 }
@@ -927,25 +940,27 @@
 .ifx-scanner .gate-verdict.buy { color: var(--ifx-bull); } .ifx-scanner .gate-verdict.sell { color: var(--ifx-bear); }
 
 /* ── Leadership Queue / Trigger Radar strips ───────────────────────── */
-.ifx-scanner .scanner-leader-strip { display: flex; flex-direction: column; gap: 6px; margin-bottom: var(--ifx-space-3); }
+/* max-width caps the STRIP itself, not just the cards inside it. On a
+   wide monitor .ifx-scanner can run ~1900px edge to edge; a "Top 7"
+   list with only 2-3 qualifying symbols (a quiet market) was letting
+   the flex row below try to fill that entire width, so even after the
+   per-card max-width fix its cards stopped growing at a few hundred
+   px and left over 1000px of dead space trailing off to the right --
+   reported directly: "why this much unused space... leaking and
+   unfit". Capping the strip's own width means 2-3 cards in a ~1100px
+   row reads as a deliberately compact list, not an unfinished banner;
+   it still wraps to more rows once enough symbols qualify. */
+.ifx-scanner .scanner-leader-strip { display: flex; flex-direction: column; gap: 6px; margin-bottom: var(--ifx-space-3); max-width: 1100px; }
 .ifx-scanner .leader-title, .ifx-scanner .trigger-radar-title {
   font-size: var(--ifx-text-2xs); font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--ifx-content-text-faint);
 }
-/* Grid, not a horizontal-scroll flex row: with only 2-3 cards (a quiet
-   market) a flex row leaves them stranded on the left with a wide dead
-   gap to the right -- reported directly as wasted space. A wrapping grid
-   with a max card width spreads few cards evenly and wraps to a second
-   row instead of scrolling once there are many, so the strip always
-   looks intentionally composed regardless of how many cards there are. */
-/* flex, not grid: the previous grid (auto-fit + 1fr tracks) created one
-   wide TRACK per card when there were only a few, but each card's own
-   max-width capped it well short of that track's width -- since a
-   grid item aligns to the start of its track by default, that left a
-   big blank gap after every card instead of one at the end of the row
-   (reported directly: "still i can see the line" -- these gaps read the
-   same as the outline bug even though the cause was different). Flexbox
-   grows the cards THEMSELVES to fill the row (no separate track to leave
-   a gap in), and wraps to a new line once they hit their min basis. */
+/* flex, not grid: an auto-fit grid creates one wide TRACK per card, and
+   each card's own max-width stops well short of that track's width --
+   since a grid item aligns to the start of its track by default, that
+   leaves a blank gap after every card instead of one at the end of the
+   row. Flexbox grows the cards THEMSELVES to fill the row (no separate
+   track to leave a gap in), wrapping to a new line once they hit their
+   min basis. */
 .ifx-scanner .leader-cards, .ifx-scanner .trigger-radar-cards {
   display: flex; flex-wrap: wrap; gap: 6px;
 }
