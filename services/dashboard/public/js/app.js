@@ -35,6 +35,7 @@ import { initModeSwitch } from './mode-switch.js?v=8.0.0-new-shell';
 import { CockpitV2Panel } from './cockpit-v2.js?v=8.0.0-new-shell';
 import { WatchStripV2Panel } from './watch-strip-v2.js?v=8.0.0-new-shell';
 import { ScannerV2Panel } from './scanner-v2.js?v=8.0.0-new-shell';
+import { initRailV2 } from './rail-v2.js?v=8.0.0-new-shell';
 
 class InfusionApp {
   constructor() {
@@ -117,6 +118,80 @@ class InfusionApp {
     const scannerV2 = new ScannerV2Panel(document.getElementById('scannerV2'));
     scannerV2.init();
     this._panels.push(scannerV2);
+
+    // Phase N5: left rail -- a SECOND instance of each existing panel class,
+    // pointed at New shell's own *V2 containers, not a relocated DOM node
+    // (see index.html's comment on #newShell for why: Classic's own tabs
+    // must never end up empty because New "borrowed" their element).
+    // Confirmed none of these 15 classes reach for a hardcoded
+    // document.getElementById internally (grepped before writing this) --
+    // every one of them scopes exclusively to the container it's given, so
+    // two independent instances are safe. Both instances share the same
+    // api.js singleton, so this doesn't double any actual network polling.
+    initRailV2();
+
+    const watchlistV2 = new WatchlistPanel(document.getElementById('watchlistBodyV2'));
+    watchlistV2.init();
+    this._panels.push(watchlistV2);
+
+    const optionCockpitV2 = new OptionCockpit(
+      document.getElementById('optionCockpitBodyV2'),
+      document.getElementById('optionStatusV2')
+    );
+    optionCockpitV2.init();
+    this._panels.push(optionCockpitV2);
+
+    const riskConsoleV2 = new RiskConsole(document.getElementById('riskConsoleV2'));
+    riskConsoleV2.init();
+    this._panels.push(riskConsoleV2);
+
+    const scannerInsightV2 = new ScannerInsight(document.getElementById('scannerInsightPanelV2'));
+    scannerInsightV2.init();
+    this._panels.push(scannerInsightV2);
+
+    const triggerPanelV2 = new TriggerPanel(document.getElementById('triggerBodyV2'));
+    triggerPanelV2.init();
+    this._panels.push(triggerPanelV2);
+
+    const newsPanelV2 = new NewsPanel(document.getElementById('newsBodyV2'));
+    newsPanelV2.init();
+    this._panels.push(newsPanelV2);
+
+    const eventsPanelV2 = new EventsPanel(document.getElementById('eventsBodyV2'));
+    eventsPanelV2.init();
+    this._panels.push(eventsPanelV2);
+
+    const journalPanelV2 = new JournalPanel(document.getElementById('journalBodyV2'));
+    journalPanelV2.init();
+    this._panels.push(journalPanelV2);
+
+    const executionPanelV2 = new ExecutionPanel(document.getElementById('executionBodyV2'));
+    executionPanelV2.init();
+    this._panels.push(executionPanelV2);
+
+    const safetyPanelV2 = new SafetyPanel(document.getElementById('safetyBodyV2'));
+    safetyPanelV2.init();
+    this._panels.push(safetyPanelV2);
+
+    const alertLogV2 = new AlertLog(document.getElementById('alertBodyV2'));
+    alertLogV2.init();
+    this._panels.push(alertLogV2);
+
+    const analyticsV2 = new AnalyticsPanel(document.getElementById('analyticsBodyV2'));
+    analyticsV2.init();
+    this._panels.push(analyticsV2);
+
+    const optionsAnalyticsPanelV2 = new OptionsAnalyticsPanel(document.getElementById('optionsAnalyticsPanelV2'));
+    optionsAnalyticsPanelV2.init();
+    this._panels.push(optionsAnalyticsPanelV2);
+
+    const optimizerPanelV2 = new OptimizerPanel(document.getElementById('optimizerPanelV2'));
+    optimizerPanelV2.init();
+    this._panels.push(optimizerPanelV2);
+
+    const aiQueryPanelV2 = new AiQueryPanel(document.getElementById('aiQueryPanelV2'));
+    aiQueryPanelV2.init();
+    this._panels.push(aiQueryPanelV2);
 
     // Scanner (Priority 1)
     const scanner = new ScannerPanel(document.getElementById('scannerPanel'));
