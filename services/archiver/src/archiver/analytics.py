@@ -55,7 +55,17 @@ class SignalAnalytics:
             ROUND(AVG(max_favorable_pct)::numeric, 2) as avg_mfe,
             ROUND(AVG(max_adverse_pct)::numeric, 2) as avg_mae,
             ROUND(AVG(time_to_target_min) FILTER (WHERE outcome_label = 'TARGET_HIT')::numeric, 1) as avg_time_to_target,
-            ROUND(AVG(time_to_stop_min) FILTER (WHERE outcome_label = 'STOP_HIT')::numeric, 1) as avg_time_to_stop
+            ROUND(AVG(time_to_stop_min) FILTER (WHERE outcome_label = 'STOP_HIT')::numeric, 1) as avg_time_to_stop,
+            -- Phase N8: same "unknown = pre-migration TARGET_HIT row, not
+            -- zero" convention as backtest.py's target_levels -- added as
+            -- extra FILTER clauses on this existing single-pass query
+            -- rather than a second query, since this function (unlike
+            -- backtest.py's summary) already fetches everything in one
+            -- round trip.
+            COUNT(*) FILTER (WHERE target_level_hit = 'T1') as t1_hits,
+            COUNT(*) FILTER (WHERE target_level_hit = 'T2') as t2_hits,
+            COUNT(*) FILTER (WHERE target_level_hit = 'T3') as t3_hits,
+            COUNT(*) FILTER (WHERE outcome_label = 'TARGET_HIT' AND target_level_hit IS NULL) as target_level_unknown
         FROM signals {where}
         """
 
@@ -80,6 +90,12 @@ class SignalAnalytics:
             "avg_mae_pct": float(row["avg_mae"]) if row["avg_mae"] else None,
             "avg_time_to_target_min": float(row["avg_time_to_target"]) if row["avg_time_to_target"] else None,
             "avg_time_to_stop_min": float(row["avg_time_to_stop"]) if row["avg_time_to_stop"] else None,
+            "target_levels": {
+                "t1": row["t1_hits"] or 0,
+                "t2": row["t2_hits"] or 0,
+                "t3": row["t3_hits"] or 0,
+                "unknown": row["target_level_unknown"] or 0,
+            },
         }
 
     async def precision_by_grade(self, trade_date: date | None = None) -> list[dict]:
@@ -322,7 +338,7 @@ class SignalAnalytics:
             outcome_label, session_hour, sector_id, market_regime,
             max_favorable_pct, max_adverse_pct,
             time_to_target_min, time_to_stop_min,
-            created_at
+            created_at, target_level_hit
         FROM signals
         {where}
         ORDER BY created_at DESC
@@ -351,6 +367,10 @@ class SignalAnalytics:
                 "time_to_target_min": float(r["time_to_target_min"]) if r["time_to_target_min"] else None,
                 "time_to_stop_min": float(r["time_to_stop_min"]) if r["time_to_stop_min"] else None,
                 "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+                # Phase N8: 'T1'/'T2'/'T3' on a TARGET_HIT row, null on
+                # STOP_HIT/EXPIRED or on signals archived before this
+                # column existed.
+                "target_level_hit": r["target_level_hit"],
             }
             for r in rows
         ]

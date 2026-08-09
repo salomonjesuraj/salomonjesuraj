@@ -213,6 +213,24 @@ async def backtest_summary(request):
                 ORDER BY total DESC
                 LIMIT 8
             """, *params)
+
+            # Phase N8: how far a TARGET_HIT signal actually ran, not just
+            # that it hit *a* target. target_level_hit is NULL on rows
+            # archived before migration 003 (pre-existing TARGET_HIT rows
+            # with no level recorded) -- counted separately as "unknown"
+            # rather than silently folded into T1, so old data doesn't
+            # masquerade as "every hit stopped at T1".
+            target_levels = await conn.fetchrow(f"""
+                SELECT
+                    COUNT(*) FILTER (WHERE target_level_hit = 'T1')::int AS t1,
+                    COUNT(*) FILTER (WHERE target_level_hit = 'T2')::int AS t2,
+                    COUNT(*) FILTER (WHERE target_level_hit = 'T3')::int AS t3,
+                    COUNT(*) FILTER (WHERE target_level_hit IS NULL)::int AS unknown
+                FROM signals
+                WHERE created_at >= now() - ($1::int * interval '1 day')
+                  AND outcome_label = 'TARGET_HIT'
+                {where_strategy}
+            """, *params)
         except Exception as exc:
             return web.json_response({
                 "available": False,
@@ -267,6 +285,15 @@ async def backtest_summary(request):
         "by_grade": rows(by_grade),
         "by_session": rows(by_session),
         "by_sector": rows(by_sector),
+        # Phase N8. "unknown" = TARGET_HIT rows archived before migration
+        # 003 added target_level_hit -- real historical hits, just no
+        # level recorded for them, not zero.
+        "target_levels": {
+            "t1": int(target_levels["t1"] or 0) if target_levels else 0,
+            "t2": int(target_levels["t2"] or 0) if target_levels else 0,
+            "t3": int(target_levels["t3"] or 0) if target_levels else 0,
+            "unknown": int(target_levels["unknown"] or 0) if target_levels else 0,
+        },
     })
 
 

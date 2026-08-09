@@ -33,7 +33,8 @@ _IST = timezone(timedelta(hours=5, minutes=30))
 
 _FETCH_UNTRACKED_SQL = """
 SELECT id, signal_id, symbol, signal_type, entry_price, invalidation_price,
-       target_price, created_at, high_after_signal, low_after_signal
+       target_price, created_at, high_after_signal, low_after_signal,
+       t2_price, t3_price
 FROM signals
 WHERE NOT outcome_tracked
   AND NOT suppressed
@@ -57,7 +58,8 @@ UPDATE signals SET
     max_favorable_pct = $9,
     max_adverse_pct = $10,
     time_to_target_min = $11,
-    time_to_stop_min = $12
+    time_to_stop_min = $12,
+    target_level_hit = $13
 WHERE id = $1
 """
 
@@ -130,6 +132,8 @@ class OutcomeTracker:
             entry = float(row["entry_price"])
             stop = float(row["invalidation_price"])
             target = float(row["target_price"])
+            t2 = float(row["t2_price"] or 0)
+            t3 = float(row["t3_price"] or 0)
             signal_type = str(row["signal_type"] or "").lower()
             bearish = target < entry or signal_type == "bearish"
             created = row["created_at"]
@@ -164,6 +168,7 @@ class OutcomeTracker:
             expired_at = None
             time_to_target = None
             time_to_stop = None
+            target_level_hit = None
 
             if (not bearish and ltp >= target) or (bearish and ltp <= target):
                 outcome_tracked = True
@@ -171,6 +176,25 @@ class OutcomeTracker:
                 target_hit_at = now_utc
                 time_to_target = elapsed_min
                 self._target_hits += 1
+                # Phase N8: T1/T2/T3 level detection. Scoped to this exact
+                # moment -- the highest level ALREADY reached by the same
+                # ltp reading that just confirmed T1, not continued
+                # monitoring afterward (this row leaves the untracked pool
+                # the instant outcome_tracked flips true, same as it always
+                # has -- T2/T3 progression that happens in a LATER 30s
+                # cycle, after this row is no longer selected by
+                # _FETCH_UNTRACKED_SQL, is an honest, documented gap of
+                # this scoped implementation, not silently pretended away).
+                # A genuine confluence-cluster fib target (t3 > t2 > t1
+                # for bullish, t3 < t2 < t1 for bearish) is assumed since
+                # that's how compute_fib_targets()/practical_option_targets()
+                # both construct them; t2/t3 of 0 means "not computed for
+                # this signal" and is treated as "no further level to check".
+                target_level_hit = "T1"
+                if t3 > 0 and ((not bearish and ltp >= t3) or (bearish and ltp <= t3)):
+                    target_level_hit = "T3"
+                elif t2 > 0 and ((not bearish and ltp >= t2) or (bearish and ltp <= t2)):
+                    target_level_hit = "T2"
             elif (not bearish and ltp <= stop) or (bearish and ltp >= stop):
                 outcome_tracked = True
                 outcome_label = "STOP_HIT"
@@ -199,6 +223,7 @@ class OutcomeTracker:
                 mae_pct,                # $10
                 time_to_target,         # $11
                 time_to_stop,           # $12
+                target_level_hit,       # $13
             ))
 
         if updates:

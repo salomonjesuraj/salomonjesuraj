@@ -1496,14 +1496,19 @@
 .ifx-int-stat b { font-family: var(--ifx-font-mono); font-size: 19px; font-weight: 800; }
 .ifx-int-stat small { display: block; font-size: 10px; color: var(--ifx-shell-text-faint); margin-top: 2px; }
 
-.ifx-int-gap-note { padding: 13px 15px; border-radius: var(--ifx-radius-md); border: 1px dashed var(--ifx-risk-strong); background: var(--ifx-risk-dim); margin-bottom: 6px; }
-.ifx-int-gap-note b { color: var(--ifx-risk-strong); font-size: 12px; }
-.ifx-int-gap-note p { margin: 6px 0 10px; font-size: 11.5px; color: var(--ifx-shell-text-muted); line-height: 1.55; }
+/* Phase N8: real T1/T2/T3 breakdown card (replaced the earlier "not
+   tracked yet" placeholder now that tracker.py actually checks all three
+   levels -- see integrity-panel-v2.js's _renderTargetLevels()). */
+.ifx-int-t123-card { padding: 13px 15px; border-radius: var(--ifx-radius-md); border: 1px solid var(--ifx-shell-border); background: var(--ifx-shell-surface); margin-bottom: 6px; }
+.ifx-int-t123-card h4 { margin: 0 0 10px; font-size: 11.5px; font-weight: 800; color: var(--ifx-shell-text); display: flex; align-items: baseline; gap: 8px; }
+.ifx-int-t123-card h4 small { font-weight: 500; font-size: 10px; color: var(--ifx-shell-text-faint); text-transform: none; letter-spacing: 0; }
 .ifx-int-t123 { display: flex; flex-direction: column; gap: 6px; }
 .ifx-int-t123-row { display: flex; align-items: center; gap: 10px; font-size: 11px; }
 .ifx-int-t123-row label { width: 20px; font-family: var(--ifx-font-mono); font-weight: 800; color: var(--ifx-shell-text-faint); }
-.ifx-int-t123-track { flex: 1; height: 8px; border-radius: 4px; background: repeating-linear-gradient(135deg, var(--ifx-shell-border), var(--ifx-shell-border) 5px, transparent 5px, transparent 10px); opacity: .5; }
-.ifx-int-t123-row span { width: 80px; text-align: right; color: var(--ifx-shell-text-faint); font-style: italic; }
+.ifx-int-t123-track { flex: 1; height: 8px; border-radius: 4px; background: var(--ifx-shell-border); overflow: hidden; }
+.ifx-int-t123-track.live > i { display: block; height: 100%; border-radius: 4px; transition: width var(--ifx-normal) var(--ifx-ease); }
+.ifx-int-t123-count { width: 90px; text-align: right; color: var(--ifx-shell-text-muted); font-family: var(--ifx-font-mono); font-size: 10.5px; }
+.ifx-int-t123-note { margin: 10px 0 0; font-size: 10.5px; color: var(--ifx-shell-text-faint); line-height: 1.5; }
 
 .ifx-int-breakdowns { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
 .ifx-int-bd-card { padding: 12px 14px; border-radius: var(--ifx-radius-md); border: 1px solid var(--ifx-shell-border); background: var(--ifx-shell-surface); }

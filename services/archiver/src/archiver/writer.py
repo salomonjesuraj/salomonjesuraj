@@ -55,14 +55,16 @@ INSERT INTO signals (
     features, entry_price, invalidation_price, target_price,
     risk_reward_ratio, sector_id, sector_strength, market_regime,
     pre_breakout_state, suppressed, suppression_reason,
-    conditions_met, explanation, sub_scores, session_hour
+    conditions_met, explanation, sub_scores, session_hour,
+    t2_price, t3_price
 ) VALUES (
     $1::uuid, $2, $3, $4, $5,
     $6, $7, $8, $9,
     $10::jsonb, $11, $12, $13,
     $14, $15, $16, $17,
     $18, $19, $20,
-    $21::jsonb, $22::text[], $23::jsonb, $24
+    $21::jsonb, $22::text[], $23::jsonb, $24,
+    $25, $26
 )
 ON CONFLICT (signal_id) DO NOTHING
 """
@@ -154,6 +156,13 @@ class SignalWriter:
                 p.get("explanation", []),                           # $22
                 json.dumps(p.get("sub_scores", {})),               # $23
                 session,                                            # $24
+                # Phase N8: t2_price/t3_price aren't top-level payload
+                # fields (unlike target_price) -- options_first_hybrid.py
+                # writes them inside features_snapshot (see its "t2_price"/
+                # "t3_price" keys), so pulled from there rather than a
+                # p.get() that would always miss.
+                (p.get("features_snapshot") or {}).get("t2_price", 0.0),  # $25
+                (p.get("features_snapshot") or {}).get("t3_price", 0.0),  # $26
             ))
 
         if not rows:

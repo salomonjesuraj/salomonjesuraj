@@ -50,15 +50,7 @@ export class IntegrityPanelV2 {
     this._el.innerHTML = `
       <div class="ifx-int-toolbar" id="intWindowPills"></div>
       <div class="ifx-int-stats" id="intStats"></div>
-      <div class="ifx-int-gap-note">
-        <b>⚠ Not tracked yet</b>
-        <p>Infusion currently records one <span class="ifx-mono">target_price</span> per signal and a binary <b>TARGET_HIT</b> / <b>STOP_HIT</b> outcome — it does not yet know which fib level (T1/T2/T3) price actually reached. The bars below are a placeholder for once the outcome tracker checks all three levels (scoped as Phase N8), not real data.</p>
-        <div class="ifx-int-t123">
-          <div class="ifx-int-t123-row"><label>T1</label><div class="ifx-int-t123-track"></div><span>not tracked</span></div>
-          <div class="ifx-int-t123-row"><label>T2</label><div class="ifx-int-t123-track"></div><span>not tracked</span></div>
-          <div class="ifx-int-t123-row"><label>T3</label><div class="ifx-int-t123-track"></div><span>not tracked</span></div>
-        </div>
-      </div>
+      <div id="intTargetLevels"></div>
       <div class="ifx-section-label" style="margin-top:16px">Breakdown by grade / session / sector<span class="ifx-section-rule"></span></div>
       <div class="ifx-int-breakdowns" id="intBreakdowns"></div>
       <div class="ifx-section-label" style="margin-top:16px">Signal Ledger<span class="ifx-section-rule"></span><span class="ifx-section-count" id="intLedgerCount"></span></div>
@@ -94,6 +86,7 @@ export class IntegrityPanelV2 {
     const isDay = this._window === 'today' || this._window === 'yesterday';
     const dateStr = this._window === 'today' ? istDateStr(istNow()) : this._window === 'yesterday' ? yesterdayIstStr() : null;
     this._el.querySelector('#intStats').innerHTML = `<div class="ifx-int-loading">Loading${isDay ? '' : ' — wider windows can take up to ~30s against a large archive'}…</div>`;
+    this._el.querySelector('#intTargetLevels').innerHTML = '';
     this._el.querySelector('#intBreakdowns').innerHTML = '';
     this._el.querySelector('#intLedgerBody').innerHTML = '';
 
@@ -145,6 +138,7 @@ export class IntegrityPanelV2 {
       const ledger = await api.fetch(ledgerUrl);
 
       this._renderStats(stats, decidedCount);
+      this._renderTargetLevels(stats?.target_levels, stats?.target_hits ?? 0);
       this._renderBreakdowns(byGrade, bySession, bySector);
       this._renderLedger(Array.isArray(ledger) ? ledger : [], !isDay);
     } catch (e) {
@@ -172,6 +166,35 @@ export class IntegrityPanelV2 {
     this._el.querySelector('#intStats').innerHTML = cards.map((c) =>
       `<div class="ifx-int-stat"><label>${c.label}</label><b style="color:${c.color}">${c.value}</b><small>${c.sub}</small></div>`
     ).join('');
+  }
+
+  // Phase N8: real T1/T2/T3 breakdown, replacing the earlier placeholder.
+  // "unknown" (TARGET_HIT rows archived before migration 003, or a signal
+  // whose t2/t3 were never computed -- e.g. no fib confluence cluster
+  // existed) is shown as its own bar rather than folded into T1, so old
+  // data doesn't masquerade as "everything stops at T1".
+  _renderTargetLevels(levels, targetHits) {
+    const el = this._el.querySelector('#intTargetLevels');
+    const l = levels || { t1: 0, t2: 0, t3: 0, unknown: 0 };
+    const rows = [
+      ['T1', l.t1, 'var(--ifx-bull)'],
+      ['T2', l.t2, 'var(--ifx-accent)'],
+      ['T3', l.t3, 'var(--ifx-info)'],
+      ['?', l.unknown, 'var(--ifx-shell-text-faint)'],
+    ];
+    el.innerHTML = `
+      <div class="ifx-int-t123-card">
+        <h4>Target Level Reached<small>${targetHits} TARGET_HIT signals · Phase N8, tracker checks all 3 levels at hit time</small></h4>
+        <div class="ifx-int-t123">
+          ${rows.map(([label, count, color]) => {
+            const pct = targetHits ? Math.round((count / targetHits) * 100) : 0;
+            return `<div class="ifx-int-t123-row"><label>${label}</label>
+              <div class="ifx-int-t123-track live"><i style="width:${pct}%;background:${color}"></i></div>
+              <span class="ifx-int-t123-count">${count} (${pct}%)</span></div>`;
+          }).join('')}
+        </div>
+        <p class="ifx-int-t123-note">Detected at the same 30s poll that confirms T1 -- a level reached in a <em>later</em> cycle, after the signal stops being polled, won't retroactively show here. "?" is a real T1 hit archived before this tracking existed, not a missing value.</p>
+      </div>`;
   }
 
   _renderBreakdowns(byGrade, bySession, bySector) {
@@ -206,10 +229,14 @@ export class IntegrityPanelV2 {
       const moveCls = move >= 0 ? 'ifx-tone-good' : 'ifx-tone-bad';
       const timeToOutcome = outcome === 'TARGET_HIT' ? r.time_to_target_min : outcome === 'STOP_HIT' ? r.time_to_stop_min : null;
       const dateStr = r.created_at ? new Date(r.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }) : '—';
+      // Phase N8: which fib level a TARGET_HIT actually reached, right on
+      // the outcome pill -- "?" for pre-migration rows, nothing appended
+      // at all for STOP_HIT/EXPIRED where the concept doesn't apply.
+      const levelSuffix = outcome === 'TARGET_HIT' ? ` (${r.target_level_hit || '?'})` : '';
       return `<tr><td style="text-align:left">${dateStr}</td><td style="text-align:left"><b class="ifx-mono">${r.symbol || '—'}</b></td>
         <td style="text-align:left"><small>${r.strategy || '—'}</small></td><td>${r.grade || '—'}</td>
         <td class="ifx-mono">₹${Number(r.entry_price || 0).toFixed(2)}</td><td class="ifx-mono">₹${Number(r.stop || 0).toFixed(2)}</td><td class="ifx-mono">₹${Number(r.target || 0).toFixed(2)}</td>
-        <td><span class="ifx-outcome-pill ${outcomeCls}">${outcome || '—'}</span></td>
+        <td><span class="ifx-outcome-pill ${outcomeCls}">${outcome || '—'}${levelSuffix}</span></td>
         <td class="ifx-mono ${moveCls}">${move != null ? (move >= 0 ? '+' : '') + move.toFixed(2) + '%' : '—'}</td>
         <td class="ifx-mono">${timeToOutcome != null ? timeToOutcome.toFixed(0) + 'm' : '—'}</td></tr>`;
     }).join('');
