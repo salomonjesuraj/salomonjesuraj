@@ -575,7 +575,10 @@ function gateScoreCell(item, mode = 'precision') {
   </span>`;
 }
 
-function smartRank(item) {
+// Exported (Phase N4): scanner-v2.js reuses these exact, already-tuned pure
+// functions rather than re-deriving smart-rank/direction-zone heuristics
+// independently -- same inputs, same outputs, zero behavior change here.
+export function smartRank(item) {
   const option = Number(item.option_readiness || 0);
   const setup = Number(item.setup_strength || item.readiness || 0);
   const mtf = Number(item.mtf_score || item.pine_confidence || 0);
@@ -620,7 +623,7 @@ function smartRank(item) {
   return Math.round(Math.max(0, Math.min(150, rank)));
 }
 
-function smartRankReasons(item) {
+export function smartRankReasons(item) {
   const parts = [];
   const option = Math.round(Number(item.option_readiness || 0));
   const setup = Math.round(Number(item.setup_strength || item.readiness || 0));
@@ -664,7 +667,7 @@ function triggerDistance(item, side) {
   return { side, level, distance: diffPct, absDistance: Math.abs(diffPct), crossed: ltp >= level };
 }
 
-function directionalScores(item) {
+export function directionalScores(item) {
   const option = Number(item.option_readiness || 0);
   const setup = Number(item.setup_strength || item.readiness || 0);
   const mtf = Number(item.mtf_score || item.pine_confidence || 0);
@@ -689,7 +692,7 @@ function directionalScores(item) {
   };
 }
 
-function deriveDirectionZone(item, previousLock) {
+export function deriveDirectionZone(item, previousLock) {
   const ltp = Number(item.ltp || 0);
   const ceAbove = Number(item.positive_above || item.breakout_area || item.entry_price_hint || 0);
   const peBelow = Number(item.negative_below || item.invalidation_area || item.stop_loss_hint || 0);

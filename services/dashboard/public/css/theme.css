@@ -1320,3 +1320,79 @@
 .ifx-watch-progress > i { display: block; height: 100%; background: var(--ifx-accent); }
 .ifx-watch-foot { display: flex; justify-content: space-between; gap: 6px; font-size: 10px; color: var(--ifx-shell-text-faint); }
 .ifx-watch-foot b { color: var(--ifx-shell-text); font-family: var(--ifx-font-mono); font-weight: 700; white-space: nowrap; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   NEW SHELL -- Phase N4: Screener table v2, full 14-column spec.
+   Same --ifx-shell-* dark-surface treatment as Command Center (Phase N3)
+   -- New shell reads as one consistent dark page, not a shell/paper
+   split like Classic. Header and body rows share one grid template
+   (--ifx-scr-grid) so columns always line up regardless of scroll
+   position; VirtualScroll only virtualizes the body, the head is a
+   normal static row this file owns directly.
+   ═══════════════════════════════════════════════════════════════════════ */
+.ifx-scr-v2 {
+  --ifx-scr-grid: 108px 112px 88px 92px 90px 100px 128px 84px 108px 118px 84px 84px 84px 84px;
+  color: var(--ifx-shell-text); font-family: var(--ifx-font-ui);
+}
+.ifx-scr-toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.ifx-scr-search {
+  flex: 1 1 240px; display: flex; align-items: center; gap: 6px; padding: 6px 10px;
+  border-radius: var(--ifx-radius-sm); border: 1px solid var(--ifx-shell-border); background: var(--ifx-shell-surface);
+  color: var(--ifx-shell-text-faint); font-size: var(--ifx-text-sm);
+}
+.ifx-scr-search input { border: none; background: none; outline: none; color: var(--ifx-shell-text); font-size: var(--ifx-text-sm); width: 100%; font-family: var(--ifx-font-ui); }
+.ifx-scr-count { font-family: var(--ifx-font-mono); font-size: var(--ifx-text-xs); color: var(--ifx-shell-text-faint); }
+
+.ifx-scr-table-wrap { border: 1px solid var(--ifx-shell-border); border-radius: var(--ifx-radius-lg); overflow: hidden; background: var(--ifx-shell-surface); }
+.ifx-scr-head {
+  display: grid; grid-template-columns: var(--ifx-scr-grid);
+  border-bottom: 1px solid var(--ifx-shell-border); background: var(--ifx-shell-raised);
+}
+.ifx-scr-th {
+  padding: 9px 10px; font-size: 10px; font-weight: 800; letter-spacing: .4px; text-transform: uppercase;
+  color: var(--ifx-shell-text-faint); cursor: pointer; white-space: nowrap; text-align: right; user-select: none;
+}
+.ifx-scr-th:first-child, .ifx-scr-th:nth-child(2) { text-align: left; }
+.ifx-scr-th.sorted { color: var(--ifx-accent); }
+.ifx-scr-arrow { font-size: 8px; margin-left: 2px; }
+
+/* VirtualScroll's own contract: the container needs a real height +
+   overflow-y:auto (see virtual-scroll.js's constructor doc) -- 560px is
+   a reasonable default for a page that also has Command Center above
+   it; .vscroll-viewport is the class VirtualScroll itself adds. */
+.ifx-scr-body.vscroll-viewport { height: 560px; overflow-y: auto; position: relative; }
+
+.ifx-scr-row { display: grid; grid-template-columns: var(--ifx-scr-grid); height: 100%; border-bottom: 1px solid var(--ifx-shell-border); cursor: pointer; }
+.ifx-scr-row:hover { background: rgba(255,255,255,.025); }
+.ifx-scr-row.selected { background: var(--ifx-accent-dim); box-shadow: inset 3px 0 0 var(--ifx-accent); }
+.ifx-scr-td { display: flex; align-items: center; justify-content: flex-end; padding: 0 10px; font-size: 12px; overflow: hidden; white-space: nowrap; }
+.ifx-scr-td.left { justify-content: flex-start; }
+.ifx-scr-td small { color: var(--ifx-shell-text-faint); text-transform: capitalize; }
+.ifx-scr-dash { color: var(--ifx-shell-text-faint); }
+
+.ifx-scr-chg { display: flex; flex-direction: column; align-items: flex-end; gap: 0; line-height: 1.25; }
+.ifx-scr-meter { display: flex; align-items: center; gap: 6px; }
+.ifx-scr-meter-track { width: 36px; height: 4px; border-radius: 2px; background: var(--ifx-shell-border); overflow: hidden; }
+.ifx-scr-meter-track > i { display: block; height: 100%; }
+.ifx-scr-mtf { display: flex; gap: 2px; }
+.ifx-scr-mtf-dot { width: 5px; height: 5px; border-radius: 50%; display: inline-block; }
+.ifx-scr-mtf-dot.ifx-mtf-dot--bull { background: var(--ifx-bull); }
+.ifx-scr-mtf-dot.ifx-mtf-dot--bear { background: var(--ifx-bear); }
+.ifx-scr-mtf-dot.ifx-mtf-dot--flat { background: var(--ifx-shell-border); }
+.ifx-scr-favour-loading { color: var(--ifx-shell-text-faint); font-style: italic; }
+
+/* Live vs. frozen -- the exact Phase B insight (dashed-underline live
+   projection vs. solid-locked frozen value), reapplied to New's own
+   .ifx-scr-level class rather than reusing Classic's .level-cell
+   selector wholesale (different column layout, would need its own
+   :not(.has-signal) row-scoping anyway). */
+.ifx-scr-level.live { color: var(--ifx-info); font-style: italic; border-bottom: 1px dashed var(--ifx-info); padding-bottom: 1px; }
+.ifx-scr-level.live.ifx-tone-good { color: var(--ifx-bull); border-bottom-color: var(--ifx-bull); }
+.ifx-scr-level.live.ifx-tone-bad { color: var(--ifx-bear); border-bottom-color: var(--ifx-bear); }
+.ifx-scr-level.frozen { color: var(--ifx-shell-text); font-weight: 700; }
+.ifx-scr-level.frozen.ifx-tone-good { color: var(--ifx-bull-strong); }
+.ifx-scr-level.frozen.ifx-tone-bad { color: var(--ifx-bear-strong); }
+.ifx-scr-entry { display: inline-flex; align-items: center; gap: 5px; }
+.ifx-scr-side { font-size: 8px; font-weight: 800; font-style: normal; padding: 1px 5px; border-radius: 4px; }
+.ifx-scr-side.ce { background: var(--ifx-bull-dim); color: var(--ifx-bull); }
+.ifx-scr-side.pe { background: var(--ifx-bear-dim); color: var(--ifx-bear); }

@@ -34,6 +34,7 @@ import { AiQueryPanel } from './ai-query-panel.js?v=8.0.0-phase-d';
 import { initModeSwitch } from './mode-switch.js?v=8.0.0-new-shell';
 import { CockpitV2Panel } from './cockpit-v2.js?v=8.0.0-new-shell';
 import { WatchStripV2Panel } from './watch-strip-v2.js?v=8.0.0-new-shell';
+import { ScannerV2Panel } from './scanner-v2.js?v=8.0.0-new-shell';
 
 class InfusionApp {
   constructor() {
@@ -112,6 +113,10 @@ class InfusionApp {
     const watchStripV2 = new WatchStripV2Panel(document.getElementById('watchStripV2'));
     watchStripV2.init();
     this._panels.push(watchStripV2);
+
+    const scannerV2 = new ScannerV2Panel(document.getElementById('scannerV2'));
+    scannerV2.init();
+    this._panels.push(scannerV2);
 
     // Scanner (Priority 1)
     const scanner = new ScannerPanel(document.getElementById('scannerPanel'));
