@@ -96,12 +96,23 @@ export class CockpitPanel {
     this._el.innerHTML = `<div class="ifx-cockpit-grid">${ranked.map((sig) => this._renderCard(sig)).join('')}</div>`;
 
     this._el.querySelectorAll('[data-cockpit-sym]').forEach((card) => {
-      card.addEventListener('click', () => {
+      const activate = () => {
         const sym = card.dataset.cockpitSym;
         const sig = ranked.find((s) => s.symbol === sym);
         if (!sig) return;
         document.dispatchEvent(new CustomEvent('signal:select', { detail: sig }));
         document.dispatchEvent(new CustomEvent('chart:load', { detail: { symbol: sym, signal: sig } }));
+      };
+      card.addEventListener('click', activate);
+      // tabindex="0" makes this focusable but, unlike a real <button>, the
+      // browser does not auto-fire click on Enter/Space -- without this the
+      // card was visibly focusable (focus ring shows) but not actually
+      // operable from the keyboard.
+      card.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          activate();
+        }
       });
     });
   }
@@ -130,7 +141,7 @@ export class CockpitPanel {
     const chaseable = !!fs.chaseable;
 
     return `
-    <div class="ifx-ticket ifx-ticket--${isBull ? 'bull' : 'bear'}" data-cockpit-sym="${escapeHtml(sig.symbol)}" tabindex="0">
+    <div class="ifx-ticket ifx-ticket--${isBull ? 'bull' : 'bear'}" data-cockpit-sym="${escapeHtml(sig.symbol)}" tabindex="0" role="button" aria-label="Open chart and details for ${escapeHtml(sig.symbol)}, ${escapeHtml(label)}">
       <div class="ifx-ticket-head">
         <div class="ifx-ticket-symbol-block">
           <span class="ifx-ticket-symbol">${escapeHtml(sig.symbol)}</span>

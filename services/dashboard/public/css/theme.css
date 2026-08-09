@@ -555,6 +555,39 @@
   box-shadow: var(--ifx-focus-ring);
 }
 
+/* Same catch-all for "paper" content roots (.ifx-scanner/.ifx-oa/.ifx-opt/
+   .ifx-ask/.ifx-pulse) -- these are deliberately NOT .ifx-shell (see the
+   file header's shell-vs-paper design note), so the rule above never
+   matched their buttons. Phase E accessibility pass found this: leader
+   cards, trigger-radar cards, filter/preset/density buttons, and the
+   sector-ribbon's tabs/cards/tiles were all focusable (real <button>s)
+   but showed no visible focus ring at all -- reachable by keyboard,
+   invisible while focused. Individual components may still declare a
+   more specific :focus-visible rule (e.g. .ifx-ask-input's) which simply
+   overrides this default. */
+.ifx-scanner button:focus-visible, .ifx-scanner a:focus-visible, .ifx-scanner [tabindex]:focus-visible,
+.ifx-oa button:focus-visible, .ifx-oa a:focus-visible, .ifx-oa [tabindex]:focus-visible,
+.ifx-opt button:focus-visible, .ifx-opt a:focus-visible, .ifx-opt [tabindex]:focus-visible,
+.ifx-ask button:focus-visible, .ifx-ask a:focus-visible, .ifx-ask [tabindex]:focus-visible,
+.ifx-pulse button:focus-visible, .ifx-pulse a:focus-visible, .ifx-pulse [tabindex]:focus-visible,
+.ifx-cockpit-panel button:focus-visible, .ifx-cockpit-panel a:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--ifx-content-surface), 0 0 0 4px var(--ifx-accent-strong);
+}
+
+/* .workbench-tab is a legacy (main.css) class, not part of the ifx-
+   namespace -- but it's the primary keyboard navigation for the entire
+   16-tab "More" drawer, and the Phase A audit already found no
+   systematic focus styling anywhere in main.css. Targeted exception:
+   fix this one interaction-critical element rather than expand this
+   file's scope into a full legacy-CSS pass. */
+.workbench-tab:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--ifx-content-surface, #fff), 0 0 0 4px var(--ifx-accent-strong, #c9821e);
+  position: relative;
+  z-index: 1;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════
    F&O Scanner table (services/dashboard/public/js/scanner.js) — a re-skin,
    not a rewrite. scanner.js's rendering logic (~2,380 lines: 15+ cell-type
