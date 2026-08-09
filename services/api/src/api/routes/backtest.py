@@ -136,18 +136,53 @@ def _walkforward_status(test: dict, target: float, min_test: int) -> tuple[str, 
     return "FORWARD_FAILED", "Out-of-sample proof failed target. Do not promote this profile."
 
 
-@routes.get("/api/backtest/summary")
-async def backtest_summary(request):
-    pool = request.app.get("pg_pool")
-    if not pool:
-        return web.json_response({
-            "available": False,
-            "reason": "Postgres analytics pool is not available.",
-            "phase": "Phase 5",
-        })
+_SUMMARY_CACHE_PREFIX = "infusion:backtest:summary:cache:"
+_SUMMARY_CACHE_TTL_SEC = 90
 
-    days = max(1, min(365, int(request.query.get("days", "60") or 60)))
-    strategy = request.query.get("strategy", "")
+# Enhanced follow-up to the version that shipped with Phase N8: that one
+# ran 5 independent queries (overview, by_grade, by_session, by_sector,
+# target_levels), each doing its own WHERE created_at >= ... full scan --
+# live-measured at 23s for days=7 against this archive's 269,560 rows in
+# that window (269,479 of them suppressed), and a separate check hit
+# nginx's 30s gateway timeout outright. GROUPING SETS computes all four
+# breakdowns (plus the single overview row) from ONE scan of the filtered
+# row set instead of five, using GROUPING(col) to tell which aggregation
+# level each result row belongs to -- the standard, correct way to do
+# "give me the overall total AND broken out by X AND by Y AND by Z" in
+# one query rather than a UNION of separately-filtered queries.
+_SUMMARY_SQL = """
+SELECT
+    GROUPING(conviction_grade) AS g_grade,
+    GROUPING(session_hour) AS g_session,
+    GROUPING(sector_id) AS g_sector,
+    COALESCE(conviction_grade, '-') AS grade_label,
+    COALESCE(session_hour, 'unknown') AS session_label,
+    COALESCE(sector_id, '-') AS sector_label,
+    COUNT(*)::int AS total,
+    COUNT(*) FILTER (WHERE NOT COALESCE(suppressed, false))::int AS active,
+    COUNT(*) FILTER (WHERE COALESCE(suppressed, false))::int AS suppressed,
+    COUNT(*) FILTER (WHERE outcome_label = 'TARGET_HIT')::int AS target_hits,
+    COUNT(*) FILTER (WHERE outcome_label = 'STOP_HIT')::int AS stop_hits,
+    COUNT(*) FILTER (WHERE outcome_label = 'EXPIRED')::int AS expired,
+    AVG(conviction_score)::float AS avg_score,
+    AVG(risk_reward_ratio)::float AS avg_rr,
+    AVG(max_favorable_pct)::float AS avg_mfe,
+    AVG(max_adverse_pct)::float AS avg_mae,
+    COUNT(*) FILTER (WHERE target_level_hit = 'T1')::int AS t1,
+    COUNT(*) FILTER (WHERE target_level_hit = 'T2')::int AS t2,
+    COUNT(*) FILTER (WHERE target_level_hit = 'T3')::int AS t3,
+    COUNT(*) FILTER (WHERE outcome_label = 'TARGET_HIT' AND target_level_hit IS NULL)::int AS target_unknown
+FROM signals
+WHERE created_at >= now() - ($1::int * interval '1 day')
+{where_strategy}
+GROUP BY GROUPING SETS ((), (conviction_grade), (session_hour), (sector_id))
+"""
+
+
+async def _compute_backtest_summary(pool, days: int, strategy: str) -> dict:
+    """The actual query + shaping, extracted so the route handler can
+    cache around it. Same output shape as before this follow-up -- only
+    how it's computed changed, not what callers get back."""
     where_strategy = "AND strategy = $2" if strategy else ""
     params = [days]
     if strategy:
@@ -155,90 +190,40 @@ async def backtest_summary(request):
 
     async with pool.acquire() as conn:
         try:
-            overview = await conn.fetchrow(f"""
-                SELECT
-                    COUNT(*)::int AS total,
-                    COUNT(*) FILTER (WHERE NOT COALESCE(suppressed, false))::int AS active,
-                    COUNT(*) FILTER (WHERE COALESCE(suppressed, false))::int AS suppressed,
-                    COUNT(*) FILTER (WHERE outcome_label = 'TARGET_HIT')::int AS target_hits,
-                    COUNT(*) FILTER (WHERE outcome_label = 'STOP_HIT')::int AS stop_hits,
-                    COUNT(*) FILTER (WHERE outcome_label = 'EXPIRED')::int AS expired,
-                    AVG(conviction_score)::float AS avg_score,
-                    AVG(risk_reward_ratio)::float AS avg_rr,
-                    AVG(max_favorable_pct)::float AS avg_mfe,
-                    AVG(max_adverse_pct)::float AS avg_mae
-                FROM signals
-                WHERE created_at >= now() - ($1::int * interval '1 day')
-                {where_strategy}
-            """, *params)
-
-            by_grade = await conn.fetch(f"""
-                SELECT
-                    COALESCE(conviction_grade, '-') AS label,
-                    COUNT(*)::int AS total,
-                    COUNT(*) FILTER (WHERE outcome_label = 'TARGET_HIT')::int AS wins,
-                    COUNT(*) FILTER (WHERE outcome_label = 'STOP_HIT')::int AS losses
-                FROM signals
-                WHERE created_at >= now() - ($1::int * interval '1 day')
-                {where_strategy}
-                GROUP BY 1
-                ORDER BY total DESC
-                LIMIT 8
-            """, *params)
-
-            by_session = await conn.fetch(f"""
-                SELECT
-                    COALESCE(session_hour, 'unknown') AS label,
-                    COUNT(*)::int AS total,
-                    COUNT(*) FILTER (WHERE outcome_label = 'TARGET_HIT')::int AS wins,
-                    COUNT(*) FILTER (WHERE outcome_label = 'STOP_HIT')::int AS losses
-                FROM signals
-                WHERE created_at >= now() - ($1::int * interval '1 day')
-                {where_strategy}
-                GROUP BY 1
-                ORDER BY total DESC
-                LIMIT 8
-            """, *params)
-
-            by_sector = await conn.fetch(f"""
-                SELECT
-                    COALESCE(sector_id, '-') AS label,
-                    COUNT(*)::int AS total,
-                    COUNT(*) FILTER (WHERE outcome_label = 'TARGET_HIT')::int AS wins,
-                    COUNT(*) FILTER (WHERE outcome_label = 'STOP_HIT')::int AS losses
-                FROM signals
-                WHERE created_at >= now() - ($1::int * interval '1 day')
-                {where_strategy}
-                GROUP BY 1
-                ORDER BY total DESC
-                LIMIT 8
-            """, *params)
-
-            # Phase N8: how far a TARGET_HIT signal actually ran, not just
-            # that it hit *a* target. target_level_hit is NULL on rows
-            # archived before migration 003 (pre-existing TARGET_HIT rows
-            # with no level recorded) -- counted separately as "unknown"
-            # rather than silently folded into T1, so old data doesn't
-            # masquerade as "every hit stopped at T1".
-            target_levels = await conn.fetchrow(f"""
-                SELECT
-                    COUNT(*) FILTER (WHERE target_level_hit = 'T1')::int AS t1,
-                    COUNT(*) FILTER (WHERE target_level_hit = 'T2')::int AS t2,
-                    COUNT(*) FILTER (WHERE target_level_hit = 'T3')::int AS t3,
-                    COUNT(*) FILTER (WHERE target_level_hit IS NULL)::int AS unknown
-                FROM signals
-                WHERE created_at >= now() - ($1::int * interval '1 day')
-                  AND outcome_label = 'TARGET_HIT'
-                {where_strategy}
-            """, *params)
+            grouped = await conn.fetch(_SUMMARY_SQL.format(where_strategy=where_strategy), *params)
         except Exception as exc:
-            return web.json_response({
+            return {
                 "available": False,
                 "phase": "Phase 5",
                 "reason": f"Backtest summary could not read archived signal outcomes: {exc}",
-            }, status=200)
+            }
 
-    o = dict(overview or {})
+    overview_row = None
+    grade_rows, session_rows, sector_rows = [], [], []
+    for r in grouped:
+        d = dict(r)
+        # GROUPING(col) is 1 when col is NOT a grouping column for this
+        # row (i.e. it was aggregated over), 0 when it IS -- confirmed
+        # directly against Postgres before trusting it, not assumed from
+        # memory (SELECT GROUPING(x) ... GROUP BY GROUPING SETS ((),(x))
+        # returns g=1 for the ()-row, g=0 for the (x)-rows). So the
+        # single overall-totals row -- grouped by NONE of the three
+        # columns -- is (1,1,1), not (0,0,0) as an earlier version of
+        # this function had it (a real bug: it left `overview_row` stuck
+        # at None, silently zeroing out total/active/target_hits/etc.
+        # while by_grade/by_session/by_sector kept working -- caught by
+        # comparing this endpoint's own overview numbers against its own
+        # by_grade total, which didn't add up).
+        if d["g_grade"] == 1 and d["g_session"] == 1 and d["g_sector"] == 1:
+            overview_row = d
+        elif d["g_grade"] == 0 and d["g_session"] == 1 and d["g_sector"] == 1:
+            grade_rows.append(d)
+        elif d["g_session"] == 0 and d["g_grade"] == 1 and d["g_sector"] == 1:
+            session_rows.append(d)
+        elif d["g_sector"] == 0 and d["g_grade"] == 1 and d["g_session"] == 1:
+            sector_rows.append(d)
+
+    o = overview_row or {}
     total = int(o.get("total") or 0)
     hits = int(o.get("target_hits") or 0)
     stops = int(o.get("stop_hits") or 0)
@@ -247,23 +232,23 @@ async def backtest_summary(request):
     precision = round(hits / decided * 100, 1) if decided else None
     reliability, note = _reliability(decided, total, precision)
 
-    def rows(records):
+    def rows(records, label_key):
         out = []
-        for r in records:
-            d = dict(r)
-            wins = int(d.get("wins") or 0)
-            losses = int(d.get("losses") or 0)
+        for d in records:
+            wins = int(d.get("target_hits") or 0)
+            losses = int(d.get("stop_hits") or 0)
             dec = wins + losses
             out.append({
-                "label": d.get("label") or "-",
+                "label": d.get(label_key) or "-",
                 "total": int(d.get("total") or 0),
                 "wins": wins,
                 "losses": losses,
                 "precision_pct": round(wins / dec * 100, 1) if dec else None,
             })
-        return out
+        out.sort(key=lambda x: x["total"], reverse=True)
+        return out[:8]
 
-    return web.json_response({
+    return {
         "available": True,
         "phase": "Phase 5",
         "days": days,
@@ -282,19 +267,56 @@ async def backtest_summary(request):
         "avg_mae_pct": round(float(o.get("avg_mae") or 0), 2) if o.get("avg_mae") is not None else None,
         "reliability": reliability,
         "note": note,
-        "by_grade": rows(by_grade),
-        "by_session": rows(by_session),
-        "by_sector": rows(by_sector),
+        "by_grade": rows(grade_rows, "grade_label"),
+        "by_session": rows(session_rows, "session_label"),
+        "by_sector": rows(sector_rows, "sector_label"),
         # Phase N8. "unknown" = TARGET_HIT rows archived before migration
         # 003 added target_level_hit -- real historical hits, just no
         # level recorded for them, not zero.
         "target_levels": {
-            "t1": int(target_levels["t1"] or 0) if target_levels else 0,
-            "t2": int(target_levels["t2"] or 0) if target_levels else 0,
-            "t3": int(target_levels["t3"] or 0) if target_levels else 0,
-            "unknown": int(target_levels["unknown"] or 0) if target_levels else 0,
+            "t1": int(o.get("t1") or 0),
+            "t2": int(o.get("t2") or 0),
+            "t3": int(o.get("t3") or 0),
+            "unknown": int(o.get("target_unknown") or 0),
         },
-    })
+    }
+
+
+@routes.get("/api/backtest/summary")
+async def backtest_summary(request):
+    pool = request.app.get("pg_pool")
+    if not pool:
+        return web.json_response({
+            "available": False,
+            "reason": "Postgres analytics pool is not available.",
+            "phase": "Phase 5",
+        })
+
+    days = max(1, min(365, int(request.query.get("days", "60") or 60)))
+    strategy = request.query.get("strategy", "")
+
+    # Short-TTL cache: the query is real work even after the GROUPING SETS
+    # consolidation (still one full scan of the date-range row set), and
+    # this endpoint gets hit repeatedly with the same days/strategy within
+    # short windows (Signal Integrity's window pills, the Optimizer panel,
+    # dashboard polling) with no need for sub-90s freshness on a rolling
+    # N-day aggregate. Same request.app["redis"] + json.dumps/loads pattern
+    # this file's optimizer-proposal cache already uses below.
+    redis = request.app.get("redis")
+    cache_key = f"{_SUMMARY_CACHE_PREFIX}{days}:{strategy or 'all'}"
+    if redis is not None:
+        cached_raw = await redis.get(cache_key)
+        if cached_raw:
+            result = json.loads(cached_raw.decode() if isinstance(cached_raw, bytes) else cached_raw)
+            result["cached"] = True
+            return web.json_response(result)
+
+    result = await _compute_backtest_summary(pool, days, strategy)
+    result["cached"] = False
+    result["computed_at_us"] = int(time.time() * 1_000_000)
+    if redis is not None and result.get("available"):
+        await redis.set(cache_key, json.dumps(result), ex=_SUMMARY_CACHE_TTL_SEC)
+    return web.json_response(result)
 
 
 @routes.get("/api/backtest/optimize")
