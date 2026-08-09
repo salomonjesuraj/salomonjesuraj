@@ -385,8 +385,49 @@
   width: 340px !important;
 }
 .ifx-pulse.section-expanded { flex: 1 1 auto !important; width: auto !important; max-height: none; }
-.ifx-pulse.section-collapsed { max-height: 40px; }
+/* Three-layer bug -- each one hid a different symptom of the same
+   underlying cause (the collapse mechanism is app-wide legacy CSS keyed
+   to specific OLD class names, and .ifx-pulse-head/.ifx-pulse-tabs use
+   new ones it's never heard of):
+   1) main.css's generic ".screener-pro-v4 .section-collapsed{
+      max-height:44px!important}" applies to EVERY collapsible section
+      (its own comment: "collapsed sections become a true compact
+      stack") -- being !important, .ifx-pulse really does have a hard
+      ~44px budget once collapsed, same as every other panel.
+   2) .ifx-pulse-head wraps onto a second line inside that budget
+      (title + drag handle + the 4 tabs + expand/collapse icons don't
+      fit on one line) -- fixed by hiding .ifx-pulse-tabs on collapse.
+   3) The actual root cause, found only after 1-2 stopped explaining the
+      full symptom: "[data-collapsible-section].section-collapsed >
+      :not(.panel-header):not(.pulse-head){display:none!important}"
+      hides EVERY direct child of a collapsed section except ones
+      named literally .panel-header or .pulse-head -- the OLD class
+      names. .ifx-pulse-head matches neither, so this rule was hiding
+      the whole header (not just clipping it), title included, on
+      every collapse. Pressing "-" didn't minimize Market Pulse, it
+      erased it. Reported directly: "the sector map hidden completely
+      when i press -". Renaming to the legacy .pulse-head class was
+      rejected -- it carries its own old visual styling (main.css:2829,
+      :4992) that would drag old-dashboard colors back in. Instead this
+      matches that rule's specificity (0,4,0: 1 attr + 3 classes worth
+      from the two :not() arguments) exactly via the selector below, so
+      normal cascade order (this file loads after main.css) decides it. */
+.ifx-pulse.section-collapsed .ifx-pulse-tabs { display: none; }
+[data-collapsible-section].ifx-pulse.section-collapsed > .ifx-pulse-head { display: flex !important; }
 .ifx-pulse.section-collapsed .ifx-pulse-body { display: none; }
+/* Layer 4: "[data-collapsible-section].section-collapsed{flex:0 0
+   38px!important}" is written for panels that stack VERTICALLY in
+   .pro-main, where collapsing to a 38px flex-basis shrinks their
+   height in that column. .ifx-pulse instead sits in a horizontal row
+   next to the cockpit, where flex-basis runs along the row's WIDTH --
+   so the same rule was crushing the whole panel to a 38px-wide sliver
+   (confirmed live: .ifx-pulse-head measured 36px wide, not enough to
+   fit even the title on one line, which is what pushed the expand
+   button below the visible 44px-tall strip in layer 1's fix). Collapse
+   should only remove the body height here, not the width -- reassert
+   the same 340px this panel already uses expanded, at matching (0,2,0)
+   specificity + !important so it survives the legacy rule above it. */
+.ifx-pulse.section-collapsed { flex: 0 0 340px !important; width: 340px !important; }
 @media (max-width: 1100px) {
   .ifx-pulse { flex-basis: auto !important; width: 100% !important; }
 }
