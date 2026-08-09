@@ -27,9 +27,27 @@
         document.documentElement.setAttribute('data-theme', 'dark');
       }
     })();
+    // Same anti-FOUC reasoning as the theme script above, mirrors
+    // dashboard-mode.js's initialMode() exactly -- classic is the default
+    // so a returning visitor never sees a flash of the new layout unless
+    // they explicitly opted into it last time.
+    (function () {
+      try {
+        var saved = localStorage.getItem('infusion:dashboard-mode');
+        document.documentElement.setAttribute('data-dashboard-mode', saved === 'new' ? 'new' : 'classic');
+      } catch (e) {
+        document.documentElement.setAttribute('data-dashboard-mode', 'classic');
+      }
+    })();
   </script>
 </head>
 <body class="screener-v4-page">
+  <!-- Always-visible, mode-independent -- deliberately NOT inside .dashboard
+       or #newShell, since [data-dashboard-mode="new"] hides .dashboard
+       entirely and this is the only way back out of New mode. See
+       dashboard-mode.js / mode-switch.js. -->
+  <button type="button" id="dashboardModeSwitch" class="ifx-mode-switch" title="Switch between the Classic and New dashboard"></button>
+
   <div class="dashboard hybrid-dashboard pro-terminal screener-pro-v4">
     <!-- v2 rebuild: header/ticker/market-health/nav/footer are now styled
          entirely by theme.css (ifx-* classes, applied by each panel's own
@@ -195,7 +213,14 @@
 
   </div>
 
+  <!-- New shell (Phase N1 skeleton) -- a second, parallel dashboard toggled
+       via data-dashboard-mode on <html>. Deliberately a sibling of
+       .dashboard, not a replacement: Classic's DOM/JS is never touched by
+       anything that follows, so it can't regress while New is being built
+       and iterated on. Empty for now -- panels arrive in Phases N3-N7. -->
+  <div id="newShell" class="ifx-new-shell"></div>
+
   <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
-  <script type="module" src="/js/app.js?v=7.0.0-signal-cockpit"></script>
+  <script type="module" src="/js/app.js?v=8.0.0-new-shell"></script>
 </body>
 </html>

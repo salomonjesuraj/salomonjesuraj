@@ -1162,3 +1162,45 @@
   background: var(--ifx-warn-dim); color: var(--ifx-warn); border-radius: var(--ifx-radius-sm);
 }
 .ifx-opt-ablation-controls { display: flex; gap: var(--ifx-space-2); flex-wrap: wrap; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   DASHBOARD REDESIGN v2 -- Phase N1: Classic/New shell toggle
+   .dashboard (Classic) and #newShell (New) are permanent DOM siblings,
+   never conditionally rendered -- [data-dashboard-mode] on <html> just
+   picks which one is visible. This is deliberate: Classic's markup/JS
+   stays completely untouched by anything New-shell-related, so nothing
+   built for New can regress Classic, and the two can be compared side by
+   side against real live data before Classic is ever retired (see the
+   "Dashboard Redesign v2" plan section for the full rationale).
+   ═══════════════════════════════════════════════════════════════════════ */
+#newShell { display: none; }
+[data-dashboard-mode="new"] #newShell { display: block; }
+/* !important required: main.css's `.screener-pro-v4{display:flex!important;...}`
+   (a class always present on this element) beats a plain display:none
+   regardless of selector specificity -- !important only loses to another
+   !important, never to a "more specific" normal rule. Confirmed live:
+   without this, .dashboard stayed display:flex after switching to New
+   mode, silently overlapping the new shell underneath it. */
+[data-dashboard-mode="new"] .dashboard { display: none !important; }
+
+/* Fixed, mode-independent -- its own stacking context, never a child of
+   .dashboard or #newShell (see index.html's comment on the element).
+   Bottom-right, not the top strip: Classic stacks header (44px) + ticker
+   (30px) + market-health (30px) full-width edge to edge with real
+   content in every band -- confirmed live via getBoundingClientRect()
+   that top:8px collided with #themeToggle AND top:52px collided with
+   both #marketTicker and #marketHealthTop. Bottom-right is genuinely
+   clear in both shells and is a conventional spot for a persistent
+   utility control (chat-widget position). */
+.ifx-mode-switch {
+  position: fixed; bottom: 14px; right: 14px; z-index: 999;
+  font-family: var(--ifx-font-ui, 'Inter', sans-serif); font-size: 11px; font-weight: 700; letter-spacing: .2px;
+  padding: 5px 12px; border-radius: var(--ifx-radius-pill, 999px);
+  border: 1px solid var(--ifx-accent-strong, #c9821e); background: var(--ifx-accent, #e8a33d); color: var(--ifx-accent-ink, #241a06);
+  cursor: pointer; box-shadow: var(--ifx-shadow-md, 0 8px 20px rgba(0,0,0,.25));
+}
+.ifx-mode-switch:hover { filter: brightness(1.06); }
+.ifx-mode-switch:focus-visible { outline: none; box-shadow: var(--ifx-shadow-md, 0 8px 20px rgba(0,0,0,.25)), 0 0 0 3px var(--ifx-accent-dim, rgba(232,163,61,.3)); }
+[data-dashboard-mode="new"] .ifx-mode-switch {
+  background: transparent; color: var(--ifx-shell-text, #e6e6f2); border-color: var(--ifx-shell-border, #262740);
+}

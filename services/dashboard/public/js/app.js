@@ -31,6 +31,7 @@ import { SectionControls } from './section-controls.js?v=6.4.4-summary-chip-poli
 import { OptionsAnalyticsPanel } from './options-analytics-panel.js?v=8.0.0-phase-d';
 import { OptimizerPanel } from './optimizer-panel.js?v=8.0.0-phase-d';
 import { AiQueryPanel } from './ai-query-panel.js?v=8.0.0-phase-d';
+import { initModeSwitch } from './mode-switch.js?v=8.0.0-new-shell';
 
 class InfusionApp {
   constructor() {
@@ -39,6 +40,13 @@ class InfusionApp {
 
   init() {
     console.log('[Infusion] Initializing Command Center...');
+
+    // Phase N1: Classic/New shell toggle. The attribute is already set
+    // correctly by index.html's anti-FOUC inline script before this file
+    // even loads (same precedent as theme.js, which is never explicitly
+    // .init()'d here either) -- this just wires the always-visible switch
+    // button's click handler.
+    initModeSwitch();
 
     const sectionControls = new SectionControls(document);
     sectionControls.init();
