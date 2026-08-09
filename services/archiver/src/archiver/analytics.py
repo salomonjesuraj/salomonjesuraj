@@ -300,9 +300,22 @@ class SignalAnalytics:
     # RECENT OUTCOMES
     # ═══════════════════════════════════════════════
 
-    async def recent_outcomes(self, limit: int = 20) -> list[dict]:
-        """Most recent tracked signal outcomes."""
-        sql = """
+    async def recent_outcomes(self, limit: int = 20, trade_date: date | None = None) -> list[dict]:
+        """Most recent tracked signal outcomes.
+
+        trade_date (Phase N7, dashboard Signal Integrity tab): optional
+        exact-calendar-day filter, same `created_at::date = $N` pattern as
+        precision()/precision_by_grade() etc. above -- None (the default)
+        keeps the original "most recent N overall" behavior unchanged for
+        every existing caller.
+        """
+        where = "WHERE NOT suppressed AND outcome_tracked"
+        params: list = [limit]
+        if trade_date:
+            where += " AND created_at::date = $2"
+            params.append(trade_date)
+
+        sql = f"""
         SELECT
             signal_id, symbol, strategy, conviction_grade, conviction_score,
             entry_price, invalidation_price, target_price,
@@ -311,13 +324,13 @@ class SignalAnalytics:
             time_to_target_min, time_to_stop_min,
             created_at
         FROM signals
-        WHERE NOT suppressed AND outcome_tracked
+        {where}
         ORDER BY created_at DESC
         LIMIT $1
         """
 
         async with self._pool.acquire() as conn:
-            rows = await conn.fetch(sql, limit)
+            rows = await conn.fetch(sql, *params)
 
         return [
             {

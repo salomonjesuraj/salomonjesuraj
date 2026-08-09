@@ -24,6 +24,7 @@ const ROWS = [
   { key: 'options-analytics', icon: '⌗', label: 'Options Analytics' },
   { key: 'optimizer', icon: '↻', label: 'Optimizer' },
   { key: 'ask-infusion', icon: '✦', label: 'Ask Infusion' },
+  { key: 'signal-integrity', icon: '✓', label: 'Signal Integrity' },
 ];
 
 export function initRailV2() {

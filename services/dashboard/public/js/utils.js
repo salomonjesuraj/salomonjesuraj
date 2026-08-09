@@ -195,6 +195,35 @@ export function istNow() {
 }
 
 /**
+ * Format an istNow()-shifted Date as YYYY-MM-DD -- the exact param shape
+ * /api/analytics/precision(/grade|/session|/sector) and /api/analytics/
+ * outcomes expect for date=. Reads the UTC fields deliberately (see
+ * istNow()'s own comment: the Date's UTC fields ARE the IST values once
+ * shifted), not local fields, which would double-apply an offset.
+ *
+ * @param {Date} d - an istNow()-shifted Date
+ * @returns {string} e.g. "2026-08-09"
+ */
+export function istDateStr(d) {
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/**
+ * Same as istDateStr(istNow()) but for the previous calendar day --
+ * powers Signal Integrity's "Yesterday" window.
+ *
+ * @returns {string} e.g. "2026-08-08"
+ */
+export function yesterdayIstStr() {
+  const d = istNow();
+  d.setUTCDate(d.getUTCDate() - 1);
+  return istDateStr(d);
+}
+
+/**
  * Current IST clock string in HH:MM:SS format (24-hour).
  *
  * @returns {string}  e.g. "14:32:07"

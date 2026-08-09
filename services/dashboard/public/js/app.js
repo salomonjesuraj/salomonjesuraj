@@ -38,6 +38,7 @@ import { ScannerV2Panel } from './scanner-v2.js?v=8.0.0-new-shell';
 import { initRailV2 } from './rail-v2.js?v=8.0.0-new-shell';
 import { TrackRecordV2Panel } from './track-record-v2.js?v=8.0.0-new-shell';
 import { SignalAlertV2 } from './signal-alert-v2.js?v=8.0.0-new-shell';
+import { IntegrityPanelV2 } from './integrity-panel-v2.js?v=8.0.0-new-shell';
 
 class InfusionApp {
   constructor() {
@@ -202,6 +203,10 @@ class InfusionApp {
     const aiQueryPanelV2 = new AiQueryPanel(document.getElementById('aiQueryPanelV2'));
     aiQueryPanelV2.init();
     this._panels.push(aiQueryPanelV2);
+
+    const integrityPanelV2 = new IntegrityPanelV2(document.getElementById('integrityPanelV2'));
+    integrityPanelV2.init();
+    this._panels.push(integrityPanelV2);
 
     // Scanner (Priority 1)
     const scanner = new ScannerPanel(document.getElementById('scannerPanel'));

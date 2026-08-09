@@ -3,9 +3,7 @@
  * framing: "convince me"). Four numbers, every one backed by a real
  * endpoint already built and verified this session, no invented figures:
  *
- *   Today          -> /api/analytics/precision (defaults to today's date,
- *                      confirmed live: date=2020-01-01 returns all-null/
- *                      zero, so the date-scoping is real, not a no-op)
+ *   Today          -> /api/analytics/precision?date=<IST today>
  *   30-Day         -> /api/backtest/summary?days=30
  *   Walk-Forward   -> /api/backtest/walkforward?days=120&target=80
  *   Session P&L    -> sum of option.net_pnl across /api/journal/trades
@@ -13,8 +11,17 @@
  *                      cost-adjusted P&L, already computed by cost_model.py
  *                      -- reused here, not recomputed). Zero closed trades
  *                      today is a real, honestly-shown state, not an error.
+ *
+ * The route's own docstring says date= "defaults to today" when omitted --
+ * live-checked that claim against precision()'s actual code (no date
+ * filter applied at all when trade_date is None) and it's false: omitting
+ * date= returns ALL-TIME totals, not today's. Passing an explicit
+ * IST-computed date (istNow(), the same IST utility utils.js's clock/
+ * session logic already relies on -- not reinvented here) is what
+ * actually scopes this to today.
  */
 import { api } from './api.js';
+import { istNow, istDateStr } from './utils.js';
 
 const DASH = '—';
 
@@ -34,7 +41,7 @@ export class TrackRecordV2Panel {
     this._el.classList.add('ifx-tr-strip');
     this._render(null, null, null, null);
 
-    this._unsubs.push(api.subscribe('/api/analytics/precision', (resp) => {
+    this._unsubs.push(api.subscribe(`/api/analytics/precision?date=${istDateStr(istNow())}`, (resp) => {
       this._today = resp;
       this._paint();
     }, 30000));
