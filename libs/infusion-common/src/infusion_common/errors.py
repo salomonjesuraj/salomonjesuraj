@@ -80,6 +80,25 @@ def classify_error(exception: Exception) -> InfusionError:
     if "ValidationError" in exc_type:
         return InfusionError(ErrorCategory.MALFORMED_DATA, ErrorSource.VALIDATION, msg, exception)
 
+    # Upstox broker auth failures -- checked before the generic RETRYABLE
+    # fallback so an expired/invalid/missing token is distinguishable from
+    # a transient network blip. Matches the exact RuntimeError messages
+    # ingestion/adapters/upstox.py's authenticate()/connect() raise (a
+    # missing token, an expired token per the JWT's own exp claim, or a
+    # 401 from Upstox's /authorize endpoint). Phase 13.2 audit finding:
+    # without this, ConnectionSupervisor retried a KNOWN-bad token every
+    # ~30s forever (its exponential backoff caps at reconnect_max), which
+    # cannot succeed by retrying and only adds pointless request volume
+    # against Upstox's own rate limits (UDAPI10005) while waiting for a
+    # human to fix the token via the dashboard or the login flow.
+    if isinstance(exception, RuntimeError) and (
+        "Upstox access token" in msg or "Upstox WS auth failed: 401" in msg
+    ):
+        return InfusionError(
+            ErrorCategory.BROKER, ErrorSource.BROKER_WS, msg, exception,
+            context={"auth_failure": True},
+        )
+
     # Fatal errors
     if isinstance(exception, (MemoryError, AssertionError)):
         return InfusionError(ErrorCategory.FATAL, ErrorSource.INTERNAL, msg, exception)

@@ -34,6 +34,39 @@ UPSTOX_INDEX_MAP = {
 INDEX_SYMBOLS = {"NIFTY", "NIFTY50", "BANKNIFTY", "NIFTYBANK", "FINNIFTY", "MIDCPNIFTY"}
 
 
+def _upstox_error_reason(payload: dict, status: int) -> str:
+    """Extract a real failure reason from an Upstox error response.
+
+    Phase 13.2 audit fix: every call site here previously read
+    `payload.get("message", fallback)` -- but Upstox's actual error
+    envelope nests the message under `errors[].message` (with the error's
+    `errorCode`, e.g. UDAPI100050 for an invalid token, alongside it), not
+    a top-level `message` key. A genuine Upstox error response has no
+    top-level `message`, so every prior call silently fell through to its
+    generic fallback string and threw away the real reason -- confirmed
+    live: grepping this codebase for "errorCode"/"error_code" returned
+    zero hits anywhere. 429 is called out explicitly (Upstox's
+    UDAPI10005) since it means "back off", not "something is broken".
+    """
+    if status == 429:
+        return "Upstox rate limit hit (429/UDAPI10005) -- back off before retrying."
+    if status == 401:
+        return "Upstox token invalid or expired (401) -- login again at http://localhost:5100/auth/login."
+    errors = payload.get("errors") if isinstance(payload, dict) else None
+    if isinstance(errors, list) and errors:
+        first = errors[0] if isinstance(errors[0], dict) else {}
+        code = first.get("errorCode", "")
+        msg = first.get("message", "")
+        if code or msg:
+            return f"{code}: {msg}".strip(": ") or f"Upstox error HTTP {status}"
+    # Some Upstox endpoints do use a flat top-level "message" -- kept as a
+    # secondary check rather than the primary one it used to be.
+    flat_msg = payload.get("message") if isinstance(payload, dict) else None
+    if flat_msg:
+        return str(flat_msg)
+    return f"Upstox error HTTP {status}"
+
+
 def _liquidity_thresholds() -> dict:
     return {
         "min_oi": float(os.getenv("INFUSION_OPTION_MIN_OI", "100")),
@@ -548,7 +581,7 @@ async def _resolve_upstox_expiry(session, headers: dict, instrument_key: str) ->
             ) as resp:
                 payload = await resp.json()
                 if resp.status != 200 or payload.get("status") != "success":
-                    last_error = payload.get("message", f"Upstox option contract HTTP {resp.status}")
+                    last_error = _upstox_error_reason(payload, resp.status)
                     continue
         except Exception as exc:
             last_error = f"Upstox option contract error: {exc}"
@@ -608,7 +641,7 @@ async def _fetch_full_option_chain(redis, symbol: str) -> dict:
                 if resp.status != 200 or data.get("status") != "success":
                     return {
                         "ready": False,
-                        "reason": data.get("message", f"Upstox option chain HTTP {resp.status}"),
+                        "reason": _upstox_error_reason(data, resp.status),
                     }
     except Exception as exc:
         return {"ready": False, "reason": f"Upstox option chain error: {exc}"}
@@ -695,7 +728,7 @@ async def _upstox_option_context(redis, symbol: str, bias: str, features: dict |
                 if resp.status != 200 or payload.get("status") != "success":
                     return {
                         "ready": False,
-                        "reason": payload.get("message", f"Upstox option chain HTTP {resp.status}"),
+                        "reason": _upstox_error_reason(payload, resp.status),
                     }
     except Exception as exc:
         return {"ready": False, "reason": f"Upstox option chain error: {exc}"}

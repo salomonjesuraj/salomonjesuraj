@@ -33,6 +33,7 @@ class ConnectionSupervisor:
         reconnect_base: float = 1.0,
         reconnect_max: float = 30.0,
         jitter_pct: float = 0.20,
+        auth_failure_backoff_sec: float = 300.0,
     ):
         self.adapter = adapter
         self.instruments = instruments
@@ -41,7 +42,17 @@ class ConnectionSupervisor:
         self.reconnect_base = reconnect_base
         self.reconnect_max = reconnect_max
         self.jitter_pct = jitter_pct
+        # Phase 13.2 audit fix: a token failure will not self-resolve by
+        # retrying sooner, so it gets a much longer, flat wait instead of
+        # the exponential ramp meant for transient network blips -- see
+        # classify_error()'s auth_failure branch in infusion_common.errors.
+        # _sleep_or_force_recheck() still wakes this early the instant a
+        # human saves a fresh token, so this doesn't add real recovery
+        # latency, only stops uselessly hammering Upstox's /authorize
+        # endpoint while nothing has changed.
+        self.auth_failure_backoff_sec = auth_failure_backoff_sec
         self._consecutive_failures = 0
+        self._last_error_was_auth_failure = False
         self._running = True
 
     async def run(self):
@@ -56,7 +67,11 @@ class ConnectionSupervisor:
                 # This blocks until WS disconnects
                 await self.adapter.start_streaming(self.on_tick)
 
-                # If we reach here, WS closed normally
+                # If we reach here, WS closed normally -- reset the auth-
+                # failure flag so a stale True from an EARLIER iteration
+                # can't wrongly apply the long backoff to this unrelated
+                # normal close.
+                self._last_error_was_auth_failure = False
                 logger.warning("ws_session_ended")
 
             except Exception as e:
@@ -67,6 +82,10 @@ class ConnectionSupervisor:
                     logger.critical("fatal_error_stopping", error=str(e))
                     raise
 
+                self._last_error_was_auth_failure = bool(
+                    err.context and err.context.get("auth_failure")
+                )
+
             finally:
                 try:
                     await self.adapter.disconnect()
@@ -76,14 +95,21 @@ class ConnectionSupervisor:
             if not self._running:
                 break
 
-            # Reconnect with exponential backoff
             self._consecutive_failures += 1
-            delay = self._calculate_backoff()
-            logger.info(
-                "reconnecting",
-                attempt=self._consecutive_failures,
-                delay_sec=round(delay, 2),
-            )
+            if self._last_error_was_auth_failure:
+                delay = self.auth_failure_backoff_sec
+                logger.info(
+                    "reconnect_deferred_auth_failure",
+                    attempt=self._consecutive_failures,
+                    delay_sec=delay,
+                )
+            else:
+                delay = self._calculate_backoff()
+                logger.info(
+                    "reconnecting",
+                    attempt=self._consecutive_failures,
+                    delay_sec=round(delay, 2),
+                )
             await self._sleep_or_force_recheck(delay)
 
     def _calculate_backoff(self) -> float:
