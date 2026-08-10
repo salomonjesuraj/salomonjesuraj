@@ -131,23 +131,79 @@ class VolVwapBreakout(BaseStrategy):
             return None
 
         # ── Compute price levels ───────────────────────────
+        # Phase W (same fix as options_first_hybrid.py, applied here too):
+        # this strategy's trigger IS a one-time VWAP crossover
+        # (vwap_reclaim above requires prev_ltp <= prev_vwap), which
+        # already self-limits most repeat-firing -- a sustained trend
+        # doesn't keep re-qualifying every bar the way options_first_hybrid's
+        # gates did. But a symbol chopping back and forth right around VWAP
+        # can still cross-reclaim-cross-reclaim multiple times in a
+        # session, each a genuine new crossover producing a genuinely new
+        # (differently priced) candidate -- same user-visible symptom
+        # (repeated re-priced alerts for what reads as "the same setup"),
+        # different mechanism. Same watch-episode freeze closes that gap:
+        # a still-open, not-yet-chaseable episode reuses its frozen ladder
+        # and goes silent instead of re-alerting on every subsequent
+        # crossover-adjacent bar.
         atr = features.get("atr_14", 0.0)
-        entry = ltp
-        atr_safe = atr if atr > 0 else max(ltp * 0.0045, 0.50)
-        invalidation = min(vwap - (atr_safe * 0.35), entry - max(atr_safe * 0.75, entry * 0.0035, 0.50))
-        # Pine-alignment scoring (structure/MTF/strength-meter story), same
-        # call options_first_hybrid.py already makes — previously this
-        # strategy skipped it entirely, so vol_vwap_breakout signals carried
-        # no Pine-consistent explanation. It also computes T1/T2/T3
-        # internally, so reuse rather than recomputing.
-        pine = compute_pine_decision(
-            features,
-            bullish=True,
-            entry=entry,
-            invalidation=invalidation,
+        now_us = int(features.get("timestamp_us") or 0)
+        episode_key = f"{self.strategy_id}:bullish"
+        episode = state.watch_episodes.get(episode_key)
+        ttl_us = self._s.options_hybrid_watch_ttl_min * 60 * 1_000_000
+        episode_valid = bool(episode) and (
+            now_us <= 0 or now_us - int(episode.get("first_seen_us") or 0) <= ttl_us
         )
-        target, target2, target3 = pine.t1_price, pine.t2_price, pine.t3_price
-        effective_risk, target_method = pine.risk_per_share, pine.target_method
+        if episode_valid:
+            frozen_stop = float(episode["invalidation_price"])
+            if ltp < frozen_stop:
+                episode_valid = False  # invalidated, not "still the same setup, just later"
+
+        if episode_valid:
+            entry = float(episode["entry_price"])
+            invalidation = frozen_stop
+            target = float(episode["target_price"])
+            target2 = float(episode["target2_price"])
+            target3 = float(episode["target3_price"])
+            effective_risk = abs(entry - invalidation)
+            target_method = str(episode.get("target_method") or "frozen_watch_episode")
+            pine = compute_pine_decision(features, bullish=True, entry=entry, invalidation=invalidation)
+            was_chaseable = bool(episode.get("alerted_chaseable"))
+            newly_chaseable = bool(pine.chaseable) and not was_chaseable
+            if bool(episode.get("alerted_watch")) and not newly_chaseable:
+                return None
+            episode_snapshot = {
+                **episode,
+                "alerted_watch": True,
+                "alerted_chaseable": was_chaseable or bool(pine.chaseable),
+            }
+        else:
+            entry = ltp
+            atr_safe = atr if atr > 0 else max(ltp * 0.0045, 0.50)
+            invalidation = min(vwap - (atr_safe * 0.35), entry - max(atr_safe * 0.75, entry * 0.0035, 0.50))
+            # Pine-alignment scoring (structure/MTF/strength-meter story), same
+            # call options_first_hybrid.py already makes — previously this
+            # strategy skipped it entirely, so vol_vwap_breakout signals carried
+            # no Pine-consistent explanation. It also computes T1/T2/T3
+            # internally, so reuse rather than recomputing.
+            pine = compute_pine_decision(
+                features,
+                bullish=True,
+                entry=entry,
+                invalidation=invalidation,
+            )
+            target, target2, target3 = pine.t1_price, pine.t2_price, pine.t3_price
+            effective_risk, target_method = pine.risk_per_share, pine.target_method
+            episode_snapshot = {
+                "entry_price": entry,
+                "invalidation_price": invalidation,
+                "target_price": target,
+                "target2_price": target2,
+                "target3_price": target3,
+                "target_method": target_method,
+                "first_seen_us": now_us,
+                "alerted_watch": True,
+                "alerted_chaseable": bool(pine.chaseable),
+            }
         if pine.anti_chase_ok:
             explanation.append("Anti-chase: clean location")
         else:
@@ -236,4 +292,6 @@ class VolVwapBreakout(BaseStrategy):
             entry_price=entry,
             invalidation_price=invalidation,
             target_price=target,
+            episode_key=episode_key,
+            episode_snapshot=episode_snapshot,
         )
