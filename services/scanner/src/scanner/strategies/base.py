@@ -37,6 +37,18 @@ class SignalCandidate:
     invalidation_price: float = 0.0
     target_price: float = 0.0
 
+    # Watch-episode write-back (Phase W, optional -- only strategies that
+    # opt into episode-freezing set these). A strategy may only READ
+    # state.watch_episodes inside evaluate() (see the class docstring's
+    # "must not mutate state" contract below); if it decides a watch
+    # episode's ladder should be created/refreshed, it says so here and
+    # the ENGINE (the caller) is the one that actually writes
+    # state.watch_episodes[episode_key] = episode_snapshot, immediately
+    # after evaluate() returns -- same pattern as state.update_from_features()
+    # already being a caller-side, post-evaluate mutation.
+    episode_key: str | None = None
+    episode_snapshot: dict | None = None
+
 
 class BaseStrategy(ABC):
     """Abstract base class for scanner strategies.

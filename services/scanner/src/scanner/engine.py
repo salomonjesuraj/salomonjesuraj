@@ -137,6 +137,16 @@ class ScannerEngine:
             candidate = strategy.evaluate(payload, state)
             await self._persist_diagnostics(symbol, strategy.strategy_id, payload, state, candidate is not None)
             if candidate is not None:
+                # Phase W: caller-side write-back of the watch-episode
+                # ladder a strategy decided on -- evaluate() only reads
+                # state.watch_episodes (strategies/base.py's contract
+                # forbids mutating state from inside evaluate()), so this
+                # is the one place that actually persists it, same as
+                # state.update_from_features() below being a caller-side,
+                # post-evaluate mutation rather than something the
+                # strategy does itself.
+                if candidate.episode_key and candidate.episode_snapshot is not None:
+                    state.watch_episodes[candidate.episode_key] = candidate.episode_snapshot
                 await self._process_candidate(candidate, payload, state)
 
         # Update state AFTER evaluation (so prev_* reflects pre-evaluation)
@@ -457,8 +467,14 @@ class ScannerEngine:
             self.settings.cooldown_sec,
         )
 
-        # Mark pre-breakout as TRIGGERED
-        if state is not None:
+        # Mark pre-breakout as TRIGGERED -- only for a genuine, chaseable
+        # breakout confirmation, not every watch-tier ("Wait for trigger")
+        # publish. Previously unconditional here (Phase W finding): a
+        # non-chaseable candidate would flip the symbol to TRIGGERED and
+        # reset it to IDLE on the very next tick, silently discarding any
+        # COMPRESSING/ACCUMULATING/COILED progress PreBreakoutTracker had
+        # already built up for a setup that hadn't actually broken out yet.
+        if state is not None and bool(signal.features_snapshot.get("chaseable")):
             self.pre_breakout.mark_triggered(state)
 
         self._signals_emitted += 1

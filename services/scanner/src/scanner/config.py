@@ -53,6 +53,14 @@ class ScannerSettings(InfusionSettings):
     options_hybrid_min_rel_vol: float = 1.1 # softer than strict breakout
     options_hybrid_max_spread_bps: float = 70.0
     options_hybrid_min_core_gates: int = 4  # trend gates required for CE/PE candidate
+    # How long a frozen "Wait for trigger" watch episode's entry/SL/T1-T3
+    # ladder stays valid before being treated as stale and recomputed
+    # fresh (Phase W). ~3 hours -- long enough that a still-unresolved
+    # watch legitimately spans most of a session without becoming an
+    # ancient, no-longer-relevant stop distance if volatility has since
+    # shifted; short enough that a symbol chopping sideways all day
+    # doesn't keep showing a morning ladder into the close.
+    options_hybrid_watch_ttl_min: int = 180
 
     # ─── Pre-breakout state machine ─────────────────
     pb_compress_ticks: int = 5              # ticks of declining bb_width

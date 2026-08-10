@@ -9,7 +9,7 @@ Design principles:
   - Lightweight: dataclass, no heavy allocations
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -17,6 +17,24 @@ class ScannerSymbolState:
     """Mutable per-symbol state for crossover and temporal detection."""
 
     symbol: str
+
+    # Watch-episode ladders (Phase W) -- freezes a strategy's entry/SL/
+    # T1-T3 the first time it flags a non-chaseable "watch this" candidate,
+    # so re-evaluating the same still-open setup on a later, moved LTP
+    # doesn't produce a new, different-looking ladder every cycle (the
+    # exact bug reported live: the same GRASIM "Wait for trigger" setup
+    # re-alerting 3x today with 3 different price ladders as price
+    # drifted). Keyed "{strategy_id}:{signal_type}", e.g.
+    # "options_first_hybrid:bullish" -- a small, fixed key space bounded
+    # by (strategies) x (bullish/bearish), not unbounded growth, so this
+    # stays consistent with this file's "bounded, fixed fields" principle
+    # in spirit even though the container itself is a dict.
+    #
+    # Strategies only ever READ this (strategies/base.py's evaluate()
+    # contract explicitly forbids mutating state) -- engine.py writes it
+    # back after evaluate() returns, the same caller-writes-after pattern
+    # already used for update_from_features() below.
+    watch_episodes: dict[str, dict] = field(default_factory=dict)
 
     # Previous feature values (for crossover detection)
     prev_ltp: float = 0.0

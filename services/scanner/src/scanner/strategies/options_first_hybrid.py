@@ -137,21 +137,83 @@ class OptionsFirstHybrid(BaseStrategy):
 
         signal_type = "bullish" if bullish else "bearish"
         option_bias = "BUY CE" if bullish else "BUY PE"
-        entry = ltp
-        atr_safe = atr if atr > 0 else max(ltp * 0.0045, 0.50)
-        stop_buffer = max(atr_safe * 0.85, ltp * 0.0035, 0.50)
-        invalidation = entry - stop_buffer if bullish else entry + stop_buffer
-        pine = compute_pine_decision(
-            features,
-            bullish=bullish,
-            entry=entry,
-            invalidation=invalidation,
+
+        # Phase W: reuse a still-open watch episode's frozen ladder instead
+        # of recomputing entry/SL/T1-T3 off today's live `ltp` every cycle
+        # -- the confirmed root cause of the same setup re-alerting with a
+        # different, drifted price ladder each time (GRASIM: 3x today, 3
+        # different ladders, all "Wait for trigger"). Read-only on `state`
+        # here (strategies/base.py's contract forbids mutating it) --
+        # engine.py writes the episode back via candidate.episode_key/
+        # episode_snapshot after evaluate() returns.
+        now_us = int(features.get("timestamp_us") or 0)
+        episode_key = f"{self.strategy_id}:{signal_type}"
+        episode = state.watch_episodes.get(episode_key)
+        ttl_us = self._s.options_hybrid_watch_ttl_min * 60 * 1_000_000
+        episode_valid = bool(episode) and (
+            now_us <= 0 or now_us - int(episode.get("first_seen_us") or 0) <= ttl_us
         )
-        # pine already computed T1/T2/T3 with these exact same inputs
-        # (compute_pine_decision calls practical_option_targets internally)
-        # — reuse instead of recomputing.
-        target, target2, target3 = pine.t1_price, pine.t2_price, pine.t3_price
-        effective_risk, target_method = pine.risk_per_share, pine.target_method
+        if episode_valid:
+            frozen_stop = float(episode["invalidation_price"])
+            # Invalidated: price closed beyond the frozen stop without
+            # ever confirming entry -- the watched setup failed, not "the
+            # same opportunity, just later." Treat as no episode so a
+            # fresh ladder gets computed below, same as a brand-new setup.
+            if (bullish and ltp < frozen_stop) or (not bullish and ltp > frozen_stop):
+                episode_valid = False
+
+        if episode_valid:
+            entry = float(episode["entry_price"])
+            invalidation = frozen_stop
+            target = float(episode["target_price"])
+            target2 = float(episode["target2_price"])
+            target3 = float(episode["target3_price"])
+            effective_risk = abs(entry - invalidation)
+            target_method = str(episode.get("target_method") or "frozen_watch_episode")
+            pine = compute_pine_decision(features, bullish=bullish, entry=entry, invalidation=invalidation)
+            was_chaseable = bool(episode.get("alerted_chaseable"))
+            newly_chaseable = bool(pine.chaseable) and not was_chaseable
+            if bool(episode.get("alerted_watch")) and not newly_chaseable:
+                # Same still-open episode, nothing changed since the last
+                # alert (or it was already chaseable last cycle too) --
+                # the actual fix: stay silent instead of re-publishing/
+                # re-alerting/re-archiving a structurally identical
+                # candidate. `_persist_diagnostics` in engine.py only
+                # instruments vol_vwap_breakout, so returning None here
+                # has no other observability cost.
+                return None
+            episode_snapshot = {
+                **episode,
+                "alerted_watch": True,
+                "alerted_chaseable": was_chaseable or bool(pine.chaseable),
+            }
+        else:
+            entry = ltp
+            atr_safe = atr if atr > 0 else max(ltp * 0.0045, 0.50)
+            stop_buffer = max(atr_safe * 0.85, ltp * 0.0035, 0.50)
+            invalidation = entry - stop_buffer if bullish else entry + stop_buffer
+            pine = compute_pine_decision(
+                features,
+                bullish=bullish,
+                entry=entry,
+                invalidation=invalidation,
+            )
+            # pine already computed T1/T2/T3 with these exact same inputs
+            # (compute_pine_decision calls practical_option_targets internally)
+            # — reuse instead of recomputing.
+            target, target2, target3 = pine.t1_price, pine.t2_price, pine.t3_price
+            effective_risk, target_method = pine.risk_per_share, pine.target_method
+            episode_snapshot = {
+                "entry_price": entry,
+                "invalidation_price": invalidation,
+                "target_price": target,
+                "target2_price": target2,
+                "target3_price": target3,
+                "target_method": target_method,
+                "first_seen_us": now_us,
+                "alerted_watch": True,
+                "alerted_chaseable": bool(pine.chaseable),
+            }
 
         explanation = [
             f"{option_bias} candidate from options-first hybrid model",
@@ -299,6 +361,8 @@ class OptionsFirstHybrid(BaseStrategy):
             entry_price=entry,
             invalidation_price=invalidation,
             target_price=target,
+            episode_key=episode_key,
+            episode_snapshot=episode_snapshot,
         )
 
     def _score(
