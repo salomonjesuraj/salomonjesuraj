@@ -1178,6 +1178,108 @@ async def main():
         wf_result.get("status") == "FORWARD_TARGET_MET" and wf_result.get("target_met") is True,
         f"got status={wf_result.get('status')}",
     )
+    check(
+        "compute_walkforward (fake pool): hourly-spaced rows have zero rows purged (no "
+        "target_hit_at/stop_hit_at on this synthetic data at all -- can't tell a row leaked "
+        "past the boundary without a resolution timestamp, so the safe default is to keep it)",
+        wf_result.get("purged_train_count") == 0,
+        f"got purged={wf_result.get('purged_train_count')}",
+    )
+    check(
+        "compute_walkforward (fake pool): hourly-spaced rows have exactly 1 row embargoed -- "
+        "the split-boundary row itself (0 min elapsed from itself is always < embargo_min by "
+        "definition), NOT any neighboring row, since 1h spacing is far wider than the 5-min "
+        "default embargo window",
+        wf_result.get("embargoed_test_count") == 1,
+        f"got embargoed={wf_result.get('embargoed_test_count')}",
+    )
+
+    # --- Phase 13.3: purge + embargo on a deliberately overlapping synthetic dataset ---
+    # 60 rows, 2 minutes apart, every outcome resolving 3 minutes after
+    # creation (comfortably inside archiver/config.py's real 5-minute
+    # signal_ttl_min). With defaults (min_train=30, min_test=15,
+    # train_pct=0.70) split = max(30, min(45, 42)) = 42, so split_ts is
+    # row 42's created_at (index 42, i.e. minute 84).
+    # Row i is created at minute (2*i) and resolves at minute (2*i)+3.
+    #   - Row 40 (train, created minute 80) resolves at minute 83 --
+    #     before split_ts (84) -- survives the purge.
+    #   - Row 41 (train, created minute 82) resolves at minute 85 -- at
+    #     or after split_ts (84) -- PURGED, its outcome leaked past the
+    #     boundary. Exactly one train row purged.
+    #   - Embargo window (default 5 min) = [84, 89). Test rows created at
+    #     minutes 84, 86, 88 (indices 42, 43, 44) fall inside it; minute
+    #     90 (index 45) does not. Exactly three test rows embargoed.
+    def overlap_row(i):
+        created = datetime(2026, 1, 1, tzinfo=_tz.utc) + timedelta(minutes=2 * i)
+        resolved = created + timedelta(minutes=3)
+        return {
+            "created_at": created,
+            "symbol": "RELIANCE",
+            "sector_id": "energy",
+            "session_hour": "closing",
+            "conviction_score": 90.0,
+            "conviction_grade": "A+",
+            "risk_reward_ratio": 2.0,
+            "outcome_label": "TARGET_HIT",
+            "target_hit_at": resolved,
+            "stop_hit_at": None,
+            "suppressed": False,
+            "strategy": "options_first_hybrid",
+            "pre_breakout_state": "-",
+            "market_regime": "-",
+        }
+
+    overlap_rows = [overlap_row(i) for i in range(60)]
+    overlap_result = await compute_walkforward(
+        _FakePool(overlap_rows), days=120, target=80.0, min_train=30, min_test=15, train_pct=0.70, embargo_min=5.0,
+    )
+    check(
+        "compute_walkforward purge: exactly 1 train row purged (its outcome resolved 1 min past the split boundary)",
+        overlap_result.get("purged_train_count") == 1,
+        f"got {overlap_result.get('purged_train_count')}, full result={overlap_result}",
+    )
+    check(
+        "compute_walkforward embargo: exactly 3 test rows embargoed (created inside the 5-min post-split window)",
+        overlap_result.get("embargoed_test_count") == 3,
+        f"got {overlap_result.get('embargoed_test_count')}",
+    )
+    check(
+        "compute_walkforward purge+embargo: train/test sizes reflect the drop (42-1=41 train, 18-3=15 test)",
+        overlap_result.get("train_size") == 41 and overlap_result.get("test_size") == 15,
+        f"got train_size={overlap_result.get('train_size')} test_size={overlap_result.get('test_size')}",
+    )
+    check(
+        "compute_walkforward: embargo_min echoed back in the response for verifiability",
+        overlap_result.get("embargo_min") == 5.0,
+    )
+
+    # embargo_min=0 must disable the embargo entirely (opt-out, not a
+    # silent floor) while purge still runs off real resolution timestamps.
+    no_embargo_result = await compute_walkforward(
+        _FakePool(overlap_rows), days=120, target=80.0, min_train=30, min_test=15, train_pct=0.70, embargo_min=0.0,
+    )
+    check(
+        "compute_walkforward: embargo_min=0 disables embargo (0 embargoed) but purge still applies (1 purged)",
+        no_embargo_result.get("embargoed_test_count") == 0 and no_embargo_result.get("purged_train_count") == 1,
+        f"got {no_embargo_result.get('embargoed_test_count')}/{no_embargo_result.get('purged_train_count')}",
+    )
+
+    # A too-thin post-purge/embargo sample must report LOW_SAMPLE rather
+    # than silently running a grid search on a handful of rows. total=60
+    # still passes the pre-split total-rows check (>= min_train+min_test
+    # = 45), but a 30-min embargo against 2-min-spaced rows eats indices
+    # 42-56 (15 of the 18 test rows), leaving only 3 -- well under
+    # min_test=15 -- so this specifically exercises the POST-purge/embargo
+    # re-check, not the earlier pre-split one.
+    thin_result = await compute_walkforward(
+        _FakePool(overlap_rows), days=120, target=80.0, min_train=30, min_test=15, train_pct=0.70, embargo_min=30.0,
+    )
+    check(
+        "compute_walkforward: an embargo that eats most of the test set reports LOW_SAMPLE post-split, not a false result",
+        thin_result.get("status") == "LOW_SAMPLE" and thin_result.get("recommended") is None
+        and thin_result.get("test_size") == 3,
+        f"got {thin_result}",
+    )
 
     diverged_redis = _FakeRedis({LIVE_CONFIG_KEY: {
         b"precision_guard_enabled": b"True",

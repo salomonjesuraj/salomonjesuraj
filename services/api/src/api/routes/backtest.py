@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from aiohttp import web
 
@@ -120,6 +120,67 @@ def _profile_metrics(rows: list[dict], profile: dict, days: int) -> dict:
         "avg_score": round(sum(float(r.get("conviction_score") or 0) for r in matched) / decided, 1) if decided else None,
         "avg_rr": round(sum(float(r.get("risk_reward_ratio") or 0) for r in matched) / decided, 2) if decided else None,
     }
+
+
+def _purge_and_embargo(
+    rows: list[dict], split: int, embargo_min: float
+) -> tuple[list[dict], list[dict], int, int]:
+    """Phase 13.3: harden the chronological train/test cut against a
+    specific leakage mode a plain index split ignores.
+
+    Two related but distinct problems, both fixed here:
+
+    1. PURGE -- a training row's outcome can resolve AFTER the split
+       boundary even though the row itself was created before it. The
+       archiver's outcome tracker (archiver/tracker.py) polls every 30s
+       and marks a signal TARGET_HIT/STOP_HIT/EXPIRED within
+       signal_ttl_min minutes of creation (archiver/config.py, default
+       5) -- so a signal created a couple of minutes before the split can
+       still resolve a couple of minutes into what should be the
+       untouched test window. Scoring that row as pure "training
+       evidence" lets information from inside the test period leak into
+       the profile that gets chosen using train_rows. Purged here by
+       dropping any train row whose target_hit_at/stop_hit_at (whichever
+       matches its own outcome_label) falls at or after the split
+       boundary's timestamp.
+
+    2. EMBARGO -- even a train row that resolves cleanly before the
+       boundary can sit on conditions (a live intraday move, a sector
+       rotation) that are still unfolding when the test window opens.
+       A short buffer of test rows immediately after the boundary is
+       excluded entirely (neither trained on nor tested against) so nothing
+       in the "test" set was created while that carry-over was still live.
+
+    embargo_min defaults to signal_ttl_min (5) in compute_walkforward()
+    below -- the exact maximum time any TARGET_HIT/STOP_HIT outcome can
+    take to resolve, so the window is grounded in the tracker's own
+    real behavior rather than picked arbitrarily.
+    """
+    if split <= 0 or split >= len(rows):
+        return rows[:split], rows[split:], 0, 0
+
+    split_ts = rows[split]["created_at"]
+    train_candidates = rows[:split]
+
+    purged_train = []
+    purged_count = 0
+    for r in train_candidates:
+        resolved_at = r.get("target_hit_at") if r.get("outcome_label") == "TARGET_HIT" else r.get("stop_hit_at")
+        if resolved_at is not None and resolved_at >= split_ts:
+            purged_count += 1
+            continue
+        purged_train.append(r)
+
+    embargo_end = split_ts + timedelta(minutes=embargo_min)
+    embargoed_test = []
+    embargoed_count = 0
+    for r in rows[split:]:
+        if r["created_at"] < embargo_end:
+            embargoed_count += 1
+            continue
+        embargoed_test.append(r)
+
+    return purged_train, embargoed_test, purged_count, embargoed_count
 
 
 def _walkforward_status(test: dict, target: float, min_test: int) -> tuple[str, str]:
@@ -597,6 +658,7 @@ async def compute_walkforward(
     min_train: int = 30,
     min_test: int = 15,
     train_pct: float = 0.70,
+    embargo_min: float = 5.0,
 ) -> dict:
     """Out-of-sample rule validation -- the actual computation, extracted
     from the /api/backtest/walkforward route handler so other callers
@@ -609,6 +671,12 @@ async def compute_walkforward(
     reports how that same profile performs on the newer forward window. This is
     intentionally conservative so the dashboard does not mistake curve-fitting
     for a proven 80% edge.
+
+    Phase 13.3: the chronological cut is additionally purged and embargoed
+    around the split boundary -- see _purge_and_embargo()'s docstring for
+    why a plain index split isn't enough on its own. embargo_min defaults
+    to 5, matching archiver/config.py's signal_ttl_min -- the exact
+    maximum time any TARGET_HIT/STOP_HIT outcome can take to resolve.
     """
     if not pool:
         return {
@@ -622,6 +690,7 @@ async def compute_walkforward(
     min_train = max(10, min(2000, int(min_train or 30)))
     min_test = max(5, min(1000, int(min_test or 15)))
     train_pct = max(0.50, min(0.85, float(train_pct or 0.70)))
+    embargo_min = max(0.0, min(120.0, float(embargo_min if embargo_min is not None else 5.0)))
     valid_sessions = {"opening", "mid_morning", "midday", "closing"}
 
     async with pool.acquire() as conn:
@@ -636,6 +705,8 @@ async def compute_walkforward(
                     COALESCE(conviction_grade, '-') AS conviction_grade,
                     COALESCE(risk_reward_ratio, 0)::float AS risk_reward_ratio,
                     outcome_label,
+                    target_hit_at,
+                    stop_hit_at,
                     COALESCE(suppressed, false) AS suppressed,
                     COALESCE(strategy, '-') AS strategy,
                     COALESCE(pre_breakout_state, '-') AS pre_breakout_state,
@@ -673,10 +744,36 @@ async def compute_walkforward(
         }
 
     split = max(min_train, min(total - min_test, int(total * train_pct)))
-    train_rows = rows[:split]
-    test_rows = rows[split:]
+    train_rows, test_rows, purged_count, embargoed_count = _purge_and_embargo(rows, split, embargo_min)
     train_days = max(1, int(days * train_pct))
     test_days = max(1, days - train_days)
+
+    # Purging/embargoing can drop either side below the minimum sample
+    # size that already passed the pre-split total-rows check above --
+    # re-validate post-split rather than silently running a grid search
+    # against a test set embargo left too thin to mean anything.
+    if len(train_rows) < min_train or len(test_rows) < min_test:
+        return {
+            "available": True,
+            "phase": "Phase 5.3",
+            "status": "LOW_SAMPLE",
+            "target_precision_pct": target,
+            "total_decided": total,
+            "train_size": len(train_rows),
+            "test_size": len(test_rows),
+            "purged_train_count": purged_count,
+            "embargoed_test_count": embargoed_count,
+            "embargo_min": embargo_min,
+            "recommended": None,
+            "candidates": [],
+            "note": (
+                f"Purging ({purged_count} train row(s) whose outcome resolved after the split) "
+                f"and a {embargo_min:.0f}-min embargo ({embargoed_count} test row(s) dropped) "
+                f"left too few decided outcomes on one side of the split "
+                f"(train={len(train_rows)}, need {min_train}; test={len(test_rows)}, need {min_test}). "
+                f"Wait for more archived signals or widen the days window."
+            ),
+        }
 
     profiles = []
     score_floors = [50, 55, 60, 65, 70, 75, 80, 85, 90]
@@ -753,6 +850,13 @@ async def compute_walkforward(
         "total_decided": total,
         "train_size": len(train_rows),
         "test_size": len(test_rows),
+        # Phase 13.3: purge/embargo counts, always reported (even 0) so
+        # this is verifiable rather than a claimed-but-invisible method --
+        # matches this session's standard of never asserting a technique
+        # is in effect without a number a human can check.
+        "purged_train_count": purged_count,
+        "embargoed_test_count": embargoed_count,
+        "embargo_min": embargo_min,
         "target_met": target_met,
         "status": recommended["status"] if recommended else "NO_PROFILE",
         "recommended": recommended,
@@ -771,6 +875,7 @@ async def backtest_walkforward(request):
     min_train = request.query.get("min_train", "30")
     min_test = request.query.get("min_test", "15")
     train_pct = request.query.get("train_pct", "0.70")
+    embargo_min = request.query.get("embargo_min", "5")
     result = await compute_walkforward(
         pool,
         days=int(days) if days else 120,
@@ -778,6 +883,7 @@ async def backtest_walkforward(request):
         min_train=int(min_train) if min_train else 30,
         min_test=int(min_test) if min_test else 15,
         train_pct=float(train_pct) if train_pct else 0.70,
+        embargo_min=float(embargo_min) if embargo_min else 5.0,
     )
     return web.json_response(result)
 
