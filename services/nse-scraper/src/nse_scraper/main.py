@@ -26,6 +26,7 @@ import redis.asyncio as aioredis
 import structlog
 
 from nse_scraper.config import NseScraperSettings
+from nse_scraper.delivery import run_delivery_capture
 from nse_scraper.loader import (
     load_universe,
     populate_redis,
@@ -94,6 +95,16 @@ async def run() -> None:
     if reverse_map:
         await store_instrument_map(r, reverse_map)
 
+    # Phase 13.5: NSE delivery % capture. Run once at startup (catches up
+    # quickly after a redeploy instead of waiting a full interval) then on
+    # DELIVERY_CAPTURE_INTERVAL_SEC -- cheap regardless of cadence since
+    # run_delivery_capture() no-ops once today's session data is stored.
+    try:
+        result = await run_delivery_capture(r, set(symbols.keys()))
+        logger.info("delivery_capture_startup", **result)
+    except Exception as exc:
+        logger.warning("delivery_capture_startup_failed", error=str(exc))
+
     # Health reporter
     health = HealthReporter(r, settings.service_name)
     health.set_details_fn(lambda: {
@@ -113,12 +124,17 @@ async def run() -> None:
         start_oauth_server(r, settings)
     )
 
-    # Main loop: periodic health heartbeat + symbol refresh
+    # Main loop: periodic health heartbeat + symbol refresh + delivery capture
+    DELIVERY_CAPTURE_INTERVAL_SEC = 3 * 3600  # NSE publishes once/day; this just
+                                               # bounds how quickly a fresh
+                                               # session's data gets picked up
     async def main_loop():
         refresh_counter = 0
+        delivery_counter = 0
         while not lifecycle.shutdown_event.is_set():
             await asyncio.sleep(30)
             refresh_counter += 30
+            delivery_counter += 30
 
             # Periodic symbol re-population (hourly by default)
             if refresh_counter >= settings.symbol_refresh_interval_sec:
@@ -133,6 +149,14 @@ async def run() -> None:
                     logger.info("symbols_refreshed", count=new_count)
                 except Exception as e:
                     logger.warning("symbol_refresh_error", error=str(e))
+
+            if delivery_counter >= DELIVERY_CAPTURE_INTERVAL_SEC:
+                delivery_counter = 0
+                try:
+                    result = await run_delivery_capture(r, set(symbols.keys()))
+                    logger.info("delivery_capture", **result)
+                except Exception as e:
+                    logger.warning("delivery_capture_error", error=str(e))
 
             logger.debug(
                 "heartbeat",

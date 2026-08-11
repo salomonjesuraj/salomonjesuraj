@@ -144,7 +144,14 @@ async def bootstrap_historical(redis) -> dict:
                     instrument_key,
                     "days",
                     1,
-                    today - timedelta(days=180),
+                    # 370 calendar days (not 180) -- a real 52-week-high/low
+                    # read (api/routes/mtf.py's _week52_stats) needs a full
+                    # year of daily bars plus buffer for weekends/holidays;
+                    # 180 days silently truncated every "52-week" claim to
+                    # ~6 months. mtf.py's _load_bars already caps its
+                    # zrange read at the most recent 260 bars, so this is
+                    # the only place the window needs widening.
+                    today - timedelta(days=370),
                     today,
                 )
                 await _store_zset(redis, f"infusion:ohlc:{symbol}:daily", daily, 14 * 86400)

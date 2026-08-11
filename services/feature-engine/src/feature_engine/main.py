@@ -78,6 +78,27 @@ async def main():
 
     engine.set_history_loader(load_history)
 
+    async def load_delivery(symbol: str) -> dict | None:
+        raw = await redis.hgetall(f"infusion:nse:delivery:{symbol}")
+        if not raw:
+            return None
+        out: dict = {}
+        for key, value in raw.items():
+            k = key.decode() if isinstance(key, bytes) else key
+            v = value.decode() if isinstance(value, bytes) else value
+            out[k] = v
+        try:
+            return {
+                "delivery_pct": float(out.get("delivery_pct") or 0.0),
+                "avg_delivery_pct_20d": float(out["avg_delivery_pct_20d"]) if out.get("avg_delivery_pct_20d") else None,
+                "avg_days": int(out.get("avg_days") or 0),
+                "trade_date": out.get("trade_date", ""),
+            }
+        except ValueError:
+            return None
+
+    engine.set_delivery_loader(load_delivery)
+
     async def on_bar(symbol, timeframe, bar):
         """Persist every completed bar for charting and restart-safe history."""
         key = f"infusion:ohlc:{symbol}:{timeframe}m"

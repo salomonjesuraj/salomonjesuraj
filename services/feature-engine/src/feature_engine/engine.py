@@ -9,6 +9,7 @@ from feature_engine.state import SymbolState, OHLCBar
 from feature_engine.bar_builder import update_bars
 from feature_engine.features.price import (
     update_price_features, update_ema_features, get_vwap, get_gap_pct, get_change_pct,
+    get_vwap_sd_bands,
 )
 from feature_engine.features.momentum import (
     update_rsi, get_rsi, update_macd, get_macd,
@@ -113,6 +114,7 @@ class FeatureEngine:
         self._on_bar = None
         self._profile_loader = None
         self._history_loader = None
+        self._delivery_loader = None
         self._processed = 0
 
     def set_callback(self, fn):
@@ -127,6 +129,9 @@ class FeatureEngine:
 
     def set_history_loader(self, fn):
         self._history_loader = fn
+
+    def set_delivery_loader(self, fn):
+        self._delivery_loader = fn
 
     async def ingest(self, payload: dict):
         """Buffer a normalized tick for batch processing."""
@@ -211,6 +216,15 @@ class FeatureEngine:
             if profile:
                 state.volume_profile = profile
                 state.volume_profile_ready = True
+        if (self._delivery_loader
+                and now_us() - state.delivery_checked_us > 300_000_000):
+            state.delivery_checked_us = now_us()
+            delivery = await self._delivery_loader(symbol)
+            if delivery and delivery.get("trade_date") != state.delivery_trade_date:
+                state.delivery_pct = delivery.get("delivery_pct", 0.0)
+                state.delivery_pct_avg_20d = delivery.get("avg_delivery_pct_20d")
+                state.delivery_avg_days = delivery.get("avg_days", 0)
+                state.delivery_trade_date = delivery.get("trade_date", "")
         return state
 
     def _compute(self, state: SymbolState, tick: dict) -> tuple[FeatureVectorV1 | None, list]:
@@ -237,6 +251,7 @@ class FeatureEngine:
             state.session_date = session_date
             state.vwap_numerator = 0.0
             state.vwap_denominator = 0
+            state.vwap_sq_numerator = 0.0
             state.day_high = 0.0
             state.day_low = float("inf")
             state.day_open = tick.get("open", ltp) or ltp
@@ -324,6 +339,10 @@ class FeatureEngine:
             **fib_snapshot(state, ltp),
             **ict_snapshot(state),
             **volman_snapshot(state),
+            **get_vwap_sd_bands(state),
+            "delivery_pct_avg_20d": state.delivery_pct_avg_20d,
+            "delivery_avg_days": state.delivery_avg_days,
+            "delivery_trade_date": state.delivery_trade_date,
             "di_plus": di_plus,
             "di_minus": di_minus,
             "adx": adx,
@@ -371,6 +390,7 @@ class FeatureEngine:
             completed_1m_bars=state.completed_1m_bars,
             spread_bps=get_spread_bps(state),
             order_imbalance=get_order_imbalance(state),
+            delivery_pct=state.delivery_pct,
             ml_features=ml_features,
         ), completed
 

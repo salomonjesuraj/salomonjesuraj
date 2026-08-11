@@ -538,6 +538,45 @@ def _donchian_channel(daily_bars: list[dict], period: int = DONCHIAN_PERIOD) -> 
     }
 
 
+WEEK52_TRADING_DAYS = 252  # ~52 calendar weeks of NSE trading sessions
+WEEK52_NEAR_PCT = 3.0      # within this % of the 52w extreme counts as "near"
+
+
+def _week52_stats(daily_bars: list[dict], ltp: float) -> dict:
+    """52-week high/low distance, from the same cached daily bars every other
+    daily-bar feature here already uses (`bootstrap_historical` fetches a
+    370-calendar-day window specifically to cover this — see scheduler/
+    historical.py). Deliberately labeled "52-week", not "all-time-high": an
+    honest ATH claim would need multi-year history Infusion doesn't fetch
+    today, so this doesn't pretend to be one.
+    """
+    if not daily_bars or ltp <= 0:
+        return {
+            "week52_high": None, "week52_low": None,
+            "week52_high_distance_pct": None, "week52_low_distance_pct": None,
+            "week52_near_high": False, "week52_near_low": False,
+            "week52_bars": 0,
+        }
+
+    window = daily_bars[-WEEK52_TRADING_DAYS:]
+    high = max(b["high"] for b in window)
+    low = min(b["low"] for b in window)
+    high_dist = (ltp - high) / high * 100 if high > 0 else None
+    low_dist = (ltp - low) / low * 100 if low > 0 else None
+
+    return {
+        "week52_high": round(high, 2),
+        "week52_low": round(low, 2),
+        # Negative = below the level (the common case for high_distance);
+        # positive high_distance means price is making a fresh 52w high now.
+        "week52_high_distance_pct": round(high_dist, 2) if high_dist is not None else None,
+        "week52_low_distance_pct": round(low_dist, 2) if low_dist is not None else None,
+        "week52_near_high": high_dist is not None and high_dist >= -WEEK52_NEAR_PCT,
+        "week52_near_low": low_dist is not None and low_dist <= WEEK52_NEAR_PCT,
+        "week52_bars": len(window),
+    }
+
+
 def _major_blocker(blocker_bars: dict[str, list[dict]], ltp: float) -> dict:
     """Nearest opposing swing pivot on the higher timeframes, between price
     and either direction's target — matches Pine's "Major Blocker" concept.
@@ -788,6 +827,7 @@ async def compute_mtf(redis, symbol: str, store: bool = True) -> dict:
     wyckoff_structural_failure = detect_structural_failure(daily_pivots)
     wyckoff_sot = detect_shortening_of_thrust(daily_pivots)
     wyckoff_sos_sow = detect_sos_sow_bar(daily) if daily else None
+    week52 = _week52_stats(daily, current_ltp)
     quality = "historical" if any(row["bars"] for row in timeframes.values()) else "missing"
     if any(row["quality"] == "limited" for row in timeframes.values()) and quality == "historical":
         quality = "limited"
@@ -822,6 +862,7 @@ async def compute_mtf(redis, symbol: str, store: bool = True) -> dict:
         "ma_regime": ma_regime,
         "chart_patterns": chart_patterns,
         "donchian": donchian,
+        "week52": week52,
         "wyckoff_structural_failure": wyckoff_structural_failure,
         "wyckoff_sot": wyckoff_sot,
         "wyckoff_sos_sow": wyckoff_sos_sow,

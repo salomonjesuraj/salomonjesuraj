@@ -43,6 +43,12 @@ class SymbolState:
     # VWAP accumulators
     vwap_numerator: float = 0.0
     vwap_denominator: int = 0
+    # sum(price^2 * delta_volume) -- alongside vwap_numerator/denominator this
+    # gives session variance without needing to know VWAP at each historical
+    # tick: variance = vwap_sq_numerator/vwap_denominator - vwap^2 (see
+    # features/price.py get_vwap_sd_bands). Same session-boundary reset as
+    # the other VWAP accumulators.
+    vwap_sq_numerator: float = 0.0
 
     # EMA state (keyed by period)
     ema: dict[int, float] = field(default_factory=dict)
@@ -109,6 +115,18 @@ class SymbolState:
     volume_profile_checked_us: int = 0
     history_seed_checked_us: int = 0
     history_seeded: bool = False
+
+    # NSE delivery % (Phase 13.5) -- next-day signal, T's session data
+    # published by NSE post-market and captured by nse-scraper (see
+    # nse_scraper/delivery.py). Re-checked on a throttle (not once-and-done
+    # like volume_profile_ready above) so a new trading day's figure is
+    # picked up without needing a service restart -- delivery_trade_date
+    # tracks which session the cached value is actually for.
+    delivery_pct: float = 0.0
+    delivery_pct_avg_20d: float | None = None
+    delivery_avg_days: int = 0
+    delivery_trade_date: str = ""
+    delivery_checked_us: int = 0
 
     # Bar builders
     bar_1m: OHLCBar = field(default_factory=OHLCBar)

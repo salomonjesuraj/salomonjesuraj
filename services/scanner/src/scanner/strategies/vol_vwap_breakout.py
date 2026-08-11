@@ -288,6 +288,26 @@ class VolVwapBreakout(BaseStrategy):
                 "wyckoff_structural_failure": wyckoff_failure,
                 "wyckoff_sot": wyckoff_sot,
                 "wyckoff_sos_sow": wyckoff_sos_sow,
+                # Session VWAP standard-deviation bands (Phase 13.5) --
+                # directly relevant here since this strategy's whole trigger
+                # IS a VWAP reclaim. Informational only, not wired into
+                # gates yet. See feature_engine/features/price.py.
+                "vwap_stdev": ml.get("vwap_stdev"),
+                "vwap_sd1_upper": ml.get("vwap_sd1_upper"),
+                "vwap_sd1_lower": ml.get("vwap_sd1_lower"),
+                "vwap_sd2_upper": ml.get("vwap_sd2_upper"),
+                "vwap_sd2_lower": ml.get("vwap_sd2_lower"),
+                "vwap_sd_ready": ml.get("vwap_sd_ready"),
+                # 52-week high/low distance + NSE delivery % (Phase 13.5).
+                # Informational only -- see api/routes/mtf.py's
+                # _week52_stats() and nse_scraper/delivery.py.
+                "week52_high": (mtf_cache.get("week52") or {}).get("week52_high"),
+                "week52_low": (mtf_cache.get("week52") or {}).get("week52_low"),
+                "week52_high_distance_pct": (mtf_cache.get("week52") or {}).get("week52_high_distance_pct"),
+                "week52_near_high": (mtf_cache.get("week52") or {}).get("week52_near_high"),
+                "delivery_pct": features.get("delivery_pct"),
+                "delivery_pct_avg_20d": ml.get("delivery_pct_avg_20d"),
+                "delivery_avg_days": ml.get("delivery_avg_days"),
             },
             entry_price=entry,
             invalidation_price=invalidation,
