@@ -49,6 +49,7 @@ from api.routes.journal import routes as journal_routes
 from api.routes.execution import routes as execution_routes
 from api.routes.safety import routes as safety_routes
 from api.routes.events import routes as events_routes
+from api.routes.strategy_selector import routes as strategy_selector_routes
 from api.ai_advisor import OpenAIAdvisor
 from api.option_chain_queue import option_chain_queue_loop
 from api.mtf_queue import mtf_queue_loop
@@ -121,6 +122,7 @@ async def main():
     app.router.add_routes(execution_routes)
     app.router.add_routes(safety_routes)
     app.router.add_routes(events_routes)
+    app.router.add_routes(strategy_selector_routes)
     if pg_pool:
         app.router.add_routes(analytics_routes)
 
