@@ -27,6 +27,14 @@ OPTIMIZER_PROPOSAL_RETRY_SEC = 120  # short retry on failure (e.g. api not up
                                      # yet on a fresh cold start) instead of
                                      # stranding the sweep for a full day
 
+# Phase 13.4: option-premium capture for net-of-cost walk-forward
+# validation. Short interval on purpose -- the endpoint's own LIMIT 20
+# per pass bounds each call, and live daily published-signal volume is
+# low (confirmed ~11-15/day from the real archive checked this session),
+# so running every 60s keeps entry premium captured close to fire-time
+# without meaningfully loading the api/Upstox side.
+PREMIUM_CAPTURE_INTERVAL_SEC = 60
+
 
 async def run_optimizer_proposal_sweep() -> dict:
     """Calls the api service's walk-forward-vs-live-config comparison. This
@@ -38,6 +46,20 @@ async def run_optimizer_proposal_sweep() -> dict:
     url = f"{API_BASE_URL}/api/backtest/optimizer-proposal"
     async with aiohttp.ClientSession() as session:
         async with session.get(url, timeout=aiohttp.ClientTimeout(total=120)) as resp:
+            resp.raise_for_status()
+            return await resp.json()
+
+
+async def run_premium_capture() -> dict:
+    """Calls the api service's option-premium capture pass for signals
+    that fired/resolved recently and don't have real premium data yet.
+    See capture_missing_premiums() in api/routes/backtest.py -- this
+    only ever fills in entry_premium_ask/entry_premium_bid/
+    exit_premium_bid/option_instrument_key on the signals table, never
+    touches scanner's live config or any trading decision."""
+    url = f"{API_BASE_URL}/api/backtest/capture-premiums"
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, timeout=aiohttp.ClientTimeout(total=60)) as resp:
             resp.raise_for_status()
             return await resp.json()
 
@@ -92,8 +114,33 @@ async def run() -> None:
             except asyncio.TimeoutError:
                 pass
 
+    # Phase 13.4: short-interval premium capture, independent of both
+    # loops above. Failures just mean "try again in 60s" -- no retry
+    # backoff needed since the interval is already short and each pass
+    # is cheap/bounded (LIMIT 20 per query inside capture_missing_premiums()).
+    async def premium_capture_loop():
+        while not lifecycle.shutdown_event.is_set():
+            try:
+                result = await run_premium_capture()
+                logger.info(
+                    "premium_capture_sweep",
+                    entry_captured=result.get("entry_captured"),
+                    entry_attempted=result.get("entry_attempted"),
+                    exit_captured=result.get("exit_captured"),
+                    exit_attempted=result.get("exit_attempted"),
+                )
+            except Exception as exc:
+                logger.warning("premium_capture_sweep_failed", error=str(exc))
+            try:
+                await asyncio.wait_for(
+                    lifecycle.shutdown_event.wait(),
+                    timeout=PREMIUM_CAPTURE_INTERVAL_SEC,
+                )
+            except asyncio.TimeoutError:
+                pass
+
     async def combined_loop():
-        await asyncio.gather(main_loop(), optimizer_proposal_loop())
+        await asyncio.gather(main_loop(), optimizer_proposal_loop(), premium_capture_loop())
 
     await lifecycle.run_until_shutdown(combined_loop)
 

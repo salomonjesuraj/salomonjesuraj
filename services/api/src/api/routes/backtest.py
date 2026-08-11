@@ -1242,3 +1242,121 @@ async def backtest_optimizer_proposal_latest(request):
         return web.json_response(json.loads(text))
     except (json.JSONDecodeError, TypeError):
         return web.json_response({"available": False, "reason": "Stored proposal record is corrupt."})
+
+
+# Phase 13.4 (capture infra only -- see the plan's "Net-of-Cost Walk-Forward
+# Validation" section for why net-precision reporting itself is a separate,
+# later follow-up rather than part of this same change).
+_PREMIUM_LOOKBACK_MIN = 10
+_PREMIUM_BATCH_LIMIT = 20
+
+
+async def capture_missing_premiums(pool, redis) -> dict:
+    """Fill in entry/exit option premium for recently-fired/-resolved
+    signals that don't have it yet. Called on a short interval by
+    services/scheduler/src/scheduler/main.py's premium_capture_loop --
+    never by the dashboard. Two independent, bounded (LIMIT 20 each)
+    passes so one slow Upstox call can't block the other:
+
+    1. Recently-published active signals missing entry_premium_ask --
+       fetch the near-ATM contract's current ask/bid for that signal's
+       side (CE for a bullish signal_type, PE for bearish -- the
+       signals table has no separate option_bias column, but signal_type
+       already encodes this 1:1, see options_first_hybrid.py's
+       `option_bias = "BUY CE" if bullish else "BUY PE"`) and write it.
+    2. Recently-decided (TARGET_HIT/STOP_HIT) signals missing
+       exit_premium_bid -- same fetch, write just the bid (the exit
+       fill).
+
+    Deliberately scoped to the last _PREMIUM_LOOKBACK_MIN minutes only:
+    an option contract fetched for a signal from hours ago may have
+    already rolled or thinned out enough that "current chain" no longer
+    means what it did at signal time, and there's no point endlessly
+    retrying a contract lookup for a signal that's aged out of being
+    capturable with any real accuracy.
+    """
+    if not pool or not redis:
+        return {"available": False, "reason": "Postgres pool or Redis not available."}
+
+    # Local import: routes/market.py pulls in the heavier Upstox-auth
+    # import chain (aiohttp session helpers, instrument-key resolution)
+    # that only matters when this capture actually runs -- same pattern
+    # ai.py already uses for the identical reason.
+    from api.routes.market import _capture_option_premium
+
+    entry_captured = 0
+    entry_attempted = 0
+    exit_captured = 0
+    exit_attempted = 0
+
+    async with pool.acquire() as conn:
+        entry_rows = await conn.fetch(
+            """
+            SELECT signal_id, symbol, signal_type
+            FROM signals
+            WHERE created_at >= now() - ($1::int * interval '1 minute')
+              AND NOT COALESCE(suppressed, false)
+              AND entry_premium_ask IS NULL
+            ORDER BY created_at DESC
+            LIMIT $2
+            """,
+            _PREMIUM_LOOKBACK_MIN, _PREMIUM_BATCH_LIMIT,
+        )
+        for row in entry_rows:
+            entry_attempted += 1
+            bias = "CE" if row["signal_type"] == "bullish" else "PE"
+            premium = await _capture_option_premium(redis, row["symbol"], bias)
+            if premium is None:
+                continue
+            await conn.execute(
+                """
+                UPDATE signals
+                SET entry_premium_ask = $1, entry_premium_bid = $2, option_instrument_key = $3
+                WHERE signal_id = $4
+                """,
+                premium["ask"], premium["bid"], premium["instrument_key"], row["signal_id"],
+            )
+            entry_captured += 1
+
+        exit_rows = await conn.fetch(
+            """
+            SELECT signal_id, symbol, signal_type
+            FROM signals
+            WHERE outcome_label IN ('TARGET_HIT', 'STOP_HIT')
+              AND COALESCE(target_hit_at, stop_hit_at) >= now() - ($1::int * interval '1 minute')
+              AND exit_premium_bid IS NULL
+            ORDER BY COALESCE(target_hit_at, stop_hit_at) DESC
+            LIMIT $2
+            """,
+            _PREMIUM_LOOKBACK_MIN, _PREMIUM_BATCH_LIMIT,
+        )
+        for row in exit_rows:
+            exit_attempted += 1
+            bias = "CE" if row["signal_type"] == "bullish" else "PE"
+            premium = await _capture_option_premium(redis, row["symbol"], bias)
+            if premium is None:
+                continue
+            await conn.execute(
+                "UPDATE signals SET exit_premium_bid = $1 WHERE signal_id = $2",
+                premium["bid"], row["signal_id"],
+            )
+            exit_captured += 1
+
+    return {
+        "available": True,
+        "entry_attempted": entry_attempted,
+        "entry_captured": entry_captured,
+        "exit_attempted": exit_attempted,
+        "exit_captured": exit_captured,
+    }
+
+
+@routes.post("/api/backtest/capture-premiums")
+async def backtest_capture_premiums(request):
+    """POST /api/backtest/capture-premiums -- called by scheduler's
+    premium_capture_loop on a short interval, not by the dashboard.
+    See capture_missing_premiums()'s docstring for what it does."""
+    pool = request.app.get("pg_pool")
+    redis = request.app.get("redis")
+    result = await capture_missing_premiums(pool, redis)
+    return web.json_response(result)

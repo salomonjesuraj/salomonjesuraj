@@ -826,6 +826,36 @@ async def _upstox_option_context(redis, symbol: str, bias: str, features: dict |
     return result
 
 
+async def _capture_option_premium(redis, symbol: str, bias: str) -> dict | None:
+    """Phase 13.4: the one place a real option premium (ask/bid) gets
+    resolved for archival, so services/scheduler's premium_capture_loop
+    has something simple to call. Deliberately just wraps
+    _upstox_option_context() rather than re-fetching/re-scoring the chain
+    -- entry_fill/exit_fill_reference there are already computed in
+    exactly the ask/bid convention cost_model.compute() expects (see
+    cost_model.py's OptionTradeCostInput), so this reuses them as-is.
+    Returns None (not a partial/zero dict) on any failure so the caller
+    can tell "try again next cycle" from "genuinely zero-cost", matching
+    this file's other Upstox call sites' honesty standard.
+    """
+    ctx = await _upstox_option_context(redis, symbol, bias)
+    if not ctx.get("ready"):
+        return None
+    metrics = ctx.get("metrics") or {}
+    ask = metrics.get("entry_fill")
+    bid = metrics.get("exit_fill_reference")
+    if not ask or not bid:
+        return None
+    return {
+        # "contract" here is already the plain instrument_key string
+        # (see _upstox_option_context: `contract = leg.get("instrument_key", "")`),
+        # not a nested object -- checked directly rather than assumed.
+        "instrument_key": ctx.get("contract") or None,
+        "ask": float(ask),
+        "bid": float(bid),
+    }
+
+
 async def _default_symbol(redis) -> str:
     members = await redis.zrevrange("infusion:signals:active", 0, 0)
     if members:
