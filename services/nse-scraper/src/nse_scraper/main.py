@@ -27,6 +27,7 @@ import structlog
 
 from nse_scraper.config import NseScraperSettings
 from nse_scraper.delivery import run_delivery_capture
+from nse_scraper.fo_ban import run_fo_ban_capture
 from nse_scraper.loader import (
     load_universe,
     populate_redis,
@@ -105,6 +106,15 @@ async def run() -> None:
     except Exception as exc:
         logger.warning("delivery_capture_startup_failed", error=str(exc))
 
+    # Phase 13.13: F&O ban list. Startup fetch so the gate is populated
+    # before scanner needs it, same "catch up quickly after redeploy"
+    # reasoning as delivery capture above.
+    try:
+        result = await run_fo_ban_capture(r)
+        logger.info("fo_ban_capture_startup", **result)
+    except Exception as exc:
+        logger.warning("fo_ban_capture_startup_failed", error=str(exc))
+
     # Health reporter
     health = HealthReporter(r, settings.service_name)
     health.set_details_fn(lambda: {
@@ -128,13 +138,18 @@ async def run() -> None:
     DELIVERY_CAPTURE_INTERVAL_SEC = 3 * 3600  # NSE publishes once/day; this just
                                                # bounds how quickly a fresh
                                                # session's data gets picked up
+    FO_BAN_CAPTURE_INTERVAL_SEC = 30 * 60     # shorter than delivery -- this
+                                               # gates live signal publishing,
+                                               # worth refreshing more often
     async def main_loop():
         refresh_counter = 0
         delivery_counter = 0
+        fo_ban_counter = 0
         while not lifecycle.shutdown_event.is_set():
             await asyncio.sleep(30)
             refresh_counter += 30
             delivery_counter += 30
+            fo_ban_counter += 30
 
             # Periodic symbol re-population (hourly by default)
             if refresh_counter >= settings.symbol_refresh_interval_sec:
@@ -157,6 +172,14 @@ async def run() -> None:
                     logger.info("delivery_capture", **result)
                 except Exception as e:
                     logger.warning("delivery_capture_error", error=str(e))
+
+            if fo_ban_counter >= FO_BAN_CAPTURE_INTERVAL_SEC:
+                fo_ban_counter = 0
+                try:
+                    result = await run_fo_ban_capture(r)
+                    logger.info("fo_ban_capture", **result)
+                except Exception as e:
+                    logger.warning("fo_ban_capture_error", error=str(e))
 
             logger.debug(
                 "heartbeat",

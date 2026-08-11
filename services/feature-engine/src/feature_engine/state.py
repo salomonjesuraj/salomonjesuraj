@@ -128,6 +128,18 @@ class SymbolState:
     delivery_trade_date: str = ""
     delivery_checked_us: int = 0
 
+    # Heiken-Ashi (Phase 13.7) -- see features/heiken_ashi.py.
+    ha_open: float = 0.0
+    ha_close: float = 0.0
+    ha_high: float = 0.0
+    ha_low: float = 0.0
+    ha_initialized: bool = False
+    ha_trend_streak: int = 0
+    ha_streak_bullish: bool | None = None   # color the current streak is counting
+    ha_last_bullish: bool | None = None     # latest HA candle's color
+    ha_prev_bullish_for_flip: bool | None = None  # color one bar before latest, for flip detection
+    ha_doji: bool = False
+
     # Bar builders
     bar_1m: OHLCBar = field(default_factory=OHLCBar)
     bar_5m: OHLCBar = field(default_factory=OHLCBar)

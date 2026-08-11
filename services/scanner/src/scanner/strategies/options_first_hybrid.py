@@ -373,6 +373,13 @@ class OptionsFirstHybrid(BaseStrategy):
             "delivery_pct": features.get("delivery_pct"),
             "delivery_pct_avg_20d": ml.get("delivery_pct_avg_20d"),
             "delivery_avg_days": ml.get("delivery_avg_days"),
+            # Heiken-Ashi (Phase 13.7) -- see feature_engine/features/heiken_ashi.py.
+            # Informational only, a correlated-not-new confirmation of the
+            # existing Supertrend/MA-stack/ADX trend read.
+            "ha_trend": ml.get("ha_trend"),
+            "ha_trend_streak": ml.get("ha_trend_streak"),
+            "ha_doji": ml.get("ha_doji"),
+            "ha_color_flip": ml.get("ha_color_flip"),
         }
 
         return SignalCandidate(

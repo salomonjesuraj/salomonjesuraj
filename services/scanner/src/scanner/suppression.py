@@ -1,11 +1,21 @@
 """Suppression gate — first-class signal quality filter.
 
 Evaluation order is strict and deterministic:
-  1. DUPLICATE CHECK  — active signal for same symbol+strategy?
-  2. COOLDOWN CHECK   — cooldown key exists?
-  3. SECTOR FILTER    — sector strength above threshold?
-  4. REGIME FILTER    — market regime compatible with strategy?
-  5. CONVICTION FLOOR — score above minimum?
+  1. F&O BAN CHECK    — symbol under NSE trading ban (MWPL>=95%)?
+  2. DUPLICATE CHECK  — active signal for same symbol+strategy?
+  3. COOLDOWN CHECK   — cooldown key exists?
+  4. SECTOR FILTER    — sector strength above threshold?
+  5. REGIME FILTER    — market regime compatible with strategy?
+  6. CONVICTION FLOOR — score above minimum?
+
+  (a 7th gate, PRECISION GUARD, runs after the above when enabled for a
+  given strategy — see evaluate() below)
+
+The F&O ban gate (Phase 13.13) is the one gate here that isn't a signal-
+quality judgment — it's a hard, NSE-published constraint (no NEW F&O
+position may legally be opened in a banned symbol), so unlike every other
+Phase 1-13.x field it is deliberately wired as a real suppression rather
+than left informational. See nse_scraper/fo_ban.py for the capture side.
 
 If ANY gate fails, the signal is SUPPRESSED with a structured reason.
 Suppressed signals are published to the audit stream for observability.
@@ -126,7 +136,21 @@ class SuppressionGate:
         Returns SuppressionResult — first failing gate wins.
         """
 
-        # ── Gate 1: Duplicate active signal ────────────
+        # ── Gate 1: F&O ban (Phase 13.13) ──────────────
+        # Cheapest possible check (single SISMEMBER), and a hard legal/
+        # exchange constraint rather than a quality judgment, so it goes
+        # first -- no reason to compute anything else for a symbol you
+        # cannot open a new F&O position in today regardless of how good
+        # the setup looks.
+        is_banned = await self._check_fo_ban(symbol)
+        if is_banned:
+            return SuppressionResult(
+                passed=False,
+                reason="fo_trading_ban",
+                gate="fo_ban",
+            )
+
+        # ── Gate 2: Duplicate active signal ────────────
         is_dup = await self._check_duplicate(symbol, strategy_id)
         if is_dup:
             return SuppressionResult(
@@ -135,7 +159,7 @@ class SuppressionGate:
                 gate="duplicate",
             )
 
-        # ── Gate 2: Cooldown ───────────────────────────
+        # ── Gate 3: Cooldown ───────────────────────────
         in_cooldown = await self._check_cooldown(symbol, strategy_id)
         if in_cooldown:
             return SuppressionResult(
@@ -144,7 +168,7 @@ class SuppressionGate:
                 gate="cooldown",
             )
 
-        # ── Gate 3: Sector strength ────────────────────
+        # ── Gate 4: Sector strength ────────────────────
         if sector_id:
             strength = await self._sector_strength(sector_id)
             bearish = str(signal_type).lower() == "bearish"
@@ -161,7 +185,7 @@ class SuppressionGate:
                     gate="sector",
                 )
 
-        # ── Gate 4: Market regime ──────────────────────
+        # ── Gate 5: Market regime ──────────────────────
         if market_regime == "volatile":
             return SuppressionResult(
                 passed=False,
@@ -169,7 +193,7 @@ class SuppressionGate:
                 gate="regime",
             )
 
-        # ── Gate 5: Conviction floor ───────────────────
+        # ── Gate 6: Conviction floor ───────────────────
         if conviction_score < self._min_conviction:
             return SuppressionResult(
                 passed=False,
@@ -177,7 +201,7 @@ class SuppressionGate:
                 gate="conviction",
             )
 
-        # ── Gate 6: Precision guard from optimizer ─────────────────
+        # ── Gate 7: Precision guard from optimizer ─────────────────
         if self._precision_guard_enabled and strategy_id in self._precision_guard_strategy_ids:
             if conviction_score < self._precision_guard_min_score:
                 return SuppressionResult(
@@ -214,6 +238,18 @@ class SuppressionGate:
             strategy=strategy_id,
             ttl_sec=ttl_sec,
         )
+
+    async def _check_fo_ban(self, symbol: str) -> bool:
+        """Phase 13.13. Set is captured/refreshed by nse-scraper
+        (nse_scraper/fo_ban.py) every 30 min from NSE's real daily ban
+        list; absence of the key (fetch never ran / failed) means "don't
+        suppress" -- same fail-open behavior as _sector_strength below,
+        since a missing key is a data-availability gap, not evidence the
+        symbol is actually banned."""
+        exists = await self.redis.exists("infusion:nse:fo_ban:symbols")
+        if not exists:
+            return False
+        return bool(await self.redis.sismember("infusion:nse:fo_ban:symbols", symbol))
 
     async def _check_duplicate(self, symbol: str, strategy_id: str) -> bool:
         """Check if there's an active signal for the same symbol+strategy."""

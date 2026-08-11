@@ -27,6 +27,7 @@ from feature_engine.features.zones import update_zones, zone_snapshot
 from feature_engine.features.fibonacci import fib_snapshot
 from feature_engine.features.ict import update_ict, ict_snapshot
 from feature_engine.features.volman import volman_snapshot
+from feature_engine.features.heiken_ashi import update_heiken_ashi, heiken_ashi_snapshot
 from infusion_models.feature import FeatureVectorV1
 from infusion_common.timing import now_us
 
@@ -308,6 +309,7 @@ class FeatureEngine:
             update_adx(state, completed_1m.high, completed_1m.low, close_1m)
             update_supertrend(state, completed_1m.high, completed_1m.low, close_1m, state.atr)
             update_body_ema(state, completed_1m.open, close_1m)
+            update_heiken_ashi(state, completed_1m.open, completed_1m.high, completed_1m.low, close_1m)
             state.volume_history.append(completed_1m.volume)
             state.recent_1m_bars.append(_bar_dict(completed_1m))
             state.completed_1m_bars += 1
@@ -340,6 +342,7 @@ class FeatureEngine:
             **ict_snapshot(state),
             **volman_snapshot(state),
             **get_vwap_sd_bands(state),
+            **heiken_ashi_snapshot(state),
             "delivery_pct_avg_20d": state.delivery_pct_avg_20d,
             "delivery_avg_days": state.delivery_avg_days,
             "delivery_trade_date": state.delivery_trade_date,
