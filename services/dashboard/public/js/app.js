@@ -5,7 +5,7 @@
 import { Header } from './header.js';
 import { Footer } from './footer.js?v=6.4.4-summary-chip-polish';
 import { CockpitPanel } from './cockpit.js?v=7.0.0-signal-cockpit';
-import { ScannerPanel } from './scanner.js?v=6.4.4-summary-chip-polish';
+import { ScannerPanel } from './scanner.js?v=13.12-vcp-fo-ban';
 import { SignalBoard } from './signals.js?v=2.5.1-options-first-hybrid';
 import { WatchlistPanel } from './watchlist.js';
 import { SectorPanel } from './sectors.js';

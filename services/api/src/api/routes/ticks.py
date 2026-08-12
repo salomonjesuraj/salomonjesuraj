@@ -154,6 +154,32 @@ def _apply_index_context(entry: dict, context: dict) -> None:
     entry["market_index_regime"] = context.get("market_index_regime")
 
 
+async def _fo_ban_context(redis) -> dict:
+    """F&O ban list (Phase 13.13) for the scanner table -- same source
+    scanner/suppression.py's real Gate 1 reads (infusion:nse:fo_ban:symbols,
+    captured by nse_scraper/fo_ban.py from NSE's daily MWPL>=95% list), just
+    fetched ONCE per /api/ticks request (one SMEMBERS) rather than a
+    per-symbol SISMEMBER call -- the set is small (single digits to a few
+    dozen symbols on a real trading day), so one bulk read plus a local
+    Python `in` check per row is both correct and far cheaper than 200+
+    Redis round trips.
+    """
+    pipe = redis.pipeline()
+    pipe.smembers("infusion:nse:fo_ban:symbols")
+    pipe.get("infusion:nse:fo_ban:trade_date")
+    symbols_raw, trade_date_raw = await pipe.execute()
+    symbols = set()
+    for s in (symbols_raw or []):
+        symbols.add(s.decode() if isinstance(s, bytes) else s)
+    trade_date = trade_date_raw.decode() if isinstance(trade_date_raw, bytes) else trade_date_raw
+    return {"symbols": symbols, "trade_date": trade_date}
+
+
+def _apply_fo_ban_context(entry: dict, symbol: str, context: dict) -> None:
+    entry["fo_banned"] = symbol in context.get("symbols", set())
+    entry["fo_ban_trade_date"] = context.get("trade_date")
+
+
 def _decode_hash(data: dict) -> dict:
     result = {}
     for k, v in data.items():
@@ -862,6 +888,12 @@ def _decode_mtf_cache(raw) -> dict:
             # Phase 13.5 -- 52-week high/low distance, see
             # api/routes/mtf.py's _week52_stats().
             "week52": payload.get("week52") or {},
+            # Phase 13.12 -- VCP / Minervini Stage-2 composite, see
+            # api/vcp.py. Same cached mtf payload, just passed through
+            # whole rather than field-by-field like week52 above, since the
+            # scanner table wants the full component breakdown for a
+            # tooltip, not just the headline score.
+            "vcp": payload.get("vcp") or {},
         }
     except (json.JSONDecodeError, TypeError, ValueError):
         return {}
@@ -1159,6 +1191,7 @@ async def list_ticks(request):
         return web.json_response({"count": 0, "ticks": []})
 
     index_context = await _scanner_index_context(redis)
+    fo_ban_context = await _fo_ban_context(redis)
 
     # Pipeline: fetch tick, feature, pre-breakout, sector, MTF, cached news edge,
     # event calendar, and selected-symbol Upstox option-chain confirmation in
@@ -1203,6 +1236,7 @@ async def list_ticks(request):
         sector_strength = float(sector.get("strength_score", 50) or 50)
         try:
             _apply_index_context(entry, index_context)
+            _apply_fo_ban_context(entry, symbol, fo_ban_context)
             entry.update(_scanner_intel(entry, features, prebreak, sector_strength))
             # Phase 13.5/13.7: VWAP SD bands, Heiken-Ashi, delivery % --
             # informational-only fields feature-engine already computes,

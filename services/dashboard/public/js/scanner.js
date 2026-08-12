@@ -31,6 +31,12 @@ const COLUMNS = [
   { key: 'target_3_hint', label: 'T3',         align: 'right',  width: '78px',   toggle: true },
   { key: 'stop_loss_hint', label: 'SL',        align: 'right',  width: '78px',   toggle: true },
   { key: 'chain_execution_status', label: 'Chain', align: 'center', width: '112px', toggle: true },
+  // F&O ban (Phase 13.13) -- a hard NSE/SEBI legal constraint (MWPL>=95%),
+  // not a signal-quality read like everything else here, so it's visible
+  // by default rather than opt-in like the rest of this file's
+  // enrichment columns. Empty on non-banned rows (usually the vast
+  // majority) rather than a permanent column of noise.
+  { key: 'fo_banned',    label: 'F&O',         align: 'center', width: '68px',   toggle: true },
 
   { key: 'prev_diff',    label: 'Prev close +/-', align: 'right', width: '118px', toggle: true, defaultHidden: true },
   { key: 'rel_vol',      label: 'RVol',        align: 'right',  width: '66px',   toggle: true, defaultHidden: true },
@@ -46,6 +52,10 @@ const COLUMNS = [
   { key: 'trend_bias',   label: 'Trend',       align: 'center', width: '78px',   toggle: true, defaultHidden: true },
   { key: 'mtf_score',    label: 'MTF Score',   align: 'right',  width: '94px',   toggle: true, defaultHidden: true },
   { key: 'mtf_source',   label: 'MTF Src',     align: 'center', width: '82px',   toggle: true, defaultHidden: true },
+  // VCP / Minervini Stage-2 composite (Phase 13.12), see api/vcp.py.
+  // Daily-timeframe, informational only -- opt-in like the rest of this
+  // hidden-by-default block, same as mtf_score/swing_score above.
+  { key: 'vcp_score',    label: 'VCP',         align: 'right',  width: '86px',   toggle: true, defaultHidden: true },
   { key: 'direction_zone', label: 'CE / PE Zone', align: 'left', width: '210px', toggle: true, defaultHidden: true },
   { key: 'ce_score',      label: 'CE',         align: 'right',  width: '72px',   toggle: true, defaultHidden: true },
   { key: 'pe_score',      label: 'PE',         align: 'right',  width: '72px',   toggle: true, defaultHidden: true },
@@ -246,6 +256,32 @@ function chainCell(item) {
     <span class="trade-chip ${cls}">${escapeHtml(label)}</span>
     <small class="${oiSignal ? (String(item.chain_oi_bias).toUpperCase() === 'BULLISH' ? 'positive' : 'negative') : ''}">${subText}</small>
   </div>`;
+}
+
+// F&O ban gate (Phase 13.13) -- real NSE/SEBI suppression, see
+// scanner/suppression.py's Gate 1 and api/routes/ticks.py's
+// _apply_fo_ban_context(). Empty cell (not a "clear" chip) when not
+// banned -- most rows most days, so a permanent "OK" badge would just be
+// visual noise across the whole table.
+function foBanCell(item) {
+  if (!item.fo_banned) return '';
+  const date = item.fo_ban_trade_date ? ` as of ${item.fo_ban_trade_date}` : '';
+  return `<span class="trade-chip sell" title="NSE F&amp;O ban list (MWPL≥95%)${escapeHtml(date)} — no new F&amp;O positions allowed">BANNED</span>`;
+}
+
+// VCP / Minervini Stage-2 composite (Phase 13.12), see api/vcp.py.
+// Honest "—" (not a 0-meter, which would misread as a genuinely bad
+// score) when the symbol's daily-bar mtf cache hasn't been computed for
+// this row yet -- same cache-miss condition week52/ma_regime/donchian
+// already have via the same infusion:mtf:{symbol} read.
+function vcpCell(item) {
+  const vcp = item.vcp && typeof item.vcp === 'object' ? item.vcp : {};
+  if (vcp.score == null) return `<span class="text-muted">—</span>`;
+  const gradeLabel = vcp.grade === 'tight_vcp' ? 'Tight VCP'
+    : vcp.grade === 'developing_base' ? 'Developing base'
+    : 'No clear base';
+  const reliableNote = vcp.reliable === false ? ' (partial read)' : '';
+  return `<span title="${escapeHtml(gradeLabel + reliableNote)}">${scoreMeter(vcp.score)}</span>`;
 }
 
 function commandCenterBlock(item) {
@@ -2302,6 +2338,8 @@ export class ScannerPanel {
       pe_score: scoreMeter(item.pe_score || 0),
       option_readiness: optionHTML,
       chain_execution_status: chainCell(item),
+      fo_banned: foBanCell(item),
+      vcp_score: vcpCell(item),
       evidence: rowEvidence(item),
       entry_price_hint: `<span class="level-cell">${formatPrice(item.entry_price_hint)}</span>`,
       stop_loss_hint: `<span class="level-cell negative">${formatPrice(item.stop_loss_hint)}</span>`,
