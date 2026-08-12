@@ -1223,6 +1223,18 @@
 }
 .ifx-opt-ablation-controls { display: flex; gap: var(--ifx-space-2); flex-wrap: wrap; }
 
+/* Phase 13.8/13.10 dashboard surfacing */
+.ifx-opt-dsr { margin-top: var(--ifx-space-3); padding-top: var(--ifx-space-3); border-top: 1px dashed var(--ifx-content-border); }
+.ifx-opt-section-subtitle { font-size: var(--ifx-text-xs); font-weight: 700; color: var(--ifx-content-text-muted); margin-bottom: 2px; }
+.ifx-opt-ic-table { width: 100%; border-collapse: collapse; font-size: var(--ifx-text-xs); margin-top: var(--ifx-space-2); }
+.ifx-opt-ic-table th {
+  text-align: left; font-weight: 700; text-transform: uppercase; letter-spacing: .3px;
+  font-size: var(--ifx-text-2xs); color: var(--ifx-content-text-faint);
+  padding: 4px 8px; border-bottom: 1px solid var(--ifx-content-border);
+}
+.ifx-opt-ic-table td { padding: 4px 8px; border-bottom: 1px solid var(--ifx-content-border); color: var(--ifx-content-text); }
+.ifx-opt-ic-table tr:last-child td { border-bottom: none; }
+
 /* ═══════════════════════════════════════════════════════════════════════
    DASHBOARD REDESIGN v2 -- Phase N1: Classic/New shell toggle
    .dashboard (Classic) and #newShell (New) are permanent DOM siblings,

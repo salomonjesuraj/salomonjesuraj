@@ -51,6 +51,7 @@ export class OptimizerPanel {
   init() {
     if (!this._el) return;
     this._el.classList.add('ifx-opt');
+    this._icBusy = false;
     this._render();
 
     this._unsubs.push(api.subscribe('/api/backtest/walkforward?days=120&target=80', (resp) => {
@@ -60,6 +61,10 @@ export class OptimizerPanel {
     this._unsubs.push(api.subscribe('/api/backtest/optimizer-proposal/latest', (resp) => {
       this._renderProposal(resp);
     }, 60000));
+
+    this._unsubs.push(api.subscribe('/api/backtest/kelly-sizing?days=180', (resp) => {
+      this._renderKelly(resp);
+    }, 120000));
   }
 
   _render() {
@@ -73,6 +78,10 @@ export class OptimizerPanel {
         <div id="optProposal" class="ifx-opt-body">Loading…</div>
       </div>
       <div class="ifx-opt-section">
+        <div class="ifx-opt-section-title">Position Sizing — Half-Kelly <span class="ifx-tone-faint">(from real archived win/loss outcomes, informational only)</span></div>
+        <div id="optKelly" class="ifx-opt-body">Loading…</div>
+      </div>
+      <div class="ifx-opt-section">
         <div class="ifx-opt-section-title">Feature-Ablation Evidence <span class="ifx-tone-faint">(does this informational field actually predict outcomes?)</span></div>
         <div class="ifx-opt-ablation-controls">
           <select class="ifx-oa-select" id="optAblationField">
@@ -82,9 +91,17 @@ export class OptimizerPanel {
         </div>
         <div id="optAblation" class="ifx-opt-body">Pick a field and click "Check evidence" — nothing runs automatically (this queries live archived-outcome data on demand).</div>
       </div>
+      <div class="ifx-opt-section">
+        <div class="ifx-opt-section-title">Feature Information Coefficient <span class="ifx-tone-faint">(correlation of every informational field against real R-multiple outcomes)</span></div>
+        <div class="ifx-opt-ablation-controls">
+          <button type="button" class="ifx-btn ifx-btn--on-paper" id="optIcRun">Load Feature IC</button>
+        </div>
+        <div id="optIc" class="ifx-opt-body">Click "Load Feature IC" — nothing runs automatically (this queries live archived-outcome data on demand, decoding every archived signal's full snapshot — can take ~20-30s on a large archive).</div>
+      </div>
     `;
 
     this._el.querySelector('#optAblationRun')?.addEventListener('click', () => this._runAblation());
+    this._el.querySelector('#optIcRun')?.addEventListener('click', () => this._runFeatureIc());
   }
 
   _renderWalkforward(resp) {
@@ -108,7 +125,30 @@ export class OptimizerPanel {
         <div class="ifx-opt-metric"><label>Test sample</label><b class="ifx-mono">${test.decided || 0} decided</b></div>
       </div>` : ''}
       <p class="ifx-opt-note">${escapeHtml(resp.note || '')}</p>
+      ${this._renderDsr(resp.dsr)}
     `;
+  }
+
+  _renderDsr(dsr) {
+    if (!dsr) return '';
+    if (!dsr.available) {
+      return `<div class="ifx-opt-dsr">
+        <div class="ifx-opt-section-subtitle">Deflated Sharpe Ratio <span class="ifx-tone-faint">(corrects for testing ${dsr.n_trials || 0} profile variants)</span></div>
+        <div class="ifx-opt-unavailable">${escapeHtml(dsr.reason || 'Not enough data to compute.')}</div>
+      </div>`;
+    }
+    const pct = dsr.deflated_sharpe_ratio != null ? Math.round(dsr.deflated_sharpe_ratio * 100) : null;
+    const tone = pct == null ? '' : pct >= 80 ? 'ifx-tone-good' : pct >= 50 ? '' : 'ifx-tone-bad';
+    return `<div class="ifx-opt-dsr">
+      <div class="ifx-opt-section-subtitle">Deflated Sharpe Ratio <span class="ifx-tone-faint">(corrects for testing ${dsr.n_trials || 0} profile variants)</span></div>
+      <div class="ifx-opt-metric-grid">
+        <div class="ifx-opt-metric"><label>DSR</label><b class="ifx-mono ${tone}">${pct != null ? pct + '%' : '—'}</b></div>
+        <div class="ifx-opt-metric"><label>Recommended Sharpe</label><b class="ifx-mono">${dsr.recommended_sharpe != null ? dsr.recommended_sharpe : '—'}</b></div>
+        <div class="ifx-opt-metric"><label>Chance benchmark</label><b class="ifx-mono">${dsr.benchmark_sharpe != null ? dsr.benchmark_sharpe : '—'}</b></div>
+        <div class="ifx-opt-metric"><label>Test trades</label><b class="ifx-mono">${dsr.recommended_n_trades || 0}</b></div>
+      </div>
+      <p class="ifx-opt-note">${escapeHtml(dsr.note || '')}</p>
+    </div>`;
   }
 
   _renderProposal(resp) {
@@ -126,6 +166,74 @@ export class OptimizerPanel {
       <p class="ifx-opt-note">${escapeHtml(resp.note || resp.reason || '')}</p>
       ${resp.status === 'PROPOSED' ? '<p class="ifx-opt-warn">This is a proposal for human review only — nothing was changed automatically. Review before touching scanner config.</p>' : ''}
     `;
+  }
+
+  _renderKelly(resp) {
+    const el = this._el.querySelector('#optKelly');
+    if (!el) return;
+    if (!resp || !resp.available) {
+      el.innerHTML = `<div class="ifx-opt-unavailable">${escapeHtml(resp?.reason || 'Unavailable')}</div>`;
+      return;
+    }
+    const strategies = resp.strategies || {};
+    const rows = Object.entries(strategies);
+    if (!rows.length) {
+      el.innerHTML = `<div class="ifx-opt-unavailable">No archived outcomes yet.</div>`;
+      return;
+    }
+    el.innerHTML = `
+      <div class="ifx-opt-metric-grid">
+        ${rows.map(([strategyId, s]) => `
+          <div class="ifx-opt-metric">
+            <label>${escapeHtml(strategyId)}</label>
+            <b class="ifx-mono ${s.reliable ? (Number(s.half_kelly_pct) >= 0 ? 'ifx-tone-good' : 'ifx-tone-bad') : ''}">
+              ${s.reliable ? s.half_kelly_pct + '%' : 'not enough sample'}
+            </b>
+            <small>${s.win_rate_pct != null ? s.win_rate_pct + '% win rate' : '—'} · ${s.decided || 0} decided</small>
+          </div>
+        `).join('')}
+      </div>
+      <p class="ifx-opt-note">${escapeHtml(resp.note || '')}</p>
+    `;
+  }
+
+  async _runFeatureIc() {
+    if (this._icBusy) return;
+    const out = this._el.querySelector('#optIc');
+    const btn = this._el.querySelector('#optIcRun');
+    if (!out) return;
+    this._icBusy = true;
+    if (btn) btn.disabled = true;
+    out.innerHTML = 'Loading — decoding the full archive, this can take ~20-30s…';
+    try {
+      const resp = await api.fetch('/api/backtest/feature-ic?days=90');
+      if (!resp || !resp.available) {
+        out.innerHTML = `<div class="ifx-opt-unavailable">${escapeHtml(resp?.reason || 'Unavailable')}</div>`;
+      } else {
+        const fields = resp.fields || [];
+        out.innerHTML = `
+          <table class="ifx-opt-ic-table">
+            <thead><tr><th>Field</th><th>IC</th><th>Present</th><th>Absent</th><th>Reliable</th></tr></thead>
+            <tbody>
+              ${fields.map(f => `
+                <tr>
+                  <td>${escapeHtml(f.field)}</td>
+                  <td class="ifx-mono ${f.ic != null && Math.abs(f.ic) >= 0.1 ? (f.ic > 0 ? 'ifx-tone-good' : 'ifx-tone-bad') : ''}">${f.ic != null ? f.ic : '—'}</td>
+                  <td class="ifx-mono">${f.n_present}</td>
+                  <td class="ifx-mono">${f.n_absent}</td>
+                  <td>${f.reliable ? '<span class="ifx-badge ifx-badge--bull">yes</span>' : '<span class="ifx-badge ifx-badge--neutral">no</span>'}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          <p class="ifx-opt-note">${escapeHtml(resp.note || '')}</p>
+        `;
+      }
+    } catch (err) {
+      out.innerHTML = `<div class="ifx-opt-unavailable">Request failed: ${escapeHtml(String(err))}</div>`;
+    }
+    this._icBusy = false;
+    if (btn) btn.disabled = false;
   }
 
   async _runAblation() {

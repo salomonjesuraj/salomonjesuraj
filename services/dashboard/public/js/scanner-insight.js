@@ -69,6 +69,14 @@ export class ScannerInsight {
     this._aiToken = 0;
     this._unsubs = [];
     this._clickHandler = null;
+    // Phase 13.9/13.10/13.11 -- alignment/Kelly/RSI-divergence are only
+    // ever computed at signal-fire time (inside options_first_hybrid.py/
+    // vol_vwap_breakout.py's evaluate(), not on every live tick), so
+    // they're only meaningful for whichever FIRED signal was last
+    // selected -- not for "whatever symbol is currently in Stock Detail"
+    // in general. Kept as its own piece of state, cleared whenever the
+    // selection moves to a symbol that isn't backed by a fired signal.
+    this._activeSignal = null;
   }
 
   init() {
@@ -87,7 +95,22 @@ export class ScannerInsight {
 
     document.addEventListener('chart:load', (e) => {
       const sym = e.detail?.symbol;
+      const sig = e.detail?.signal;
+      this._activeSignal = (sig && sig.symbol === sym) ? sig : null;
       if (sym) this.select(sym);
+      else this._render();
+    });
+
+    // cockpit.js dispatches this alongside chart:load with the full fired
+    // signal (features_snapshot/sub_scores included) -- chart:load above
+    // already captures it when present, this covers any future dispatch
+    // site that sends signal:select on its own.
+    document.addEventListener('signal:select', (e) => {
+      const sig = e.detail;
+      if (sig && sig.symbol) {
+        this._activeSignal = sig;
+        this._render();
+      }
     });
 
     this._clickHandler = (e) => {
@@ -102,6 +125,7 @@ export class ScannerInsight {
   select(symbol) {
     if (!symbol || this._selectedSymbol === symbol) return;
     this._selectedSymbol = symbol;
+    if (this._activeSignal && this._activeSignal.symbol !== symbol) this._activeSignal = null;
     this._ai = null;
     this._aiMode = '';
     this._mtf = null;
@@ -224,6 +248,65 @@ export class ScannerInsight {
           ${deliveryDelta != null && Math.abs(deliveryDelta) >= 10 ? `<span class="insight-pill ${deliveryDelta > 0 ? 'good' : 'bad'}">Delivery ${deliveryDelta > 0 ? 'above' : 'below'} 20D avg by ${Math.abs(deliveryDelta).toFixed(1)}pt</span>` : ''}
         </div>
         <p class="option-reason">Informational only — not wired into the conviction score. Delivery % is T-1 (NSE has no live intraday delivery feed); VWAP bands and Heiken-Ashi need a few completed 1-minute bars before they're meaningful.</p>
+      </div>
+    `;
+  }
+
+  /** Phase 13.9/13.10/13.11 -- signal alignment, half-Kelly sizing, and
+   * RSI divergence are all computed once, at signal-fire time, inside the
+   * strategy that produced the trade -- not on every live tick like the
+   * Extended Signals section above. So this section is scoped to
+   * whichever fired signal card was last clicked in the Cockpit
+   * (this._activeSignal), not to "whatever symbol Stock Detail happens to
+   * be showing." An honest empty state when there's no active signal for
+   * the current symbol, rather than silently showing nothing. */
+  _renderSignalTimeEvidence(symbol) {
+    const sig = this._activeSignal;
+    if (!sig || sig.symbol !== symbol) {
+      return `
+        <div class="insight-section signal-time-evidence">
+          <div class="insight-title">Signal-time evidence — alignment, sizing, divergence</div>
+          <p class="option-reason">Click a card in the Signal Cockpit to see the alignment breadth, half-Kelly sizing read, and RSI divergence that were computed for that specific fired signal — these aren't live per-tick numbers.</p>
+        </div>`;
+    }
+
+    const fs = sig.features_snapshot && typeof sig.features_snapshot === 'object' ? sig.features_snapshot : {};
+    const sizing = sig.sub_scores && typeof sig.sub_scores === 'object' ? (sig.sub_scores.position_sizing || {}) : {};
+
+    const agree = n(fs.alignment_agree_count);
+    const checked = n(fs.alignment_checked_count);
+    const total = n(fs.alignment_total_families, 8);
+    const agreeTone = checked > 0 && agree / checked >= 0.6 ? 'positive' : checked > 0 && agree / checked <= 0.3 ? 'negative' : '';
+
+    const kellyReliable = !!sizing.kelly_reliable;
+    const kellyPct = sizing.kelly_half_pct;
+
+    const divergencePills = [
+      fs.rsi_divergence_bullish_regular ? { label: 'Regular bullish divergence', cls: 'good' } : null,
+      fs.rsi_divergence_bullish_hidden ? { label: 'Hidden bullish divergence', cls: 'good' } : null,
+      fs.rsi_divergence_bearish_regular ? { label: 'Regular bearish divergence', cls: 'bad' } : null,
+      fs.rsi_divergence_bearish_hidden ? { label: 'Hidden bearish divergence', cls: 'bad' } : null,
+    ].filter(Boolean);
+
+    return `
+      <div class="insight-section signal-time-evidence">
+        <div class="insight-title">Signal-time evidence — alignment, sizing, divergence</div>
+        <div class="trade-level-grid compact">
+          <div><span>Alignment</span><b class="${agreeTone}">${checked > 0 ? `${agree}/${checked} of ${total}` : 'no families active'}</b></div>
+          <div><span>Half-Kelly size</span><b>${kellyReliable ? kellyPct + '%' : 'not enough sample'}</b></div>
+          <div><span>Kelly win rate</span><b>${sizing.kelly_win_rate_pct != null ? sizing.kelly_win_rate_pct + '%' : '—'}</b></div>
+          <div><span>Kelly sample</span><b>${sizing.kelly_sample_size || 0} decided</b></div>
+        </div>
+        ${checked > 0 ? `
+        <div class="insight-pills">
+          ${(fs.alignment_agreeing_families || []).map(f => `<span class="insight-pill good">${escapeHtml(f)}</span>`).join('')}
+          ${(fs.alignment_disagreeing_families || []).map(f => `<span class="insight-pill bad">${escapeHtml(f)}</span>`).join('')}
+        </div>` : ''}
+        ${divergencePills.length ? `
+        <div class="insight-pills">
+          ${divergencePills.map(p => `<span class="insight-pill ${p.cls}">${escapeHtml(p.label)}</span>`).join('')}
+        </div>` : '<p class="option-reason">No RSI divergence at this signal\'s swing points.</p>'}
+        <p class="option-reason">Informational only — none of this is wired into the conviction score or position sizing yet. Frozen at signal time, same as the trade levels above.</p>
       </div>
     `;
   }
@@ -367,6 +450,7 @@ export class ScannerInsight {
       </div>
 
       ${this._renderExtendedSignals(item, trueMtf)}
+      ${this._renderSignalTimeEvidence(symbol)}
 
       <div class="insight-section">
         <div class="insight-title">Why it has strength</div>
