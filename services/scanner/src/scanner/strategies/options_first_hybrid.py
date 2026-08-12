@@ -252,6 +252,7 @@ class OptionsFirstHybrid(BaseStrategy):
         wyckoff_failure = mtf_cache.get("wyckoff_structural_failure")
         wyckoff_sot = mtf_cache.get("wyckoff_sot")
         wyckoff_sos_sow = mtf_cache.get("wyckoff_sos_sow")
+        vcp = mtf_cache.get("vcp") or {}
         alignment = compute_signal_alignment(
             bullish=bullish, ml=ml, ma_regime=ma_regime, donchian=donchian,
             wyckoff_sos_sow=wyckoff_sos_sow, atr_trend=atr_trend, candle_pattern=candle_pattern,
@@ -395,6 +396,11 @@ class OptionsFirstHybrid(BaseStrategy):
             "rsi_divergence_bullish_hidden": ml.get("rsi_divergence_bullish_hidden"),
             "rsi_divergence_bearish_regular": ml.get("rsi_divergence_bearish_regular"),
             "rsi_divergence_bearish_hidden": ml.get("rsi_divergence_bearish_hidden"),
+            # VCP / Minervini Stage-2 composite (Phase 13.12) -- see
+            # api/vcp.py. Daily-timeframe, informational only.
+            "vcp_score": vcp.get("score"),
+            "vcp_grade": vcp.get("grade"),
+            "vcp_reliable": vcp.get("reliable"),
         }
 
         return SignalCandidate(

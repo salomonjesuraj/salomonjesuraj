@@ -32,12 +32,18 @@ KNOWN_ABLATION_FIELDS = [
     "order_block_bullish_validated", "order_block_bearish_validated",
     "donchian_fresh_high_breakout", "donchian_fresh_low_breakout",
     "wyckoff_structural_failure", "wyckoff_sot", "wyckoff_sos_sow",
-    "volman_entry_triggered",
+    "volman_entry_triggered", "vcp_grade",
 ]
 # cross_confirmation (Phase 9) lives in sub_scores, not features_snapshot --
 # every other field above is in features_snapshot. feature-ablation takes an
 # explicit ?column= to query either.
 KNOWN_ABLATION_FIELDS_SUB_SCORES = ["cross_confirmation"]
+# Phase 13.12 -- vcp_score is a continuous 0-100 composite (api/vcp.py), not
+# a presence/absence field like everything above. compute_feature_ic
+# correlates it directly against R-multiple (see _ic_encode) rather than
+# 0/1-encoding it -- a real IC on the raw factor score is more informative
+# here than a truthy/falsy split would be.
+CONTINUOUS_IC_FIELDS = ["vcp_score"]
 
 _LIVE_GUARD_DEPLOYED_AT_UTC = datetime(2026, 8, 1, 16, 48, tzinfo=timezone.utc)
 _LIVE_GUARD_PROFILE = {
@@ -1236,7 +1242,7 @@ def _decode_json_column(raw) -> dict:
     return decoded if isinstance(decoded, dict) else {}
 
 
-def _ic_encode(field: str, value) -> int | None:
+def _ic_encode(field: str, value) -> float | None:
     """0/1 presence encoding for one field's raw value, feeding
     statistics_utils.pearson_r as the point-biserial x-variable. Plain
     truthiness (_ablation_field_present, already used by feature-ablation
@@ -1247,6 +1253,13 @@ def _ic_encode(field: str, value) -> int | None:
     ma_regime is special-cased to test specifically "is this a confirmed
     golden cross", excluding "unknown" rows from the sample entirely
     rather than folding them into either side.
+
+    vcp_score (Phase 13.12, CONTINUOUS_IC_FIELDS) is special-cased the
+    other direction: it's already a real 0-100 composite, so the raw value
+    is passed straight through rather than collapsed to 0/1 -- correlating
+    the actual factor score against R-multiple is the more informative
+    read, and is literally what "information coefficient" means for a
+    continuous factor in quant finance.
     """
     if field == "ma_regime":
         if value == "golden_cross":
@@ -1254,6 +1267,13 @@ def _ic_encode(field: str, value) -> int | None:
         if value == "death_cross":
             return 0
         return None
+    if field in CONTINUOUS_IC_FIELDS:
+        if value is None:
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
     return 1 if _ablation_field_present(value) else 0
 
 
@@ -1298,9 +1318,11 @@ async def compute_feature_ic(pool, days: int = 90) -> dict:
         })
 
     total = len(rows)
-    field_specs = [(f, "features") for f in KNOWN_ABLATION_FIELDS] + [
-        (f, "sub_scores") for f in KNOWN_ABLATION_FIELDS_SUB_SCORES
-    ]
+    field_specs = (
+        [(f, "features") for f in KNOWN_ABLATION_FIELDS]
+        + [(f, "sub_scores") for f in KNOWN_ABLATION_FIELDS_SUB_SCORES]
+        + [(f, "features") for f in CONTINUOUS_IC_FIELDS]
+    )
     results = []
     for field, column in field_specs:
         xs, ys = [], []
@@ -1311,6 +1333,21 @@ async def compute_feature_ic(pool, days: int = 90) -> dict:
             xs.append(float(encoded))
             ys.append(row["r_multiple"])
         ic = pearson_r(xs, ys)
+        continuous = field in CONTINUOUS_IC_FIELDS
+        if continuous:
+            # No presence/absence axis for a continuous score -- every row
+            # in xs already has a real computed value (encoded is None was
+            # skipped above), so "present" just means "used".
+            results.append({
+                "field": field,
+                "column": "features_snapshot" if column == "features" else column,
+                "ic": round(ic, 4) if ic is not None else None,
+                "n_used": len(xs),
+                "n_present": len(xs),
+                "n_absent": None,
+                "continuous": True,
+            })
+            continue
         n_present = sum(1 for x in xs if x == 1.0)
         results.append({
             "field": field,
@@ -1319,6 +1356,7 @@ async def compute_feature_ic(pool, days: int = 90) -> dict:
             "n_used": len(xs),
             "n_present": n_present,
             "n_absent": len(xs) - n_present,
+            "continuous": False,
         })
 
     # A field's total n_used is nearly always huge (most archived signals
@@ -1333,8 +1371,14 @@ async def compute_feature_ic(pool, days: int = 90) -> dict:
     # since most rows predate these fields being added to
     # features_snapshot at all).
     min_side = 15
+    # Continuous fields (vcp_score) have no absent side to gate on -- reliability
+    # is just "enough rows used", same threshold shape as Kelly's `decided >= 30`.
+    min_continuous_n = 30
     for r in results:
-        r["reliable"] = r["ic"] is not None and r["n_present"] >= min_side and r["n_absent"] >= min_side
+        if r.get("continuous"):
+            r["reliable"] = r["ic"] is not None and r["n_used"] >= min_continuous_n
+        else:
+            r["reliable"] = r["ic"] is not None and r["n_present"] >= min_side and r["n_absent"] >= min_side
     reliable = [r for r in results if r["reliable"]]
     return {
         "available": True,
@@ -1343,12 +1387,15 @@ async def compute_feature_ic(pool, days: int = 90) -> dict:
         "days": days,
         "total_decided": total,
         "min_side_for_reliable": min_side,
+        "min_n_for_reliable_continuous": min_continuous_n,
         "fields": results,
         "note": (
             f"{len(reliable)}/{len(results)} fields have >= {min_side} decided outcomes on BOTH "
             "the present and absent side (not just a large total N -- most fields here are new "
             "enough that the vast majority of archived history predates them, so a big n_used "
             "with a tiny n_present is not a reliable correlation regardless of its IC value). "
+            f"vcp_score (Phase 13.12) is continuous, not presence/absence -- it's reliable at "
+            f">= {min_continuous_n} rows used, correlated on its raw 0-100 value, not a 0/1 split. "
             "|IC| above ~0.1 is a real, if modest, signal in a noisy per-trade series among "
             "reliable fields; treat anything below that, or any unreliable field, as noise. "
             "Diagnostic only -- never auto-wired into scanner/scoring.py."

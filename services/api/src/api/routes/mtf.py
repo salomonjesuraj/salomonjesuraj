@@ -19,6 +19,7 @@ from aiohttp import web
 
 from api.chart_patterns import fractal_pivots_indexed, detect_chart_patterns
 from api.wyckoff import detect_structural_failure, detect_shortening_of_thrust, detect_sos_sow_bar
+from api.vcp import compute_vcp
 
 routes = web.RouteTableDef()
 
@@ -741,23 +742,31 @@ def _score_timeframe(tf: str, bars: list[dict], include_vwap: bool) -> dict:
     }
 
 
-async def _load_bars(redis, symbol: str) -> tuple[list[dict], list[dict]]:
+NIFTY50_DAILY_KEY = "infusion:ohlc:NIFTY50:daily"  # same bootstrap path as any equity, see scheduler/historical.py
+
+
+async def _load_bars(redis, symbol: str) -> tuple[list[dict], list[dict], list[dict]]:
     now = int(time.time())
     # Enough 1m bars for recent 4H/1H/15M context without making the endpoint heavy.
     start_intraday = now - (10 * 86400)
-    history, live, daily = await asyncio.gather(
+    history, live, daily, nifty_daily = await asyncio.gather(
         redis.zrangebyscore(f"infusion:ohlc:{symbol}:history:1m", start_intraday, "+inf"),
         redis.zrangebyscore(f"infusion:ohlc:{symbol}:1m", start_intraday, "+inf"),
         redis.zrange(f"infusion:ohlc:{symbol}:daily", -260, -1),
+        # Phase 13.12 (VCP relative strength) -- same daily zset shape as
+        # any equity's, read once per call alongside the symbol's own bars
+        # rather than a separate round trip.
+        redis.zrange(NIFTY50_DAILY_KEY, -260, -1),
     )
     intraday = _merge_bars(_decode_ohlc(history), _decode_ohlc(live))
     daily_bars = _decode_ohlc(daily)
-    return intraday, daily_bars
+    nifty_bars = _decode_ohlc(nifty_daily)
+    return intraday, daily_bars, nifty_bars
 
 
 async def compute_mtf(redis, symbol: str, store: bool = True) -> dict:
     symbol = symbol.upper()
-    intraday, daily = await _load_bars(redis, symbol)
+    intraday, daily, nifty_daily = await _load_bars(redis, symbol)
     timeframes: dict[str, dict] = {}
     all_warnings: list[str] = []
     blocker_bars: dict[str, list[dict]] = {}
@@ -828,6 +837,7 @@ async def compute_mtf(redis, symbol: str, store: bool = True) -> dict:
     wyckoff_sot = detect_shortening_of_thrust(daily_pivots)
     wyckoff_sos_sow = detect_sos_sow_bar(daily) if daily else None
     week52 = _week52_stats(daily, current_ltp)
+    vcp = compute_vcp(daily, nifty_daily, current_ltp) if daily else {"available": False, "score": None, "reason": "No daily bar history"}
     quality = "historical" if any(row["bars"] for row in timeframes.values()) else "missing"
     if any(row["quality"] == "limited" for row in timeframes.values()) and quality == "historical":
         quality = "limited"
@@ -863,6 +873,7 @@ async def compute_mtf(redis, symbol: str, store: bool = True) -> dict:
         "chart_patterns": chart_patterns,
         "donchian": donchian,
         "week52": week52,
+        "vcp": vcp,
         "wyckoff_structural_failure": wyckoff_structural_failure,
         "wyckoff_sot": wyckoff_sot,
         "wyckoff_sos_sow": wyckoff_sos_sow,
