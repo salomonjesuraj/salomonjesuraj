@@ -252,6 +252,65 @@ export class ScannerInsight {
     `;
   }
 
+  /** Phase 13.12 -- VCP (Volatility Contraction Pattern) / Minervini
+   * Stage-2 composite. Daily-timeframe, same continuous-per-symbol shape
+   * as Extended Signals above (recomputed inside /api/mtf's 300s-cached
+   * compute_mtf(), not frozen at signal time) -- reads off trueMtf.vcp,
+   * not the /api/ticks row, so it's live for whatever symbol Stock Detail
+   * is showing right now, fired signal or not. See api/vcp.py. */
+  _renderVcp(trueMtf) {
+    const vcp = trueMtf?.vcp;
+    if (!vcp || vcp.available === false) {
+      return `
+        <div class="insight-section vcp-section">
+          <div class="insight-title">VCP / Minervini Stage-2</div>
+          <p class="option-reason">${escapeHtml(vcp?.reason || 'No daily bar history cached for this symbol yet.')}</p>
+        </div>`;
+    }
+
+    const comp = vcp.components || {};
+    const tt = comp.trend_template || {};
+    const cq = comp.contraction_quality || {};
+    const vd = comp.volume_dryup || {};
+    const pp = comp.pivot_proximity || {};
+    const rs = comp.relative_strength || {};
+
+    const gradeMeta = {
+      tight_vcp: { label: 'Tight VCP', tone: 'positive' },
+      developing_base: { label: 'Developing base', tone: 'warn' },
+      no_clear_base: { label: 'No clear base', tone: '' },
+    }[vcp.grade] || { label: vcp.grade || '-', tone: '' };
+
+    const compScore = (part, max) => part && part.available
+      ? `${Number(part.score).toFixed(1)}/${max}`
+      : 'n/a';
+
+    return `
+      <div class="insight-section vcp-section">
+        <div class="insight-title">VCP / Minervini Stage-2 — <b class="${gradeMeta.tone}">${escapeHtml(gradeMeta.label)}</b></div>
+        <div class="option-mini-grid">
+          <div><span>Composite</span><b class="${gradeMeta.tone}">${n(vcp.score)}/100</b></div>
+          <div><span>Trend template</span><b>${tt.available ? `${tt.checks_passed}/${tt.checks_total}` : '—'}</b></div>
+          <div><span>Contractions</span><b>${cq.available ? cq.contractions_found : '—'}</b></div>
+        </div>
+        <div class="trade-level-grid compact">
+          <div><span>Trend template</span><b>${compScore(tt, 25)}</b></div>
+          <div><span>Contraction quality</span><b>${compScore(cq, 25)}</b></div>
+          <div><span>Volume dry-up</span><b>${compScore(vd, 20)}</b></div>
+          <div><span>Pivot proximity</span><b>${compScore(pp, 15)}</b></div>
+          <div><span>RS vs Nifty 50</span><b>${compScore(rs, 15)}</b></div>
+          <div><span>Base pivot</span><b>${pp.available ? formatPrice(pp.pivot) : '—'}</b></div>
+        </div>
+        <div class="insight-pills">
+          ${!vcp.reliable ? `<span class="insight-pill muted">Partial read — one or more components lack enough history</span>` : ''}
+          ${rs.available ? `<span class="insight-pill ${rs.rs_diff_pct >= 0 ? 'good' : 'bad'}">RS ${rs.rs_diff_pct >= 0 ? '+' : ''}${rs.rs_diff_pct}% vs Nifty (${rs.lookback_days}d)</span>` : ''}
+          ${vd.available ? `<span class="insight-pill ${vd.volume_ratio <= 0.7 ? 'good' : ''}">Volume ratio ${vd.volume_ratio}×</span>` : ''}
+        </div>
+        <p class="option-reason">Informational only — not wired into the conviction score. Daily-timeframe composite: Trend Template 25% / Contraction Quality 25% / Volume Dry-Up 20% / Pivot Proximity 15% / Relative Strength vs Nifty 50 15%.</p>
+      </div>
+    `;
+  }
+
   /** Phase 13.9/13.10/13.11 -- signal alignment, half-Kelly sizing, and
    * RSI divergence are all computed once, at signal-fire time, inside the
    * strategy that produced the trade -- not on every live tick like the
@@ -450,6 +509,7 @@ export class ScannerInsight {
       </div>
 
       ${this._renderExtendedSignals(item, trueMtf)}
+      ${this._renderVcp(trueMtf)}
       ${this._renderSignalTimeEvidence(symbol)}
 
       <div class="insight-section">
