@@ -34,7 +34,7 @@ DEFAULT_RIGHT = 2
 BREAK_BUFFER_ATR = 0.10
 
 
-def update_structure(state, left: int = DEFAULT_LEFT, right: int = DEFAULT_RIGHT) -> None:
+def update_structure(state, left: int = DEFAULT_LEFT, right: int = DEFAULT_RIGHT, rsi: float = 50.0) -> None:
     """Advance the fractal pivot / BOS-CHOCH state machine by one completed bar.
 
     Reads `state.recent_1m_bars` (already maintained by the engine on every
@@ -42,6 +42,11 @@ def update_structure(state, left: int = DEFAULT_LEFT, right: int = DEFAULT_RIGHT
     confirm a pivot. Sets `state.structure_event = True` only on the bar a
     break just fired, so callers can tell "state changed this tick" apart
     from "state is still whatever it was."
+
+    `rsi` (optional, Phase 13.11) is recorded alongside any swing point
+    confirmed this call into state.rsi_swing_points -- see that field's
+    docstring in state.py for why this lives in a separate deque rather
+    than widening swing_points' own tuples.
     """
     items = list(state.recent_1m_bars)
     window = left + right + 1
@@ -60,11 +65,13 @@ def update_structure(state, left: int = DEFAULT_LEFT, right: int = DEFAULT_RIGHT
         state.swing_high_2 = state.swing_high_1
         state.swing_high_1 = cand_high
         state.swing_points.append((cand_high, "high", state.completed_1m_bars))
+        state.rsi_swing_points.append((cand_high, "high", state.completed_1m_bars, rsi))
 
     if cand_low == min(lows) and lows.count(cand_low) == 1:
         state.swing_low_2 = state.swing_low_1
         state.swing_low_1 = cand_low
         state.swing_points.append((cand_low, "low", state.completed_1m_bars))
+        state.rsi_swing_points.append((cand_low, "low", state.completed_1m_bars, rsi))
 
     close = items[-1]["c"]
     buf = max(state.atr, 0.0) * BREAK_BUFFER_ATR

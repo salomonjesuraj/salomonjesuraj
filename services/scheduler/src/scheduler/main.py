@@ -35,6 +35,13 @@ OPTIMIZER_PROPOSAL_RETRY_SEC = 120  # short retry on failure (e.g. api not up
 # without meaningfully loading the api/Upstox side.
 PREMIUM_CAPTURE_INTERVAL_SEC = 60
 
+# Phase 13.10: half-Kelly position-sizing stat per strategy. Daily cadence
+# matches optimizer_proposal_loop's -- the underlying win-rate/avg-win-R
+# numbers move slowly (they're averaged over 180 days of archived
+# outcomes), so there's nothing to gain from checking more often.
+KELLY_SIZING_INTERVAL_SEC = 24 * 3600
+KELLY_SIZING_RETRY_SEC = 120
+
 
 async def run_optimizer_proposal_sweep() -> dict:
     """Calls the api service's walk-forward-vs-live-config comparison. This
@@ -46,6 +53,20 @@ async def run_optimizer_proposal_sweep() -> dict:
     url = f"{API_BASE_URL}/api/backtest/optimizer-proposal"
     async with aiohttp.ClientSession() as session:
         async with session.get(url, timeout=aiohttp.ClientTimeout(total=120)) as resp:
+            resp.raise_for_status()
+            return await resp.json()
+
+
+async def run_kelly_sizing_sweep() -> dict:
+    """Calls the api service's half-Kelly sizing computation. This only
+    ever writes informational stats to Redis (infusion:kelly:{strategy_id})
+    for scanner/engine.py's _recommended_lots() to read alongside the
+    existing ATR-scaled sizing -- never changes scanner's actual live
+    config or auto-applies a size. See compute_kelly_sizing() in
+    api/routes/backtest.py."""
+    url = f"{API_BASE_URL}/api/backtest/kelly-sizing"
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=60)) as resp:
             resp.raise_for_status()
             return await resp.json()
 
@@ -139,8 +160,34 @@ async def run() -> None:
             except asyncio.TimeoutError:
                 pass
 
+    # Phase 13.10: once-daily half-Kelly sizing sweep, same shape as
+    # optimizer_proposal_loop. Runs once at startup too so the Redis cache
+    # is populated without waiting a full day on a fresh deploy.
+    async def kelly_sizing_loop():
+        while not lifecycle.shutdown_event.is_set():
+            delay = KELLY_SIZING_INTERVAL_SEC
+            try:
+                result = await run_kelly_sizing_sweep()
+                logger.info(
+                    "kelly_sizing_sweep",
+                    available=result.get("available"),
+                    strategies=list((result.get("strategies") or {}).keys()),
+                )
+            except Exception as exc:
+                logger.warning("kelly_sizing_sweep_failed", error=str(exc))
+                delay = KELLY_SIZING_RETRY_SEC
+            try:
+                await asyncio.wait_for(
+                    lifecycle.shutdown_event.wait(),
+                    timeout=delay,
+                )
+            except asyncio.TimeoutError:
+                pass
+
     async def combined_loop():
-        await asyncio.gather(main_loop(), optimizer_proposal_loop(), premium_capture_loop())
+        await asyncio.gather(
+            main_loop(), optimizer_proposal_loop(), premium_capture_loop(), kelly_sizing_loop(),
+        )
 
     await lifecycle.run_until_shutdown(combined_loop)
 

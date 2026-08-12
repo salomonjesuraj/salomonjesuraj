@@ -17,6 +17,7 @@ quality candidates can exist in the system without becoming noisy alerts.
 
 from __future__ import annotations
 
+from scanner.alignment import compute_signal_alignment
 from scanner.config import ScannerSettings
 from scanner.pine_confidence import compute_pine_decision
 from scanner.state import ScannerSymbolState
@@ -251,6 +252,10 @@ class OptionsFirstHybrid(BaseStrategy):
         wyckoff_failure = mtf_cache.get("wyckoff_structural_failure")
         wyckoff_sot = mtf_cache.get("wyckoff_sot")
         wyckoff_sos_sow = mtf_cache.get("wyckoff_sos_sow")
+        alignment = compute_signal_alignment(
+            bullish=bullish, ml=ml, ma_regime=ma_regime, donchian=donchian,
+            wyckoff_sos_sow=wyckoff_sos_sow, atr_trend=atr_trend, candle_pattern=candle_pattern,
+        )
         snapshot = {
             "ltp": ltp,
             "vwap": vwap,
@@ -380,6 +385,16 @@ class OptionsFirstHybrid(BaseStrategy):
             "ha_trend_streak": ml.get("ha_trend_streak"),
             "ha_doji": ml.get("ha_doji"),
             "ha_color_flip": ml.get("ha_color_flip"),
+            # Signal alignment (Phase 13.9) -- breadth-of-evidence across 8
+            # independent signal families, informational only. See
+            # scanner/alignment.py.
+            **alignment,
+            # RSI divergence (Phase 13.11) -- informational only. See
+            # feature_engine/features/divergence.py.
+            "rsi_divergence_bullish_regular": ml.get("rsi_divergence_bullish_regular"),
+            "rsi_divergence_bullish_hidden": ml.get("rsi_divergence_bullish_hidden"),
+            "rsi_divergence_bearish_regular": ml.get("rsi_divergence_bearish_regular"),
+            "rsi_divergence_bearish_hidden": ml.get("rsi_divergence_bearish_hidden"),
         }
 
         return SignalCandidate(

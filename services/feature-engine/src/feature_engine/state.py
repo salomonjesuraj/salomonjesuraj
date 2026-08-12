@@ -170,6 +170,16 @@ class SymbolState:
     # (price, "high"|"low", completed_1m_bars index at confirmation).
     swing_points: deque = field(default_factory=lambda: deque(maxlen=10))
 
+    # RSI paired with each confirmed swing point (Phase 13.11 -- regular/
+    # hidden RSI divergence, features/divergence.py). Deliberately a
+    # SEPARATE deque from swing_points above, not an extra element on its
+    # tuples -- fibonacci.py unpacks swing_points as exactly 3 values in
+    # several places, so widening that tuple would break it. Populated at
+    # the exact same confirmation event in features/structure.py, so this
+    # is never out of sync with swing_points -- same real pivots, just
+    # also carrying the RSI value structure.py doesn't otherwise see.
+    rsi_swing_points: deque = field(default_factory=lambda: deque(maxlen=10))
+
     # Candlestick pattern sizing baseline (EMA of body size, matches Pine v6's
     # bodyAvgEma — used by Marubozu / Three Soldiers-Crows thresholds).
     body_size_ema: float = 0.0

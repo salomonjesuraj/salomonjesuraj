@@ -153,7 +153,8 @@ class ScannerEngine:
         state.update_from_features(payload)
 
     async def _recommended_lots(
-        self, symbol: str, entry_price: float, invalidation_price: float, atr: float | None = None
+        self, symbol: str, entry_price: float, invalidation_price: float,
+        atr: float | None = None, strategy_id: str = "",
     ) -> dict:
         """Signal-time position-size estimate using underlying entry/stop —
         matches simple_structure_pivot_ma_plan_v6.pine's Position Sizing
@@ -186,7 +187,35 @@ class ScannerEngine:
             risk_amount = capital * risk_pct / 100.0
         max_lots = int(settings.get("max_lots") or 5)
         sizing = compute_position_size(risk_amount, per_unit_risk, lot_size, max_lots=max_lots, atr=atr)
-        return {**sizing, "lot_size": lot_size, "risk_amount": round(risk_amount, 2)}
+        kelly = await self._read_kelly_sizing(strategy_id) if strategy_id else {}
+        return {**sizing, "lot_size": lot_size, "risk_amount": round(risk_amount, 2), **kelly}
+
+    async def _read_kelly_sizing(self, strategy_id: str) -> dict:
+        """Phase 13.10: best-effort read of the half-Kelly sizing stat the
+        scheduler's daily sweep writes (see compute_kelly_sizing() in
+        api/routes/backtest.py) -- informational only, added alongside
+        (never replacing) the ATR-scaled sizing above. Never raises into
+        the hot path: a missing/stale cache just means these fields come
+        back empty, same as any other best-effort Redis read in this file.
+        """
+        try:
+            raw = await self.redis.hgetall(f"infusion:kelly:{strategy_id}")
+            if not raw:
+                return {}
+            decoded = {}
+            for k, v in raw.items():
+                key = k.decode() if isinstance(k, bytes) else k
+                val = v.decode() if isinstance(v, bytes) else v
+                decoded[key] = val
+            half_kelly = decoded.get("half_kelly_pct")
+            return {
+                "kelly_reliable": decoded.get("reliable") == "True",
+                "kelly_half_pct": float(half_kelly) if half_kelly not in (None, "None") else None,
+                "kelly_win_rate_pct": float(decoded["win_rate_pct"]) if decoded.get("win_rate_pct") not in (None, "None") else None,
+                "kelly_sample_size": int(float(decoded["decided"])) if decoded.get("decided") else 0,
+            }
+        except Exception:
+            return {}
 
     async def _fetch_mtf_cache(self, symbol: str) -> dict | None:
         """Best-effort read of the cached historical-MTF payload.
@@ -271,7 +300,8 @@ class ScannerEngine:
         # ── Position sizing (early estimate) ───────────
         atr_for_sizing = candidate.features_snapshot.get("atr_14")
         sub_scores["position_sizing"] = await self._recommended_lots(
-            candidate.symbol, candidate.entry_price, candidate.invalidation_price, atr=atr_for_sizing
+            candidate.symbol, candidate.entry_price, candidate.invalidation_price,
+            atr=atr_for_sizing, strategy_id=candidate.strategy_id,
         )
 
         created_us = now_us()

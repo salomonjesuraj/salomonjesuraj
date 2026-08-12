@@ -14,6 +14,10 @@ from datetime import datetime, timedelta, timezone
 
 from aiohttp import web
 
+from api.statistics_utils import (
+    r_multiple, sharpe_stats, expected_max_sharpe, probabilistic_sharpe_ratio, pearson_r,
+)
+
 routes = web.RouteTableDef()
 
 # Sub-signal fields added across Phases 1/4/6/7/8/9/10 this session, all
@@ -122,6 +126,24 @@ def _profile_metrics(rows: list[dict], profile: dict, days: int) -> dict:
     }
 
 
+def _profile_sharpe(rows: list[dict], profile: dict) -> dict:
+    """Phase 13.8: R-multiple-based Sharpe stats for one profile's matched
+    rows -- the "trial" Sharpe that feeds the Deflated Sharpe Ratio
+    correction in compute_walkforward(). Deliberately NOT annualized (a
+    per-trade Sharpe): DSR only needs trial Sharpes to be computed
+    consistently with each other for the multiple-testing correction to
+    hold, and annualizing would need a trades-per-year assumption this
+    codebase doesn't otherwise model. See statistics_utils.py for the
+    R-multiple convention and formulas.
+    """
+    matched = [r for r in rows if _row_matches_profile(r, profile)]
+    r_multiples = [
+        rm for r in matched
+        if (rm := r_multiple(r.get("outcome_label"), r.get("risk_reward_ratio"))) is not None
+    ]
+    return sharpe_stats(r_multiples)
+
+
 def _purge_and_embargo(
     rows: list[dict], split: int, embargo_min: float
 ) -> tuple[list[dict], list[dict], int, int]:
@@ -181,6 +203,59 @@ def _purge_and_embargo(
         embargoed_test.append(r)
 
     return purged_train, embargoed_test, purged_count, embargoed_count
+
+
+def _compute_dsr(profiles: list[dict], recommended: dict | None) -> dict:
+    """Phase 13.8: Deflated Sharpe Ratio for the recommended (best-utility)
+    profile, benchmarked against the expected-max-Sharpe-by-chance across
+    every profile the grid search actually evaluated -- i.e. corrects for
+    exactly the selection bias compute_walkforward()'s own 1,575-profile
+    grid search creates by trying that many variants and picking a winner.
+    See statistics_utils.py for the underlying formulas (Bailey & Lopez de
+    Prado). Advisory number only -- never gates target_met/status above.
+    """
+    trial_sharpes = [
+        p["test_sharpe"]["sharpe"] for p in profiles
+        if p.get("test_sharpe", {}).get("sharpe") is not None
+    ]
+    n_trials = len(trial_sharpes)
+    benchmark = expected_max_sharpe(trial_sharpes)
+
+    if not recommended or benchmark is None:
+        return {
+            "available": False,
+            "n_trials": n_trials,
+            "reason": "Not enough profiles with a computable Sharpe (need std(R-multiples) > 0 across >=2 profiles).",
+        }
+
+    rec_sharpe = recommended.get("test_sharpe") or {}
+    sr_hat = rec_sharpe.get("sharpe")
+    n = rec_sharpe.get("n")
+    skew = rec_sharpe.get("skew")
+    kurtosis = rec_sharpe.get("kurtosis")
+    if sr_hat is None or not n or skew is None or kurtosis is None:
+        return {
+            "available": False,
+            "n_trials": n_trials,
+            "benchmark_sharpe": round(benchmark, 4),
+            "reason": "Recommended profile's test set has no computable Sharpe (all wins, all losses, or too few decided trades).",
+        }
+
+    dsr = probabilistic_sharpe_ratio(sr_hat, benchmark, n, skew, kurtosis)
+    return {
+        "available": True,
+        "n_trials": n_trials,
+        "recommended_sharpe": round(sr_hat, 4),
+        "benchmark_sharpe": round(benchmark, 4),
+        "recommended_n_trades": n,
+        "deflated_sharpe_ratio": round(dsr, 4) if dsr is not None else None,
+        "note": (
+            "Probability the recommended profile's real edge exceeds what pure chance "
+            f"would produce as the best of {n_trials} tried variants -- not a precision "
+            "number, a confidence-in-the-selection number. Per-trade Sharpe (R-multiple "
+            "based), not annualized."
+        ),
+    }
 
 
 def _walkforward_status(test: dict, target: float, min_test: int) -> tuple[str, str]:
@@ -795,6 +870,7 @@ async def compute_walkforward(
                     if train["decided"] < min_train:
                         continue
                     test = _profile_metrics(test_rows, profile, test_days)
+                    test_sharpe = _profile_sharpe(test_rows, profile)
                     status, status_note = _walkforward_status(test, target, min_test)
                     overfit_gap = None
                     if train["precision_pct"] is not None and test["precision_pct"] is not None:
@@ -815,6 +891,7 @@ async def compute_walkforward(
                         "label": _describe_profile(profile),
                         "train": train,
                         "test": test,
+                        "test_sharpe": test_sharpe,
                         "status": status,
                         "status_note": status_note,
                         "overfit_gap_pct": overfit_gap,
@@ -837,6 +914,7 @@ async def compute_walkforward(
         if recommended
         else "No trainable profile survived the minimum sample rules."
     )
+    dsr = _compute_dsr(profiles, recommended)
 
     return {
         "available": True,
@@ -862,6 +940,7 @@ async def compute_walkforward(
         "recommended": recommended,
         "candidates": profiles[:10],
         "note": note,
+        "dsr": dsr,
     }
 
 
@@ -1030,6 +1109,260 @@ async def compute_feature_ablation(pool, field: str, column: str = "features_sna
         "precision_lift_pct": lift,
         "note": " ".join(note_parts),
     }
+
+
+def _decode_json_column(raw) -> dict:
+    try:
+        decoded = json.loads(raw) if isinstance(raw, str) else (raw or {})
+    except (json.JSONDecodeError, TypeError):
+        decoded = {}
+    return decoded if isinstance(decoded, dict) else {}
+
+
+def _ic_encode(field: str, value) -> int | None:
+    """0/1 presence encoding for one field's raw value, feeding
+    statistics_utils.pearson_r as the point-biserial x-variable. Plain
+    truthiness (_ablation_field_present, already used by feature-ablation
+    above) covers every KNOWN_ABLATION_FIELDS/_SUB_SCORES entry except
+    ma_regime, which is a 3-way string enum ("golden_cross"/"death_cross"/
+    "unknown") where truthiness alone can't tell a confirmed bearish
+    regime apart from "we don't know yet" -- both are non-empty strings.
+    ma_regime is special-cased to test specifically "is this a confirmed
+    golden cross", excluding "unknown" rows from the sample entirely
+    rather than folding them into either side.
+    """
+    if field == "ma_regime":
+        if value == "golden_cross":
+            return 1
+        if value == "death_cross":
+            return 0
+        return None
+    return 1 if _ablation_field_present(value) else 0
+
+
+async def compute_feature_ic(pool, days: int = 90) -> dict:
+    """Phase 13.8: per-feature Information Coefficient -- Pearson (here,
+    point-biserial since every field is 0/1-encoded) correlation between
+    each KNOWN_ABLATION_FIELDS(_SUB_SCORES) field's presence and the
+    R-multiple outcome of the signal it was attached to. Complements
+    feature-ablation's precision-split view with a single, comparable-
+    across-fields number, computed from the same archived outcomes.
+
+    Same governance as everything else this session: diagnostic evidence
+    only, ranks fields for a human to review, never auto-wires anything
+    into scanner/scoring.py.
+    """
+    if not pool:
+        return {"available": False, "reason": "Postgres analytics pool is not available.", "phase": "Phase 13.8"}
+
+    days = max(1, min(365, int(days or 90)))
+    async with pool.acquire() as conn:
+        try:
+            records = await conn.fetch("""
+                SELECT outcome_label, risk_reward_ratio, features, sub_scores
+                FROM signals
+                WHERE created_at >= now() - ($1::int * interval '1 day')
+                  AND outcome_label IN ('TARGET_HIT', 'STOP_HIT')
+                  AND NOT COALESCE(suppressed, false)
+            """, days)
+        except Exception as exc:
+            return {"available": False, "phase": "Phase 13.8", "reason": f"Feature-IC query failed: {exc}"}
+
+    rows = []
+    for r in records:
+        d = dict(r)
+        rm = r_multiple(d.get("outcome_label"), d.get("risk_reward_ratio"))
+        if rm is None:
+            continue
+        rows.append({
+            "r_multiple": rm,
+            "features": _decode_json_column(d.get("features")),
+            "sub_scores": _decode_json_column(d.get("sub_scores")),
+        })
+
+    total = len(rows)
+    field_specs = [(f, "features") for f in KNOWN_ABLATION_FIELDS] + [
+        (f, "sub_scores") for f in KNOWN_ABLATION_FIELDS_SUB_SCORES
+    ]
+    results = []
+    for field, column in field_specs:
+        xs, ys = [], []
+        for row in rows:
+            encoded = _ic_encode(field, row[column].get(field))
+            if encoded is None:
+                continue
+            xs.append(float(encoded))
+            ys.append(row["r_multiple"])
+        ic = pearson_r(xs, ys)
+        n_present = sum(1 for x in xs if x == 1.0)
+        results.append({
+            "field": field,
+            "column": "features_snapshot" if column == "features" else column,
+            "ic": round(ic, 4) if ic is not None else None,
+            "n_used": len(xs),
+            "n_present": n_present,
+            "n_absent": len(xs) - n_present,
+        })
+
+    # A field's total n_used is nearly always huge (most archived signals
+    # simply predate the field existing at all, and absence-because-never-
+    # computed is indistinguishable from absence-because-not-triggered --
+    # both correctly encode to 0). That makes total-N alone a misleading
+    # reliability gate: a correlation computed from 3 "present" rows
+    # against 12,000+ "absent" ones is statistical noise no matter how
+    # large n_used looks. Reliability requires enough rows on BOTH sides,
+    # not just a big denominator (caught live: every Phase 1-10 field
+    # currently has single-digit real presence counts in the archive,
+    # since most rows predate these fields being added to
+    # features_snapshot at all).
+    min_side = 15
+    for r in results:
+        r["reliable"] = r["ic"] is not None and r["n_present"] >= min_side and r["n_absent"] >= min_side
+    reliable = [r for r in results if r["reliable"]]
+    return {
+        "available": True,
+        "phase": "Phase 13.8",
+        "method": "point_biserial_ic_vs_r_multiple",
+        "days": days,
+        "total_decided": total,
+        "min_side_for_reliable": min_side,
+        "fields": results,
+        "note": (
+            f"{len(reliable)}/{len(results)} fields have >= {min_side} decided outcomes on BOTH "
+            "the present and absent side (not just a large total N -- most fields here are new "
+            "enough that the vast majority of archived history predates them, so a big n_used "
+            "with a tiny n_present is not a reliable correlation regardless of its IC value). "
+            "|IC| above ~0.1 is a real, if modest, signal in a noisy per-trade series among "
+            "reliable fields; treat anything below that, or any unreliable field, as noise. "
+            "Diagnostic only -- never auto-wired into scanner/scoring.py."
+        ),
+    }
+
+
+@routes.get("/api/backtest/feature-ic")
+async def backtest_feature_ic(request):
+    """GET /api/backtest/feature-ic?days=90 -- ranked Information
+    Coefficient for every KNOWN_ABLATION_FIELDS(_SUB_SCORES) field against
+    real R-multiple outcomes. See compute_feature_ic()."""
+    pool = request.app.get("pg_pool")
+    days = request.query.get("days", "90")
+    result = await compute_feature_ic(pool, days=int(days) if days else 90)
+    return web.json_response(result)
+
+
+KELLY_KEY_PREFIX = "infusion:kelly:"
+
+
+async def compute_kelly_sizing(pool, redis, days: int = 180) -> dict:
+    """Phase 13.10: half-Kelly position-sizing stat per strategy, computed
+    from Infusion's own archived TARGET_HIT/STOP_HIT outcomes, and written
+    to Redis (KELLY_KEY_PREFIX + strategy_id) for scanner/engine.py's
+    _recommended_lots() to read cheaply -- scanner has no Postgres access,
+    matching the "propose only, scanner reads a Redis cache another
+    service wrote" pattern optimizer-proposal/F&O-ban already use here.
+
+    Kelly% = W - (1-W)/R (the standard Kelly criterion for a binary win/
+    loss bet), where W = win rate and R = average win size in R-multiples
+    (average loss is always exactly 1R by this codebase's own
+    risk_reward_ratio convention -- see statistics_utils.r_multiple).
+    Half-Kelly (Kelly%/2) is what's actually surfaced -- full Kelly's
+    optimal-growth guarantee assumes W/R are known exactly, which they
+    never are from a finite sample; half-Kelly is the standard
+    practitioner discount against that estimation error.
+
+    A NEGATIVE Kelly% is reported as-is, not clipped to zero -- it means
+    the strategy's own historical numbers argue against sizing up at all,
+    a real and important reading, not an edge case to hide.
+
+    Gated on >= 30 decided outcomes per strategy (the same minimum this
+    session's earlier nse-trading-skills GitHub research cited) -- below
+    that, reports "not enough sample" rather than a number nobody should
+    trust. Informational only, surfaced alongside (never replacing) the
+    existing ATR-scaled Turtle sizing in engine.py's _recommended_lots().
+    """
+    if not pool:
+        return {"available": False, "reason": "Postgres analytics pool is not available.", "phase": "Phase 13.10"}
+
+    days = max(1, min(365, int(days or 180)))
+    min_sample = 30
+
+    async with pool.acquire() as conn:
+        try:
+            records = await conn.fetch("""
+                SELECT COALESCE(strategy, '-') AS strategy, outcome_label, risk_reward_ratio
+                FROM signals
+                WHERE created_at >= now() - ($1::int * interval '1 day')
+                  AND outcome_label IN ('TARGET_HIT', 'STOP_HIT')
+                  AND NOT COALESCE(suppressed, false)
+            """, days)
+        except Exception as exc:
+            return {"available": False, "phase": "Phase 13.10", "reason": f"Kelly-sizing query failed: {exc}"}
+
+    by_strategy: dict[str, list[dict]] = {}
+    for r in records:
+        d = dict(r)
+        by_strategy.setdefault(d["strategy"], []).append(d)
+
+    strategies: dict[str, dict] = {}
+    for strategy_id, rows in by_strategy.items():
+        wins = [r for r in rows if r["outcome_label"] == "TARGET_HIT"]
+        losses = [r for r in rows if r["outcome_label"] == "STOP_HIT"]
+        decided = len(wins) + len(losses)
+        win_rate = (len(wins) / decided) if decided else None
+        avg_win_r = (
+            sum((float(r.get("risk_reward_ratio") or 0) or 1.0) for r in wins) / len(wins)
+            if wins else None
+        )
+        reliable = decided >= min_sample and win_rate is not None and bool(avg_win_r) and avg_win_r > 0
+        kelly_pct = half_kelly_pct = None
+        if reliable:
+            kelly_pct = win_rate - (1 - win_rate) / avg_win_r
+            half_kelly_pct = kelly_pct / 2
+        strategies[strategy_id] = {
+            "decided": decided,
+            "wins": len(wins),
+            "losses": len(losses),
+            "win_rate_pct": round(win_rate * 100, 1) if win_rate is not None else None,
+            "avg_win_r": round(avg_win_r, 3) if avg_win_r is not None else None,
+            "kelly_pct": round(kelly_pct * 100, 2) if kelly_pct is not None else None,
+            "half_kelly_pct": round(half_kelly_pct * 100, 2) if half_kelly_pct is not None else None,
+            "reliable": bool(reliable),
+        }
+
+    if redis is not None:
+        for strategy_id, stat in strategies.items():
+            key = f"{KELLY_KEY_PREFIX}{strategy_id}"
+            mapping = {k: str(v) for k, v in stat.items()}
+            pipe = redis.pipeline(transaction=False)
+            pipe.hset(key, mapping=mapping)
+            pipe.expire(key, 3 * 86400)  # a stale cache is worse than a missing one past a few days
+            await pipe.execute()
+
+    return {
+        "available": True,
+        "phase": "Phase 13.10",
+        "days": days,
+        "min_sample": min_sample,
+        "strategies": strategies,
+        "note": (
+            "Half-Kelly position-size multiplier per strategy, from real archived outcomes. "
+            "A negative Kelly% means the strategy's own historical numbers argue against "
+            "sizing up at all, not just for smaller size. Informational only -- surfaced "
+            "alongside, never replacing, the existing ATR-scaled position sizing."
+        ),
+    }
+
+
+@routes.get("/api/backtest/kelly-sizing")
+async def backtest_kelly_sizing(request):
+    """GET /api/backtest/kelly-sizing?days=180 -- half-Kelly sizing stat
+    per strategy, also written to Redis for scanner to read. See
+    compute_kelly_sizing()."""
+    pool = request.app.get("pg_pool")
+    redis = request.app.get("redis")
+    days = request.query.get("days", "180")
+    result = await compute_kelly_sizing(pool, redis, days=int(days) if days else 180)
+    return web.json_response(result)
 
 
 @routes.get("/api/backtest/feature-ablation")

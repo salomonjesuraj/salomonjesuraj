@@ -22,6 +22,7 @@ from feature_engine.features.volatility import (
 from feature_engine.features.volume import update_obv, get_relative_volume, get_volume_sma
 from feature_engine.features.microstructure import get_spread_bps, get_order_imbalance
 from feature_engine.features.structure import update_structure, structure_snapshot
+from feature_engine.features.divergence import detect_rsi_divergence
 from feature_engine.features.candles import update_body_ema, detect_candle_pattern, body_pct
 from feature_engine.features.zones import update_zones, zone_snapshot
 from feature_engine.features.fibonacci import fib_snapshot
@@ -332,7 +333,7 @@ class FeatureEngine:
             # ICT runs after update_structure() specifically -- it reads
             # swing_high_1/swing_low_1 as its liquidity-sweep precondition,
             # so it needs this bar's swing state already current.
-            update_structure(state)
+            update_structure(state, rsi=get_rsi(state))
             update_zones(state, completed_1m.bar_start_ms)
             update_ict(state)
 
@@ -356,6 +357,7 @@ class FeatureEngine:
             **volman_snapshot(state),
             **get_vwap_sd_bands(state),
             **heiken_ashi_snapshot(state),
+            **detect_rsi_divergence(state.rsi_swing_points),
             "delivery_pct_avg_20d": state.delivery_pct_avg_20d,
             "delivery_avg_days": state.delivery_avg_days,
             "delivery_trade_date": state.delivery_trade_date,
