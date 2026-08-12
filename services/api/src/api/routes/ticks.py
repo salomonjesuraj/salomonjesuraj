@@ -859,6 +859,9 @@ def _decode_mtf_cache(raw) -> dict:
             "mtf_warnings": payload.get("warnings") or [],
             "mtf_rejection_reasons": payload.get("rejection_reasons") or [],
             "mtf_trade_bias": payload.get("trade_bias"),
+            # Phase 13.5 -- 52-week high/low distance, see
+            # api/routes/mtf.py's _week52_stats().
+            "week52": payload.get("week52") or {},
         }
     except (json.JSONDecodeError, TypeError, ValueError):
         return {}
@@ -1201,6 +1204,39 @@ async def list_ticks(request):
         try:
             _apply_index_context(entry, index_context)
             entry.update(_scanner_intel(entry, features, prebreak, sector_strength))
+            # Phase 13.5/13.7: VWAP SD bands, Heiken-Ashi, delivery % --
+            # informational-only fields feature-engine already computes,
+            # passed straight through (no derivation needed here, unlike
+            # _scanner_intel's fields above). See feature_engine/main.py's
+            # HOT_STATE_ML_WHITELIST for what actually lands in `features`.
+            _BOOL_PASSTHROUGH_KEYS = {"vwap_sd_ready", "ha_doji", "ha_color_flip"}
+            for key in (
+                "delivery_pct", "vwap_stdev", "vwap_sd1_upper", "vwap_sd1_lower",
+                "vwap_sd2_upper", "vwap_sd2_lower", "vwap_sd_ready",
+                "ha_trend", "ha_trend_streak", "ha_doji", "ha_color_flip",
+                "delivery_pct_avg_20d", "delivery_avg_days", "delivery_trade_date",
+            ):
+                if key not in features:
+                    continue
+                value = features[key]
+                # delivery_pct_avg_20d is deliberately stored as "" (not
+                # omitted) when there's no rolling average yet -- see
+                # nse_scraper/delivery.py's _rolling_avg(). _decode_hash's
+                # float() coercion leaves "" as the literal empty string
+                # (float("") raises), which is truthy-by-existence in JS
+                # (`!= null` passes) and broke the dashboard's .toFixed()
+                # call on it live. Normalize to a real absence.
+                if value == "":
+                    continue
+                # These round-tripped through Redis as str(bool) ("True"/
+                # "False"), not real booleans -- _decode_hash's float()
+                # coercion leaves them as that literal string since
+                # float("True") raises. Coerce back explicitly rather than
+                # letting a truthy-string "False" silently evaluate truthy
+                # on the frontend.
+                if key in _BOOL_PASSTHROUGH_KEYS and isinstance(value, str):
+                    value = value == "True"
+                entry[key] = value
             if option_summary:
                 chain_score = float(option_summary.get("execution_score") or option_summary.get("option_score") or 0)
                 previous_proxy = entry.get("option_readiness")

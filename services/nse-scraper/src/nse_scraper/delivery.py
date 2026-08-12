@@ -199,8 +199,23 @@ async def run_delivery_capture(redis, universe_symbols: set[str]) -> dict:
         return {"status": "unavailable", "reason": "no bhavcopy found in lookback window"}
 
     trade_date, parsed = result
-    if stored_date == trade_date.isoformat():
-        return {"status": "already_current", "trade_date": trade_date.isoformat()}
+
+    # Real bug caught live (this session): the old version short-circuited
+    # the ENTIRE run -- including every per-symbol write -- the moment
+    # `latest_date` matched, with no regard for which symbols actually got
+    # written. A test run against a 4-symbol subset set latest_date once,
+    # then permanently starved every subsequent real 208-symbol universe
+    # run for the rest of that trading day (confirmed: only the original 4
+    # symbols ever had real Redis data while the other 204 silently sat at
+    # their SymbolState default of 0.0, indistinguishable in the dashboard
+    # from a genuine 0% delivery day). Per-symbol writes are already
+    # naturally idempotent (a plain HSET overwrite, and _rolling_avg's own
+    # head-of-list date check prevents double-counting the same session in
+    # the 20-day rolling average) -- so the fix is simply to stop skipping
+    # them. The one-time cost of always re-fetching+re-parsing the CSV
+    # (once per DELIVERY_CAPTURE_INTERVAL_SEC, a few seconds) is trivial
+    # next to actually covering the universe correctly.
+    already_current = stored_date == trade_date.isoformat()
 
     written = 0
     for symbol in universe_symbols:
@@ -228,10 +243,12 @@ async def run_delivery_capture(redis, universe_symbols: set[str]) -> dict:
         trade_date=trade_date.isoformat(),
         symbols_in_bhavcopy=len(parsed),
         universe_matched=written,
+        was_already_current=already_current,
     )
     return {
         "status": "complete",
         "trade_date": trade_date.isoformat(),
         "symbols_in_bhavcopy": len(parsed),
         "universe_matched": written,
+        "was_already_current": already_current,
     }

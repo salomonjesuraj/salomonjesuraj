@@ -18,7 +18,7 @@ import { MarketTicker } from './market-ticker.js?v=5.7.0-top-status-gift-nifty';
 import { OptionCockpit } from './options.js?v=6.4.4-summary-chip-polish';
 import { SectorRibbon } from './sector-ribbon.js?v=6.4.4-summary-chip-polish';
 import { WorkbenchTabs } from './workbench-tabs.js?v=2.4.0-hybrid-scanner';
-import { ScannerInsight } from './scanner-insight.js?v=6.4.4-summary-chip-polish';
+import { ScannerInsight } from './scanner-insight.js?v=13.5-extended-signals';
 import { TriggerPanel } from './triggers.js?v=3.1.0-pro-terminal-ui';
 import { AuthTokenDialog } from './auth-token-dialog.js?v=3.2.0-upstox-token-dialog';
 import { RiskConsole } from './risk-console.js?v=6.4.4-summary-chip-polish';
@@ -29,6 +29,7 @@ import { ExecutionPanel } from './execution-panel.js?v=6.4.4-summary-chip-polish
 import { SafetyPanel } from './safety-panel.js?v=6.4.4-summary-chip-polish';
 import { SectionControls } from './section-controls.js?v=6.4.4-summary-chip-polish';
 import { OptionsAnalyticsPanel } from './options-analytics-panel.js?v=8.0.0-phase-d';
+import { StrategySelectorPanel } from './strategy-selector-panel.js?v=13.6-dashboard';
 import { OptimizerPanel } from './optimizer-panel.js?v=8.0.0-phase-d';
 import { AiQueryPanel } from './ai-query-panel.js?v=8.0.0-phase-d';
 import { initModeSwitch } from './mode-switch.js?v=8.0.0-new-shell';
@@ -196,6 +197,10 @@ class InfusionApp {
     optionsAnalyticsPanelV2.init();
     this._panels.push(optionsAnalyticsPanelV2);
 
+    const strategySelectorPanelV2 = new StrategySelectorPanel(document.getElementById('strategySelectorPanelV2'));
+    strategySelectorPanelV2.init();
+    this._panels.push(strategySelectorPanelV2);
+
     const optimizerPanelV2 = new OptimizerPanel(document.getElementById('optimizerPanelV2'));
     optimizerPanelV2.init();
     this._panels.push(optimizerPanelV2);
@@ -285,6 +290,11 @@ class InfusionApp {
     const optionsAnalyticsPanel = new OptionsAnalyticsPanel(document.getElementById('optionsAnalyticsPanel'));
     optionsAnalyticsPanel.init();
     this._panels.push(optionsAnalyticsPanel);
+
+    // Phase 13.6 dashboard surfacing: ranked multi-leg strategy shortlist.
+    const strategySelectorPanel = new StrategySelectorPanel(document.getElementById('strategySelectorPanel'));
+    strategySelectorPanel.init();
+    this._panels.push(strategySelectorPanel);
 
     const optimizerPanel = new OptimizerPanel(document.getElementById('optimizerPanel'));
     optimizerPanel.init();

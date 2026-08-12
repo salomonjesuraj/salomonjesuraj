@@ -174,6 +174,60 @@ export class ScannerInsight {
            null;
   }
 
+  /** Phase 13.5/13.7 -- 52-week range, VWAP SD bands, delivery %,
+   * Heiken-Ashi. All informational, none wired into the conviction score
+   * -- same "not applied until feature-ablation earns it" governance as
+   * everything else these come from. week52 rides on the same /api/mtf
+   * fetch scanner-insight.js already does for MTF; the rest come straight
+   * off the /api/ticks row (feature-engine's hot-state hash, see
+   * feature_engine/main.py's HOT_STATE_ML_WHITELIST). */
+  _renderExtendedSignals(item, trueMtf) {
+    const week52 = trueMtf?.week52 || {};
+    const haTrend = String(item.ha_trend || 'NA').toUpperCase();
+    const haTone = haTrend === 'BULL' ? 'positive' : haTrend === 'BEAR' ? 'negative' : '';
+    // Number.isFinite (not just != null) guards against "" or any other
+    // non-numeric value that survives a Redis string round-trip --
+    // caught live: an empty-string delivery_pct_avg_20d (the real "no
+    // rolling average yet" sentinel) passed a plain != null check and
+    // crashed .toFixed() on a string.
+    // delivery_pct is a SymbolState default of 0.0 until nse-scraper's
+    // capture actually runs for this symbol -- indistinguishable from a
+    // genuine 0% delivery day unless gated on delivery_trade_date
+    // actually being set (caught live: NATIONALUM showed a plausible-
+    // looking "0.0%" that was really "never captured", not a real value).
+    const deliveryCaptured = Boolean(item.delivery_trade_date);
+    const deliveryPctRaw = Number(item.delivery_pct);
+    const deliveryAvgRaw = Number(item.delivery_pct_avg_20d);
+    const deliveryPct = (deliveryCaptured && Number.isFinite(deliveryPctRaw)) ? deliveryPctRaw : null;
+    const deliveryAvg = (deliveryCaptured && Number.isFinite(deliveryAvgRaw)) ? deliveryAvgRaw : null;
+    const deliveryDelta = (deliveryPct != null && deliveryAvg != null) ? deliveryPct - deliveryAvg : null;
+
+    return `
+      <div class="insight-section extended-signals">
+        <div class="insight-title">Extended signals — 52W range, VWAP bands, delivery %, Heiken-Ashi</div>
+        <div class="trade-level-grid compact">
+          <div><span>52W High</span><b>${formatPrice(week52.week52_high)}</b></div>
+          <div><span>52W Low</span><b>${formatPrice(week52.week52_low)}</b></div>
+          <div><span>From high</span><b class="${n(week52.week52_high_distance_pct) >= 0 ? 'positive' : ''}">${formatPct(week52.week52_high_distance_pct)}</b></div>
+          <div><span>From low</span><b class="positive">${formatPct(week52.week52_low_distance_pct)}</b></div>
+          <div><span>VWAP SD1</span><b>${formatPrice(item.vwap_sd1_lower)} – ${formatPrice(item.vwap_sd1_upper)}</b></div>
+          <div><span>VWAP SD2</span><b>${formatPrice(item.vwap_sd2_lower)} – ${formatPrice(item.vwap_sd2_upper)}</b></div>
+          <div><span>Delivery %</span><b>${deliveryPct != null ? deliveryPct.toFixed(1) + '%' : '—'}</b></div>
+          <div><span>Delivery 20D avg</span><b>${deliveryAvg != null ? deliveryAvg.toFixed(1) + '%' : '—'}</b></div>
+          <div><span>Heiken-Ashi</span><b class="${haTone}">${haTrend === 'NA' ? 'No streak yet' : `${haTrend} ×${n(item.ha_trend_streak)}`}</b></div>
+        </div>
+        <div class="insight-pills">
+          ${week52.week52_near_high ? `<span class="insight-pill warn">Near 52W high</span>` : ''}
+          ${week52.week52_near_low ? `<span class="insight-pill good">Near 52W low</span>` : ''}
+          ${item.vwap_sd_ready === false ? `<span class="insight-pill muted">VWAP bands warming up</span>` : ''}
+          ${item.ha_doji ? `<span class="insight-pill warn">Heiken-Ashi doji${item.ha_color_flip ? ' + color flip' : ''}</span>` : ''}
+          ${deliveryDelta != null && Math.abs(deliveryDelta) >= 10 ? `<span class="insight-pill ${deliveryDelta > 0 ? 'good' : 'bad'}">Delivery ${deliveryDelta > 0 ? 'above' : 'below'} 20D avg by ${Math.abs(deliveryDelta).toFixed(1)}pt</span>` : ''}
+        </div>
+        <p class="option-reason">Informational only — not wired into the conviction score. Delivery % is T-1 (NSE has no live intraday delivery feed); VWAP bands and Heiken-Ashi need a few completed 1-minute bars before they're meaningful.</p>
+      </div>
+    `;
+  }
+
   _render() {
     if (!this._el) return;
     const item = this._current();
@@ -311,6 +365,8 @@ export class ScannerInsight {
           ${gate('Pattern', item.trend_stack?.pattern, patternText)}
         </div>
       </div>
+
+      ${this._renderExtendedSignals(item, trueMtf)}
 
       <div class="insight-section">
         <div class="insight-title">Why it has strength</div>

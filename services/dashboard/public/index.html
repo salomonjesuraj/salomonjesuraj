@@ -107,6 +107,7 @@
             <button class="workbench-tab" data-tab="alerts">Alert Log</button>
             <button class="workbench-tab" data-tab="diagnostics">Diagnostics</button>
             <button class="workbench-tab" data-tab="options-analytics">Options Analytics</button>
+            <button class="workbench-tab" data-tab="strategy-selector">Strategy Selector</button>
             <button class="workbench-tab" data-tab="optimizer">Optimizer</button>
             <button class="workbench-tab" data-tab="ask-infusion">Ask Infusion</button>
           </div>
@@ -185,6 +186,11 @@
           <div class="workbench-pane" data-pane="options-analytics">
             <div class="workbench-section-title">Options Analytics &mdash; PCR, OI Levels, Max Pain</div>
             <div id="optionsAnalyticsPanel" class="workbench-scroll"></div>
+          </div>
+
+          <div class="workbench-pane" data-pane="strategy-selector">
+            <div class="workbench-section-title">Strategy Selector &mdash; Ranked Multi-Leg Shortlist</div>
+            <div id="strategySelectorPanel" class="workbench-scroll"></div>
           </div>
 
           <div class="workbench-pane" data-pane="optimizer">
@@ -268,6 +274,7 @@
           <div data-pane-v2="alerts"><div class="ifx-pane-title">Alert Log</div><div id="alertBodyV2"></div></div>
           <div data-pane-v2="diagnostics"><div class="ifx-pane-title">Diagnostics + Precision</div><div id="analyticsBodyV2"></div></div>
           <div data-pane-v2="options-analytics"><div class="ifx-pane-title">Options Analytics — PCR, OI Levels, Max Pain</div><div id="optionsAnalyticsPanelV2"></div></div>
+          <div data-pane-v2="strategy-selector"><div class="ifx-pane-title">Strategy Selector — Ranked Multi-Leg Shortlist</div><div id="strategySelectorPanelV2"></div></div>
           <div data-pane-v2="optimizer"><div class="ifx-pane-title">Optimizer — Walk-Forward, Proposal Drift, Feature Ablation</div><div id="optimizerPanelV2"></div></div>
           <div data-pane-v2="ask-infusion"><div class="ifx-pane-title">Ask Infusion</div><div id="aiQueryPanelV2"></div></div>
           <div data-pane-v2="signal-integrity"><div class="ifx-pane-title">Signal Integrity — every signal Infusion has fired, and what actually happened</div><div id="integrityPanelV2"></div></div>
@@ -278,6 +285,6 @@
   </div>
 
   <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
-  <script type="module" src="/js/app.js?v=8.0.0-new-shell"></script>
+  <script type="module" src="/js/app.js?v=13.6-strategy-selector"></script>
 </body>
 </html>

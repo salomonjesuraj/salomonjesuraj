@@ -626,6 +626,7 @@
    overrides this default. */
 .ifx-scanner button:focus-visible, .ifx-scanner a:focus-visible, .ifx-scanner [tabindex]:focus-visible,
 .ifx-oa button:focus-visible, .ifx-oa a:focus-visible, .ifx-oa [tabindex]:focus-visible,
+.ifx-ss button:focus-visible, .ifx-ss a:focus-visible, .ifx-ss [tabindex]:focus-visible,
 .ifx-opt button:focus-visible, .ifx-opt a:focus-visible, .ifx-opt [tabindex]:focus-visible,
 .ifx-ask button:focus-visible, .ifx-ask a:focus-visible, .ifx-ask [tabindex]:focus-visible,
 .ifx-pulse button:focus-visible, .ifx-pulse a:focus-visible, .ifx-pulse [tabindex]:focus-visible,
@@ -1098,6 +1099,47 @@
   border: 1px solid var(--ifx-content-border); background: var(--ifx-content-surface); color: var(--ifx-content-text);
 }
 .ifx-oa-select:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--ifx-content-surface), 0 0 0 4px var(--ifx-accent-strong); }
+
+/* ── Options Strategy Selector (Phase 13.6) ────────────────────────── */
+/* Reuses .ifx-oa's root/empty/loading/unavailable/head/symbol/footnote
+   classes directly (same "paper content pane" shape) -- only the ranked-
+   card list below is new. */
+.ifx-ss-context {
+  display: flex; flex-wrap: wrap; gap: var(--ifx-space-3);
+  font-size: var(--ifx-text-xs); color: var(--ifx-content-text-muted);
+}
+.ifx-ss-list { display: flex; flex-direction: column; gap: var(--ifx-space-3); }
+.ifx-ss-card {
+  display: flex; flex-direction: column; gap: var(--ifx-space-2);
+  padding: var(--ifx-space-4);
+  background: var(--ifx-content-surface); border: 1px solid var(--ifx-content-border); border-radius: var(--ifx-radius-lg);
+  box-shadow: var(--ifx-shadow-sm);
+}
+.ifx-ss-card-head { display: flex; align-items: center; justify-content: space-between; gap: var(--ifx-space-2); }
+.ifx-ss-card-title { font-weight: 700; font-size: var(--ifx-text-sm); }
+.ifx-ss-legs table { width: 100%; border-collapse: collapse; font-size: var(--ifx-text-xs); }
+.ifx-ss-legs th {
+  text-align: left; font-weight: 700; text-transform: uppercase; letter-spacing: .3px;
+  font-size: var(--ifx-text-2xs); color: var(--ifx-content-text-faint);
+  padding: 4px 8px; border-bottom: 1px solid var(--ifx-content-border);
+}
+.ifx-ss-legs td { padding: 4px 8px; border-bottom: 1px solid var(--ifx-content-border); }
+.ifx-ss-legs tr:last-child td { border-bottom: none; }
+.ifx-ss-metrics {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: var(--ifx-space-2);
+  font-size: var(--ifx-text-xs);
+}
+.ifx-ss-metrics > div { display: flex; flex-direction: column; gap: 2px; }
+.ifx-ss-metrics span { color: var(--ifx-content-text-faint); font-size: var(--ifx-text-2xs); text-transform: uppercase; letter-spacing: .3px; }
+.ifx-ss-metrics b { font-size: var(--ifx-text-sm); font-family: var(--ifx-font-mono); }
+.ifx-ss-comps {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--ifx-space-2);
+  padding-top: var(--ifx-space-2); border-top: 1px dashed var(--ifx-content-border);
+}
+.ifx-ss-comp { display: flex; flex-direction: column; gap: 1px; font-size: var(--ifx-text-2xs); }
+.ifx-ss-comp span { color: var(--ifx-content-text-faint); text-transform: uppercase; letter-spacing: .3px; }
+.ifx-ss-comp b { font-family: var(--ifx-font-mono); font-size: var(--ifx-text-xs); }
+.ifx-ss-comp small { color: var(--ifx-content-text-muted); line-height: 1.4; }
 
 /* ── Ask Infusion (NL query) ───────────────────────────────────────── */
 .ifx-ask {

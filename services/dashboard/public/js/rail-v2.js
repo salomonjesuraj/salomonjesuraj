@@ -22,6 +22,7 @@ const ROWS = [
   { key: 'alerts', icon: '🔔', label: 'Alert Log' },
   { key: 'diagnostics', icon: '📊', label: 'Diagnostics' },
   { key: 'options-analytics', icon: '⌗', label: 'Options Analytics' },
+  { key: 'strategy-selector', icon: '⚖', label: 'Strategy Selector' },
   { key: 'optimizer', icon: '↻', label: 'Optimizer' },
   { key: 'ask-infusion', icon: '✦', label: 'Ask Infusion' },
   { key: 'signal-integrity', icon: '✓', label: 'Signal Integrity' },

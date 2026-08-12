@@ -118,6 +118,19 @@ async def main():
         pipe.expire(key, 7 * 86400)
         await pipe.execute()
 
+    # ml_features is free-form and excluded from the hot-state hash below
+    # wholesale (it can carry list/dict values a flat str-mapping hash
+    # can't represent cleanly), but a small whitelist of Phase 13.5/13.7
+    # scalar fields is worth surfacing live in the dashboard's per-symbol
+    # feature hash -- api/routes/ticks.py reads this same hash for the
+    # live scanner table and Stock Detail panel.
+    HOT_STATE_ML_WHITELIST = (
+        "vwap_stdev", "vwap_sd1_upper", "vwap_sd1_lower",
+        "vwap_sd2_upper", "vwap_sd2_lower", "vwap_sd_ready",
+        "ha_trend", "ha_trend_streak", "ha_doji", "ha_color_flip",
+        "delivery_pct_avg_20d", "delivery_avg_days", "delivery_trade_date",
+    )
+
     async def on_feature(fv):
         """Callback: publish feature vector to stream + hot state."""
         payload = fv.model_dump()
@@ -127,10 +140,12 @@ async def main():
             received_at_us=fv.timestamp_us,
         )
         # Update hot state
-        await redis.hset(
-            f"{KEY_FEATURE_PREFIX}{fv.symbol}",
-            mapping={k: str(v) for k, v in payload.items() if k != "ml_features"},
-        )
+        mapping = {k: str(v) for k, v in payload.items() if k != "ml_features"}
+        ml_features = payload.get("ml_features") or {}
+        for key in HOT_STATE_ML_WHITELIST:
+            if key in ml_features:
+                mapping[key] = str(ml_features[key])
+        await redis.hset(f"{KEY_FEATURE_PREFIX}{fv.symbol}", mapping=mapping)
 
     engine.set_callback(on_feature)
     engine.set_bar_callback(on_bar)

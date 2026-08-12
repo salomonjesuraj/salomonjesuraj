@@ -220,7 +220,20 @@ class FeatureEngine:
         if (self._delivery_loader
                 and now_us() - state.delivery_checked_us > 300_000_000):
             state.delivery_checked_us = now_us()
-            delivery = await self._delivery_loader(symbol)
+            # A cold multi-service redeploy can start feature-engine and
+            # nse-scraper at nearly the same instant -- if this symbol's
+            # very first post-restart check races ahead of nse-scraper's
+            # capture finishing, the loader legitimately returns None once
+            # and the symbol just waits out this same 5-min throttle for
+            # its next attempt (confirmed live: self-heals within one
+            # retry, not a bug). A hard loader failure (Redis hiccup etc.)
+            # is swallowed the same way -- worth a retry, not worth
+            # crashing the whole flush loop over.
+            try:
+                delivery = await self._delivery_loader(symbol)
+            except Exception as exc:
+                logger.warning("delivery_loader_failed", symbol=symbol, error=str(exc))
+                delivery = None
             if delivery and delivery.get("trade_date") != state.delivery_trade_date:
                 state.delivery_pct = delivery.get("delivery_pct", 0.0)
                 state.delivery_pct_avg_20d = delivery.get("avg_delivery_pct_20d")
