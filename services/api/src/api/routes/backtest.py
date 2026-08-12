@@ -17,6 +17,7 @@ from aiohttp import web
 from api.statistics_utils import (
     r_multiple, sharpe_stats, expected_max_sharpe, probabilistic_sharpe_ratio, pearson_r,
 )
+from api.cost_model import compute as cost_model_compute, OptionTradeCostInput
 
 routes = web.RouteTableDef()
 
@@ -142,6 +143,111 @@ def _profile_sharpe(rows: list[dict], profile: dict) -> dict:
         if (rm := r_multiple(r.get("outcome_label"), r.get("risk_reward_ratio"))) is not None
     ]
     return sharpe_stats(r_multiples)
+
+
+MIN_NET_OF_COST_SAMPLE = 10  # below this, a net-precision % from real premium data is noise, not evidence
+
+
+def _net_of_cost_metrics(rows: list[dict], profile: dict | None = None) -> dict:
+    """Phase 13.4b: net-of-cost precision for whichever decided rows
+    actually have real captured option premium data (entry_premium_ask/
+    entry_premium_bid/exit_premium_bid -- Phase 13.4's capture
+    infrastructure, and sub_scores.position_sizing.quantity, already
+    archived for every signal). Distinct from every other precision_pct
+    in this file, which only ever knows binary TARGET_HIT/STOP_HIT and is
+    blind to whether a cheap-premium "win" was actually cost-negative
+    after brokerage/STT/GST/stamp duty -- see cost_model.py.
+
+    gross_precision_pct_same_subset is recomputed independently from each
+    row's own gross_pnl sign (not trusted from outcome_label) -- the whole
+    point of this function is checking whether a technical TARGET_HIT
+    actually meant the option premium moved favorably too, so silently
+    assuming that agreement would defeat the purpose.
+
+    Gated on MIN_NET_OF_COST_SAMPLE: real capture only started with Phase
+    13.4 and (confirmed live, this session) is producing roughly 3-4
+    decided trades with full premium data per trading day so far --
+    reporting a "net precision" from a handful of trades would be
+    statistical noise dressed up as evidence, so this returns an honest
+    "not enough sample yet" below the floor instead of a number.
+
+    `profile`, when given, filters to that profile's matched rows first
+    (same _row_matches_profile() convention _profile_metrics()/
+    _profile_sharpe() already use) -- omitted for an unfiltered, whole-
+    window aggregate read.
+    """
+    candidates = [r for r in rows if _row_matches_profile(r, profile)] if profile else rows
+    usable = []
+    n_with_premium = 0
+    n_zero_qty = 0
+    for r in candidates:
+        if r.get("outcome_label") not in ("TARGET_HIT", "STOP_HIT"):
+            continue
+        entry_ask = r.get("entry_premium_ask")
+        entry_bid = r.get("entry_premium_bid")
+        exit_bid = r.get("exit_premium_bid")
+        if entry_ask is None or entry_bid is None or exit_bid is None:
+            continue
+        n_with_premium += 1
+        sub_scores = r.get("sub_scores")
+        if isinstance(sub_scores, str):
+            try:
+                sub_scores = json.loads(sub_scores)
+            except (json.JSONDecodeError, TypeError):
+                sub_scores = {}
+        sub_scores = sub_scores if isinstance(sub_scores, dict) else {}
+        quantity = int((sub_scores.get("position_sizing") or {}).get("quantity") or 0)
+        if quantity <= 0:
+            # A real, separate reason from "no premium data" -- the
+            # recommended lot count rounded to zero (large F&O lot size
+            # vs. a small risk_amount), so there is no trade to compute a
+            # P&L on. Confirmed live (this session): every one of the
+            # real premium-captured signals so far hit exactly this,
+            # since Infusion's default risk_amount is small relative to
+            # several of these symbols' real lot sizes -- worth flagging
+            # distinctly from "capture hasn't produced enough data yet"
+            # rather than folding both into one undifferentiated count.
+            n_zero_qty += 1
+            continue
+        usable.append(cost_model_compute(OptionTradeCostInput(
+            entry_ask=float(entry_ask), exit_bid=float(exit_bid),
+            bid_at_entry=float(entry_bid), quantity=quantity,
+        )))
+
+    n = len(usable)
+    if n < MIN_NET_OF_COST_SAMPLE:
+        reason = (
+            f"Only {n} decided trade(s) in this window have both real captured premium data "
+            f"AND a non-zero recommended position size (need >= {MIN_NET_OF_COST_SAMPLE})."
+        )
+        if n_zero_qty:
+            reason += (
+                f" {n_zero_qty} of {n_with_premium} premium-captured trade(s) had a recommended "
+                "size of 0 lots (F&O lot size larger than the configured risk budget supports) "
+                "and can't contribute a P&L either way."
+            )
+        reason += " Net-of-cost precision needs real option premium history to accumulate -- see Phase 13.4's capture infrastructure."
+        return {
+            "available": False,
+            "n_with_premium_data": n_with_premium,
+            "n_zero_recommended_qty": n_zero_qty,
+            "n_usable": n,
+            "min_sample": MIN_NET_OF_COST_SAMPLE,
+            "reason": reason,
+        }
+
+    net_wins = sum(1 for u in usable if u["net_pnl"] > 0)
+    gross_wins = sum(1 for u in usable if u["gross_pnl"] > 0)
+    return {
+        "available": True,
+        "n_with_premium_data": n_with_premium,
+        "n_zero_recommended_qty": n_zero_qty,
+        "n_usable": n,
+        "net_precision_pct": round(net_wins / n * 100, 1),
+        "gross_precision_pct_same_subset": round(gross_wins / n * 100, 1),
+        "avg_net_pnl": round(sum(u["net_pnl"] for u in usable) / n, 2),
+        "avg_cost_pct_of_premium": round(sum(u["cost_as_pct_of_premium"] for u in usable) / n, 3),
+    }
 
 
 def _purge_and_embargo(
@@ -785,7 +891,8 @@ async def compute_walkforward(
                     COALESCE(suppressed, false) AS suppressed,
                     COALESCE(strategy, '-') AS strategy,
                     COALESCE(pre_breakout_state, '-') AS pre_breakout_state,
-                    COALESCE(market_regime, '-') AS market_regime
+                    COALESCE(market_regime, '-') AS market_regime,
+                    entry_premium_ask, entry_premium_bid, exit_premium_bid, sub_scores
                 FROM signals
                 WHERE created_at >= now() - ($1::int * interval '1 day')
                   AND outcome_label IN ('TARGET_HIT', 'STOP_HIT')
@@ -871,6 +978,7 @@ async def compute_walkforward(
                         continue
                     test = _profile_metrics(test_rows, profile, test_days)
                     test_sharpe = _profile_sharpe(test_rows, profile)
+                    test_net_of_cost = _net_of_cost_metrics(test_rows, profile)
                     status, status_note = _walkforward_status(test, target, min_test)
                     overfit_gap = None
                     if train["precision_pct"] is not None and test["precision_pct"] is not None:
@@ -892,6 +1000,7 @@ async def compute_walkforward(
                         "train": train,
                         "test": test,
                         "test_sharpe": test_sharpe,
+                        "test_net_of_cost": test_net_of_cost,
                         "status": status,
                         "status_note": status_note,
                         "overfit_gap_pct": overfit_gap,
@@ -915,6 +1024,13 @@ async def compute_walkforward(
         else "No trainable profile survived the minimum sample rules."
     )
     dsr = _compute_dsr(profiles, recommended)
+    # Phase 13.4b: whole-window (no profile filter) net-of-cost read --
+    # visible even while every individual profile above is still below
+    # MIN_NET_OF_COST_SAMPLE, since real premium capture (Phase 13.4) is
+    # young and thinly spread across 1,575 profiles. This aggregate is the
+    # first place a real net-vs-gross gap will become visible as capture
+    # accumulates, before any single profile has enough of its own.
+    net_of_cost = _net_of_cost_metrics(rows)
 
     return {
         "available": True,
@@ -941,6 +1057,7 @@ async def compute_walkforward(
         "candidates": profiles[:10],
         "note": note,
         "dsr": dsr,
+        "net_of_cost": net_of_cost,
     }
 
 
