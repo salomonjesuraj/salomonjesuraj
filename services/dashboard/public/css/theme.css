@@ -1376,16 +1376,17 @@
 .ifx-watch-foot b { color: var(--ifx-shell-text); font-family: var(--ifx-font-mono); font-weight: 700; white-space: nowrap; }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   NEW SHELL -- Phase N4: Screener table v2, full 14-column spec.
-   Same --ifx-shell-* dark-surface treatment as Command Center (Phase N3)
-   -- New shell reads as one consistent dark page, not a shell/paper
-   split like Classic. Header and body rows share one grid template
-   (--ifx-scr-grid) so columns always line up regardless of scroll
+   NEW SHELL -- Phase N4: Screener table v2, mockup's 14-column spec plus
+   F&O ban gate + VCP (columns 15-16, added on request -- see scanner-v2.js's
+   header comment). Same --ifx-shell-* dark-surface treatment as Command
+   Center (Phase N3) -- New shell reads as one consistent dark page, not a
+   shell/paper split like Classic. Header and body rows share one grid
+   template (--ifx-scr-grid) so columns always line up regardless of scroll
    position; VirtualScroll only virtualizes the body, the head is a
    normal static row this file owns directly.
    ═══════════════════════════════════════════════════════════════════════ */
 .ifx-scr-v2 {
-  --ifx-scr-grid: 108px 112px 88px 92px 90px 100px 128px 84px 108px 118px 84px 84px 84px 84px;
+  --ifx-scr-grid: 108px 112px 88px 92px 90px 100px 128px 84px 108px 118px 84px 84px 84px 84px 68px 86px;
   color: var(--ifx-shell-text); font-family: var(--ifx-font-ui);
 }
 .ifx-scr-toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }

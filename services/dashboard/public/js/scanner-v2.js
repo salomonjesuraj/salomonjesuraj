@@ -1,8 +1,14 @@
 /**
- * F&O Screener v2 — New shell's screener table, full 14-column spec per
- * the approved mockup: Symbol, Sector, LTP, Chg(₹+%), Strength,
- * Conviction, MTF, Bias, Chain Favour, Entry(CE/PE), T1, T2, T3, SL.
+ * F&O Screener v2 — New shell's screener table. Started as the approved
+ * mockup's 14-column spec (Symbol, Sector, LTP, Chg(₹+%), Strength,
+ * Conviction, MTF, Bias, Chain Favour, Entry(CE/PE), T1, T2, T3, SL);
+ * gained F&O (ban gate, Phase 13.13) and VCP (Phase 13.12) as columns
+ * 15-16 on explicit request, mirroring the same two additions to
+ * Classic's scanner.js -- same /api/ticks fields (fo_banned/
+ * fo_ban_trade_date/vcp), same real ban-list and daily-bar-mtf-cache
+ * sources, just rendered through this file's own badge/meter components.
  *
+
  * Data + ranking logic is NOT reimplemented -- smartRank/deriveDirectionZone
  * are imported straight from scanner.js (exported there for exactly this
  * reuse) so New's ranking can never quietly drift from Classic's already-
@@ -40,6 +46,35 @@ function mtfDotsHtml(dots) {
     const v = String(data[tf] || 'Y').toUpperCase();
     return `<i class="ifx-scr-mtf-dot ${cls[v] || cls.Y}" title="${tf}"></i>`;
   }).join('');
+}
+
+// F&O ban gate (Phase 13.13), same real infusion:nse:fo_ban:symbols read
+// as Classic's scanner.js -- both tables share one /api/ticks response
+// (see api/routes/ticks.py's _apply_fo_ban_context()), just rendered
+// through New's own badge component here instead of Classic's chip.
+function foBanHtml(item) {
+  if (!item.fo_banned) return `<span class="ifx-scr-dash">${DASH}</span>`;
+  const date = item.fo_ban_trade_date ? ` as of ${item.fo_ban_trade_date}` : '';
+  return `<span class="ifx-badge ifx-badge--bear" title="NSE F&amp;O ban list (MWPL≥95%)${escapeHtml(date)} — no new F&amp;O positions allowed">BANNED</span>`;
+}
+
+// VCP / Minervini Stage-2 composite (Phase 13.12), see api/vcp.py. Same
+// meter language New's Strength/Conviction columns already use. Honest
+// dash (not a 0-value meter) when this row's daily-bar mtf cache hasn't
+// been computed yet -- same cache-miss condition every other
+// _decode_mtf_cache field already has.
+function vcpHtml(item) {
+  const vcp = item.vcp && typeof item.vcp === 'object' ? item.vcp : {};
+  if (vcp.score == null) return `<span class="ifx-scr-dash">${DASH}</span>`;
+  const score = Math.round(Number(vcp.score));
+  const gradeLabel = vcp.grade === 'tight_vcp' ? 'Tight VCP'
+    : vcp.grade === 'developing_base' ? 'Developing base'
+    : 'No clear base';
+  const color = score >= 80 ? 'var(--ifx-bull)' : score >= 55 ? 'var(--ifx-warn)' : 'var(--ifx-bear)';
+  return `<div class="ifx-scr-meter" title="${escapeHtml(gradeLabel)}${vcp.reliable === false ? ' (partial read)' : ''}">
+    <span class="ifx-mono">${score}</span>
+    <div class="ifx-scr-meter-track"><i style="width:${Math.min(100, score)}%;background:${color}"></i></div>
+  </div>`;
 }
 
 export class ScannerV2Panel {
@@ -160,6 +195,7 @@ export class ScannerV2Panel {
       ['setup_strength', 'Strength'], ['option_readiness', 'Conviction'], ['mtf', 'MTF'],
       ['direction_bias', 'Bias'], ['favour', 'Chain Favour'], ['entry', 'Entry'],
       ['t1', 'T1'], ['t2', 'T2'], ['t3', 'T3'], ['sl', 'SL'],
+      ['fo_banned', 'F&O'], ['vcp_score', 'VCP'],
     ];
     const head = this._el.querySelector('#scrV2Head');
     head.innerHTML = cols.map(([key, label]) =>
@@ -280,6 +316,8 @@ export class ScannerV2Panel {
       <div class="ifx-scr-td">${lvl(t2Px, 'ifx-tone-good')}</div>
       <div class="ifx-scr-td">${lvl(t3Px, 'ifx-tone-good')}</div>
       <div class="ifx-scr-td">${lvl(slPx, 'ifx-tone-bad')}</div>
+      <div class="ifx-scr-td">${foBanHtml(item)}</div>
+      <div class="ifx-scr-td">${vcpHtml(item)}</div>
     </div>`;
   }
 
