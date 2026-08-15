@@ -40,6 +40,7 @@ from scanner.pre_breakout import PreBreakoutTracker
 from scanner.sector import SectorEngine
 from scanner.strategies import get_strategies
 from scanner.strategies.base import SignalCandidate
+from scanner.ml_score import score_signal as ml_score_signal, classify_session_ist
 
 from infusion_models.events import EventType
 from infusion_models.signal import ScanSignalV2
@@ -310,6 +311,32 @@ class ScannerEngine:
         # ── Sector context ─────────────────────────────
         sector_strength = self.sector.get_sector_strength(state.sector_id)
         market_regime = self.sector.regime.value
+
+        # ── ML classifier (informational, Phase: trained ML classifier) ──
+        # Applies the cached, api-trained logistic regression model (see
+        # scanner/ml_score.py) to this exact candidate's own core metadata
+        # + features_snapshot/sub_scores -- best-effort, {} on any failure
+        # or missing model, same convention as _read_kelly_sizing above.
+        # session_hour derived here matches EXACTLY what archiver/writer.py
+        # will independently derive for this same signal's own row (same
+        # created_us moment, same bucketing rule), so the live score is
+        # always evaluated on the identical encoding its own archived
+        # outcome will later be judged against.
+        sub_scores["ml_classifier"] = await ml_score_signal(
+            self.redis,
+            core={
+                "conviction_score": score,
+                "risk_reward_ratio": rr,
+                "conviction_grade": grade,
+                "session_hour": classify_session_ist(created_us),
+                "strategy": candidate.strategy_id,
+                "sector_id": state.sector_id,
+                "market_regime": market_regime,
+                "pre_breakout_state": state.pre_breakout_state,
+            },
+            features=candidate.features_snapshot,
+            sub_scores=sub_scores,
+        )
 
         # ── Suppression gate ───────────────────────────
         result = await self.suppression.evaluate(

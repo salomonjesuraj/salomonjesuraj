@@ -42,6 +42,18 @@ PREMIUM_CAPTURE_INTERVAL_SEC = 60
 KELLY_SIZING_INTERVAL_SEC = 24 * 3600
 KELLY_SIZING_RETRY_SEC = 120
 
+# ML classifier retrain. Daily cadence, same reasoning as Kelly/optimizer-
+# proposal -- the underlying archive grows by ~11-15 decided signals/day
+# (confirmed this session), nowhere near enough in a single day to move a
+# model trained on 8,000+ rows meaningfully. The route itself takes
+# ~15-20s (real, measured against the live archive) since it's a plain-
+# Python logistic-regression training pass -- api/ml_classifier.py runs
+# that inside asyncio.to_thread so it never blocks api's event loop, and a
+# generous 90s timeout here gives it headroom over aiohttp/network
+# overhead on top of that real cost.
+ML_CLASSIFIER_INTERVAL_SEC = 24 * 3600
+ML_CLASSIFIER_RETRY_SEC = 120
+
 
 async def run_optimizer_proposal_sweep() -> dict:
     """Calls the api service's walk-forward-vs-live-config comparison. This
@@ -67,6 +79,20 @@ async def run_kelly_sizing_sweep() -> dict:
     url = f"{API_BASE_URL}/api/backtest/kelly-sizing"
     async with aiohttp.ClientSession() as session:
         async with session.get(url, timeout=aiohttp.ClientTimeout(total=60)) as resp:
+            resp.raise_for_status()
+            return await resp.json()
+
+
+async def run_ml_classifier_sweep() -> dict:
+    """Calls the api service's ML classifier (re)train. This only ever
+    writes the trained weights + held-out test metrics to Redis
+    (infusion:ml-classifier:model) for scanner/ml_score.py to read and
+    api/routes/backtest.py's /latest route to serve to the dashboard --
+    never changes scanner's live config, suppression, or the conviction
+    score itself. See api/ml_classifier.py's module docstring."""
+    url = f"{API_BASE_URL}/api/backtest/ml-classifier"
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=90)) as resp:
             resp.raise_for_status()
             return await resp.json()
 
@@ -184,9 +210,38 @@ async def run() -> None:
             except asyncio.TimeoutError:
                 pass
 
+    # ML classifier: once-daily retrain, same shape as kelly_sizing_loop.
+    # Runs once at startup too so the Redis cache is populated without
+    # waiting a full day on a fresh deploy.
+    async def ml_classifier_loop():
+        while not lifecycle.shutdown_event.is_set():
+            delay = ML_CLASSIFIER_INTERVAL_SEC
+            try:
+                result = await run_ml_classifier_sweep()
+                logger.info(
+                    "ml_classifier_sweep",
+                    available=result.get("available"),
+                    reliable=result.get("reliable"),
+                    n_train=result.get("n_train"),
+                    n_test=result.get("n_test"),
+                    test_auc=(result.get("test_metrics") or {}).get("auc"),
+                    lift_over_score_auc=result.get("lift_over_score_auc"),
+                )
+            except Exception as exc:
+                logger.warning("ml_classifier_sweep_failed", error=str(exc))
+                delay = ML_CLASSIFIER_RETRY_SEC
+            try:
+                await asyncio.wait_for(
+                    lifecycle.shutdown_event.wait(),
+                    timeout=delay,
+                )
+            except asyncio.TimeoutError:
+                pass
+
     async def combined_loop():
         await asyncio.gather(
             main_loop(), optimizer_proposal_loop(), premium_capture_loop(), kelly_sizing_loop(),
+            ml_classifier_loop(),
         )
 
     await lifecycle.run_until_shutdown(combined_loop)

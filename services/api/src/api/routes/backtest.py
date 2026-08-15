@@ -18,6 +18,7 @@ from api.statistics_utils import (
     r_multiple, sharpe_stats, expected_max_sharpe, probabilistic_sharpe_ratio, pearson_r,
 )
 from api.cost_model import compute as cost_model_compute, OptionTradeCostInput
+from api.ml_classifier import train_classifier, read_cached_model
 
 routes = web.RouteTableDef()
 
@@ -1856,4 +1857,34 @@ async def backtest_capture_premiums(request):
     pool = request.app.get("pg_pool")
     redis = request.app.get("redis")
     result = await capture_missing_premiums(pool, redis)
+    return web.json_response(result)
+
+
+@routes.get("/api/backtest/ml-classifier")
+async def backtest_ml_classifier_train(request):
+    """GET /api/backtest/ml-classifier?days=400 -- (re)trains the
+    classifier against real archived outcomes and caches the result.
+    Real cost: ~15-20s CPU-bound (run off the event loop via
+    asyncio.to_thread inside train_classifier -- other requests keep
+    being served while this runs). Called by the scheduler's daily
+    ml_classifier_loop, not meant for the dashboard to poll directly --
+    see /api/backtest/ml-classifier/latest for that. See
+    api/ml_classifier.py's module docstring for the real first-run
+    finding (near-zero lift over the existing conviction_score with
+    today's coverage-gated feature set) and why that's honest, not a bug.
+    """
+    pool = request.app.get("pg_pool")
+    redis = request.app.get("redis")
+    days = request.query.get("days", "400")
+    result = await train_classifier(pool, redis, days=int(days) if days else 400)
+    return web.json_response(result)
+
+
+@routes.get("/api/backtest/ml-classifier/latest")
+async def backtest_ml_classifier_latest(request):
+    """GET /api/backtest/ml-classifier/latest -- reads the last-trained
+    model + its held-out test metrics from Redis without retraining
+    (cheap, for the dashboard to poll)."""
+    redis = request.app.get("redis")
+    result = await read_cached_model(redis)
     return web.json_response(result)
