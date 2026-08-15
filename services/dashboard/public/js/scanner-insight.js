@@ -330,7 +330,9 @@ export class ScannerInsight {
     }
 
     const fs = sig.features_snapshot && typeof sig.features_snapshot === 'object' ? sig.features_snapshot : {};
-    const sizing = sig.sub_scores && typeof sig.sub_scores === 'object' ? (sig.sub_scores.position_sizing || {}) : {};
+    const subScores = sig.sub_scores && typeof sig.sub_scores === 'object' ? sig.sub_scores : {};
+    const sizing = subScores.position_sizing || {};
+    const ml = subScores.ml_classifier || {};
 
     const agree = n(fs.alignment_agree_count);
     const checked = n(fs.alignment_checked_count);
@@ -347,14 +349,19 @@ export class ScannerInsight {
       fs.rsi_divergence_bearish_hidden ? { label: 'Hidden bearish divergence', cls: 'bad' } : null,
     ].filter(Boolean);
 
+    const mlPct = ml.ml_probability != null ? Math.round(ml.ml_probability * 100) : null;
+    const mlTone = mlPct == null ? '' : mlPct >= 60 ? 'positive' : mlPct <= 40 ? 'negative' : '';
+
     return `
       <div class="insight-section signal-time-evidence">
-        <div class="insight-title">Signal-time evidence — alignment, sizing, divergence</div>
+        <div class="insight-title">Signal-time evidence — alignment, sizing, divergence, ML read</div>
         <div class="trade-level-grid compact">
           <div><span>Alignment</span><b class="${agreeTone}">${checked > 0 ? `${agree}/${checked} of ${total}` : 'no families active'}</b></div>
           <div><span>Half-Kelly size</span><b>${kellyReliable ? kellyPct + '%' : 'not enough sample'}</b></div>
           <div><span>Kelly win rate</span><b>${sizing.kelly_win_rate_pct != null ? sizing.kelly_win_rate_pct + '%' : '—'}</b></div>
           <div><span>Kelly sample</span><b>${sizing.kelly_sample_size || 0} decided</b></div>
+          <div><span>ML classifier</span><b class="${mlTone}">${mlPct != null ? `${mlPct}% TARGET_HIT` : 'not scored'}</b></div>
+          <div><span>ML model quality</span><b>${ml.ml_reliable ? `AUC ${ml.ml_model_auc}` : 'building sample'}</b></div>
         </div>
         ${checked > 0 ? `
         <div class="insight-pills">
@@ -365,6 +372,7 @@ export class ScannerInsight {
         <div class="insight-pills">
           ${divergencePills.map(p => `<span class="insight-pill ${p.cls}">${escapeHtml(p.label)}</span>`).join('')}
         </div>` : '<p class="option-reason">No RSI divergence at this signal\'s swing points.</p>'}
+        ${ml.ml_model_interpretation ? `<p class="option-reason">ML model: ${escapeHtml(ml.ml_model_interpretation)}</p>` : ''}
         <p class="option-reason">Informational only — none of this is wired into the conviction score or position sizing yet. Frozen at signal time, same as the trade levels above.</p>
       </div>
     `;

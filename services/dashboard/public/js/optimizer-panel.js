@@ -65,6 +65,10 @@ export class OptimizerPanel {
     this._unsubs.push(api.subscribe('/api/backtest/kelly-sizing?days=180', (resp) => {
       this._renderKelly(resp);
     }, 120000));
+
+    this._unsubs.push(api.subscribe('/api/backtest/ml-classifier/latest', (resp) => {
+      this._renderMlClassifier(resp);
+    }, 120000));
   }
 
   _render() {
@@ -80,6 +84,10 @@ export class OptimizerPanel {
       <div class="ifx-opt-section">
         <div class="ifx-opt-section-title">Position Sizing — Half-Kelly <span class="ifx-tone-faint">(from real archived win/loss outcomes, informational only)</span></div>
         <div id="optKelly" class="ifx-opt-body">Loading…</div>
+      </div>
+      <div class="ifx-opt-section">
+        <div class="ifx-opt-section-title">ML Classifier <span class="ifx-tone-faint">(trained on real archived outcomes, benchmarked against the existing conviction score)</span></div>
+        <div id="optMlClassifier" class="ifx-opt-body">Loading…</div>
       </div>
       <div class="ifx-opt-section">
         <div class="ifx-opt-section-title">Feature-Ablation Evidence <span class="ifx-tone-faint">(does this informational field actually predict outcomes?)</span></div>
@@ -195,6 +203,54 @@ export class OptimizerPanel {
       </div>
       <p class="ifx-opt-note">${escapeHtml(resp.note || '')}</p>
     `;
+  }
+
+  _renderMlClassifier(resp) {
+    const el = this._el.querySelector('#optMlClassifier');
+    if (!el) return;
+    if (!resp || !resp.available) {
+      el.innerHTML = `<div class="ifx-opt-unavailable">${escapeHtml(resp?.reason || 'Unavailable')}</div>`;
+      return;
+    }
+    if (resp.reason && !resp.test_metrics) {
+      // available:true but training itself declined (too few rows either
+      // side of the purge/embargo split) -- same shape backtest.py's
+      // walkforward LOW_SAMPLE case uses.
+      el.innerHTML = `<div class="ifx-opt-unavailable">${escapeHtml(resp.reason)}</div>`;
+      return;
+    }
+    const m = resp.test_metrics || {};
+    const lift = resp.lift_over_score_auc;
+    const liftTone = lift == null ? '' : lift >= 0.05 ? 'ifx-tone-good' : lift >= 0 ? '' : 'ifx-tone-bad';
+    const trainedAgo = resp.trained_at ? this._relativeTime(resp.trained_at) : '—';
+    el.innerHTML = `
+      <div class="ifx-opt-stat-row">
+        <span class="ifx-badge ${resp.reliable ? 'ifx-badge--bull' : 'ifx-badge--neutral'}">${resp.reliable ? 'reliable sample' : 'building sample'}</span>
+        <span class="ifx-tone-faint">${resp.n_train || 0} train / ${resp.n_test || 0} test · ${resp.n_active_features || 0} active features · trained ${trainedAgo}</span>
+      </div>
+      <div class="ifx-opt-metric-grid">
+        <div class="ifx-opt-metric"><label>Model test AUC</label><b class="ifx-mono">${m.auc != null ? m.auc : '—'}</b></div>
+        <div class="ifx-opt-metric"><label>Raw score AUC (baseline)</label><b class="ifx-mono">${resp.baseline_score_auc != null ? resp.baseline_score_auc : '—'}</b></div>
+        <div class="ifx-opt-metric"><label>Lift over score</label><b class="ifx-mono ${liftTone}">${lift != null ? (lift >= 0 ? '+' : '') + lift : '—'}</b></div>
+        <div class="ifx-opt-metric"><label>Test accuracy</label><b class="ifx-mono">${m.accuracy != null ? Math.round(m.accuracy * 100) + '%' : '—'}</b></div>
+      </div>
+      <p class="ifx-opt-note">${escapeHtml(resp.interpretation || '')}</p>
+      <p class="ifx-opt-note">Informational only — never wired into suppression, position sizing, or the live conviction score. Surfaces as <code>sub_scores.ml_classifier.ml_probability</code> on newly fired signals; see Stock Detail's Signal-time evidence for a specific signal's own reading.</p>
+    `;
+  }
+
+  _relativeTime(iso) {
+    try {
+      const ms = Date.now() - new Date(iso).getTime();
+      if (ms < 0) return 'just now';
+      const mins = Math.round(ms / 60000);
+      if (mins < 60) return `${mins}m ago`;
+      const hours = Math.round(mins / 60);
+      if (hours < 48) return `${hours}h ago`;
+      return `${Math.round(hours / 24)}d ago`;
+    } catch (_) {
+      return '—';
+    }
   }
 
   async _runFeatureIc() {
