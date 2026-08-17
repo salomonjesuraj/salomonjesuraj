@@ -1220,6 +1220,29 @@
 }
 .ifx-opt-section-title { font-size: var(--ifx-text-sm); font-weight: 800; color: var(--ifx-content-text); }
 .ifx-opt-body { font-size: var(--ifx-text-xs); color: var(--ifx-content-text-muted); }
+
+/* Phase O.4 -- collapsed-by-default supporting sections (Optimizer
+   Proposal, Half-Kelly, ML Classifier, Feature-Ablation, Feature IC).
+   Walk-Forward Status is the one section that stays expanded -- the
+   single most-actionable "is the system working" read; everything else
+   is deeper evidence, collapsed with a one-line derived status until
+   asked for. Unlike scanner-insight.js's .insight-subsection (Phase O.1),
+   this panel's data arrives via targeted per-section DOM writes rather
+   than a full-panel re-render, so toggling here only flips a CSS class --
+   it never touches (or risks blanking) the section's live content. */
+.ifx-opt-section-head {
+  display: flex; align-items: center; gap: var(--ifx-space-2); width: 100%;
+  padding: 0; margin: 0; background: none; border: none; cursor: pointer; text-align: left; font: inherit;
+}
+.ifx-opt-section-summary {
+  flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: var(--ifx-text-xs); color: var(--ifx-content-text-faint);
+}
+.ifx-opt-chevron { flex: 0 0 auto; color: var(--ifx-content-text-faint); font-size: 11px; transition: transform .15s ease; }
+.ifx-opt-subsection:not(.is-collapsed) .ifx-opt-chevron { transform: rotate(90deg); }
+.ifx-opt-subsection.is-collapsed .ifx-opt-body,
+.ifx-opt-subsection.is-collapsed .ifx-opt-ablation-controls { display: none; }
+.ifx-opt-subsection.is-collapsed .ifx-opt-section-summary { color: var(--ifx-content-text-muted); }
 .ifx-opt-unavailable { color: var(--ifx-content-text-faint); font-style: italic; }
 .ifx-opt-stat-row { display: flex; align-items: center; gap: var(--ifx-space-2); flex-wrap: wrap; }
 .ifx-opt-metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: var(--ifx-space-3); margin-top: 4px; }

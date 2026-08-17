@@ -46,6 +46,9 @@ export class OptimizerPanel {
     this._el = containerEl;
     this._unsubs = [];
     this._ablationBusy = false;
+    // Phase O.4 -- all 5 supporting sections start collapsed; Walk-Forward
+    // Status has no entry here since it's never wrapped as collapsible.
+    this._collapsed = { proposal: true, kelly: true, mlClassifier: true, ablation: true, ic: true };
   }
 
   init() {
@@ -53,6 +56,13 @@ export class OptimizerPanel {
     this._el.classList.add('ifx-opt');
     this._icBusy = false;
     this._render();
+    this._el.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-opt-toggle]');
+      if (!btn) return;
+      const key = btn.dataset.optToggle;
+      this._collapsed[key] = !this._collapsed[key];
+      btn.closest('.ifx-opt-subsection')?.classList.toggle('is-collapsed', this._collapsed[key]);
+    });
 
     this._unsubs.push(api.subscribe('/api/backtest/walkforward?days=120&target=80', (resp) => {
       this._renderWalkforward(resp);
@@ -71,26 +81,41 @@ export class OptimizerPanel {
     }, 120000));
   }
 
+  // Phase O.4 -- shared markup for a collapsible section: title stays
+  // static, a summary span (id'd so _renderX() can update it whenever new
+  // data arrives, independent of expand/collapse state) shows the derived
+  // one-line status while collapsed.
+  _collapsibleHead(key, title, summaryId, defaultText = 'Loading…') {
+    return `
+      <button type="button" class="ifx-opt-section-head" data-opt-toggle="${key}">
+        <span class="ifx-opt-section-title">${title}</span>
+        <span class="ifx-opt-section-summary" id="${summaryId}">${defaultText}</span>
+        <span class="ifx-opt-chevron" aria-hidden="true">›</span>
+      </button>
+    `;
+  }
+
   _render() {
+    const cls = (key) => `ifx-opt-section ifx-opt-subsection${this._collapsed[key] ? ' is-collapsed' : ''}`;
     this._el.innerHTML = `
       <div class="ifx-opt-section">
         <div class="ifx-opt-section-title">Walk-Forward Status</div>
         <div id="optWalkforward" class="ifx-opt-body">Loading…</div>
       </div>
-      <div class="ifx-opt-section">
-        <div class="ifx-opt-section-title">Optimizer Proposal <span class="ifx-tone-faint">(live vs. recommended config)</span></div>
+      <div class="${cls('proposal')}">
+        ${this._collapsibleHead('proposal', 'Optimizer Proposal <span class="ifx-tone-faint">(live vs. recommended config)</span>', 'optProposalSummary')}
         <div id="optProposal" class="ifx-opt-body">Loading…</div>
       </div>
-      <div class="ifx-opt-section">
-        <div class="ifx-opt-section-title">Position Sizing — Half-Kelly <span class="ifx-tone-faint">(from real archived win/loss outcomes, informational only)</span></div>
+      <div class="${cls('kelly')}">
+        ${this._collapsibleHead('kelly', 'Position Sizing — Half-Kelly <span class="ifx-tone-faint">(from real archived win/loss outcomes, informational only)</span>', 'optKellySummary')}
         <div id="optKelly" class="ifx-opt-body">Loading…</div>
       </div>
-      <div class="ifx-opt-section">
-        <div class="ifx-opt-section-title">ML Classifier <span class="ifx-tone-faint">(trained on real archived outcomes, benchmarked against the existing conviction score)</span></div>
+      <div class="${cls('mlClassifier')}">
+        ${this._collapsibleHead('mlClassifier', 'ML Classifier <span class="ifx-tone-faint">(trained on real archived outcomes, benchmarked against the existing conviction score)</span>', 'optMlClassifierSummary')}
         <div id="optMlClassifier" class="ifx-opt-body">Loading…</div>
       </div>
-      <div class="ifx-opt-section">
-        <div class="ifx-opt-section-title">Feature-Ablation Evidence <span class="ifx-tone-faint">(does this informational field actually predict outcomes?)</span></div>
+      <div class="${cls('ablation')}">
+        ${this._collapsibleHead('ablation', 'Feature-Ablation Evidence <span class="ifx-tone-faint">(does this informational field actually predict outcomes?)</span>', 'optAblationSummary', 'not checked yet')}
         <div class="ifx-opt-ablation-controls">
           <select class="ifx-oa-select" id="optAblationField">
             ${ABLATION_FIELDS.map(f => `<option value="${f.field}|${f.column}">${escapeHtml(f.label)}</option>`).join('')}
@@ -99,8 +124,8 @@ export class OptimizerPanel {
         </div>
         <div id="optAblation" class="ifx-opt-body">Pick a field and click "Check evidence" — nothing runs automatically (this queries live archived-outcome data on demand).</div>
       </div>
-      <div class="ifx-opt-section">
-        <div class="ifx-opt-section-title">Feature Information Coefficient <span class="ifx-tone-faint">(correlation of every informational field against real R-multiple outcomes)</span></div>
+      <div class="${cls('ic')}">
+        ${this._collapsibleHead('ic', 'Feature Information Coefficient <span class="ifx-tone-faint">(correlation of every informational field against real R-multiple outcomes)</span>', 'optIcSummary', 'not loaded yet')}
         <div class="ifx-opt-ablation-controls">
           <button type="button" class="ifx-btn ifx-btn--on-paper" id="optIcRun">Load Feature IC</button>
         </div>
@@ -159,13 +184,24 @@ export class OptimizerPanel {
     </div>`;
   }
 
+  // Phase O.4 -- tiny shared setter so every _renderX() below updates its
+  // section's collapsed-state summary the same way, regardless of
+  // expand/collapse state (the summary always reflects the latest data;
+  // only its visibility is gated by .is-collapsed).
+  _setSummary(id, text) {
+    const el = this._el.querySelector(`#${id}`);
+    if (el) el.textContent = text;
+  }
+
   _renderProposal(resp) {
     const el = this._el.querySelector('#optProposal');
     if (!el) return;
     if (!resp || !resp.available) {
+      this._setSummary('optProposalSummary', resp?.reason || 'No proposal computed yet.');
       el.innerHTML = `<div class="ifx-opt-unavailable">${escapeHtml(resp?.reason || 'No proposal computed yet.')}</div>`;
       return;
     }
+    this._setSummary('optProposalSummary', resp.status || 'UNKNOWN');
     el.innerHTML = `
       <div class="ifx-opt-stat-row">
         <span class="ifx-badge ${statusTone(resp.status)}">${escapeHtml(resp.status || 'UNKNOWN')}</span>
@@ -180,15 +216,19 @@ export class OptimizerPanel {
     const el = this._el.querySelector('#optKelly');
     if (!el) return;
     if (!resp || !resp.available) {
+      this._setSummary('optKellySummary', resp?.reason || 'Unavailable');
       el.innerHTML = `<div class="ifx-opt-unavailable">${escapeHtml(resp?.reason || 'Unavailable')}</div>`;
       return;
     }
     const strategies = resp.strategies || {};
     const rows = Object.entries(strategies);
     if (!rows.length) {
+      this._setSummary('optKellySummary', 'No archived outcomes yet');
       el.innerHTML = `<div class="ifx-opt-unavailable">No archived outcomes yet.</div>`;
       return;
     }
+    const reliableCount = rows.filter(([, s]) => s.reliable).length;
+    this._setSummary('optKellySummary', `${reliableCount}/${rows.length} strategies reliable`);
     el.innerHTML = `
       <div class="ifx-opt-metric-grid">
         ${rows.map(([strategyId, s]) => `
@@ -209,6 +249,7 @@ export class OptimizerPanel {
     const el = this._el.querySelector('#optMlClassifier');
     if (!el) return;
     if (!resp || !resp.available) {
+      this._setSummary('optMlClassifierSummary', resp?.reason || 'Unavailable');
       el.innerHTML = `<div class="ifx-opt-unavailable">${escapeHtml(resp?.reason || 'Unavailable')}</div>`;
       return;
     }
@@ -216,6 +257,7 @@ export class OptimizerPanel {
       // available:true but training itself declined (too few rows either
       // side of the purge/embargo split) -- same shape backtest.py's
       // walkforward LOW_SAMPLE case uses.
+      this._setSummary('optMlClassifierSummary', resp.reason);
       el.innerHTML = `<div class="ifx-opt-unavailable">${escapeHtml(resp.reason)}</div>`;
       return;
     }
@@ -223,6 +265,7 @@ export class OptimizerPanel {
     const lift = resp.lift_over_score_auc;
     const liftTone = lift == null ? '' : lift >= 0.05 ? 'ifx-tone-good' : lift >= 0 ? '' : 'ifx-tone-bad';
     const trainedAgo = resp.trained_at ? this._relativeTime(resp.trained_at) : '—';
+    this._setSummary('optMlClassifierSummary', `AUC ${m.auc != null ? m.auc : '—'}${lift != null ? ` · lift ${lift >= 0 ? '+' : ''}${lift}` : ''}`);
     el.innerHTML = `
       <div class="ifx-opt-stat-row">
         <span class="ifx-badge ${resp.reliable ? 'ifx-badge--bull' : 'ifx-badge--neutral'}">${resp.reliable ? 'reliable sample' : 'building sample'}</span>
@@ -261,12 +304,16 @@ export class OptimizerPanel {
     this._icBusy = true;
     if (btn) btn.disabled = true;
     out.innerHTML = 'Loading — decoding the full archive, this can take ~20-30s…';
+    this._setSummary('optIcSummary', 'loading…');
     try {
       const resp = await api.fetch('/api/backtest/feature-ic?days=90');
       if (!resp || !resp.available) {
+        this._setSummary('optIcSummary', resp?.reason || 'Unavailable');
         out.innerHTML = `<div class="ifx-opt-unavailable">${escapeHtml(resp?.reason || 'Unavailable')}</div>`;
       } else {
         const fields = resp.fields || [];
+        const reliableCount = fields.filter((f) => f.reliable).length;
+        this._setSummary('optIcSummary', `${reliableCount}/${fields.length} fields reliable`);
         out.innerHTML = `
           <table class="ifx-opt-ic-table">
             <thead><tr><th>Field</th><th>IC</th><th>Present</th><th>Absent</th><th>Reliable</th></tr></thead>
@@ -286,6 +333,7 @@ export class OptimizerPanel {
         `;
       }
     } catch (err) {
+      this._setSummary('optIcSummary', 'request failed');
       out.innerHTML = `<div class="ifx-opt-unavailable">Request failed: ${escapeHtml(String(err))}</div>`;
     }
     this._icBusy = false;
@@ -302,13 +350,16 @@ export class OptimizerPanel {
     this._ablationBusy = true;
     if (btn) btn.disabled = true;
     out.innerHTML = `Checking "${escapeHtml(field)}"…`;
+    this._setSummary('optAblationSummary', `checking ${field}…`);
     try {
       const resp = await api.fetch(`/api/backtest/feature-ablation?field=${encodeURIComponent(field)}&column=${encodeURIComponent(column)}&days=90`);
       if (!resp || !resp.available) {
+        this._setSummary('optAblationSummary', resp?.reason || 'Unavailable');
         out.innerHTML = `<div class="ifx-opt-unavailable">${escapeHtml(resp?.reason || 'Unavailable')}</div>`;
       } else {
         const present = resp.present || {};
         const absent = resp.absent || {};
+        this._setSummary('optAblationSummary', `${field}: lift ${resp.precision_lift_pct != null ? (resp.precision_lift_pct >= 0 ? '+' : '') + resp.precision_lift_pct + 'pts' : '—'}`);
         out.innerHTML = `
           <div class="ifx-opt-metric-grid">
             <div class="ifx-opt-metric"><label>Present</label><b class="ifx-mono">${present.precision_pct != null ? present.precision_pct + '%' : '—'}</b><small>${present.decided || 0} decided</small></div>
@@ -319,6 +370,7 @@ export class OptimizerPanel {
         `;
       }
     } catch (err) {
+      this._setSummary('optAblationSummary', 'request failed');
       out.innerHTML = `<div class="ifx-opt-unavailable">Request failed: ${escapeHtml(String(err))}</div>`;
     }
     this._ablationBusy = false;
