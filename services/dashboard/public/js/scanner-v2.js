@@ -1,14 +1,18 @@
 /**
  * F&O Screener v2 — New shell's screener table. Started as the approved
- * mockup's 14-column spec (Symbol, Sector, LTP, Chg(₹+%), Strength,
- * Conviction, MTF, Bias, Chain Favour, Entry(CE/PE), T1, T2, T3, SL);
- * gained F&O (ban gate, Phase 13.13) and VCP (Phase 13.12) as columns
- * 15-16 on explicit request, mirroring the same two additions to
- * Classic's scanner.js -- same /api/ticks fields (fo_banned/
- * fo_ban_trade_date/vcp), same real ban-list and daily-bar-mtf-cache
- * sources, just rendered through this file's own badge/meter components.
+ * mockup's 14-column spec, then grew to 16 (gained F&O ban gate / Phase
+ * 13.13 and VCP / Phase 13.12, mirroring Classic's scanner.js).
  *
-
+ * Phase O.2 (noise reduction) brought it back down: T1/T2/T3 collapsed
+ * into one "Targets" ladder cell (full detail in the tooltip -- same idea
+ * as merging nearby liquidity levels into one read rather than three), and
+ * a Columns toggle was added (this table previously had ZERO way to hide
+ * anything, unlike Classic, which has had one all along). See the
+ * COLUMNS array below for the {key, label, width, toggle, defaultHidden}
+ * shape and current default-visible set. Same real /api/ticks fields
+ * (fo_banned/fo_ban_trade_date/vcp) and localStorage-toggle convention as
+ * Classic, own key so the two shells' column preferences don't collide.
+ *
  * Data + ranking logic is NOT reimplemented -- smartRank/deriveDirectionZone
  * are imported straight from scanner.js (exported there for exactly this
  * reuse) so New's ranking can never quietly drift from Classic's already-
@@ -28,9 +32,10 @@
  * Rendering uses the real VirtualScroll (virtual-scroll.js) contract:
  * renderRow/keyFn/onRowClick are wired once in the constructor, and
  * _renderRow() is a pure function of (item, this._selectedSymbol,
- * this._chainFavourCache) -- selection/favour state changes call
- * vscroll.refresh() rather than hand-patching DOM nodes VirtualScroll
- * may replace wholesale on the next scroll-triggered render.
+ * this._chainFavourCache, this._hidden) -- selection/favour/column-
+ * visibility state changes call vscroll.refresh() rather than hand-
+ * patching DOM nodes VirtualScroll may replace wholesale on the next
+ * scroll-triggered render.
  */
 import { VirtualScroll } from './virtual-scroll.js';
 import { formatPrice, escapeHtml } from './utils.js';
@@ -38,6 +43,36 @@ import { api } from './api.js';
 import { smartRank, deriveDirectionZone } from './scanner.js?v=8.0.0-new-shell';
 
 const DASH = '—';
+
+// Phase O.2 -- noise reduction. Two changes from the original 16-column
+// fixed spec: (1) t1/t2/t3 collapsed into one "Targets" cell (a compact
+// ladder, full detail on hover) -- same clustering idea as merging nearby
+// liquidity levels into one read rather than listing each separately; (2)
+// a column-visibility toggle, matching Classic scanner.js's {key, label,
+// toggle, defaultHidden} shape and localStorage convention exactly, since
+// New previously had zero way to hide anything (unlike Classic). Symbol/
+// LTP/Entry/SL/F&O stay non-toggleable -- identity, the two actionable
+// price levels, and the one hard legal gate.
+const COLUMNS = [
+  { key: 'symbol', label: 'Symbol', width: 108, toggle: false },
+  { key: 'sector_id', label: 'Sector', width: 112, toggle: true },
+  { key: 'ltp', label: 'LTP', width: 88, toggle: false },
+  { key: 'change_pct', label: 'Chg', width: 92, toggle: true },
+  { key: 'setup_strength', label: 'Strength', width: 90, toggle: true },
+  { key: 'option_readiness', label: 'Conviction', width: 100, toggle: true },
+  { key: 'mtf', label: 'MTF', width: 128, toggle: true },
+  { key: 'direction_bias', label: 'Bias', width: 84, toggle: true },
+  { key: 'entry', label: 'Entry', width: 118, toggle: false },
+  { key: 'targets', label: 'Targets', width: 108, toggle: true },
+  { key: 'sl', label: 'SL', width: 84, toggle: false },
+  { key: 'fo_banned', label: 'F&O', width: 68, toggle: false },
+  { key: 'favour', label: 'Chain Favour', width: 108, toggle: true, defaultHidden: true },
+  { key: 'vcp_score', label: 'VCP', width: 86, toggle: true, defaultHidden: true },
+];
+
+function visibleColumns(hidden) {
+  return COLUMNS.filter((c) => !hidden.has(c.key));
+}
 
 function mtfDotsHtml(dots) {
   const data = dots && typeof dots === 'object' ? dots : {};
@@ -77,6 +112,20 @@ function vcpHtml(item) {
   </div>`;
 }
 
+// Phase O.2 -- T1/T2/T3 clustered into one ladder read. Shows the nearest
+// target (T1) as the primary number with a "+N" count for the rest;
+// the full ladder is always available in the tooltip. Mirrors lvl()'s own
+// frozen/live styling in _renderRow() below.
+function targetsHtml(t1Px, t2Px, t3Px, isFrozen) {
+  const levels = [t1Px, t2Px, t3Px].filter((p) => p > 0);
+  if (!levels.length) return `<span class="ifx-scr-dash">${DASH}</span>`;
+  const tooltip = ['T1', 'T2', 'T3']
+    .map((lbl, i) => ([t1Px, t2Px, t3Px][i] > 0 ? `${lbl} ${formatPrice([t1Px, t2Px, t3Px][i])}` : null))
+    .filter(Boolean).join(' · ');
+  const more = levels.length > 1 ? ` <small class="ifx-scr-targets-more">+${levels.length - 1}</small>` : '';
+  return `<span class="ifx-scr-level ${isFrozen ? 'frozen' : 'live'} ifx-tone-good" title="${escapeHtml(tooltip)}">${isFrozen ? '🔒 ' : ''}${formatPrice(levels[0])}${more}</span>`;
+}
+
 export class ScannerV2Panel {
   constructor(containerEl) {
     this._el = containerEl;
@@ -90,22 +139,42 @@ export class ScannerV2Panel {
     this._selectedSymbol = null;
     this._chainFavourCache = new Map(); // symbol -> {label, tone} | 'loading' | 'error'
     this._vscroll = null;
+    this._hidden = new Set(); // Phase O.2 -- hidden column keys, mirrors Classic scanner.js
   }
 
   init() {
     if (!this._el) return;
+    // Phase O.2 -- load hidden-column state before first render, same
+    // localStorage convention as Classic's 'infusion:scanner:hidden:v2'
+    // (own key so toggling one shell's columns never touches the other's).
+    try {
+      const saved = JSON.parse(localStorage.getItem('infusion:scanner-v2:hidden:v1') || '[]');
+      this._hidden = new Set(saved);
+    } catch (_) {}
+    COLUMNS.filter((c) => c.defaultHidden && !this._hidden.has(c.key + ':shown'))
+      .forEach((c) => this._hidden.add(c.key));
+
     this._el.classList.add('ifx-scr-v2');
     this._el.innerHTML = `
       <div class="ifx-scr-toolbar">
         <div class="ifx-scr-search">🔍 <input type="text" placeholder="Search symbol…" id="scrV2Search" /></div>
         <span class="ifx-scr-count" id="scrV2Count"></span>
+        <button type="button" class="ifx-scr-col-toggle-btn" id="scrV2ColToggle" title="Show/hide columns">Columns</button>
       </div>
+      <div class="ifx-scr-col-panel" id="scrV2ColPanel" style="display:none"></div>
       <div class="ifx-scr-table-wrap">
         <div class="ifx-scr-head" id="scrV2Head"></div>
         <div class="ifx-scr-body" id="scrV2Body"></div>
       </div>
     `;
     this._buildHead();
+    this._buildColTogglePanel();
+
+    const toggleBtn = this._el.querySelector('#scrV2ColToggle');
+    const panel = this._el.querySelector('#scrV2ColPanel');
+    toggleBtn.addEventListener('click', () => {
+      panel.style.display = panel.style.display === 'none' ? 'flex' : 'none';
+    });
 
     this._vscroll = new VirtualScroll(this._el.querySelector('#scrV2Body'), {
       rowHeight: 40,
@@ -190,16 +259,15 @@ export class ScannerV2Panel {
   }
 
   _buildHead() {
-    const cols = [
-      ['symbol', 'Symbol'], ['sector_id', 'Sector'], ['ltp', 'LTP'], ['change_pct', 'Chg'],
-      ['setup_strength', 'Strength'], ['option_readiness', 'Conviction'], ['mtf', 'MTF'],
-      ['direction_bias', 'Bias'], ['favour', 'Chain Favour'], ['entry', 'Entry'],
-      ['t1', 'T1'], ['t2', 'T2'], ['t3', 'T3'], ['sl', 'SL'],
-      ['fo_banned', 'F&O'], ['vcp_score', 'VCP'],
-    ];
+    const cols = visibleColumns(this._hidden);
+    // Grid template is now dynamic (column set can shrink/grow via the
+    // Columns panel) -- set as an inline override on the root element,
+    // which theme.css's static --ifx-scr-grid value only serves as the
+    // pre-toggle-panel-render fallback for.
+    this._el.style.setProperty('--ifx-scr-grid', cols.map((c) => `${c.width}px`).join(' '));
     const head = this._el.querySelector('#scrV2Head');
-    head.innerHTML = cols.map(([key, label]) =>
-      `<div class="ifx-scr-th${key === this._sortKey ? ' sorted' : ''}" data-sort="${key}">${escapeHtml(label)}${key === this._sortKey ? `<span class="ifx-scr-arrow">${this._sortDir === -1 ? '▾' : '▴'}</span>` : ''}</div>`
+    head.innerHTML = cols.map((c) =>
+      `<div class="ifx-scr-th${c.key === this._sortKey ? ' sorted' : ''}" data-sort="${c.key}">${escapeHtml(c.label)}${c.key === this._sortKey ? `<span class="ifx-scr-arrow">${this._sortDir === -1 ? '▾' : '▴'}</span>` : ''}</div>`
     ).join('');
     head.querySelectorAll('[data-sort]').forEach((th) => {
       th.addEventListener('click', () => {
@@ -221,6 +289,32 @@ export class ScannerV2Panel {
       case 'option_readiness': return Number(item.option_readiness || 0);
       default: return Number(item.smart_rank || 0);
     }
+  }
+
+  // Phase O.2 -- mirrors Classic scanner.js's _buildColTogglePanel/_saveHidden
+  // exactly (own localStorage key, same checkbox-per-toggleable-column shape).
+  _buildColTogglePanel() {
+    const panel = this._el.querySelector('#scrV2ColPanel');
+    if (!panel) return;
+    panel.innerHTML = COLUMNS.filter((c) => c.toggle).map((c) => `
+      <label class="ifx-scr-col-label">
+        <input type="checkbox" data-col="${c.key}" ${this._hidden.has(c.key) ? '' : 'checked'} />
+        ${escapeHtml(c.label)}
+      </label>
+    `).join('');
+    panel.querySelectorAll('input[type=checkbox]').forEach((cb) => {
+      cb.addEventListener('change', () => {
+        if (cb.checked) this._hidden.delete(cb.dataset.col);
+        else this._hidden.add(cb.dataset.col);
+        this._saveHidden();
+        this._buildHead();
+        if (this._vscroll) this._vscroll.refresh();
+      });
+    });
+  }
+
+  _saveHidden() {
+    try { localStorage.setItem('infusion:scanner-v2:hidden:v1', JSON.stringify([...this._hidden])); } catch (_) {}
   }
 
   _renderRows() {
@@ -300,24 +394,34 @@ export class ScannerV2Panel {
     const slPx = isFrozen ? item.stop_price : item.stop_loss_hint;
     const entrySide = isFrozen ? (item.signal_type === 'bearish' ? 'pe' : 'ce') : (biasCls !== 'wait' ? biasCls : '');
 
+    // Phase O.2 -- one cell-HTML entry per COLUMNS key, rendered in
+    // whichever order visibleColumns() currently returns (toggle panel can
+    // reorder-by-hiding but never desyncs header from body, since both
+    // read the same visibleColumns(this._hidden) source of truth).
+    const cellMap = {
+      symbol: `<b class="ifx-mono">${escapeHtml(sym)}</b>`,
+      sector_id: `<small>${escapeHtml(String(item.sector_id || DASH).replace(/_/g, ' '))}</small>`,
+      ltp: `<span class="ifx-mono">${formatPrice(item.ltp)}</span>`,
+      change_pct: `<div class="ifx-scr-chg ${chgCls}"><span class="ifx-mono">${chgAbs >= 0 ? '+' : ''}${chgAbs.toFixed(2)}</span><small class="ifx-mono">${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%</small></div>`,
+      setup_strength: `<div class="ifx-scr-meter"><span class="ifx-mono">${strength ? Math.round(strength) : DASH}</span><div class="ifx-scr-meter-track"><i style="width:${Math.min(100, strength)}%;background:${strength >= 60 ? 'var(--ifx-bull)' : strength >= 45 ? 'var(--ifx-warn)' : 'var(--ifx-bear)'}"></i></div></div>`,
+      option_readiness: `<div class="ifx-scr-meter"><span class="ifx-mono">${conviction ? Math.round(conviction) : DASH}</span><div class="ifx-scr-meter-track"><i style="width:${Math.min(100, conviction)}%;background:${conviction >= 55 ? 'var(--ifx-bull)' : conviction >= 45 ? 'var(--ifx-warn)' : 'var(--ifx-bear)'}"></i></div></div>`,
+      mtf: `<div class="ifx-scr-mtf">${mtfDotsHtml(item.mtf_dots)}</div>`,
+      direction_bias: `<span class="ifx-badge ifx-badge--${biasCls === 'ce' ? 'bull' : biasCls === 'pe' ? 'bear' : 'warn'}">${escapeHtml(bias)}</span>`,
+      favour: this._favourCellHtml(sym, isSelected),
+      entry: entryPx > 0 ? `<span class="ifx-scr-entry">${entrySide ? `<em class="ifx-scr-side ${entrySide}">${entrySide.toUpperCase()}</em>` : ''}${lvl(entryPx)}</span>` : `<span class="ifx-scr-dash">${DASH}</span>`,
+      targets: targetsHtml(t1Px, t2Px, t3Px, isFrozen),
+      sl: lvl(slPx, 'ifx-tone-bad'),
+      fo_banned: foBanHtml(item),
+      vcp_score: vcpHtml(item),
+    };
+    const leftKeys = new Set(['symbol', 'sector_id']);
+    const cells = visibleColumns(this._hidden)
+      .map((c) => `<div class="ifx-scr-td${leftKeys.has(c.key) ? ' left' : ''}">${cellMap[c.key] ?? DASH}</div>`)
+      .join('');
+
     return `
     <div class="ifx-scr-row${isSelected ? ' selected' : ''}" data-scr-sym="${escapeHtml(sym)}">
-      <div class="ifx-scr-td left"><b class="ifx-mono">${escapeHtml(sym)}</b></div>
-      <div class="ifx-scr-td left"><small>${escapeHtml(String(item.sector_id || DASH).replace(/_/g, ' '))}</small></div>
-      <div class="ifx-scr-td ifx-mono">${formatPrice(item.ltp)}</div>
-      <div class="ifx-scr-td"><div class="ifx-scr-chg ${chgCls}"><span class="ifx-mono">${chgAbs >= 0 ? '+' : ''}${chgAbs.toFixed(2)}</span><small class="ifx-mono">${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%</small></div></div>
-      <div class="ifx-scr-td"><div class="ifx-scr-meter"><span class="ifx-mono">${strength ? Math.round(strength) : DASH}</span><div class="ifx-scr-meter-track"><i style="width:${Math.min(100, strength)}%;background:${strength >= 60 ? 'var(--ifx-bull)' : strength >= 45 ? 'var(--ifx-warn)' : 'var(--ifx-bear)'}"></i></div></div></div>
-      <div class="ifx-scr-td"><div class="ifx-scr-meter"><span class="ifx-mono">${conviction ? Math.round(conviction) : DASH}</span><div class="ifx-scr-meter-track"><i style="width:${Math.min(100, conviction)}%;background:${conviction >= 55 ? 'var(--ifx-bull)' : conviction >= 45 ? 'var(--ifx-warn)' : 'var(--ifx-bear)'}"></i></div></div></div>
-      <div class="ifx-scr-td"><div class="ifx-scr-mtf">${mtfDotsHtml(item.mtf_dots)}</div></div>
-      <div class="ifx-scr-td"><span class="ifx-badge ifx-badge--${biasCls === 'ce' ? 'bull' : biasCls === 'pe' ? 'bear' : 'warn'}">${escapeHtml(bias)}</span></div>
-      <div class="ifx-scr-td">${this._favourCellHtml(sym, isSelected)}</div>
-      <div class="ifx-scr-td">${entryPx > 0 ? `<span class="ifx-scr-entry">${entrySide ? `<em class="ifx-scr-side ${entrySide}">${entrySide.toUpperCase()}</em>` : ''}${lvl(entryPx)}</span>` : `<span class="ifx-scr-dash">${DASH}</span>`}</div>
-      <div class="ifx-scr-td">${lvl(t1Px, 'ifx-tone-good')}</div>
-      <div class="ifx-scr-td">${lvl(t2Px, 'ifx-tone-good')}</div>
-      <div class="ifx-scr-td">${lvl(t3Px, 'ifx-tone-good')}</div>
-      <div class="ifx-scr-td">${lvl(slPx, 'ifx-tone-bad')}</div>
-      <div class="ifx-scr-td">${foBanHtml(item)}</div>
-      <div class="ifx-scr-td">${vcpHtml(item)}</div>
+      ${cells}
     </div>`;
   }
 

@@ -1388,16 +1388,20 @@
 
 /* ═══════════════════════════════════════════════════════════════════════
    NEW SHELL -- Phase N4: Screener table v2, mockup's 14-column spec plus
-   F&O ban gate + VCP (columns 15-16, added on request -- see scanner-v2.js's
-   header comment). Same --ifx-shell-* dark-surface treatment as Command
-   Center (Phase N3) -- New shell reads as one consistent dark page, not a
-   shell/paper split like Classic. Header and body rows share one grid
-   template (--ifx-scr-grid) so columns always line up regardless of scroll
-   position; VirtualScroll only virtualizes the body, the head is a
-   normal static row this file owns directly.
+   F&O ban gate + VCP. Phase O.2 (noise reduction) clustered T1/T2/T3 into
+   one Targets cell and added a Columns toggle -- see scanner-v2.js's
+   COLUMNS array for the current key/label/width/toggle set. Same
+   --ifx-shell-* dark-surface treatment as Command Center (Phase N3) -- New
+   shell reads as one consistent dark page, not a shell/paper split like
+   Classic. Header and body rows share one grid template (--ifx-scr-grid)
+   so columns always line up regardless of scroll position; VirtualScroll
+   only virtualizes the body, the head is a normal static row this file
+   owns directly. The value below is only the pre-render fallback --
+   scanner-v2.js's _buildHead() overwrites it inline once the actual
+   visible-column set (which can shrink/grow via the Columns panel) is known.
    ═══════════════════════════════════════════════════════════════════════ */
 .ifx-scr-v2 {
-  --ifx-scr-grid: 108px 112px 88px 92px 90px 100px 128px 84px 108px 118px 84px 84px 84px 84px 68px 86px;
+  --ifx-scr-grid: 108px 112px 88px 92px 90px 100px 128px 84px 118px 108px 84px 68px;
   color: var(--ifx-shell-text); font-family: var(--ifx-font-ui);
 }
 .ifx-scr-toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
@@ -1408,6 +1412,25 @@
 }
 .ifx-scr-search input { border: none; background: none; outline: none; color: var(--ifx-shell-text); font-size: var(--ifx-text-sm); width: 100%; font-family: var(--ifx-font-ui); }
 .ifx-scr-count { font-family: var(--ifx-font-mono); font-size: var(--ifx-text-xs); color: var(--ifx-shell-text-faint); }
+
+/* Phase O.2 -- Columns toggle, matching Classic's .col-toggle-btn/
+   .col-toggle-panel behavior (click to open a checkbox list) with New
+   shell's own ifx- visual language. */
+.ifx-scr-col-toggle-btn {
+  padding: 6px 12px; border-radius: var(--ifx-radius-sm); border: 1px solid var(--ifx-shell-border);
+  background: var(--ifx-shell-surface); color: var(--ifx-shell-text-faint); font-size: var(--ifx-text-xs);
+  font-weight: 700; cursor: pointer; white-space: nowrap;
+}
+.ifx-scr-col-toggle-btn:hover { color: var(--ifx-shell-text); border-color: var(--ifx-accent); }
+.ifx-scr-col-panel {
+  display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 10px 12px; margin-bottom: 10px;
+  border: 1px solid var(--ifx-shell-border); border-radius: var(--ifx-radius-sm); background: var(--ifx-shell-surface);
+}
+.ifx-scr-col-label {
+  display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--ifx-shell-text-faint); cursor: pointer;
+}
+.ifx-scr-col-label:hover { color: var(--ifx-shell-text); }
+.ifx-scr-targets-more { color: var(--ifx-shell-text-faint); font-weight: 700; }
 
 .ifx-scr-table-wrap { border: 1px solid var(--ifx-shell-border); border-radius: var(--ifx-radius-lg); overflow: hidden; background: var(--ifx-shell-surface); }
 .ifx-scr-head {
