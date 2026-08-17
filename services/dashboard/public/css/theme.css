@@ -323,6 +323,7 @@
 .ifx-ticker-name { font-size: var(--ifx-text-2xs); font-weight: 600; color: var(--ifx-shell-text-muted); }
 .ifx-ticker-price { font-size: var(--ifx-text-sm); font-weight: 600; color: var(--ifx-shell-text); }
 .ifx-ticker-pct { font-size: var(--ifx-text-xs); font-weight: 600; }
+.ifx-ticker-vix-badge { align-self: center; font-size: var(--ifx-text-2xs); }
 .ifx-ticker-spacer { flex: 1; min-width: 8px; }
 .ifx-ticker-note { font-size: var(--ifx-text-2xs); color: var(--ifx-shell-text-faint); flex-shrink: 0; white-space: nowrap; }
 

@@ -28,6 +28,26 @@ function renderTile(item, label = null) {
   </div>`;
 }
 
+// VIX tier -> badge tone. Mirrors api/vix_sizing.py's VIX_TIERS labels
+// exactly (low/elevated/high/extreme) -- keep in sync if that list changes.
+const VIX_TIER_TONE = { low: 'ifx-badge--bull', elevated: 'ifx-badge--warn', high: 'ifx-badge--risk', extreme: 'ifx-badge--bear' };
+
+function renderVixTile(vix) {
+  if (!vix || !vix.available) {
+    return `<div class="ifx-ticker-tile ifx-ticker-tile--muted" title="${escapeHtml(vix?.reason || 'India VIX unavailable')}">
+      <span class="ifx-ticker-name">VIX</span>
+      <span class="ifx-ticker-price ifx-mono">—</span>
+      <span class="ifx-ticker-pct">No data</span>
+    </div>`;
+  }
+  const tone = VIX_TIER_TONE[vix.vix_tier] || 'ifx-badge--neutral';
+  return `<div class="ifx-ticker-tile" title="Position-size multiplier: ${vix.vix_size_multiplier_pct}% -- informational only, not auto-applied">
+    <span class="ifx-ticker-name">VIX</span>
+    <span class="ifx-ticker-price ifx-mono">${vix.vix_level}</span>
+    <span class="ifx-badge ${tone} ifx-ticker-vix-badge">${escapeHtml(vix.vix_tier)} · ${vix.vix_size_multiplier_pct}%</span>
+  </div>`;
+}
+
 export class MarketTicker {
   constructor(containerEl) {
     this._el = containerEl;
@@ -43,6 +63,15 @@ export class MarketTicker {
       this._indices = resp?.indices || [];
       this._render();
     }, 3000));
+
+    // India VIX-tiered position-size read (see api/vix_sizing.py). 60s
+    // poll -- the scheduler's own sweep only refreshes the underlying
+    // cache every 5 min, so polling faster than that just re-reads the
+    // same cached value more often for no benefit.
+    this._unsubs.push(api.subscribe('/api/market/vix-multiplier', (resp) => {
+      this._vix = resp;
+      this._render();
+    }, 60000));
 
     document.addEventListener('chart:load', (e) => {
       const sym = e.detail?.symbol;
@@ -82,6 +111,7 @@ export class MarketTicker {
         { symbol: s, error: true },
         s === 'NIFTYBANK' ? 'BANKNIFTY' : s === 'GIFTNIFTY' ? 'GIFT NIFTY' : 'NIFTY'
       )).join('')}
+      ${renderVixTile(null)}
       <div class="ifx-ticker-spacer"></div>
       <div class="ifx-ticker-tile ifx-ticker-tile--muted"><span class="ifx-ticker-name">SELECTED</span><span class="ifx-ticker-price ifx-mono">—</span><span class="ifx-ticker-pct">Click a symbol</span></div>
     `;
@@ -99,6 +129,7 @@ export class MarketTicker {
       ${renderTile(nifty, 'NIFTY')}
       ${renderTile(bank, 'BANKNIFTY')}
       ${renderTile(gift, 'GIFT NIFTY')}
+      ${renderVixTile(this._vix)}
       <div class="ifx-ticker-spacer"></div>
       ${selected ? renderTile(selected, selected.symbol) : `<div class="ifx-ticker-tile ifx-ticker-tile--muted"><span class="ifx-ticker-name">SELECTED</span><span class="ifx-ticker-price ifx-mono">—</span><span class="ifx-ticker-pct">Click a symbol</span></div>`}
       <div class="ifx-ticker-note">Options mode: CE/PE bias uses underlying + chain readiness</div>

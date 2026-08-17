@@ -360,6 +360,8 @@ export class ScannerInsight {
           <div><span>Half-Kelly size</span><b>${kellyReliable ? kellyPct + '%' : 'not enough sample'}</b></div>
           <div><span>Kelly win rate</span><b>${sizing.kelly_win_rate_pct != null ? sizing.kelly_win_rate_pct + '%' : '—'}</b></div>
           <div><span>Kelly sample</span><b>${sizing.kelly_sample_size || 0} decided</b></div>
+          <div><span>India VIX at signal</span><b>${sizing.vix_level != null ? sizing.vix_level : '—'}</b></div>
+          <div><span>VIX size multiplier</span><b>${sizing.vix_tier ? `${escapeHtml(sizing.vix_tier)} · ${sizing.vix_size_multiplier_pct}%` : 'not scored'}</b></div>
           <div><span>ML classifier</span><b class="${mlTone}">${mlPct != null ? `${mlPct}% TARGET_HIT` : 'not scored'}</b></div>
           <div><span>ML model quality</span><b>${ml.ml_reliable ? `AUC ${ml.ml_model_auc}` : 'building sample'}</b></div>
         </div>
