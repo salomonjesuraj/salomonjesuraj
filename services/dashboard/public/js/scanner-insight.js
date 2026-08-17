@@ -77,11 +77,25 @@ export class ScannerInsight {
     // in general. Kept as its own piece of state, cleared whenever the
     // selection moves to a symbol that isn't backed by a fired signal.
     this._activeSignal = null;
+    // Phase O.1 -- collapse state for the supporting-evidence sub-sections
+    // below (Pine/MTF, Trend analyser, Extended Signals, VCP, Signal-time
+    // evidence). Held on the instance (not localStorage) since it just
+    // needs to survive this panel's own periodic re-renders, not the page
+    // session -- see _subsection()'s doc comment for why the existing
+    // section-controls.js mechanism doesn't fit here.
+    this._collapsed = {};
   }
 
   init() {
     if (!this._el) return;
     this._render();
+    this._el.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-subsection-toggle]');
+      if (!btn) return;
+      const key = btn.dataset.subsectionToggle;
+      this._collapsed[key] = !this._isCollapsed(key);
+      this._render();
+    });
 
     this._unsubs.push(api.subscribe('/api/ticks', (resp) => {
       this._ticks = Array.isArray(resp?.ticks) ? resp.ticks : [];
@@ -205,6 +219,29 @@ export class ScannerInsight {
    * fetch scanner-insight.js already does for MTF; the rest come straight
    * off the /api/ticks row (feature-engine's hot-state hash, see
    * feature_engine/main.py's HOT_STATE_ML_WHITELIST). */
+  // Phase O.1 -- supporting-evidence sections (everything below the core
+  // trade map) default to collapsed, showing a one-line derived verdict
+  // instead of the full raw breakdown, per the "Main Dashboard Card"
+  // discipline in the SMC/option-chain reference doc: state up front,
+  // detail on demand. Not persisted to localStorage -- see constructor.
+  _isCollapsed(key) {
+    return this._collapsed[key] !== false;
+  }
+
+  _subsection(key, title, summary, bodyHtml) {
+    const collapsed = this._isCollapsed(key);
+    return `
+      <div class="insight-section insight-subsection ${collapsed ? 'is-collapsed' : ''}">
+        <button type="button" class="insight-subsection-head" data-subsection-toggle="${key}">
+          <span class="insight-subsection-title">${title}</span>
+          <span class="insight-subsection-summary">${summary}</span>
+          <span class="insight-subsection-chevron" aria-hidden="true">›</span>
+        </button>
+        <div class="insight-subsection-body">${bodyHtml}</div>
+      </div>
+    `;
+  }
+
   _renderExtendedSignals(item, trueMtf) {
     const week52 = trueMtf?.week52 || {};
     const haTrend = String(item.ha_trend || 'NA').toUpperCase();
@@ -226,9 +263,14 @@ export class ScannerInsight {
     const deliveryAvg = (deliveryCaptured && Number.isFinite(deliveryAvgRaw)) ? deliveryAvgRaw : null;
     const deliveryDelta = (deliveryPct != null && deliveryAvg != null) ? deliveryPct - deliveryAvg : null;
 
-    return `
-      <div class="insight-section extended-signals">
-        <div class="insight-title">Extended signals — 52W range, VWAP bands, delivery %, Heiken-Ashi</div>
+    const summaryParts = [];
+    if (haTrend !== 'NA') summaryParts.push(`HA ${haTrend}${n(item.ha_trend_streak) ? ' ×' + n(item.ha_trend_streak) : ''}`);
+    if (week52.week52_near_high) summaryParts.push('near 52W high');
+    else if (week52.week52_near_low) summaryParts.push('near 52W low');
+    if (deliveryPct != null) summaryParts.push(`delivery ${deliveryPct.toFixed(1)}%`);
+    const summary = summaryParts.length ? summaryParts.join(' · ') : 'warming up';
+
+    const body = `
         <div class="trade-level-grid compact">
           <div><span>52W High</span><b>${formatPrice(week52.week52_high)}</b></div>
           <div><span>52W Low</span><b>${formatPrice(week52.week52_low)}</b></div>
@@ -248,8 +290,8 @@ export class ScannerInsight {
           ${deliveryDelta != null && Math.abs(deliveryDelta) >= 10 ? `<span class="insight-pill ${deliveryDelta > 0 ? 'good' : 'bad'}">Delivery ${deliveryDelta > 0 ? 'above' : 'below'} 20D avg by ${Math.abs(deliveryDelta).toFixed(1)}pt</span>` : ''}
         </div>
         <p class="option-reason">Informational only — not wired into the conviction score. Delivery % is T-1 (NSE has no live intraday delivery feed); VWAP bands and Heiken-Ashi need a few completed 1-minute bars before they're meaningful.</p>
-      </div>
     `;
+    return this._subsection('extended', 'Extended signals', summary, body);
   }
 
   /** Phase 13.12 -- VCP (Volatility Contraction Pattern) / Minervini
@@ -261,11 +303,8 @@ export class ScannerInsight {
   _renderVcp(trueMtf) {
     const vcp = trueMtf?.vcp;
     if (!vcp || vcp.available === false) {
-      return `
-        <div class="insight-section vcp-section">
-          <div class="insight-title">VCP / Minervini Stage-2</div>
-          <p class="option-reason">${escapeHtml(vcp?.reason || 'No daily bar history cached for this symbol yet.')}</p>
-        </div>`;
+      return this._subsection('vcp', 'VCP / Minervini Stage-2', 'not available',
+        `<p class="option-reason">${escapeHtml(vcp?.reason || 'No daily bar history cached for this symbol yet.')}</p>`);
     }
 
     const comp = vcp.components || {};
@@ -285,9 +324,8 @@ export class ScannerInsight {
       ? `${Number(part.score).toFixed(1)}/${max}`
       : 'n/a';
 
-    return `
-      <div class="insight-section vcp-section">
-        <div class="insight-title">VCP / Minervini Stage-2 — <b class="${gradeMeta.tone}">${escapeHtml(gradeMeta.label)}</b></div>
+    const summary = `${n(vcp.score)}/100 · ${gradeMeta.label}`;
+    const body = `
         <div class="option-mini-grid">
           <div><span>Composite</span><b class="${gradeMeta.tone}">${n(vcp.score)}/100</b></div>
           <div><span>Trend template</span><b>${tt.available ? `${tt.checks_passed}/${tt.checks_total}` : '—'}</b></div>
@@ -307,8 +345,8 @@ export class ScannerInsight {
           ${vd.available ? `<span class="insight-pill ${vd.volume_ratio <= 0.7 ? 'good' : ''}">Volume ratio ${vd.volume_ratio}×</span>` : ''}
         </div>
         <p class="option-reason">Informational only — not wired into the conviction score. Daily-timeframe composite: Trend Template 25% / Contraction Quality 25% / Volume Dry-Up 20% / Pivot Proximity 15% / Relative Strength vs Nifty 50 15%.</p>
-      </div>
     `;
+    return this._subsection('vcp', 'VCP / Minervini Stage-2', summary, body);
   }
 
   /** Phase 13.9/13.10/13.11 -- signal alignment, half-Kelly sizing, and
@@ -322,11 +360,8 @@ export class ScannerInsight {
   _renderSignalTimeEvidence(symbol) {
     const sig = this._activeSignal;
     if (!sig || sig.symbol !== symbol) {
-      return `
-        <div class="insight-section signal-time-evidence">
-          <div class="insight-title">Signal-time evidence — alignment, sizing, divergence</div>
-          <p class="option-reason">Click a card in the Signal Cockpit to see the alignment breadth, half-Kelly sizing read, and RSI divergence that were computed for that specific fired signal — these aren't live per-tick numbers.</p>
-        </div>`;
+      return this._subsection('evidence', 'Signal-time evidence', 'no fired signal selected',
+        `<p class="option-reason">Click a card in the Signal Cockpit to see the alignment breadth, half-Kelly sizing read, and RSI divergence that were computed for that specific fired signal — these aren't live per-tick numbers.</p>`);
     }
 
     const fs = sig.features_snapshot && typeof sig.features_snapshot === 'object' ? sig.features_snapshot : {};
@@ -352,9 +387,10 @@ export class ScannerInsight {
     const mlPct = ml.ml_probability != null ? Math.round(ml.ml_probability * 100) : null;
     const mlTone = mlPct == null ? '' : mlPct >= 60 ? 'positive' : mlPct <= 40 ? 'negative' : '';
 
-    return `
-      <div class="insight-section signal-time-evidence">
-        <div class="insight-title">Signal-time evidence — alignment, sizing, divergence, ML read</div>
+    const summary = checked > 0
+      ? `${agree}/${checked} of ${total} aligned${mlPct != null ? ` · ML ${mlPct}%` : ''}`
+      : 'no families active';
+    const body = `
         <div class="trade-level-grid compact">
           <div><span>Alignment</span><b class="${agreeTone}">${checked > 0 ? `${agree}/${checked} of ${total}` : 'no families active'}</b></div>
           <div><span>Half-Kelly size</span><b>${kellyReliable ? kellyPct + '%' : 'not enough sample'}</b></div>
@@ -376,8 +412,8 @@ export class ScannerInsight {
         </div>` : '<p class="option-reason">No RSI divergence at this signal\'s swing points.</p>'}
         ${ml.ml_model_interpretation ? `<p class="option-reason">ML model: ${escapeHtml(ml.ml_model_interpretation)}</p>` : ''}
         <p class="option-reason">Informational only — none of this is wired into the conviction score or position sizing yet. Frozen at signal time, same as the trade levels above.</p>
-      </div>
     `;
+    return this._subsection('evidence', 'Signal-time evidence', summary, body);
   }
 
   _render() {
@@ -434,6 +470,15 @@ export class ScannerInsight {
     const patternText = [item.nr_pattern, item.squeeze_state, item.candle_pattern]
       .filter(x => x && String(x).toUpperCase() !== 'NA')
       .join(' · ') || 'Waiting for setup';
+    // Phase O.1 -- derived pass-count for the Trend analyser subsection's
+    // collapsed-state summary. Same PASS vocabulary as the gate() helper.
+    const trendGateStates = [
+      vwapGate, emaGate, macdGate, atrGate,
+      item.trend_stack?.rsi, item.trend_stack?.volume,
+      item.trend_stack?.compression, item.trend_stack?.pattern,
+    ];
+    const trendGatePassCount = trendGateStates
+      .filter(s => ['PASS', 'BULL', 'ABOVE'].includes(String(s || '').toUpperCase())).length;
     const actionTone = decisionTone(decision);
     const ai = this._ai;
     const aiTone = ai?.verdict === 'TRADE_READY' ? 'buy' : ai?.verdict === 'AVOID' ? 'sell' : 'hold';
@@ -487,8 +532,7 @@ export class ScannerInsight {
         <p class="option-reason">Levels are Phase-1 live proxies from Upstox scanner features. Final execution still needs your visual TradingView confirmation.</p>
       </div>
 
-      <div class="insight-section">
-        <div class="insight-title">Pine-style confidence + MTF</div>
+      ${this._subsection('pine', 'Pine-style confidence + MTF', `MTF ${Math.round(mtfScore)} · CE ${Math.round(n(item.bull_confidence))} / PE ${Math.round(n(item.bear_confidence))}`, `
         <div class="option-mini-grid">
           <div><span>CE</span><b class="positive">${Math.round(n(item.bull_confidence))}</b></div>
           <div><span>PE</span><b class="negative">${Math.round(n(item.bear_confidence))}</b></div>
@@ -502,10 +546,9 @@ export class ScannerInsight {
           <div><span>PE dots</span><b class="negative">${n(trueMtf?.bear_count, 0)}</b></div>
           <div><span>Chase</span><b class="${item.anti_chase_ok ? 'positive' : 'warn'}">${item.anti_chase_ok ? 'PASS' : 'WAIT'}</b></div>
         </div>
-      </div>
+      `)}
 
-      <div class="insight-section">
-        <div class="insight-title">Trend analyser</div>
+      ${this._subsection('trend', 'Trend analyser', `${trendGatePassCount}/8 gates passing`, `
         <div class="insight-gates">
           ${gate('VWAP', vwapGate, item.vwap_state === 'ABOVE' ? 'Price above VWAP' : item.vwap_state === 'BELOW' ? 'Price below VWAP' : 'Need VWAP')}
           ${gate('EMA', emaGate, 'EMA stack / direction')}
@@ -516,7 +559,7 @@ export class ScannerInsight {
           ${gate('Compression', item.trend_stack?.compression, `${Math.round(n(item.bb_compression))}% BB squeeze`)}
           ${gate('Pattern', item.trend_stack?.pattern, patternText)}
         </div>
-      </div>
+      `)}
 
       ${this._renderExtendedSignals(item, trueMtf)}
       ${this._renderVcp(trueMtf)}

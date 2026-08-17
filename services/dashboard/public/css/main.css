@@ -461,6 +461,57 @@ body.layout-breakout-max{--signals-flex:2.1;--watchlist-flex:6.6;--alerts-flex:.
 .insight-pill.good{background:var(--green-dim);color:var(--green);border-color:rgba(16,185,129,.22)}
 .insight-pill.bad{background:var(--red-dim);color:#fca5a5;border-color:rgba(239,68,68,.2)}
 .insight-pill.muted{background:rgba(30,41,59,.6);color:var(--text-muted)}
+/* Phase O.1 -- collapsed-by-default supporting-evidence sections in Stock
+   Detail (scanner-insight.js). Deliberately its own small component, not a
+   reuse of section-controls.js's [data-collapsible-section] mechanism --
+   that system collapses whole top-level panels via per-panel-class rules
+   scattered across this file (.pro-risk-console.section-collapsed etc.)
+   and only applies saved state once at app boot, which doesn't survive
+   scanner-insight.js's own periodic innerHTML re-renders. This is a
+   lighter, self-contained toggle scoped to sub-sections within one panel,
+   with state held in the panel instance and re-applied on every render. */
+.insight-subsection{padding:0;overflow:hidden}
+.insight-subsection-head{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  width:100%;
+  padding:0;
+  margin-bottom:7px;
+  background:none;
+  border:none;
+  cursor:pointer;
+  text-align:left;
+  font:inherit;
+}
+.insight-subsection-title{
+  color:var(--text-secondary);
+  font-family:var(--font-ui);
+  font-size:10px;
+  font-weight:900;
+  letter-spacing:.75px;
+  text-transform:uppercase;
+}
+.insight-subsection-summary{
+  flex:1 1 auto;
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:var(--text-muted);
+  font-family:var(--font-ui);
+  font-size:9.5px;
+}
+.insight-subsection-chevron{
+  flex:0 0 auto;
+  color:var(--text-muted);
+  font-size:10px;
+  transition:transform .15s ease;
+}
+.insight-subsection:not(.is-collapsed) .insight-subsection-chevron{transform:rotate(90deg)}
+.insight-subsection.is-collapsed .insight-subsection-body{display:none}
+.insight-subsection.is-collapsed .insight-subsection-head{margin-bottom:0}
+.insight-subsection.is-collapsed .insight-subsection-summary{color:var(--text-secondary)}
 .option-mini-grid{
   display:grid;
   grid-template-columns:repeat(3,1fr);
