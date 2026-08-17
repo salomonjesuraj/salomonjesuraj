@@ -189,7 +189,33 @@ class ScannerEngine:
         max_lots = int(settings.get("max_lots") or 5)
         sizing = compute_position_size(risk_amount, per_unit_risk, lot_size, max_lots=max_lots, atr=atr)
         kelly = await self._read_kelly_sizing(strategy_id) if strategy_id else {}
-        return {**sizing, "lot_size": lot_size, "risk_amount": round(risk_amount, 2), **kelly}
+        vix = await self._read_vix_multiplier()
+        return {**sizing, "lot_size": lot_size, "risk_amount": round(risk_amount, 2), **kelly, **vix}
+
+    async def _read_vix_multiplier(self) -> dict:
+        """Best-effort read of the India VIX-tiered size multiplier the
+        scheduler's ~5-min sweep writes (see compute_vix_multiplier() in
+        api/routes/market.py, api/vix_sizing.py). Informational only,
+        added alongside (never replacing) the ATR-scaled sizing and
+        half-Kelly read above. Never raises into the hot path: a missing/
+        stale cache (e.g. Upstox auth expired, or the sweep hasn't run
+        yet) just means these fields come back empty.
+        """
+        try:
+            raw = await self.redis.get("infusion:vix:multiplier")
+            if not raw:
+                return {}
+            text = raw.decode() if isinstance(raw, bytes) else raw
+            decoded = json.loads(text)
+            if not decoded.get("available"):
+                return {}
+            return {
+                "vix_level": decoded.get("vix_level"),
+                "vix_tier": decoded.get("vix_tier"),
+                "vix_size_multiplier_pct": decoded.get("vix_size_multiplier_pct"),
+            }
+        except Exception:
+            return {}
 
     async def _read_kelly_sizing(self, strategy_id: str) -> dict:
         """Phase 13.10: best-effort read of the half-Kelly sizing stat the

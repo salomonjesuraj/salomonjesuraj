@@ -20,6 +20,7 @@ from api.cost_model import estimate_entry_costs_per_unit
 from api.event_calendar import get_event_risk
 from api.option_reality import breakeven_gate, delta_band_gate, derive_option_sl, iv_rank_gate
 from api.options_analytics import compute_max_pain, compute_oi_support_resistance, compute_pcr
+from api.vix_sizing import vix_position_multiplier
 
 routes = web.RouteTableDef()
 
@@ -30,6 +31,11 @@ UPSTOX_INDEX_MAP = {
     "NIFTYBANK": "NSE_INDEX|Nifty Bank",
     "BANKNIFTY": "NSE_INDEX|Nifty Bank",
     "GIFTNIFTY": os.getenv("INFUSION_GIFT_NIFTY_INSTRUMENT_KEY", ""),
+    # India VIX -- a standard NSE_INDEX instrument (unlike GIFT Nifty above,
+    # which trades on a different exchange segment and needs an explicit
+    # env-supplied key), so this can be hardcoded the same way NIFTY50/
+    # NIFTYBANK are.
+    "INDIAVIX": "NSE_INDEX|India VIX",
 }
 INDEX_SYMBOLS = {"NIFTY", "NIFTY50", "BANKNIFTY", "NIFTYBANK", "FINNIFTY", "MIDCPNIFTY"}
 
@@ -190,6 +196,30 @@ async def _upstox_index_quotes(request, symbols: list[str]) -> dict[str, dict]:
     cache["ts"] = now
     cache["data"] = out
     return out
+
+
+VIX_MULTIPLIER_KEY = "infusion:vix:multiplier"
+
+
+async def compute_vix_multiplier(request) -> dict:
+    """India VIX level -> position-size tier (see api/vix_sizing.py), fetched
+    via the same Upstox REST fallback every other index quote here uses (VIX
+    isn't in ingestion's live WS subscription list -- it's checked every few
+    minutes by the scheduler, not tick-by-tick, so a REST-only read is the
+    right cost/simplicity tradeoff rather than adding a new live subscription
+    for something this coarse-grained). Writes the result to Redis for
+    scanner/engine.py's _recommended_lots() to read cheaply (scanner has no
+    Upstox REST access of its own), same "api computes, scanner reads a
+    cache" pattern as Kelly sizing and the F&O ban gate.
+    """
+    quotes = await _upstox_index_quotes(request, ["INDIAVIX"])
+    vix_quote = quotes.get("INDIAVIX")
+    result = vix_position_multiplier(vix_quote["ltp"] if vix_quote else None)
+    if not vix_quote:
+        result.setdefault("reason", "India VIX quote unavailable (Upstox auth or network issue).")
+    redis = request.app["redis"]
+    await redis.set(VIX_MULTIPLIER_KEY, json.dumps(result, separators=(",", ":")), ex=20 * 60)
+    return result
 
 
 def _underlying_score(features: dict) -> tuple[float | None, dict]:
@@ -918,6 +948,18 @@ async def market_indices(request):
                 indices[idx] = fixed
 
     return web.json_response({"count": len(indices), "indices": indices})
+
+
+@routes.get("/api/market/vix-multiplier")
+async def market_vix_multiplier(request):
+    """GET /api/market/vix-multiplier -- India VIX-tiered position-size
+    read (see api/vix_sizing.py). Cheap: one Upstox REST call, already
+    de-duped by _upstox_index_quotes' own 5s cache. Computes fresh and
+    writes to Redis on every call (same shape as Kelly sizing's route) --
+    called periodically by the scheduler, and safe for the dashboard to
+    poll directly at low frequency too."""
+    result = await compute_vix_multiplier(request)
+    return web.json_response(result)
 
 
 @routes.get("/api/options/chain-analytics")
