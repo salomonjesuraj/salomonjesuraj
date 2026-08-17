@@ -7,6 +7,7 @@ from aiohttp import web
 from infusion_models.events import EventType
 from infusion_streams.codec import decode_event, encode_event
 from infusion_streams.constants import STREAM_SCAN_SIGNALS, STREAM_SCAN_SUPPRESSED, MAXLEN_SIGNALS
+from api.market_breadth import compute_market_breadth
 
 routes = web.RouteTableDef()
 
@@ -476,6 +477,27 @@ async def get_regime(request):
         })
 
     return web.json_response(_decode_hash(data))
+
+
+MARKET_BREADTH_KEY = "infusion:market-breadth:health"
+
+
+@routes.get("/api/market/breadth-health")
+async def market_breadth_health(request):
+    """GET /api/market/breadth-health -- 5-component breadth regime read
+    across Infusion's tracked F&O universe (see api/market_breadth.py for
+    the real "does this need a new data feed" finding: it doesn't, every
+    ingredient already exists from Phase 13.5/13.12's daily-bar cache and
+    feature-engine's live hot-state hash). Cheap (~0.1s, all Redis, no
+    Postgres/Upstox calls) -- computes fresh and caches on every call,
+    same shape as Kelly sizing's route. Complements, does not replace,
+    the existing single-index /api/regime classifier above.
+    """
+    redis = request.app["redis"]
+    result = await compute_market_breadth(redis)
+    if result.get("available") and redis:
+        await redis.set(MARKET_BREADTH_KEY, _json.dumps(result, separators=(",", ":")), ex=15 * 60)
+    return web.json_response(result)
 
 
 @routes.get("/api/alerts/log")
