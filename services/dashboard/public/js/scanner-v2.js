@@ -40,7 +40,7 @@
 import { VirtualScroll } from './virtual-scroll.js';
 import { formatPrice, escapeHtml } from './utils.js';
 import { api } from './api.js';
-import { smartRank, deriveDirectionZone } from './scanner.js?v=8.0.0-new-shell';
+import { smartRank, deriveDirectionZone } from './scanner.js?v=noise-reduction-3';
 
 const DASH = '—';
 

@@ -26,9 +26,12 @@ const COLUMNS = [
   { key: 'mtf_dots',     label: 'MTF',         align: 'center', width: '124px',  toggle: true },
   { key: 'trade_decision', label: 'Bias',      align: 'center', width: '88px',   toggle: true },
   { key: 'entry_price_hint', label: 'Entry',   align: 'right',  width: '88px',   toggle: true },
-  { key: 'target_1_hint', label: 'T1',         align: 'right',  width: '78px',   toggle: true },
-  { key: 'target_2_hint', label: 'T2',         align: 'right',  width: '78px',   toggle: true },
-  { key: 'target_3_hint', label: 'T3',         align: 'right',  width: '78px',   toggle: true },
+  // Phase O.3 -- T1/T2/T3 collapsed into one clustered "Targets" column
+  // (was 3 separate always-competing-for-space columns; same idea as
+  // merging nearby liquidity levels into one read, mirrors New shell's
+  // scanner-v2.js targetsHtml()). Full ladder is still there, just in the
+  // cell's tooltip instead of 3 header slots.
+  { key: 'targets_hint', label: 'Targets',   align: 'right',  width: '92px',   toggle: true },
   { key: 'stop_loss_hint', label: 'SL',        align: 'right',  width: '78px',   toggle: true },
   { key: 'chain_execution_status', label: 'Chain', align: 'center', width: '112px', toggle: true },
   // F&O ban (Phase 13.13) -- a hard NSE/SEBI legal constraint (MWPL>=95%),
@@ -282,6 +285,25 @@ function vcpCell(item) {
     : 'No clear base';
   const reliableNote = vcp.reliable === false ? ' (partial read)' : '';
   return `<span title="${escapeHtml(gradeLabel + reliableNote)}">${scoreMeter(vcp.score)}</span>`;
+}
+
+// Phase O.3 -- T1/T2/T3 clustered into one ladder cell, mirroring New
+// shell's scanner-v2.js targetsHtml() exactly (same "nearest target + N
+// more, full ladder in the tooltip" shape). Styling stays on the existing
+// .level-cell class so this cell inherits the same row-level frozen/live
+// treatment (Phase B's trust fix) every other .level-cell already has --
+// nothing new to wire there.
+function targetsCell(item) {
+  const t1 = Number(item.target_1_hint || 0);
+  const t2 = Number(item.target_2_hint || 0);
+  const t3 = Number(item.target_3_hint || 0);
+  const levels = [t1, t2, t3].filter((p) => p > 0);
+  if (!levels.length) return `<span class="level-cell text-muted">—</span>`;
+  const tooltip = ['T1', 'T2', 'T3']
+    .map((lbl, i) => ([t1, t2, t3][i] > 0 ? `${lbl} ${formatPrice([t1, t2, t3][i])}` : null))
+    .filter(Boolean).join(' · ');
+  const more = levels.length > 1 ? ` <small class="text-muted">+${levels.length - 1}</small>` : '';
+  return `<span class="level-cell positive" title="${escapeHtml(tooltip)}">${formatPrice(levels[0])}${more}</span>`;
 }
 
 function commandCenterBlock(item) {
@@ -2343,9 +2365,7 @@ export class ScannerPanel {
       evidence: rowEvidence(item),
       entry_price_hint: `<span class="level-cell">${formatPrice(item.entry_price_hint)}</span>`,
       stop_loss_hint: `<span class="level-cell negative">${formatPrice(item.stop_loss_hint)}</span>`,
-      target_1_hint: `<span class="level-cell positive">${formatPrice(item.target_1_hint)}</span>`,
-      target_2_hint: `<span class="level-cell positive">${formatPrice(item.target_2_hint)}</span>`,
-      target_3_hint: `<span class="level-cell positive">${formatPrice(item.target_3_hint)}</span>`,
+      targets_hint: targetsCell(item),
       positive_above: `<span class="level-cell positive">${formatPrice(item.positive_above)}</span>`,
       negative_below: `<span class="level-cell negative">${formatPrice(item.negative_below)}</span>`,
       ai_trade_map: aiTradeMapCell(item),
