@@ -307,7 +307,18 @@
     </div>
   </div>
 
-  <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
-  <script type="module" src="/js/app.js?v=noise-reduction-5"></script>
+  <!--
+    Chart bug fix -- was loaded from unpkg.com with zero fallback and zero
+    error handling: if the CDN script failed (ad-blocker, corporate
+    firewall, DNS/CDN outage), the chart popup would silently show
+    "Chart library loading..." forever with no console error, since the
+    failure never threw -- exactly the "click stock name, chart stuck
+    blank, no error" symptom reported live. Vendored locally
+    (js/vendor/lightweight-charts.standalone.production.js, v4.1.0,
+    unmodified from unpkg, Apache-2.0) so a live daily-use trading tool's
+    chart never depends on a third-party CDN being reachable.
+  -->
+  <script src="/js/vendor/lightweight-charts.standalone.production.js"></script>
+  <script type="module" src="/js/app.js?v=noise-reduction-6"></script>
 </body>
 </html>
