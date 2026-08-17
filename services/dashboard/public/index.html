@@ -92,24 +92,47 @@
       <section class="panel trade-workbench pro-workbench-panel section-collapsed" data-collapsible-section="trade-workbench" data-draggable-section="trade-workbench">
         <div class="panel-header workbench-header pro-panel-header">
           <span class="panel-title"><span class="icon">&#8942;&#8942;</span> More</span>
-          <div class="workbench-tabs" id="workbenchTabs">
-            <button class="workbench-tab active" data-tab="screener">Screener</button>
-            <button class="workbench-tab" data-tab="watchlist">Watchlist</button>
-            <button class="workbench-tab" data-tab="option-basis">Option Basis</button>
-            <button class="workbench-tab" data-tab="risk">Risk</button>
-            <button class="workbench-tab" data-tab="stock-detail">Stock Detail</button>
-            <button class="workbench-tab" data-tab="triggers">Triggers</button>
-            <button class="workbench-tab" data-tab="news">News</button>
-            <button class="workbench-tab" data-tab="events">Events</button>
-            <button class="workbench-tab" data-tab="journal">Journal</button>
-            <button class="workbench-tab" data-tab="execution">Execution</button>
-            <button class="workbench-tab" data-tab="safety">Safety</button>
-            <button class="workbench-tab" data-tab="alerts">Alert Log</button>
-            <button class="workbench-tab" data-tab="diagnostics">Diagnostics</button>
-            <button class="workbench-tab" data-tab="options-analytics">Options Analytics</button>
-            <button class="workbench-tab" data-tab="strategy-selector">Strategy Selector</button>
-            <button class="workbench-tab" data-tab="optimizer">Optimizer</button>
-            <button class="workbench-tab" data-tab="ask-infusion">Ask Infusion</button>
+          <!--
+            Phase O.5 -- 17 flat tabs grouped into 5 labeled clusters
+            (pure markup/CSS; workbench-tabs.js's _activate() matches
+            buttons/panes by data-tab/data-pane regardless of nesting, so
+            this needed zero JS change). Was flagged as a future risk back
+            when this bar had 13 tabs ("reassess if it becomes unwieldy")
+            and never revisited -- it reached 17 before being grouped.
+          -->
+          <div class="workbench-tabs workbench-tabs--grouped" id="workbenchTabs">
+            <div class="workbench-tab-group">
+              <span class="workbench-tab-group-label">Screener &amp; Detail</span>
+              <button class="workbench-tab active" data-tab="screener">Screener</button>
+              <button class="workbench-tab" data-tab="watchlist">Watchlist</button>
+              <button class="workbench-tab" data-tab="stock-detail">Stock Detail</button>
+              <button class="workbench-tab" data-tab="triggers">Triggers</button>
+            </div>
+            <div class="workbench-tab-group">
+              <span class="workbench-tab-group-label">Options</span>
+              <button class="workbench-tab" data-tab="option-basis">Option Basis</button>
+              <button class="workbench-tab" data-tab="options-analytics">Options Analytics</button>
+              <button class="workbench-tab" data-tab="strategy-selector">Strategy Selector</button>
+            </div>
+            <div class="workbench-tab-group">
+              <span class="workbench-tab-group-label">Backtest &amp; Optimizer</span>
+              <button class="workbench-tab" data-tab="optimizer">Optimizer</button>
+              <button class="workbench-tab" data-tab="diagnostics">Diagnostics</button>
+              <button class="workbench-tab" data-tab="risk">Risk</button>
+            </div>
+            <div class="workbench-tab-group">
+              <span class="workbench-tab-group-label">Execution &amp; Journal</span>
+              <button class="workbench-tab" data-tab="execution">Execution</button>
+              <button class="workbench-tab" data-tab="journal">Journal</button>
+              <button class="workbench-tab" data-tab="safety">Safety</button>
+              <button class="workbench-tab" data-tab="alerts">Alert Log</button>
+            </div>
+            <div class="workbench-tab-group">
+              <span class="workbench-tab-group-label">Info</span>
+              <button class="workbench-tab" data-tab="news">News</button>
+              <button class="workbench-tab" data-tab="events">Events</button>
+              <button class="workbench-tab" data-tab="ask-infusion">Ask Infusion</button>
+            </div>
           </div>
           <span class="section-size-controls">
             <button type="button" data-section-action="expand" title="Expand section">+</button>
@@ -285,6 +308,6 @@
   </div>
 
   <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
-  <script type="module" src="/js/app.js?v=noise-reduction-4"></script>
+  <script type="module" src="/js/app.js?v=noise-reduction-5"></script>
 </body>
 </html>

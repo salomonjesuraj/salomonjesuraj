@@ -1,31 +1,36 @@
 /**
- * Left rail — Phase N5. A flat, 1:1 restyle of the existing 16-tab "More"
- * drawer (workbench-tabs.js's data-tab/data-pane mechanism), not a rebuild:
- * same 15 destinations (screener excluded -- it's already the primary New
- * shell view, not tucked away), same panel classes underneath, just a
- * vertical list instead of a horizontal tab bar and a full-width swap
- * instead of a bottom drawer. Grouping the 15 rows into fewer, categorized
- * rows is a deliberately separate, later cosmetic pass -- see the plan's
- * "ship flat first" decision.
+ * Left rail — Phase N5 shipped this as a flat, 1:1 restyle of the "More"
+ * drawer's destinations (screener excluded -- it's already the primary
+ * New shell view, not tucked away): same panel classes underneath, just a
+ * vertical list instead of a horizontal tab bar. That phase deliberately
+ * deferred grouping ("ship flat first, group only once it's live and
+ * stable" -- see the plan). Phase O.5 does that grouping now, applying
+ * the same 5 clusters used for Classic's More drawer (index.html's
+ * .workbench-tab-group) so the two navigation systems read as the same
+ * taxonomy even though they're separately maintained (this rail is its
+ * own generated-from-ROWS mechanism, not literally shared code with
+ * workbench-tabs.js -- confirmed by reading both before this phase,
+ * correcting an earlier assumption that they were the same system).
  */
+const GROUPS = ['Screener & Detail', 'Options', 'Backtest & Optimizer', 'Execution & Journal', 'Info'];
 const ROWS = [
-  { key: 'watchlist', icon: '◑', label: 'Watchlist' },
-  { key: 'option-basis', icon: '⌘', label: 'Option Basis' },
-  { key: 'risk', icon: '◈', label: 'Risk' },
-  { key: 'stock-detail', icon: '◎', label: 'Stock Detail' },
-  { key: 'triggers', icon: '▲', label: 'Triggers' },
-  { key: 'news', icon: '📰', label: 'News' },
-  { key: 'events', icon: '📅', label: 'Events' },
-  { key: 'journal', icon: '▤', label: 'Journal' },
-  { key: 'execution', icon: '⚙', label: 'Execution' },
-  { key: 'safety', icon: '🛡', label: 'Safety' },
-  { key: 'alerts', icon: '🔔', label: 'Alert Log' },
-  { key: 'diagnostics', icon: '📊', label: 'Diagnostics' },
-  { key: 'options-analytics', icon: '⌗', label: 'Options Analytics' },
-  { key: 'strategy-selector', icon: '⚖', label: 'Strategy Selector' },
-  { key: 'optimizer', icon: '↻', label: 'Optimizer' },
-  { key: 'ask-infusion', icon: '✦', label: 'Ask Infusion' },
-  { key: 'signal-integrity', icon: '✓', label: 'Signal Integrity' },
+  { key: 'watchlist', icon: '◑', label: 'Watchlist', group: 'Screener & Detail' },
+  { key: 'stock-detail', icon: '◎', label: 'Stock Detail', group: 'Screener & Detail' },
+  { key: 'triggers', icon: '▲', label: 'Triggers', group: 'Screener & Detail' },
+  { key: 'option-basis', icon: '⌘', label: 'Option Basis', group: 'Options' },
+  { key: 'options-analytics', icon: '⌗', label: 'Options Analytics', group: 'Options' },
+  { key: 'strategy-selector', icon: '⚖', label: 'Strategy Selector', group: 'Options' },
+  { key: 'optimizer', icon: '↻', label: 'Optimizer', group: 'Backtest & Optimizer' },
+  { key: 'diagnostics', icon: '📊', label: 'Diagnostics', group: 'Backtest & Optimizer' },
+  { key: 'risk', icon: '◈', label: 'Risk', group: 'Backtest & Optimizer' },
+  { key: 'signal-integrity', icon: '✓', label: 'Signal Integrity', group: 'Backtest & Optimizer' },
+  { key: 'execution', icon: '⚙', label: 'Execution', group: 'Execution & Journal' },
+  { key: 'journal', icon: '▤', label: 'Journal', group: 'Execution & Journal' },
+  { key: 'safety', icon: '🛡', label: 'Safety', group: 'Execution & Journal' },
+  { key: 'alerts', icon: '🔔', label: 'Alert Log', group: 'Execution & Journal' },
+  { key: 'news', icon: '📰', label: 'News', group: 'Info' },
+  { key: 'events', icon: '📅', label: 'Events', group: 'Info' },
+  { key: 'ask-infusion', icon: '✦', label: 'Ask Infusion', group: 'Info' },
 ];
 
 export function initRailV2() {
@@ -36,12 +41,17 @@ export function initRailV2() {
   const backBtn = document.getElementById('backToPrimaryV2');
   if (!rail || !primary || !paneView) return;
 
-  rail.innerHTML = ROWS.map((r) =>
-    `<button type="button" class="ifx-rail-item" data-rail-key="${r.key}">
-      <span class="ifx-rail-icon">${r.icon}</span><span class="ifx-rail-item-label">${r.label}</span>
-      <span class="ifx-rail-chevron">→</span>
-    </button>`
-  ).join('');
+  rail.innerHTML = GROUPS.map((g) => `
+    <div class="ifx-rail-group">
+      <span class="ifx-rail-group-label">${g}</span>
+      ${ROWS.filter((r) => r.group === g).map((r) => `
+        <button type="button" class="ifx-rail-item" data-rail-key="${r.key}">
+          <span class="ifx-rail-icon">${r.icon}</span><span class="ifx-rail-item-label">${r.label}</span>
+          <span class="ifx-rail-chevron">→</span>
+        </button>
+      `).join('')}
+    </div>
+  `).join('');
 
   function showPane(key) {
     const row = ROWS.find((r) => r.key === key);

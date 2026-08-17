@@ -1537,6 +1537,17 @@
 .ifx-rail-chevron { color: var(--ifx-shell-text-faint); font-size: 11px; flex: none; }
 .ifx-rail-item.active .ifx-rail-chevron { color: var(--ifx-accent); }
 
+/* Phase O.5 -- rail-v2.js groups its rows under a label instead of one
+   flat 17-item list. Each group's last item keeps the shared bottom
+   border (rail-wide separator); the group label sits inset like a
+   section header, not a clickable row. */
+.ifx-rail-group:last-child .ifx-rail-item:last-child { border-bottom: none; }
+.ifx-rail-group-label {
+  display: block; padding: 8px 13px 4px; font-size: 9.5px; font-weight: 800; text-transform: uppercase;
+  letter-spacing: .5px; color: var(--ifx-shell-text-faint); background: var(--ifx-shell-raised);
+  border-bottom: 1px solid var(--ifx-shell-border);
+}
+
 .ifx-new-shell-main { min-width: 0; }
 #paneViewV2 { color: var(--ifx-shell-text); }
 .ifx-pane-title { font-size: var(--ifx-text-sm); font-weight: 700; color: var(--ifx-shell-text-muted); margin-bottom: 8px; }

@@ -582,6 +582,16 @@ body.layout-breakout-max{--signals-flex:2.1;--watchlist-flex:6.6;--alerts-flex:.
 }
 .workbench-tab:hover{color:var(--text-primary);border-color:var(--text-secondary)}
 .workbench-tab.active{color:#fff;border-color:var(--blue);background:linear-gradient(135deg,var(--blue),var(--purple))}
+/* Phase O.5 -- 17 flat tabs grouped into 5 labeled clusters. New wrapper
+   classes only (.workbench-tab, .workbench-tabs themselves untouched) so
+   this doesn't collide with the many .screener-pro-v4-scoped overrides
+   already layered on those two selectors elsewhere in this file. Every
+   context .workbench-tabs already lays out in (.screener-pro-v4 base,
+   narrow, wide) already sets flex-wrap:wrap, so groups just become extra
+   wrapping flex items -- no wrap behavior needed here. */
+.workbench-tab-group{display:flex;align-items:center;gap:5px;padding-right:9px;margin-right:3px;border-right:1px solid var(--border-subtle)}
+.workbench-tab-group:last-child{border-right:none;padding-right:0;margin-right:0}
+.workbench-tab-group-label{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-right:1px;white-space:nowrap}
 .workbench-body{flex:1;min-height:0;position:relative}
 .workbench-pane{display:none;height:100%;min-height:0}
 .workbench-pane.active{display:flex;flex-direction:column}
