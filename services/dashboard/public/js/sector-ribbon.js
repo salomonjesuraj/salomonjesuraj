@@ -29,12 +29,35 @@ function heatSize(value, min = 68, max = 156) {
   return Math.round(min + (max - min) * (n / 100));
 }
 
+const COMPONENT_LABELS = {
+  advance_decline: 'Adv/Dec', momentum: 'Momentum', volume_weighted: 'Volume-wtd',
+  moving_average: 'Above 50/200-SMA', week52_range: '52W range',
+};
+
+function breadthTooltip(breadth) {
+  if (!breadth || !breadth.available) return 'Market breadth unavailable';
+  const lines = [`F&O universe breadth (${breadth.universe_size} symbols) — informational only, not wired into any signal`];
+  for (const [key, label] of Object.entries(COMPONENT_LABELS)) {
+    const c = breadth.components?.[key];
+    if (!c) continue;
+    lines.push(c.available ? `${label}: ${c.score}%` : `${label}: n/a (${c.reason || 'not enough coverage'})`);
+  }
+  return lines.join('\n');
+}
+
+function breadthTone(regime) {
+  if (regime === 'healthy') return 'var(--ifx-bull-strong)';
+  if (regime === 'weak') return 'var(--ifx-bear)';
+  return 'var(--ifx-content-text-faint)';
+}
+
 export class SectorRibbon {
   constructor(containerEl) {
     this._el = containerEl;
     this._sectors = [];
     this._ticks = [];
     this._active = localStorage.getItem('infusion:pulseTab') || 'sectors';
+    this._breadth = null;
     this._unsubs = [];
   }
 
@@ -50,6 +73,23 @@ export class SectorRibbon {
       this._ticks = Array.isArray(resp?.ticks) ? resp.ticks : [];
       this._render();
     }, 7000));
+    // 5-component breadth score across the whole tracked F&O universe --
+    // see api/market_breadth.py. Cheap (~0.1s, pure Redis); its own cache
+    // TTL is 15 min so a 30s poll is plenty of headroom.
+    this._unsubs.push(api.subscribe('/api/market/breadth-health', (resp) => {
+      this._breadth = resp;
+      this._render();
+    }, 30000));
+  }
+
+  _breadthBadge() {
+    const b = this._breadth;
+    if (!b || !b.available) return '';
+    return `<span class="ifx-pulse-breadth" style="--ifx-heat:${breadthTone(b.regime)}" title="${escapeHtml(breadthTooltip(b))}">
+      <span class="ifx-pulse-breadth-label">BREADTH</span>
+      <strong class="ifx-mono">${Math.round(b.health_score)}</strong>
+      <em>${escapeHtml(b.regime)}</em>
+    </span>`;
   }
 
   _setTab(tab) {
@@ -116,6 +156,7 @@ export class SectorRibbon {
       <div class="ifx-pulse-head">
         <span class="ifx-pulse-title"><span class="ifx-drag-handle" title="Drag section">⋮⋮</span>Market Pulse</span>
         ${this._renderTabs()}
+        ${this._breadthBadge()}
         <span class="ifx-section-size-controls">
           <button type="button" data-section-action="expand" title="Expand section">+</button>
           <button type="button" data-section-action="collapse" title="Minimize section">−</button>
