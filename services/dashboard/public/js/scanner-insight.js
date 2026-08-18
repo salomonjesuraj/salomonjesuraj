@@ -51,6 +51,8 @@ function reasonPills(items, cls) {
 const BREAKOUT_TYPE_LABELS = {
   vwap_reclaim: 'VWAP Reclaim', vwap_rejection: 'VWAP Rejection',
   day_high_break: 'Day High Break', day_low_break: 'Day Low Break',
+  // Phase R8
+  opening_range_break_bull: 'Opening Range Break (Up)', opening_range_break_bear: 'Opening Range Break (Down)',
   above_vwap_continuation: 'Above VWAP Continuation', below_vwap_continuation: 'Below VWAP Continuation',
   volume_surge: 'Volume Surge', failed_no_chase: 'Failed / No-Chase',
 };
@@ -266,7 +268,7 @@ export class ScannerInsight {
   // row every other section on this page already has -- no new fetch.
   _renderBreakoutEvidence(item) {
     const score = item.stock_breakout_score;
-    const max = item.stock_breakout_score_max || 90;
+    const max = item.stock_breakout_score_max || 100;
     const tier = item.stock_breakout_tier;
     const typeLabel = BREAKOUT_TYPE_LABELS[item.breakout_type] || 'No qualifying evidence right now';
     const nextStep = BREAKOUT_TIER_NEXT_STEP[tier] || 'Not enough evidence to rank this setup yet.';
@@ -279,9 +281,17 @@ export class ScannerInsight {
       ? Math.round(Math.min(100, Math.max(0, ((ltp - low) / (high - low)) * 100)))
       : null;
 
+    // Phase R8 -- sector/index relative strength, the score's completed
+    // 10th component. null means genuinely not available this request
+    // (rare -- sector average needs a sibling in the same sector, index
+    // needs a live NIFTY tick), not "zero" -- shown as a dash, not 0.0.
+    const sectorRs = item.sector_relative_strength;
+    const indexRs = item.index_relative_strength;
+    const rsTone = (v) => (v == null ? '' : v >= 0.5 ? 'positive' : v <= -0.5 ? 'negative' : '');
+
     const body = `
         <div class="option-mini-grid">
-          <div><span>Stock Score</span><b class="${scoreTone((Number(score || 0) / max) * 100)}" title="Sector/index relative strength not computed yet -- score is out of ${max}, not 100">${score != null ? Number(score).toFixed(1) : '—'}/${max}</b></div>
+          <div><span>Stock Score</span><b class="${scoreTone((Number(score || 0) / max) * 100)}" title="Out of ${max} -- includes sector/index relative strength (Phase R8)">${score != null ? Number(score).toFixed(1) : '—'}/${max}</b></div>
           <div><span>Tier</span><b>${escapeHtml(tier || '—')}</b></div>
           <div><span>Type</span><b>${escapeHtml(typeLabel)}</b></div>
         </div>
@@ -291,6 +301,9 @@ export class ScannerInsight {
           <div><span>Day Low</span><b>${formatPrice(item.day_low)}</b></div>
           <div><span>Range position</span><b>${rangePos != null ? `${rangePos}%` : '—'}</b></div>
           <div><span>VWAP</span><b class="${item.vwap_state === 'ABOVE' ? 'positive' : item.vwap_state === 'BELOW' ? 'negative' : ''}">${escapeHtml(item.vwap_state || '—')}</b></div>
+          <div><span>Opening Range</span><b>${item.or_high != null && item.or_low != null ? `${formatPrice(item.or_low)} – ${formatPrice(item.or_high)}` : '—'}</b></div>
+          <div><span>vs Sector</span><b class="${rsTone(sectorRs)}" title="Direction-aware: positive means leading the bias-appropriate way (up for CE, down for PE)">${sectorRs != null ? `${sectorRs > 0 ? '+' : ''}${sectorRs.toFixed(2)}%` : '—'}${item.sector_leader ? ' 👑' : ''}</b></div>
+          <div><span>vs NIFTY</span><b class="${rsTone(indexRs)}">${indexRs != null ? `${indexRs > 0 ? '+' : ''}${indexRs.toFixed(2)}%` : '—'}</b></div>
         </div>
         ${!volReady ? `<div class="insight-pills"><span class="insight-pill warn">Volume baseline hasn't bootstrapped for this symbol -- RVol above is unknown, not confirmed low</span></div>` : ''}
         <p class="option-reason">${escapeHtml(nextStep)}</p>

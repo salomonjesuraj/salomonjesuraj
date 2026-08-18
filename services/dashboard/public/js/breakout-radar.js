@@ -63,6 +63,9 @@ const BREAKOUT_TYPE_META = {
   vwap_rejection: { label: 'VWAP Rejection', tone: 'bear' },
   day_high_break: { label: 'Day High Break', tone: 'bull' },
   day_low_break: { label: 'Day Low Break', tone: 'bear' },
+  // Phase R8
+  opening_range_break_bull: { label: 'Opening Range Break', tone: 'bull' },
+  opening_range_break_bear: { label: 'Opening Range Break', tone: 'bear' },
   above_vwap_continuation: { label: 'Above VWAP', tone: 'bull' },
   below_vwap_continuation: { label: 'Below VWAP', tone: 'bear' },
   volume_surge: { label: 'Volume Surge', tone: 'warn' },
@@ -73,6 +76,18 @@ function breakoutTypeHtml(item) {
   const meta = BREAKOUT_TYPE_META[item.breakout_type];
   if (!meta) return `<span class="ifx-scr-dash">${DASH}</span>`;
   return `<span class="ifx-badge ifx-badge--${meta.tone}">${escapeHtml(meta.label)}</span>`;
+}
+
+// Phase R8 -- Sector Leader is an independent contextual flag (not a
+// breakout_type value, see ticks.py's own comment on why), so it rides
+// along on the Sector cell as a compact crown rather than claiming a
+// whole new column on a table that's deliberately kept lean.
+function sectorCellHtml(item) {
+  const label = escapeHtml(String(item.sector_id || DASH).replace(/_/g, ' '));
+  const crown = item.sector_leader
+    ? ` <span title="Leading its sector's average move today (direction-aware: CE bias wants up, PE bias wants down)">👑</span>`
+    : '';
+  return `<small>${label}${crown}</small>`;
 }
 
 // RVol column: the score itself already zeroes out when a symbol's
@@ -103,13 +118,16 @@ function rangePositionHtml(item) {
 
 function scoreHtml(item) {
   const score = item.stock_breakout_score;
-  const max = item.stock_breakout_score_max || 90;
+  const max = item.stock_breakout_score_max || 100;
   if (score == null) return `<span class="ifx-scr-dash">${DASH}</span>`;
   const pct = (Number(score) / max) * 100;
   const tone = pct >= 70 ? 'ifx-tone-good' : pct >= 55 ? '' : 'ifx-tone-faint';
-  // Honest "NN/90" display -- Phase R1's own amendment: never render a
-  // bare number that could be misread as a completed 100-point score.
-  return `<span class="ifx-mono ${tone}" title="Sector/index relative strength (10pts) not computed yet -- score is out of ${max}, not 100">${Number(score).toFixed(1)}/${max}</span>`;
+  // Phase R1's own "NN/max" amendment -- never render a bare number that
+  // could be misread against the wrong scale. Phase R8 completed the
+  // model (sector/index relative strength, the last 10 points), so max
+  // is 100 now; the field stays dynamic rather than hardcoded in case a
+  // future phase changes it again.
+  return `<span class="ifx-mono ${tone}" title="Stock Breakout Score out of ${max} -- includes sector/index relative strength (see the Sector Leader / RS columns)">${Number(score).toFixed(1)}/${max}</span>`;
 }
 
 const TIER_META = {
@@ -357,7 +375,7 @@ export class BreakoutRadarPanel {
 
     const cellMap = {
       symbol: `<b class="ifx-mono sym-link">${escapeHtml(sym)}</b>`,
-      sector_id: `<small>${escapeHtml(String(item.sector_id || DASH).replace(/_/g, ' '))}</small>`,
+      sector_id: sectorCellHtml(item),
       ltp: `<span class="ifx-mono">${formatPrice(item.ltp)}</span>`,
       change_pct: `<span class="ifx-mono ${chgCls}">${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%</span>`,
       rel_vol: rvolHtml(item),

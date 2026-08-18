@@ -12,7 +12,8 @@ Designed for 500-symbol production load:
 """
 
 import json
-from datetime import date
+from datetime import date, datetime, time as dt_time
+from zoneinfo import ZoneInfo
 
 import msgpack
 from aiohttp import web
@@ -216,6 +217,106 @@ async def _write_vwap_state_context(redis, updates: dict) -> None:
     await pipe.execute()
 
 
+_IST = ZoneInfo("Asia/Kolkata")
+_OR_WINDOW_END = dt_time(9, 30)
+OR_RANGE_TTL_SEC = 20 * 3600  # spans a full session + slack, ages out before the next day -- same TTL-bound principle as R2's vwap-state, not a permanent growing surface.
+
+
+def _today_or_window_bounds() -> tuple[int, int, str] | None:
+    """Phase R8 -- today's 09:15-09:30 IST opening-range window, as Unix
+    timestamps, or None if that window hasn't closed yet (nothing to
+    honestly compute until it has -- a partial range isn't the opening
+    range)."""
+    now = datetime.now(_IST)
+    if now.time() < _OR_WINDOW_END:
+        return None
+    start = now.replace(hour=9, minute=15, second=0, microsecond=0)
+    end = now.replace(hour=9, minute=30, second=0, microsecond=0)
+    return int(start.timestamp()), int(end.timestamp()), now.date().isoformat()
+
+
+def _decode_or_bars(members: list) -> tuple[list[float], list[float]]:
+    highs: list[float] = []
+    lows: list[float] = []
+    for member in members or []:
+        try:
+            val = member.decode() if isinstance(member, bytes) else member
+            bar = json.loads(val)
+            h = float(bar.get("h", bar.get("high", 0)) or 0)
+            l = float(bar.get("l", bar.get("low", 0)) or 0)
+            if h > 0:
+                highs.append(h)
+            if l > 0:
+                lows.append(l)
+        except (json.JSONDecodeError, TypeError, ValueError, AttributeError):
+            continue
+    return highs, lows
+
+
+async def _opening_range_context(redis, symbols: list[str]) -> dict:
+    """Phase R8 -- per-symbol Opening Range (09:15-09:30 IST) high/low,
+    for the Opening Range Break breakout type. The range is fixed for the
+    rest of the day once the window closes, so this is computed once per
+    symbol per day and cached (infusion:or-range:{symbol}, TTL-bound) --
+    every other request that day pays only one cheap bulk MGET, matching
+    R2's vwap-state cost discipline. One pipeline round-trip either way,
+    not per-symbol calls (same reasoning as _fo_ban_context/
+    _vwap_state_context above).
+    """
+    if not symbols:
+        return {}
+    today = datetime.now(_IST).date().isoformat()
+    keys = [f"infusion:or-range:{s}" for s in symbols]
+    cached_raw = await redis.mget(keys)
+    result: dict[str, dict] = {}
+    missing: list[str] = []
+    for symbol, raw in zip(symbols, cached_raw):
+        if raw:
+            try:
+                payload = json.loads(raw.decode() if isinstance(raw, bytes) else raw)
+                if payload.get("date") == today:
+                    result[symbol] = payload
+                    continue
+            except (json.JSONDecodeError, TypeError, ValueError):
+                pass
+        missing.append(symbol)
+
+    window = _today_or_window_bounds()
+    if not missing or window is None:
+        return result
+
+    start_ts, end_ts, date_str = window
+    pipe = redis.pipeline()
+    for symbol in missing:
+        pipe.zrangebyscore(f"infusion:ohlc:{symbol}:history:1m", start_ts, end_ts)
+        pipe.zrangebyscore(f"infusion:ohlc:{symbol}:1m", start_ts, end_ts)
+    raw_results = await pipe.execute()
+
+    write_pipe = redis.pipeline(transaction=False)
+    for idx, symbol in enumerate(missing):
+        history_highs, history_lows = _decode_or_bars(raw_results[idx * 2])
+        live_highs, live_lows = _decode_or_bars(raw_results[idx * 2 + 1])
+        highs = history_highs + live_highs
+        lows = history_lows + live_lows
+        if not highs or not lows:
+            # Nothing bootstrapped yet for today (feed gap, non-trading
+            # day, or a symbol added after the window) -- leave it absent
+            # rather than caching an empty/zero range; next request tries
+            # again cheaply (still one bulk MGET, this symbol just stays
+            # in `missing`).
+            continue
+        payload = {"or_high": round(max(highs), 2), "or_low": round(min(lows), 2), "date": date_str}
+        result[symbol] = payload
+        write_pipe.set(f"infusion:or-range:{symbol}", json.dumps(payload, separators=(",", ":")), ex=OR_RANGE_TTL_SEC)
+    await write_pipe.execute()
+    return result
+
+
+def _apply_or_context(entry: dict, or_data: dict) -> None:
+    entry["or_high"] = or_data.get("or_high")
+    entry["or_low"] = or_data.get("or_low")
+
+
 def _classify_breakout_type(entry: dict, prev_vwap_state: str | None) -> str | None:
     """Phase R2 -- one breakout-type label per row, priority-ordered
     (most specific / most transitional wins). Every input is already on
@@ -247,7 +348,22 @@ def _classify_breakout_type(entry: dict, prev_vwap_state: str | None) -> str | N
     if day_low and ltp <= day_low:
         return "day_low_break"
 
-    # 3. Sustained continuation on the correct side of VWAP -- gated on
+    # 3. Opening Range Break (Phase R8) -- outside the classic 09:15-09:30
+    # IST range. Deliberately a state check ("is price outside the OR
+    # right now"), not an edge/transition check like #1 -- it stays
+    # labeled through a pullback that's still above/below the OR even
+    # after the fresh-high/low moment (#2) has passed, the same way #4
+    # below extends #1's transition into a sustained read. Only reached
+    # when #2 didn't already claim this row (a stock AT a brand new day
+    # high gets the more urgent day_high_break label instead).
+    or_high = entry.get("or_high")
+    or_low = entry.get("or_low")
+    if or_high and ltp > or_high:
+        return "opening_range_break_bull"
+    if or_low and ltp < or_low:
+        return "opening_range_break_bear"
+
+    # 4. Sustained continuation on the correct side of VWAP -- gated on
     # at least modest elevated volume (1.3x, softer than volume_surge's
     # 2.0x) so "happens to be above VWAP with nothing else going on"
     # (true for roughly half the universe on any given day) doesn't get
@@ -257,11 +373,11 @@ def _classify_breakout_type(entry: dict, prev_vwap_state: str | None) -> str | N
     if vwap_state == "BELOW" and rel_vol >= 1.3:
         return "below_vwap_continuation"
 
-    # 4. Volume alone, nothing else above qualified.
+    # 5. Volume alone, nothing else above qualified.
     if rel_vol >= 2.0:
         return "volume_surge"
 
-    # 5. Explicitly a bad chase -- worth a label, not just silence.
+    # 6. Explicitly a bad chase -- worth a label, not just silence.
     if not anti_chase_ok or chase_quality == "NO_CHASE":
         return "failed_no_chase"
 
@@ -787,15 +903,19 @@ def _scanner_intel(entry: dict, features: dict, prebreak: dict | None = None, se
         sustain_tf = "No entry"
         horizon_reason = "Alignment/volume/contract readiness not sufficient."
 
-    # ── Stock Breakout Score (Phase R1) ─────────────────────────
+    # ── Stock Breakout Score (Phase R1, completed by R8) ─────────
     # Ranks the UNDERLYING's own breakout evidence, independent of option-
     # chain readiness -- see docs/stock-options-dashboard-review-and-
     # structure-plan.md. Every input below is already computed above in
-    # this same function; no new I/O. Honest 0-90 scale: the reference
-    # plan's remaining 10 points (sector/index relative strength) aren't
-    # computed yet (needs new opening-range + index-RS infra, deferred),
-    # so this is never silently padded up to look like a completed
-    # 100-point model -- see STOCK_BREAKOUT_SCORE_MAX below.
+    # this same function; no new I/O. This is the 6-component, 90-point
+    # base -- R8 adds the reference plan's remaining 10 points (sector/
+    # index relative strength) in a second pass over list_ticks()'s whole
+    # `ticks` array (needs the full universe's change_pct/sector_id to
+    # compute a sector average, which a single row's pure function can't
+    # do alone), so STOCK_BREAKOUT_SCORE_MAX below is 100 even though this
+    # function only ever produces the base 90 -- by the time a response
+    # actually goes out, list_ticks() has already added the remaining 10
+    # and both numbers agree. See list_ticks()'s "Phase R8" block.
     volume_profile_ready = str(features.get("volume_profile_ready") or "") == "True"
     # rel_vol reads as a bare 0.0 when the symbol's 20-session volume
     # profile hasn't bootstrapped (feature_engine/features/volume.py) --
@@ -826,22 +946,11 @@ def _scanner_intel(entry: dict, features: dict, prebreak: dict | None = None, se
         + vwap_ema_component + mtf_alignment_component + no_chase_component,
         1,
     )
-    STOCK_BREAKOUT_SCORE_MAX = 90.0
-    # Reference plan's thresholds (>=70/100 BREAKOUT_NOW, >=55/100 shows
-    # at all) reinterpreted proportionally against the real 90-point max.
-    if stock_breakout_score >= 63.0:
-        stock_breakout_tier = (
-            "BREAKOUT_NOW"
-            if (not anti_chase_reasons and chase_quality in {"HIGHLY_CHASEABLE", "CLEAN"})
-            else "RETEST_ENTRY"
-        )
-    elif stock_breakout_score >= 49.5:
-        stock_breakout_tier = "EARLY_WATCH"
-    else:
-        stock_breakout_tier = "NO_CHASE"
-    # OPTION_READY (needs real chain data, not available inside this pure
-    # function) is applied as a tier upgrade later in list_ticks(), once
-    # option_summary has been merged into the row.
+    STOCK_BREAKOUT_SCORE_MAX = 100.0
+    # stock_breakout_tier is NOT computed here (R8 change) -- it depends
+    # on the complete post-RS score, which doesn't exist until list_ticks()'s
+    # second pass runs, so any tier decided here would just be a stale
+    # placeholder immediately overwritten. Computed once, for real, there.
 
     # Broker-style trade-card fields -- see _potential_upside_pct/
     # _trade_horizon_label docstrings for why downside% isn't included
@@ -1010,7 +1119,9 @@ def _scanner_intel(entry: dict, features: dict, prebreak: dict | None = None, se
         # breakout evidence, independent of option-chain readiness.
         "stock_breakout_score": stock_breakout_score,
         "stock_breakout_score_max": STOCK_BREAKOUT_SCORE_MAX,
-        "stock_breakout_tier": stock_breakout_tier,
+        # stock_breakout_tier deliberately absent here -- see the comment
+        # above STOCK_BREAKOUT_SCORE_MAX; list_ticks()'s Phase R8 second
+        # pass sets it once, against the complete score.
         "volume_profile_ready": volume_profile_ready,
         "day_high": round(day_high, 2) if day_high > 0 else None,
         "day_low": round(day_low, 2) if day_low > 0 else None,
@@ -1350,6 +1461,7 @@ async def list_ticks(request):
     fo_ban_context = await _fo_ban_context(redis)
     vwap_state_context = await _vwap_state_context(redis, symbols_to_fetch)
     vwap_state_updates: dict[str, str] = {}
+    or_context = await _opening_range_context(redis, symbols_to_fetch)
 
     # Pipeline: fetch tick, feature, pre-breakout, sector, MTF, cached news edge,
     # event calendar, and selected-symbol Upstox option-chain confirmation in
@@ -1395,10 +1507,12 @@ async def list_ticks(request):
         try:
             _apply_index_context(entry, index_context)
             _apply_fo_ban_context(entry, symbol, fo_ban_context)
+            _apply_or_context(entry, or_context.get(symbol, {}))
             entry.update(_scanner_intel(entry, features, prebreak, sector_strength))
-            # Phase R2 -- breakout_type classification. Needs the prior
+            # Phase R2/R8 -- breakout_type classification. Needs the prior
             # poll's VWAP state (fetched once, in bulk, above) to tell a
-            # reclaim apart from a continuation; the new state is queued
+            # reclaim apart from a continuation, and the opening-range
+            # high/low just applied above; the new VWAP state is queued
             # here and written back in one batched pipeline after the
             # loop, not per-row.
             entry["breakout_type"] = _classify_breakout_type(entry, vwap_state_context.get(symbol))
@@ -1454,15 +1568,10 @@ async def list_ticks(request):
                     "option_chain_ready": True,
                     "option_chain_source": "upstox_chain_cached",
                 })
-                # Phase R1 tier upgrade -- OPTION_READY needs real chain
-                # data, which isn't available inside _scanner_intel's pure
-                # computation. A stock already ranked BREAKOUT_NOW/
-                # RETEST_ENTRY on its own evidence graduates to
-                # OPTION_READY once the contract itself is confirmed
-                # tradeable; never downgrades or invents readiness the
-                # stock score didn't already earn.
-                if entry.get("stock_breakout_tier") in {"BREAKOUT_NOW", "RETEST_ENTRY"} and entry.get("chain_trade_ready"):
-                    entry["stock_breakout_tier"] = "OPTION_READY"
+                # OPTION_READY tier upgrade moved to list_ticks()'s Phase R8
+                # second pass (below) -- it needs the FINAL, complete-100
+                # tier to decide whether a row qualifies, which doesn't
+                # exist yet at this point in the per-row loop.
                 metrics = option_summary.get("metrics") if isinstance(option_summary.get("metrics"), dict) else {}
                 if metrics:
                     entry.update({
@@ -1506,6 +1615,78 @@ async def list_ticks(request):
     by_rvol = sorted(ticks, key=lambda e: float(e.get("rel_vol") or 0), reverse=True)
     for rank, entry in enumerate(by_rvol, start=1):
         entry["rvol_rank"] = rank
+
+    # Phase R8 -- Sector/Index relative strength, the stock_breakout_score's
+    # deferred 10th component (see STOCK_BREAKOUT_SCORE_MAX in
+    # _scanner_intel). Needs the whole universe's change_pct/sector_id to
+    # compute a sector average, so -- like rvol_rank just above -- this is
+    # a second pass over the already-built list, not something a single
+    # row's pure function could do alone. index_relative_strength only
+    # needs the index context every row already carries (nifty_change_pct,
+    # from _apply_index_context), computed here too so both halves of the
+    # same component live in one place.
+    sector_changes: dict[str, list[float]] = {}
+    for entry in ticks:
+        sid = entry.get("sector_id") or ""
+        if sid:
+            sector_changes.setdefault(sid, []).append(float(entry.get("change_pct") or 0))
+    sector_avg_change = {sid: sum(vals) / len(vals) for sid, vals in sector_changes.items() if vals}
+
+    for entry in ticks:
+        sid = entry.get("sector_id") or ""
+        change_pct = float(entry.get("change_pct") or 0)
+        nifty_chg_raw = entry.get("nifty_change_pct")
+        nifty_chg = float(nifty_chg_raw) if nifty_chg_raw is not None else None
+        sector_avg = sector_avg_change.get(sid)
+        # Direction-aware, the same symmetric treatment as every other
+        # bull/bear-split component in this file: a PE-biased stock
+        # "leading" means falling faster than its peers/the index, not
+        # rising faster.
+        is_sell = entry.get("trend_bias") == "SELL"
+        sector_rs = (change_pct - sector_avg) if sector_avg is not None else None
+        index_rs = (change_pct - nifty_chg) if nifty_chg is not None else None
+        if is_sell:
+            sector_rs = -sector_rs if sector_rs is not None else None
+            index_rs = -index_rs if index_rs is not None else None
+        entry["sector_relative_strength"] = round(sector_rs, 2) if sector_rs is not None else None
+        entry["index_relative_strength"] = round(index_rs, 2) if index_rs is not None else None
+        # Sector Leader: an independent, standalone contextual flag, NOT a
+        # breakout_type label -- a disclosed deviation from the plan's
+        # literal "breakout type" framing. A stock can lead its sector AND
+        # show e.g. a VWAP reclaim at the same moment; breakout_type only
+        # ever holds one value, so folding this in there would force
+        # losing one fact to show the other.
+        entry["sector_leader"] = bool(sector_rs is not None and sector_rs >= 0.5)
+
+        rs_points = 0.0
+        if sector_rs is not None and sector_rs >= 0.5:
+            rs_points += 5.0
+        if index_rs is not None and index_rs >= 0.5:
+            rs_points += 5.0
+        entry["stock_breakout_score"] = round(float(entry.get("stock_breakout_score") or 0) + rs_points, 1)
+
+        # Tier is finalized here, against the complete post-RS score and
+        # the reference plan's own literal thresholds (70/55) -- R1's
+        # 63.0/49.5 were that same 70/55 reinterpreted proportionally
+        # against the old 90-point max, a scaling no longer needed now the
+        # score is genuinely out of 100. OPTION_READY is a strictly-earned
+        # upgrade on top of an already-qualifying tier, applied last.
+        score = entry["stock_breakout_score"]
+        anti_chase_reasons = entry.get("anti_chase_reasons") or []
+        chase_quality = entry.get("chase_quality")
+        if score >= 70.0:
+            tier = (
+                "BREAKOUT_NOW"
+                if (not anti_chase_reasons and chase_quality in {"HIGHLY_CHASEABLE", "CLEAN"})
+                else "RETEST_ENTRY"
+            )
+        elif score >= 55.0:
+            tier = "EARLY_WATCH"
+        else:
+            tier = "NO_CHASE"
+        if tier in {"BREAKOUT_NOW", "RETEST_ENTRY"} and entry.get("chain_trade_ready"):
+            tier = "OPTION_READY"
+        entry["stock_breakout_tier"] = tier
 
     await _write_vwap_state_context(redis, vwap_state_updates)
 
