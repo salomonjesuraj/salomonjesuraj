@@ -45,6 +45,24 @@ function reasonPills(items, cls) {
   return items.map(x => `<span class="insight-pill ${cls}">${escapeHtml(String(x))}</span>`).join('');
 }
 
+// Phase R5 -- mirrors breakout-radar.js's BREAKOUT_TYPE_META and
+// api/routes/ticks.py's _classify_breakout_type vocabulary exactly; keep
+// in sync if that list changes.
+const BREAKOUT_TYPE_LABELS = {
+  vwap_reclaim: 'VWAP Reclaim', vwap_rejection: 'VWAP Rejection',
+  day_high_break: 'Day High Break', day_low_break: 'Day Low Break',
+  above_vwap_continuation: 'Above VWAP Continuation', below_vwap_continuation: 'Below VWAP Continuation',
+  volume_surge: 'Volume Surge', failed_no_chase: 'Failed / No-Chase',
+};
+
+const BREAKOUT_TIER_NEXT_STEP = {
+  BREAKOUT_NOW: 'Confirmed underlying evidence. Watch for a clean retest before chasing, or manage size if already in.',
+  OPTION_READY: 'Stock evidence AND contract quality both confirm -- the strongest state this radar reaches.',
+  RETEST_ENTRY: 'Breakout evidence is there, but chase quality is poor right now. Wait for a safer pullback/reclaim.',
+  EARLY_WATCH: 'Early evidence only -- volume or price location is moving but not yet confirmed. Watch, don’t act.',
+  NO_CHASE: 'Doesn’t clear the bar right now. No action.',
+};
+
 function mtfDots(dots) {
   const data = dots && typeof dots === 'object' ? dots : {};
   const tone = { G: 'good', R: 'bad', Y: 'warn' };
@@ -240,6 +258,45 @@ export class ScannerInsight {
         <div class="insight-subsection-body">${bodyHtml}</div>
       </div>
     `;
+  }
+
+  // Phase R5 -- Selected Stock Detail's own read of R1/R2's Stock
+  // Breakout Radar fields (stock_breakout_score/_tier, breakout_type,
+  // rel_vol, volume_profile_ready, day_high/day_low). Same /api/ticks
+  // row every other section on this page already has -- no new fetch.
+  _renderBreakoutEvidence(item) {
+    const score = item.stock_breakout_score;
+    const max = item.stock_breakout_score_max || 90;
+    const tier = item.stock_breakout_tier;
+    const typeLabel = BREAKOUT_TYPE_LABELS[item.breakout_type] || 'No qualifying evidence right now';
+    const nextStep = BREAKOUT_TIER_NEXT_STEP[tier] || 'Not enough evidence to rank this setup yet.';
+    const rvol = n(item.rel_vol);
+    const volReady = item.volume_profile_ready !== false;
+    const summary = score != null ? `${Number(score).toFixed(1)}/${max} · ${tier || '—'}` : 'no data yet';
+
+    const high = n(item.day_high), low = n(item.day_low), ltp = n(item.ltp);
+    const rangePos = (high > 0 && low > 0 && high > low)
+      ? Math.round(Math.min(100, Math.max(0, ((ltp - low) / (high - low)) * 100)))
+      : null;
+
+    const body = `
+        <div class="option-mini-grid">
+          <div><span>Stock Score</span><b class="${scoreTone((Number(score || 0) / max) * 100)}" title="Sector/index relative strength not computed yet -- score is out of ${max}, not 100">${score != null ? Number(score).toFixed(1) : '—'}/${max}</b></div>
+          <div><span>Tier</span><b>${escapeHtml(tier || '—')}</b></div>
+          <div><span>Type</span><b>${escapeHtml(typeLabel)}</b></div>
+        </div>
+        <div class="trade-level-grid compact">
+          <div><span>RVol</span><b class="${volReady ? (rvol >= 2.5 ? 'positive' : '') : ''}">${volReady ? `${rvol.toFixed(2)}x` : 'BASELINE MISSING'}</b></div>
+          <div><span>Day High</span><b>${formatPrice(item.day_high)}</b></div>
+          <div><span>Day Low</span><b>${formatPrice(item.day_low)}</b></div>
+          <div><span>Range position</span><b>${rangePos != null ? `${rangePos}%` : '—'}</b></div>
+          <div><span>VWAP</span><b class="${item.vwap_state === 'ABOVE' ? 'positive' : item.vwap_state === 'BELOW' ? 'negative' : ''}">${escapeHtml(item.vwap_state || '—')}</b></div>
+        </div>
+        ${!volReady ? `<div class="insight-pills"><span class="insight-pill warn">Volume baseline hasn't bootstrapped for this symbol -- RVol above is unknown, not confirmed low</span></div>` : ''}
+        <p class="option-reason">${escapeHtml(nextStep)}</p>
+        <p class="option-reason">Ranks the underlying stock's own breakout evidence, independent of option-chain readiness -- see the Stock Breakout Radar panel for the full, sortable list.</p>
+    `;
+    return this._subsection('breakout', 'Breakout Evidence', summary, body);
   }
 
   _renderExtendedSignals(item, trueMtf) {
@@ -531,6 +588,8 @@ export class ScannerInsight {
         </div>
         <p class="option-reason">Levels are Phase-1 live proxies from Upstox scanner features. Final execution still needs your visual TradingView confirmation.</p>
       </div>
+
+      ${this._renderBreakoutEvidence(item)}
 
       ${this._subsection('pine', 'Pine-style confidence + MTF', `MTF ${Math.round(mtfScore)} · CE ${Math.round(n(item.bull_confidence))} / PE ${Math.round(n(item.bear_confidence))}`, `
         <div class="option-mini-grid">
