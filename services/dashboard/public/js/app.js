@@ -36,10 +36,10 @@ import { initModeSwitch } from './mode-switch.js?v=8.0.0-new-shell';
 import { CockpitV2Panel } from './cockpit-v2.js?v=8.0.0-new-shell';
 import { WatchStripV2Panel } from './watch-strip-v2.js?v=8.0.0-new-shell';
 import { ScannerV2Panel } from './scanner-v2.js?v=radar-r7-1';
-import { BreakoutRadarPanel } from './breakout-radar.js?v=radar-r8-1';
+import { BreakoutRadarPanel } from './breakout-radar.js?v=radar-r9-1';
 import { initRailV2 } from './rail-v2.js?v=radar-r3-1';
 import { TrackRecordV2Panel } from './track-record-v2.js?v=8.0.0-new-shell';
-import { SignalAlertV2 } from './signal-alert-v2.js?v=8.0.0-new-shell';
+import { SignalAlertV2 } from './signal-alert-v2.js?v=radar-r9-1';
 import { IntegrityPanelV2 } from './integrity-panel-v2.js?v=8.0.0-new-shell';
 
 class InfusionApp {

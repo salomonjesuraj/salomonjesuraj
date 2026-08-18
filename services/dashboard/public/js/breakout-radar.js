@@ -210,6 +210,7 @@ export class BreakoutRadarPanel {
 
     this._el.classList.add('ifx-scr-v2');
     this._el.innerHTML = `
+      <div class="ifx-tr-strip" id="radarAlertStrip"></div>
       <div class="ifx-scr-toolbar">
         <div class="ifx-scr-search">🔍 <input type="text" placeholder="Search symbol…" id="radarSearch" /></div>
         <div class="ifx-radar-filters" id="radarFilters">
@@ -267,10 +268,39 @@ export class BreakoutRadarPanel {
       this._renderRows();
     }, 5000));
 
+    // Phase R9 -- dashboard-only early alerts, proof-not-decoration strip
+    // (same framing as Track Record's own header comment): real counts
+    // from api/radar_alert_queue.py's tracked ledger, not invented.
+    this._unsubs.push(api.subscribe('/api/radar-alerts/stats?days=1', (resp) => {
+      this._renderAlertStrip(resp);
+    }, 20000));
+
     document.addEventListener('signal:select', (e) => {
       const sym = e.detail?.symbol;
       if (sym) this._select(String(sym).toUpperCase());
     });
+  }
+
+  _renderAlertStrip(resp) {
+    const strip = this._el.querySelector('#radarAlertStrip');
+    if (!strip) return;
+    if (!resp || resp.available === false) {
+      strip.innerHTML = `<div class="ifx-tr-stat"><label>Radar Alerts</label><b class="ifx-tone-faint">—</b><small>not available yet</small></div>`;
+      return;
+    }
+    const counts = resp.counts || {};
+    const rate = resp.graduation_rate_pct;
+    const rateTone = rate == null ? '' : rate >= 40 ? 'ifx-tone-good' : rate >= 20 ? '' : 'ifx-tone-faint';
+    const stats = [
+      { label: 'Alerts (24h)', value: String(resp.total ?? 0), sub: 'first EARLY_WATCH+ crossing', src: '/api/radar-alerts/stats -- see api/radar_alert_queue.py' },
+      { label: 'Graduated', value: String(counts.graduated ?? 0), sub: 'reached BREAKOUT_NOW / OPTION_READY', tone: 'ifx-tone-good' },
+      { label: 'Faded', value: String(counts.faded ?? 0), sub: 'dropped back to NO_CHASE', tone: 'ifx-tone-bad' },
+      { label: 'Still open', value: String(counts.pending ?? 0), sub: 'watching', tone: '' },
+      { label: 'Graduation rate', value: rate != null ? `${rate.toFixed(1)}%` : DASH, sub: `of ${resp.resolved ?? 0} resolved`, tone: rateTone, info: true, src: 'Of alerts that have already resolved one way or the other (excludes still-open ones) -- how often did an early alert actually pay off' },
+    ];
+    strip.innerHTML = stats.map((s) =>
+      `<div class="ifx-tr-stat"${s.src ? ` title="${escapeHtml(s.src)}"` : ''}><label>${escapeHtml(s.label)}${s.info ? ' <span class="ifx-tr-info">ⓘ</span>' : ''}</label><b class="${s.tone || ''}">${s.value}</b><small>${escapeHtml(s.sub)}</small></div>`
+    ).join('');
   }
 
   _buildHead() {

@@ -1597,6 +1597,11 @@
 .ifx-toast-icon { font-size: 15px; flex: none; }
 .ifx-toast-body b { display: block; font-size: 12.5px; margin-bottom: 1px; }
 .ifx-toast-body span { font-size: 11px; color: var(--ifx-shell-text-muted); }
+/* Phase R9 -- radar early-alert toast: same shape, a distinct accent
+   (not the fired-signal accent color) so the two are never visually
+   confused, matching R6's whole point of keeping "watch" and "trade"
+   language/color separate. */
+.ifx-toast--radar { border-left-color: var(--ifx-warn); }
 
 .ifx-sound-switch {
   position: fixed; bottom: 54px; right: 14px; z-index: 999; width: 30px; height: 30px;

@@ -1402,25 +1402,22 @@ async def get_tick(request):
     return web.json_response(result)
 
 
-@routes.get("/api/ticks")
-async def list_ticks(request):
-    """Bulk tick data for all tracked symbols.
+async def _build_ticks(redis, sector_filter: str = "", tier_filter: str = "") -> list[dict]:
+    """The real work behind GET /api/ticks -- pulled out to a plain
+    function (Phase R9) so the radar-alert sweep (api/radar_alert_queue.py)
+    can call the exact same tier/score computation the dashboard sees,
+    in-process, with no HTTP round-trip and no second copy of this ~250-
+    line pipeline to keep in sync. list_ticks() below is now a thin
+    query-param-parsing wrapper around this.
 
     Uses Redis pipeline to fetch all tick hashes in one round-trip.
-    Returns array of tick objects for dashboard virtual scroll.
-
-    Query params:
-      ?sector={sector_id}  — filter by sector
-      ?tier={nifty50|nifty100|nifty200|nifty500} — filter by index membership
+    Returns a list of tick dicts (same shape as before this refactor's
+    values, just not yet wrapped in {"count", "ticks"}).
     """
-    redis = request.app["redis"]
-    sector_filter = request.query.get("sector", "").upper()
-    tier_filter = request.query.get("tier", "").upper()
-
     # Get symbol list from infusion:symbols hash
     all_symbols = await redis.hgetall("infusion:symbols")
     if not all_symbols:
-        return web.json_response({"count": 0, "ticks": []})
+        return []
 
     # Parse symbol metadata and apply filters
     symbols_to_fetch = []
@@ -1455,7 +1452,7 @@ async def list_ticks(request):
             continue
 
     if not symbols_to_fetch:
-        return web.json_response({"count": 0, "ticks": []})
+        return []
 
     index_context = await _scanner_index_context(redis)
     fo_ban_context = await _fo_ban_context(redis)
@@ -1690,6 +1687,23 @@ async def list_ticks(request):
 
     await _write_vwap_state_context(redis, vwap_state_updates)
 
+    return ticks
+
+
+@routes.get("/api/ticks")
+async def list_ticks(request):
+    """Bulk tick data for all tracked symbols. See _build_ticks() above
+    for the real work -- this just parses query params and wraps the
+    result.
+
+    Query params:
+      ?sector={sector_id}  — filter by sector
+      ?tier={nifty50|nifty100|nifty200|nifty500} — filter by index membership
+    """
+    redis = request.app["redis"]
+    sector_filter = request.query.get("sector", "").upper()
+    tier_filter = request.query.get("tier", "").upper()
+    ticks = await _build_ticks(redis, sector_filter, tier_filter)
     return web.json_response({"count": len(ticks), "ticks": ticks})
 
 
