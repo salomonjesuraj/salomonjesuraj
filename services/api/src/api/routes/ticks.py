@@ -1047,6 +1047,9 @@ def _decode_mtf_cache(raw) -> dict:
             # scanner table wants the full component breakdown for a
             # tooltip, not just the headline score.
             "vcp": payload.get("vcp") or {},
+            # Chartink-comparison filter, see api/daily_trend_filter.py --
+            # same passthrough-from-cached-mtf-payload pattern as vcp above.
+            "daily_trend": payload.get("daily_trend") or {},
         }
     except (json.JSONDecodeError, TypeError, ValueError):
         return {}

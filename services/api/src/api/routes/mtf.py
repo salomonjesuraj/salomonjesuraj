@@ -20,6 +20,7 @@ from aiohttp import web
 from api.chart_patterns import fractal_pivots_indexed, detect_chart_patterns
 from api.wyckoff import detect_structural_failure, detect_shortening_of_thrust, detect_sos_sow_bar
 from api.vcp import compute_vcp
+from api.daily_trend_filter import compute_daily_trend_filter
 
 routes = web.RouteTableDef()
 
@@ -838,6 +839,12 @@ async def compute_mtf(redis, symbol: str, store: bool = True) -> dict:
     wyckoff_sos_sow = detect_sos_sow_bar(daily) if daily else None
     week52 = _week52_stats(daily, current_ltp)
     vcp = compute_vcp(daily, nifty_daily, current_ltp) if daily else {"available": False, "score": None, "reason": "No daily bar history"}
+    # User asked why a real Chartink daily-trend screener surfaces different
+    # names than our live Radar -- answer: different questions (daily trend
+    # regime vs. live intraday evidence), see api/daily_trend_filter.py's own
+    # header. This gives that comparison a real surface instead of leaving
+    # it as two disconnected tools.
+    daily_trend = compute_daily_trend_filter(daily) if daily else {"available": False, "reason": "No daily bar history", "pass": False, "pass_count": 0, "total": 14, "conditions": {}}
     quality = "historical" if any(row["bars"] for row in timeframes.values()) else "missing"
     if any(row["quality"] == "limited" for row in timeframes.values()) and quality == "historical":
         quality = "limited"
@@ -874,6 +881,7 @@ async def compute_mtf(redis, symbol: str, store: bool = True) -> dict:
         "donchian": donchian,
         "week52": week52,
         "vcp": vcp,
+        "daily_trend": daily_trend,
         "wyckoff_structural_failure": wyckoff_structural_failure,
         "wyckoff_sot": wyckoff_sot,
         "wyckoff_sos_sow": wyckoff_sos_sow,

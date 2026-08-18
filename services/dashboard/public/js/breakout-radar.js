@@ -42,6 +42,14 @@ const COLUMNS = [
   { key: 'stock_breakout_score', label: 'Score', width: 84, toggle: false },
   { key: 'stock_breakout_tier', label: 'Tier', width: 118, toggle: false },
   { key: 'freshness', label: 'Fresh', width: 68, toggle: true },
+  // Daily Trend: a literal replica of a real, popular Chartink screener
+  // ("FNO stocks bullish trend scanner", 14 daily-bar conditions) the user
+  // pointed at, asking why this Radar surfaces different names -- answer:
+  // different questions (daily trend REGIME vs. live intraday EVIDENCE).
+  // See api/daily_trend_filter.py's own header for the full comparison.
+  // Opt-in, off by default -- this is a second, complementary read, not
+  // a replacement for the Radar's own live score/tier.
+  { key: 'daily_trend', label: 'Daily Trend', width: 118, toggle: true, defaultHidden: true },
 ];
 
 function visibleColumns(hidden) {
@@ -131,6 +139,28 @@ function freshnessHtml(item) {
   return `<span class="ifx-mono ${tone}">${text}</span>`;
 }
 
+// Daily Trend column: honest 3-state, not a binary pass/fail --
+// "not covered" (fewer than 51 cached daily bars for this symbol; the mtf
+// warmup queue hasn't reached it yet, or it's genuinely new to the F&O
+// list) must never look like "fails the filter". See
+// api/daily_trend_filter.py for the 14 conditions themselves.
+function dailyTrendHtml(item) {
+  const dt = item.daily_trend;
+  if (!dt || !dt.available) {
+    return `<span class="ifx-scr-dash" title="Daily bar history hasn't warmed up for this symbol yet -- not a fail, just not computed">${DASH}</span>`;
+  }
+  const { pass, pass_count: passCount, total, conditions } = dt;
+  const failed = Object.entries(conditions || {})
+    .filter(([, v]) => !v)
+    .map(([k]) => k.replace(/_/g, ' '))
+    .join(', ');
+  const title = pass
+    ? `Passes all ${total} of the Chartink bullish-trend conditions`
+    : `Fails: ${failed || 'unknown'}`;
+  const tone = pass ? 'ifx-tone-good' : passCount >= total - 2 ? '' : 'ifx-tone-faint';
+  return `<span class="ifx-mono ${tone}" title="${escapeHtml(title)}">${pass ? '✓ ' : ''}${passCount}/${total}</span>`;
+}
+
 export class BreakoutRadarPanel {
   constructor(containerEl) {
     this._el = containerEl;
@@ -144,7 +174,7 @@ export class BreakoutRadarPanel {
     this._hidden = new Set();
     // Filter toggles -- reference plan's filter list, minus the
     // sector-top-3 one (needs the deferred sector/index-RS work, R8).
-    this._filters = { rvol2: false, nearHigh: false, aboveVwap: false, excludeNoChase: false };
+    this._filters = { rvol2: false, nearHigh: false, aboveVwap: false, excludeNoChase: false, dailyTrend: false };
   }
 
   init() {
@@ -153,6 +183,12 @@ export class BreakoutRadarPanel {
       const saved = JSON.parse(localStorage.getItem('infusion:breakout-radar:hidden:v1') || '[]');
       this._hidden = new Set(saved);
     } catch (_) {}
+    // defaultHidden columns start hidden on a fresh install, but a user who
+    // explicitly re-enabled one shouldn't have it silently re-hidden again
+    // on the next reload -- the ':shown' marker (written in the checkbox
+    // handler below) records that explicit choice.
+    COLUMNS.filter((c) => c.defaultHidden && !this._hidden.has(c.key + ':shown'))
+      .forEach((c) => this._hidden.add(c.key));
 
     this._el.classList.add('ifx-scr-v2');
     this._el.innerHTML = `
@@ -163,6 +199,7 @@ export class BreakoutRadarPanel {
           <button type="button" class="ifx-radar-filter-btn" data-filter="nearHigh">Near day high</button>
           <button type="button" class="ifx-radar-filter-btn" data-filter="aboveVwap">Above VWAP</button>
           <button type="button" class="ifx-radar-filter-btn" data-filter="excludeNoChase">Exclude no-chase</button>
+          <button type="button" class="ifx-radar-filter-btn" data-filter="dailyTrend" title="Passes all 14 conditions of the real Chartink FNO bullish-trend screener -- a daily trend-regime read, separate from this table's own live intraday score">Daily Trend (Chartink)</button>
         </div>
         <span class="ifx-scr-count" id="radarCount"></span>
         <button type="button" class="ifx-scr-col-toggle-btn" id="radarColToggle" title="Show/hide columns">Columns</button>
@@ -247,8 +284,14 @@ export class BreakoutRadarPanel {
     `).join('');
     panel.querySelectorAll('input[type=checkbox]').forEach((cb) => {
       cb.addEventListener('change', () => {
-        if (cb.checked) this._hidden.delete(cb.dataset.col);
-        else this._hidden.add(cb.dataset.col);
+        const col = COLUMNS.find((c) => c.key === cb.dataset.col);
+        if (cb.checked) {
+          this._hidden.delete(cb.dataset.col);
+          if (col && col.defaultHidden) this._hidden.add(cb.dataset.col + ':shown');
+        } else {
+          this._hidden.add(cb.dataset.col);
+          this._hidden.delete(cb.dataset.col + ':shown');
+        }
         try { localStorage.setItem('infusion:breakout-radar:hidden:v1', JSON.stringify([...this._hidden])); } catch (_) {}
         this._buildHead();
         if (this._vscroll) this._vscroll.refresh();
@@ -264,6 +307,7 @@ export class BreakoutRadarPanel {
       case 'change_pct': return Number(item.change_pct || 0);
       case 'rel_vol': return Number(item.rel_vol || 0);
       case 'vwap_state': return String(item.vwap_state || '');
+      case 'daily_trend': return item.daily_trend?.available ? Number(item.daily_trend.pass_count || 0) : -1;
       default:
         // stock_breakout_score (default sort), tiebreak rvol_rank (lower
         // rank = higher volume, so invert it into the same "higher is
@@ -281,6 +325,7 @@ export class BreakoutRadarPanel {
     }
     if (this._filters.aboveVwap && item.vwap_state !== 'ABOVE') return false;
     if (this._filters.excludeNoChase && item.stock_breakout_tier === 'NO_CHASE') return false;
+    if (this._filters.dailyTrend && !(item.daily_trend && item.daily_trend.pass)) return false;
     return true;
   }
 
@@ -322,6 +367,7 @@ export class BreakoutRadarPanel {
       stock_breakout_score: scoreHtml(item),
       stock_breakout_tier: tierHtml(item),
       freshness: freshnessHtml(item),
+      daily_trend: dailyTrendHtml(item),
     };
     const leftKeys = new Set(['symbol', 'sector_id']);
     const cells = visibleColumns(this._hidden)
