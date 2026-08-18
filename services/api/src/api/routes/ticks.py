@@ -180,6 +180,94 @@ def _apply_fo_ban_context(entry: dict, symbol: str, context: dict) -> None:
     entry["fo_ban_trade_date"] = context.get("trade_date")
 
 
+async def _vwap_state_context(redis, symbols: list[str]) -> dict:
+    """Phase R2 -- previous poll's VWAP state per symbol, needed to tell a
+    genuine reclaim (was BELOW, now ABOVE) apart from a sustained
+    continuation (was already ABOVE). One bulk MGET across every symbol
+    per request, not a per-row round trip -- same shape as
+    _fo_ban_context's one-SMEMBERS-not-208-SISMEMBERs reasoning above.
+    """
+    if not symbols:
+        return {}
+    keys = [f"infusion:vwap-state:{s}" for s in symbols]
+    values = await redis.mget(keys)
+    result = {}
+    for symbol, raw in zip(symbols, values):
+        if raw:
+            result[symbol] = raw.decode() if isinstance(raw, bytes) else raw
+    return result
+
+
+async def _write_vwap_state_context(redis, updates: dict) -> None:
+    """Batched write-back of this request's VWAP states, for the *next*
+    request to diff against -- one pipeline for up to 208 symbols, not
+    208 round trips. Every key carries its own EXPIRE: this is a small
+    transition-detection cache, not meant to grow into a permanent,
+    ever-accumulating Redis surface across 208 symbols x every trading
+    day. 6h comfortably spans a full session (09:15-15:30 IST) plus
+    normal poll-gap slack; a symbol that stops updating (feed gap,
+    delisting) ages out on its own rather than lingering.
+    """
+    if not updates:
+        return
+    pipe = redis.pipeline(transaction=False)
+    for symbol, state in updates.items():
+        pipe.set(f"infusion:vwap-state:{symbol}", state, ex=6 * 3600)
+    await pipe.execute()
+
+
+def _classify_breakout_type(entry: dict, prev_vwap_state: str | None) -> str | None:
+    """Phase R2 -- one breakout-type label per row, priority-ordered
+    (most specific / most transitional wins). Every input is already on
+    `entry` by the time this runs (from _scanner_intel, plus the
+    vwap-state context passed in) -- pure classification over evidence
+    that already exists, no new computation.
+    """
+    vwap_state = entry.get("vwap_state")
+    day_high = entry.get("day_high")
+    day_low = entry.get("day_low")
+    ltp = float(entry.get("ltp") or 0)
+    rel_vol = float(entry.get("rel_vol") or 0)
+    anti_chase_ok = bool(entry.get("anti_chase_ok"))
+    chase_quality = entry.get("chase_quality")
+
+    # 1. VWAP reclaim/rejection -- a genuine transition, not a snapshot.
+    if prev_vwap_state == "BELOW" and vwap_state == "ABOVE":
+        return "vwap_reclaim"
+    if prev_vwap_state == "ABOVE" and vwap_state == "BELOW":
+        return "vwap_rejection"
+
+    # 2. Fresh day-high/day-low break -- direction-aware, mirrors R1's
+    # price-location component. The reference plan names only "Day High
+    # Break"; "Day Low Break" is the natural symmetric extension for the
+    # bearish (BUY PE) side this whole system already treats
+    # symmetrically everywhere else.
+    if day_high and ltp >= day_high:
+        return "day_high_break"
+    if day_low and ltp <= day_low:
+        return "day_low_break"
+
+    # 3. Sustained continuation on the correct side of VWAP -- gated on
+    # at least modest elevated volume (1.3x, softer than volume_surge's
+    # 2.0x) so "happens to be above VWAP with nothing else going on"
+    # (true for roughly half the universe on any given day) doesn't get
+    # labeled as if it were active breakout evidence.
+    if vwap_state == "ABOVE" and rel_vol >= 1.3:
+        return "above_vwap_continuation"
+    if vwap_state == "BELOW" and rel_vol >= 1.3:
+        return "below_vwap_continuation"
+
+    # 4. Volume alone, nothing else above qualified.
+    if rel_vol >= 2.0:
+        return "volume_surge"
+
+    # 5. Explicitly a bad chase -- worth a label, not just silence.
+    if not anti_chase_ok or chase_quality == "NO_CHASE":
+        return "failed_no_chase"
+
+    return None
+
+
 def _decode_hash(data: dict) -> dict:
     result = {}
     for k, v in data.items():
@@ -1257,6 +1345,8 @@ async def list_ticks(request):
 
     index_context = await _scanner_index_context(redis)
     fo_ban_context = await _fo_ban_context(redis)
+    vwap_state_context = await _vwap_state_context(redis, symbols_to_fetch)
+    vwap_state_updates: dict[str, str] = {}
 
     # Pipeline: fetch tick, feature, pre-breakout, sector, MTF, cached news edge,
     # event calendar, and selected-symbol Upstox option-chain confirmation in
@@ -1303,6 +1393,14 @@ async def list_ticks(request):
             _apply_index_context(entry, index_context)
             _apply_fo_ban_context(entry, symbol, fo_ban_context)
             entry.update(_scanner_intel(entry, features, prebreak, sector_strength))
+            # Phase R2 -- breakout_type classification. Needs the prior
+            # poll's VWAP state (fetched once, in bulk, above) to tell a
+            # reclaim apart from a continuation; the new state is queued
+            # here and written back in one batched pipeline after the
+            # loop, not per-row.
+            entry["breakout_type"] = _classify_breakout_type(entry, vwap_state_context.get(symbol))
+            if entry.get("vwap_state") in {"ABOVE", "BELOW"}:
+                vwap_state_updates[symbol] = entry["vwap_state"]
             # Phase 13.5/13.7: VWAP SD bands, Heiken-Ashi, delivery % --
             # informational-only fields feature-engine already computes,
             # passed straight through (no derivation needed here, unlike
@@ -1405,6 +1503,8 @@ async def list_ticks(request):
     by_rvol = sorted(ticks, key=lambda e: float(e.get("rel_vol") or 0), reverse=True)
     for rank, entry in enumerate(by_rvol, start=1):
         entry["rvol_rank"] = rank
+
+    await _write_vwap_state_context(redis, vwap_state_updates)
 
     return web.json_response({"count": len(ticks), "ticks": ticks})
 
