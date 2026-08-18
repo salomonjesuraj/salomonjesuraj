@@ -36,7 +36,8 @@ import { initModeSwitch } from './mode-switch.js?v=8.0.0-new-shell';
 import { CockpitV2Panel } from './cockpit-v2.js?v=8.0.0-new-shell';
 import { WatchStripV2Panel } from './watch-strip-v2.js?v=8.0.0-new-shell';
 import { ScannerV2Panel } from './scanner-v2.js?v=noise-reduction-3';
-import { initRailV2 } from './rail-v2.js?v=noise-reduction-5';
+import { BreakoutRadarPanel } from './breakout-radar.js?v=radar-r3-1';
+import { initRailV2 } from './rail-v2.js?v=radar-r3-1';
 import { TrackRecordV2Panel } from './track-record-v2.js?v=8.0.0-new-shell';
 import { SignalAlertV2 } from './signal-alert-v2.js?v=8.0.0-new-shell';
 import { IntegrityPanelV2 } from './integrity-panel-v2.js?v=8.0.0-new-shell';
@@ -122,6 +123,10 @@ class InfusionApp {
     const scannerV2 = new ScannerV2Panel(document.getElementById('scannerV2'));
     scannerV2.init();
     this._panels.push(scannerV2);
+
+    const breakoutRadarV2 = new BreakoutRadarPanel(document.getElementById('breakoutRadarV2'));
+    breakoutRadarV2.init();
+    this._panels.push(breakoutRadarV2);
 
     const trackRecordV2 = new TrackRecordV2Panel(document.getElementById('trackRecordV2'));
     trackRecordV2.init();

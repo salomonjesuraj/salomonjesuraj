@@ -1455,6 +1455,18 @@
 .ifx-scr-col-label:hover { color: var(--ifx-shell-text); }
 .ifx-scr-targets-more { color: var(--ifx-shell-text-faint); font-weight: 700; }
 
+/* Phase R3 -- Stock Breakout Radar's filter pills (RVol>=2, near day
+   high, above VWAP, exclude no-chase). Same pill shape as the column-
+   toggle button above, just multiplied and made stateful (.active). */
+.ifx-radar-filters { display: flex; gap: 6px; flex-wrap: wrap; }
+.ifx-radar-filter-btn {
+  padding: 6px 11px; border-radius: 999px; border: 1px solid var(--ifx-shell-border);
+  background: var(--ifx-shell-surface); color: var(--ifx-shell-text-faint); font-size: var(--ifx-text-xs);
+  font-weight: 700; cursor: pointer; white-space: nowrap;
+}
+.ifx-radar-filter-btn:hover { color: var(--ifx-shell-text); border-color: var(--ifx-accent); }
+.ifx-radar-filter-btn.active { background: var(--ifx-accent-dim); color: var(--ifx-accent); border-color: var(--ifx-accent); }
+
 .ifx-scr-table-wrap { border: 1px solid var(--ifx-shell-border); border-radius: var(--ifx-radius-lg); overflow: hidden; background: var(--ifx-shell-surface); }
 .ifx-scr-head {
   display: grid; grid-template-columns: var(--ifx-scr-grid);

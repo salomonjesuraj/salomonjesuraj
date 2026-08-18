@@ -14,6 +14,10 @@
  */
 const GROUPS = ['Screener & Detail', 'Options', 'Backtest & Optimizer', 'Execution & Journal', 'Info'];
 const ROWS = [
+  // Phase R3 -- Stock Breakout Radar, first in its group per the reference
+  // plan's "first and largest panel" framing (docs/stock-options-
+  // dashboard-review-and-structure-plan.md).
+  { key: 'breakout-radar', icon: '📡', label: 'Breakout Radar', group: 'Screener & Detail' },
   { key: 'watchlist', icon: '◑', label: 'Watchlist', group: 'Screener & Detail' },
   { key: 'stock-detail', icon: '◎', label: 'Stock Detail', group: 'Screener & Detail' },
   { key: 'triggers', icon: '▲', label: 'Triggers', group: 'Screener & Detail' },
