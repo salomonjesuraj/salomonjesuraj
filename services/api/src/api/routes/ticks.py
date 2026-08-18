@@ -699,6 +699,62 @@ def _scanner_intel(entry: dict, features: dict, prebreak: dict | None = None, se
         sustain_tf = "No entry"
         horizon_reason = "Alignment/volume/contract readiness not sufficient."
 
+    # ── Stock Breakout Score (Phase R1) ─────────────────────────
+    # Ranks the UNDERLYING's own breakout evidence, independent of option-
+    # chain readiness -- see docs/stock-options-dashboard-review-and-
+    # structure-plan.md. Every input below is already computed above in
+    # this same function; no new I/O. Honest 0-90 scale: the reference
+    # plan's remaining 10 points (sector/index relative strength) aren't
+    # computed yet (needs new opening-range + index-RS infra, deferred),
+    # so this is never silently padded up to look like a completed
+    # 100-point model -- see STOCK_BREAKOUT_SCORE_MAX below.
+    volume_profile_ready = str(features.get("volume_profile_ready") or "") == "True"
+    # rel_vol reads as a bare 0.0 when the symbol's 20-session volume
+    # profile hasn't bootstrapped (feature_engine/features/volume.py) --
+    # that's "unknown", not "genuinely quiet", so this component is
+    # explicitly zeroed (not just naturally low) until the profile is
+    # ready, rather than letting a missing baseline masquerade as real
+    # evidence of low volume.
+    rvol_component = (min(rel_vol / 3.0, 1.0) * 25.0) if volume_profile_ready else 0.0
+    day_range = max(day_high - day_low, 0.0)
+    if is_sell_bias:
+        at_fresh_extreme = day_low > 0 and ltp <= day_low
+        dist_pct = (ltp - day_low) / day_range if day_range > 0 else 1.0
+    else:
+        at_fresh_extreme = day_high > 0 and ltp >= day_high
+        dist_pct = (day_high - ltp) / day_range if day_range > 0 else 1.0
+    price_location_component = (max(0.0, 1.0 - dist_pct) * 20.0) if day_range > 0 else 0.0
+    fresh_extreme_component = 15.0 if at_fresh_extreme else 0.0
+    if (above_vwap and ema_stack_bull) or (below_vwap and ema_stack_bear):
+        vwap_ema_component = 15.0
+    elif (above_vwap and ema_bull) or (below_vwap and ema_bear):
+        vwap_ema_component = 10.0
+    else:
+        vwap_ema_component = 0.0
+    mtf_alignment_component = (max(bull_mtf, bear_mtf) / 6.0) * 10.0
+    no_chase_component = 5.0 if not anti_chase_reasons else 0.0
+    stock_breakout_score = round(
+        rvol_component + price_location_component + fresh_extreme_component
+        + vwap_ema_component + mtf_alignment_component + no_chase_component,
+        1,
+    )
+    STOCK_BREAKOUT_SCORE_MAX = 90.0
+    # Reference plan's thresholds (>=70/100 BREAKOUT_NOW, >=55/100 shows
+    # at all) reinterpreted proportionally against the real 90-point max.
+    if stock_breakout_score >= 63.0:
+        stock_breakout_tier = (
+            "BREAKOUT_NOW"
+            if (not anti_chase_reasons and chase_quality in {"HIGHLY_CHASEABLE", "CLEAN"})
+            else "RETEST_ENTRY"
+        )
+    elif stock_breakout_score >= 49.5:
+        stock_breakout_tier = "EARLY_WATCH"
+    else:
+        stock_breakout_tier = "NO_CHASE"
+    # OPTION_READY (needs real chain data, not available inside this pure
+    # function) is applied as a tier upgrade later in list_ticks(), once
+    # option_summary has been merged into the row.
+
     # Broker-style trade-card fields -- see _potential_upside_pct/
     # _trade_horizon_label docstrings for why downside% isn't included
     # symmetrically (stop_hint is entry-relative, not LTP-relative, so it
@@ -861,6 +917,15 @@ def _scanner_intel(entry: dict, features: dict, prebreak: dict | None = None, se
         },
         "strength_reasons": strength_reasons[:6],
         "weakness_reasons": weakness_reasons[:5],
+        # Phase R1 -- Stock Breakout Radar (docs/stock-options-dashboard-
+        # review-and-structure-plan.md). Ranks the underlying's own
+        # breakout evidence, independent of option-chain readiness.
+        "stock_breakout_score": stock_breakout_score,
+        "stock_breakout_score_max": STOCK_BREAKOUT_SCORE_MAX,
+        "stock_breakout_tier": stock_breakout_tier,
+        "volume_profile_ready": volume_profile_ready,
+        "day_high": round(day_high, 2) if day_high > 0 else None,
+        "day_low": round(day_low, 2) if day_low > 0 else None,
     }
 
 
@@ -1288,6 +1353,15 @@ async def list_ticks(request):
                     "option_chain_ready": True,
                     "option_chain_source": "upstox_chain_cached",
                 })
+                # Phase R1 tier upgrade -- OPTION_READY needs real chain
+                # data, which isn't available inside _scanner_intel's pure
+                # computation. A stock already ranked BREAKOUT_NOW/
+                # RETEST_ENTRY on its own evidence graduates to
+                # OPTION_READY once the contract itself is confirmed
+                # tradeable; never downgrades or invents readiness the
+                # stock score didn't already earn.
+                if entry.get("stock_breakout_tier") in {"BREAKOUT_NOW", "RETEST_ENTRY"} and entry.get("chain_trade_ready"):
+                    entry["stock_breakout_tier"] = "OPTION_READY"
                 metrics = option_summary.get("metrics") if isinstance(option_summary.get("metrics"), dict) else {}
                 if metrics:
                     entry.update({
@@ -1322,6 +1396,15 @@ async def list_ticks(request):
             )
             continue
         ticks.append(entry)
+
+    # Phase R1 -- rvol_rank needs the full set to rank against, so it's a
+    # cheap second pass over the already-built list rather than something
+    # any single row can compute for itself. 1 = highest relative volume
+    # in this response. Ties keep stable insertion order (Python sort is
+    # stable), not a real concern at this granularity.
+    by_rvol = sorted(ticks, key=lambda e: float(e.get("rel_vol") or 0), reverse=True)
+    for rank, entry in enumerate(by_rvol, start=1):
+        entry["rvol_rank"] = rank
 
     return web.json_response({"count": len(ticks), "ticks": ticks})
 
