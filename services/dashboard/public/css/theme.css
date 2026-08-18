@@ -23,6 +23,26 @@
      v2 makes it deliberate and consistent both ways).
    ═══════════════════════════════════════════════════════════════════════ */
 
+/* ── Color refresh (2026-08) ───────────────────────────────────────────
+   Every value below is WCAG contrast-checked against every real
+   background it's used on (shell chrome, paper content panels, and --
+   new this pass -- a genuinely light shell), not eyeballed. Two real,
+   measured bugs drove this: (1) [data-theme="light"] never actually
+   lightened the shell -- it kept a near-black bg while shell-text stayed
+   the same pale ink, so switching themes changed almost nothing and (2)
+   several semantic colors (bull green, info blue, the accent gold used
+   as literal text) were tuned for a dark background only and dropped as
+   low as 1.1:1 contrast against the light "paper" content panels this
+   app always uses for its cards -- a WCAG failure that's the direct
+   cause of "text not visible."
+
+   Bull/bear/info/risk are now single values used unchanged in both
+   themes (paper panels are the same near-white in light AND dark mode
+   by design -- "a dark console holding light paper panels" -- so a
+   semantic color has to read against both a dark shell and light paper
+   regardless of which theme is active; these hexes were chosen to clear
+   4:1+ against both). Only the shell chrome and the gold accent's
+   text-safe variant actually need different values per theme. */
 :root,
 [data-theme="dark"] {
   /* Ink scale */
@@ -33,20 +53,21 @@
   --ifx-ink-700: #262740;
   --ifx-ink-600: #363758;
   --ifx-ink-500: #4d4e78;
-  --ifx-ink-400: #6f7099;
+  --ifx-ink-400: #7e7fa8;
   --ifx-ink-300: #9899bb;
   --ifx-ink-200: #c3c4dc;
   --ifx-ink-100: #e6e6f2;
   --ifx-ink-50:  #f5f5fa;
 
-  /* Paper scale (light content surfaces, used inside the dark console shell) */
+  /* Paper scale (light content surfaces, used inside the console shell
+     in BOTH themes -- a deliberate, unchanged choice) */
   --ifx-paper-0: #ffffff;
   --ifx-paper-50: #f8f7f4;
   --ifx-paper-100: #f1efe9;
   --ifx-paper-200: #e5e2d8;
   --ifx-paper-ink: #1a1b29;
   --ifx-paper-ink-muted: #52536e;
-  --ifx-paper-ink-faint: #86869e;
+  --ifx-paper-ink-faint: #6b6c86;
   --ifx-paper-border: #e2e0d5;
 
   /* Console shell (chrome — header/nav/footer/sector strip) */
@@ -67,23 +88,40 @@
   --ifx-content-text-muted: var(--ifx-paper-ink-muted);
   --ifx-content-text-faint: var(--ifx-paper-ink-faint);
 
-  /* Accent — warm amber-gold, not the generic SaaS blue */
+  /* Accent — warm amber-gold. --ifx-accent is the bright FILL color
+     (badge/button backgrounds, always paired with --ifx-accent-ink for
+     the text sitting on top of it -- 7.95:1, safe). --ifx-accent-strong
+     is what to reach for whenever gold is the TEXT color itself against
+     shell/paper (never the bare --ifx-accent for that -- at 9.14:1 on
+     the dark shell it's fine, but the light theme's version below drops
+     to a gold too bright to read on white, which is exactly the
+     brand-mark bug this pass fixes). */
   --ifx-accent: #e8a33d;
-  --ifx-accent-strong: #c9821e;
+  --ifx-accent-strong: #e8a33d;
   --ifx-accent-dim: rgba(232,163,61,.16);
   --ifx-accent-ink: #241a06;
+  /* --ifx-accent-on-paper: gold used as TEXT specifically inside a
+     "paper" (always-white/near-white) content zone -- .ifx-scanner rows,
+     .ifx-pulse cards. Unlike --ifx-accent-strong (which correctly tracks
+     the *shell*'s theme -- bright on the dark shell, dark on the light
+     shell), paper content stays the same near-white in BOTH themes, so
+     this token stays the same dark, text-safe gold in both blocks too
+     (5.94:1 on white) -- never redefined in the light block below. */
+  --ifx-accent-on-paper: #8f5709;
 
-  /* Semantic (financial convention preserved; refined shades) */
-  --ifx-bull: #14b88a;
-  --ifx-bull-strong: #0e9c73;
-  --ifx-bull-dim: rgba(20,184,138,.14);
-  --ifx-bear: #ee4360;
-  --ifx-bear-strong: #d5304c;
-  --ifx-bear-dim: rgba(238,67,96,.14);
+  /* Semantic (financial convention preserved; single value per meaning,
+     verified 4:1+ against both the dark shell and the always-light
+     paper panels -- see header note above). */
+  --ifx-bull: #0c8763;
+  --ifx-bull-strong: #0a7355;
+  --ifx-bull-dim: rgba(12,135,99,.16);
+  --ifx-bear: #d5304c;
+  --ifx-bear-strong: #b02039;
+  --ifx-bear-dim: rgba(213,48,76,.16);
   --ifx-warn: #e8a33d;
   --ifx-warn-dim: rgba(232,163,61,.16);
-  --ifx-info: #4d8ef0;
-  --ifx-info-dim: rgba(77,142,240,.14);
+  --ifx-info: #3b78d8;
+  --ifx-info-dim: rgba(59,120,216,.16);
   /* Phase N2 -- added for Chain Favour (New shell only, Phase N4): a
      4-state PCR-derived read (Bullish/Flatish/Risk/Bearish) needs two
      tones bull/bear/warn/info don't cover. --ifx-warn is already used
@@ -92,21 +130,22 @@
      a distinct violet keeps them visually separate. --ifx-flat is a
      deliberately quiet neutral (not shell-text-faint, which already
      means "de-emphasized/disabled" elsewhere) for "no read, not a
-     signal." Exact hex values carried over from the approved mockup for
-     continuity, not re-derived. */
-  --ifx-risk: #b07cf7;
-  --ifx-risk-strong: #8b4fe8;
-  --ifx-risk-dim: rgba(176,124,247,.16);
-  --ifx-flat: #8488ab;
-  --ifx-flat-dim: rgba(132,136,171,.14);
+     signal." */
+  --ifx-risk: #9456e8;
+  --ifx-risk-strong: #7d3fd4;
+  --ifx-risk-dim: rgba(148,86,232,.16);
+  --ifx-flat: #7e7fa8;
+  --ifx-flat-dim: rgba(126,127,168,.16);
 
   /* Grade / conviction — single source of truth, used everywhere a grade
-     or conviction tier is shown (cards, badges, table rows). */
-  --ifx-grade-aplus: #14b88a;
-  --ifx-grade-a: #4d8ef0;
-  --ifx-grade-bplus: #e8a33d;
-  --ifx-grade-b: #9899bb;
-  --ifx-grade-c: #6f7099;
+     or conviction tier is shown (cards, badges, table rows). References
+     the semantic tokens above so a grade's color is always the same
+     verified-safe shade a badge/pill of that meaning uses anywhere else. */
+  --ifx-grade-aplus: var(--ifx-bull);
+  --ifx-grade-a: var(--ifx-info);
+  --ifx-grade-bplus: var(--ifx-accent-strong);
+  --ifx-grade-b: var(--ifx-ink-300);
+  --ifx-grade-c: var(--ifx-ink-400);
 
   --ifx-shadow-sm: 0 1px 3px rgba(6,6,14,.30);
   --ifx-shadow-md: 0 10px 28px rgba(6,6,14,.34);
@@ -115,13 +154,19 @@
 }
 
 [data-theme="light"] {
-  --ifx-shell-bg: #14152a;
-  --ifx-shell-surface: #1a1b33;
-  --ifx-shell-raised: #21223d;
-  --ifx-shell-border: #33355a;
-  --ifx-shell-text: var(--ifx-ink-100);
-  --ifx-shell-text-muted: var(--ifx-ink-300);
-  --ifx-shell-text-faint: var(--ifx-ink-400);
+  /* Real light shell now (previously stayed near-black, ~14152a, with
+     shell-text tokens unchanged -- the confirmed root cause of invisible
+     header text: 1.1:1 contrast). A deliberate change from this file's
+     original "dark console always" comment -- the user asked for a
+     light mode that's actually visible, and a header that silently
+     stays dark defeats that. */
+  --ifx-shell-bg: #f6f5f2;
+  --ifx-shell-surface: #ffffff;
+  --ifx-shell-raised: #ffffff;
+  --ifx-shell-border: #e2e0d8;
+  --ifx-shell-text: #1a1b29;
+  --ifx-shell-text-muted: #52536e;
+  --ifx-shell-text-faint: #6b6c86;
 
   --ifx-content-bg: #faf9f6;
   --ifx-content-surface: #ffffff;
@@ -129,11 +174,26 @@
   --ifx-content-border: #e6e3d9;
   --ifx-content-text: #1a1b29;
   --ifx-content-text-muted: #52536e;
-  --ifx-content-text-faint: #86869e;
+  --ifx-content-text-faint: #6b6c86;
 
-  --ifx-bull: #0e9c73;
-  --ifx-bear: #d5304c;
-  --ifx-accent-ink: #fff8ec;
+  /* --ifx-bull/--ifx-bear/--ifx-info/--ifx-risk intentionally NOT
+     redefined here -- they're the same single verified-safe value in
+     both themes (see the dark block's own comment). */
+  --ifx-accent-strong: #8f5709;  /* the bright base --ifx-accent (9.14:1 on
+     dark shell) drops to 2.2:1 on white -- this is the dark, text-safe
+     gold for the light theme specifically (5.94:1 on white). */
+  --ifx-warn: #8f5709;  /* --ifx-warn is used as TEXT color everywhere
+     (wait/hold chips, chase-quality pills) -- same fix as accent-strong
+     above, same reason. Never used as a raw fill background (only via
+     --ifx-warn-dim's translucent tint, unaffected here), so darkening
+     it doesn't touch any badge's fill, only its text. */
+  /* --ifx-accent-ink deliberately NOT overridden -- it's always used as
+     text ON TOP OF the --ifx-accent fill, which stays the same bright
+     gold in both themes, so it needs to stay the same dark ink in both
+     themes too (7.95:1). The previous light-theme override flipped it
+     to a near-white ink, which is why gold-filled buttons/badges (e.g.
+     "Try New Dashboard") read at a genuinely broken 2.0:1 in light mode. */
+
   --ifx-shadow-sm: 0 1px 2px rgba(20,21,42,.08);
   --ifx-shadow-md: 0 8px 20px rgba(20,21,42,.10);
   --ifx-shadow-lg: 0 16px 36px rgba(20,21,42,.14);
@@ -205,8 +265,8 @@
 .ifx-btn:focus-visible { outline: none; box-shadow: var(--ifx-focus-ring); }
 .ifx-btn.ifx-btn--active {
   background: var(--ifx-accent-dim);
-  border-color: var(--ifx-accent);
-  color: var(--ifx-accent);
+  border-color: var(--ifx-accent-strong);
+  color: var(--ifx-accent-strong);
 }
 .ifx-btn.ifx-btn--on-paper {
   color: var(--ifx-content-text-muted);
@@ -284,7 +344,7 @@
 .ifx-brand-mark {
   display: inline-flex; align-items: center; justify-content: center;
   width: 22px; height: 22px; border-radius: var(--ifx-radius-sm);
-  background: var(--ifx-accent-dim); color: var(--ifx-accent);
+  background: var(--ifx-accent-dim); color: var(--ifx-accent-strong);
   font-family: var(--ifx-font-mono); font-weight: 700; font-size: 11px;
 }
 .ifx-brand-word {
@@ -302,7 +362,7 @@
   color: var(--ifx-shell-text-muted); cursor: pointer; font-size: 13px;
   transition: border-color var(--ifx-fast) var(--ifx-ease), color var(--ifx-fast) var(--ifx-ease);
 }
-.ifx-theme-toggle:hover { color: var(--ifx-accent); border-color: var(--ifx-accent); }
+.ifx-theme-toggle:hover { color: var(--ifx-accent-strong); border-color: var(--ifx-accent-strong); }
 .ifx-theme-toggle:focus-visible { outline: none; box-shadow: var(--ifx-focus-ring); }
 
 .ifx-shell-row { display: flex; flex-wrap: wrap; }
@@ -363,7 +423,7 @@
 .ifx-nav-btn-icon { font-size: 10px; }
 .ifx-nav-btn:hover { color: var(--ifx-shell-text-muted); }
 .ifx-nav-btn:focus-visible { outline: none; box-shadow: var(--ifx-focus-ring); }
-.ifx-nav-btn--active { background: var(--ifx-accent-dim); border-color: var(--ifx-accent); color: var(--ifx-accent); }
+.ifx-nav-btn--active { background: var(--ifx-accent-dim); border-color: var(--ifx-accent-strong); color: var(--ifx-accent-strong); }
 
 /* ── Footer diagnostics bar ─────────────────────────────────────────── */
 .ifx-footer {
@@ -470,7 +530,7 @@
   color: var(--ifx-content-text-faint); font-size: var(--ifx-text-2xs); font-weight: 600;
   cursor: pointer;
 }
-.ifx-pulse-tab--active { background: var(--ifx-accent-dim); border-color: var(--ifx-accent-strong); color: var(--ifx-accent-strong); }
+.ifx-pulse-tab--active { background: var(--ifx-accent-dim); border-color: var(--ifx-accent-strong); color: var(--ifx-accent-on-paper); }
 .ifx-pulse-breadth {
   display: flex; align-items: center; gap: 5px;
   padding: 3px 9px; border-radius: var(--ifx-radius-pill);
@@ -714,7 +774,7 @@
 .ifx-scanner .density-toggle button:hover,
 .ifx-scanner .scanner-action-btn:hover,
 .ifx-scanner .col-toggle-btn:hover { color: var(--ifx-content-text); border-color: var(--ifx-content-text-faint); }
-.ifx-scanner .density-toggle button.active { background: var(--ifx-accent-dim); border-color: var(--ifx-accent-strong); color: var(--ifx-accent-strong); }
+.ifx-scanner .density-toggle button.active { background: var(--ifx-accent-dim); border-color: var(--ifx-accent-on-paper); color: var(--ifx-accent-on-paper); }
 .ifx-scanner .density-toggle { display: flex; gap: 3px; }
 .ifx-scanner .filter-count { font-size: var(--ifx-text-2xs); color: var(--ifx-content-text-faint); white-space: nowrap; margin-left: auto; }
 .ifx-scanner .col-toggle-panel {
@@ -759,7 +819,7 @@
   cursor: pointer; user-select: none; white-space: nowrap; flex-shrink: 0;
 }
 .ifx-scanner .sh:hover { color: var(--ifx-content-text-muted); }
-.ifx-scanner .sh.sorted { color: var(--ifx-accent-strong); }
+.ifx-scanner .sh.sorted { color: var(--ifx-accent-on-paper); }
 .ifx-scanner .sort-arrow { font-size: 8px; margin-left: 2px; }
 .ifx-scanner .scanner-table-zone,
 .ifx-scanner .vscroll-viewport {
@@ -797,7 +857,7 @@
 }
 .ifx-scanner .sc.sticky-freeze { position: sticky; background: inherit; z-index: 5; }
 .ifx-scanner .sym-link { font-weight: 700; color: var(--ifx-content-text); cursor: pointer; font-family: var(--ifx-font-mono); }
-.ifx-scanner .sym-link:hover { color: var(--ifx-accent-strong); }
+.ifx-scanner .sym-link:hover { color: var(--ifx-accent-on-paper); }
 .ifx-scanner .row-quick-stage {
   margin-left: 6px; font-size: 8px; padding: 1px 5px; border-radius: 3px;
   border: 1px solid var(--ifx-content-border); background: transparent; color: var(--ifx-content-text-faint); cursor: pointer;
@@ -840,7 +900,7 @@
 }
 .ifx-scanner .trade-chip.buy, .ifx-scanner .trade-chip.go { background: var(--ifx-bull-dim); color: var(--ifx-bull-strong); }
 .ifx-scanner .trade-chip.sell, .ifx-scanner .trade-chip.reject { background: var(--ifx-bear-dim); color: var(--ifx-bear-strong); }
-.ifx-scanner .trade-chip.hold, .ifx-scanner .trade-chip.wait { background: var(--ifx-warn-dim); color: var(--ifx-warn); }
+.ifx-scanner .trade-chip.hold, .ifx-scanner .trade-chip.wait { background: var(--ifx-warn-dim); color: var(--ifx-accent-on-paper); }
 .ifx-scanner .trade-chip.avoid { background: rgba(0,0,0,.06); color: var(--ifx-content-text-faint); }
 
 .ifx-scanner .grade-chip {
@@ -865,10 +925,10 @@
   font-family: var(--ifx-font-ui); font-size: 8px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase;
   background: var(--ifx-content-bg); color: var(--ifx-content-text-muted);
 }
-.ifx-scanner .horizon-chip.swing { color: var(--ifx-info); } .ifx-scanner .horizon-chip.btst { color: var(--ifx-accent-strong); }
+.ifx-scanner .horizon-chip.swing { color: var(--ifx-info); } .ifx-scanner .horizon-chip.btst { color: var(--ifx-accent-on-paper); }
 .ifx-scanner .horizon-chip.avoid { color: var(--ifx-bear); }
 .ifx-scanner .chase-chip.hot { color: var(--ifx-bull-strong); } .ifx-scanner .chase-chip.clean { color: var(--ifx-bull); }
-.ifx-scanner .chase-chip.wait { color: var(--ifx-warn); } .ifx-scanner .chase-chip.avoid { color: var(--ifx-bear); }
+.ifx-scanner .chase-chip.wait { color: var(--ifx-accent-on-paper); } .ifx-scanner .chase-chip.avoid { color: var(--ifx-bear); }
 .ifx-scanner .mtf-source-chip.historical { color: var(--ifx-bull); } .ifx-scanner .mtf-source-chip.proxy { color: var(--ifx-content-text-faint); }
 
 .ifx-scanner .scanner-score-meter { display: flex; align-items: center; gap: 5px; justify-content: flex-end; }
@@ -885,7 +945,7 @@
 
 /* ── Decision legend, command summary ──────────────────────────────── */
 .ifx-scanner .scanner-decision-legend { display: flex; gap: var(--ifx-space-4); padding: 6px 10px; font-size: var(--ifx-text-2xs); color: var(--ifx-content-text-faint); }
-.ifx-scanner .scanner-decision-legend .go { color: var(--ifx-bull); } .ifx-scanner .scanner-decision-legend .wait { color: var(--ifx-warn); } .ifx-scanner .scanner-decision-legend .reject { color: var(--ifx-bear); }
+.ifx-scanner .scanner-decision-legend .go { color: var(--ifx-bull); } .ifx-scanner .scanner-decision-legend .wait { color: var(--ifx-accent-on-paper); } .ifx-scanner .scanner-decision-legend .reject { color: var(--ifx-bear); }
 
 /* ── Selected Trade Plan card ───────────────────────────────────────
    Real DOM (confirmed by reading scanner.js's _updateMiniTradeCard(),
@@ -927,7 +987,7 @@
 .ifx-scanner .trade-plan-decision > div { display: flex; flex-direction: column; gap: 1px; }
 .ifx-scanner .trade-plan-decision > div span { font-size: 9px; text-transform: uppercase; letter-spacing: .4px; color: var(--ifx-content-text-faint); }
 .ifx-scanner .trade-plan-decision > div b { font-family: var(--ifx-font-mono); font-size: var(--ifx-text-2xl); font-weight: 800; }
-.ifx-scanner .trade-plan-decision.wait > div b { color: var(--ifx-warn); }
+.ifx-scanner .trade-plan-decision.wait > div b { color: var(--ifx-accent-on-paper); }
 .ifx-scanner .trade-plan-decision.watch > div b { color: var(--ifx-info); }
 .ifx-scanner .trade-plan-decision.ce > div b { color: var(--ifx-bull); }
 .ifx-scanner .trade-plan-decision.pe > div b { color: var(--ifx-bear); }
@@ -952,7 +1012,7 @@
   background: var(--ifx-content-bg); border: 1px solid var(--ifx-content-border);
 }
 .ifx-scanner .trade-plan-action span { font-size: 9px; text-transform: uppercase; letter-spacing: .4px; color: var(--ifx-content-text-faint); }
-.ifx-scanner .trade-plan-action b { font-family: var(--ifx-font-mono); font-size: var(--ifx-text-xl); font-weight: 800; color: var(--ifx-accent-strong); }
+.ifx-scanner .trade-plan-action b { font-family: var(--ifx-font-mono); font-size: var(--ifx-text-xl); font-weight: 800; color: var(--ifx-accent-on-paper); }
 .ifx-scanner .trade-plan-action small { font-size: 9px; color: var(--ifx-content-text-faint); }
 
 .ifx-scanner .trade-plan-mode {
@@ -964,7 +1024,7 @@
 .ifx-scanner .trade-plan-mode small { font-size: 9px; color: var(--ifx-content-text-faint); }
 .ifx-scanner .trade-plan-mode.go b, .ifx-scanner .trade-plan-mode.ready b { color: var(--ifx-bull); }
 .ifx-scanner .trade-plan-mode.watch b { color: var(--ifx-info); }
-.ifx-scanner .trade-plan-mode.wait b { color: var(--ifx-warn); }
+.ifx-scanner .trade-plan-mode.wait b { color: var(--ifx-accent-on-paper); }
 .ifx-scanner .trade-plan-mode.reject b, .ifx-scanner .trade-plan-mode.avoid b { color: var(--ifx-bear); }
 
 .ifx-scanner .trade-plan-metric, .ifx-scanner .trade-plan-wide {
@@ -975,6 +1035,26 @@
   font-size: 9px; text-transform: uppercase; letter-spacing: .4px; color: var(--ifx-content-text-faint);
 }
 .ifx-scanner .trade-plan-metric b, .ifx-scanner .trade-plan-wide b { font-family: var(--ifx-font-mono); font-size: var(--ifx-text-base); font-weight: 700; color: var(--ifx-content-text); }
+/* .trade-plan-option/.gate-verdict b/.trade-plan-option label,small: main.css
+   groups .trade-plan-option b together with .trade-plan-metric/-wide b (same
+   rule, same intent), but this file's own paper-ink override only ever
+   covered the first two -- .trade-plan-option (living inside the "Advanced"
+   disclosure's .option-pick-grid, e.g. "ATM"/"MEDIUM"/"No entry") stayed on
+   Classic's theme-varying --text-primary, invisible against the paper card
+   this whole grid already forces white. Completing the coverage gap. */
+.ifx-scanner .trade-plan-option b, .ifx-scanner .trade-plan-option > small,
+.ifx-scanner .trade-plan-gates .gate-verdict b { color: var(--ifx-content-text); }
+.ifx-scanner .trade-plan-option label, .ifx-scanner .trade-plan-gates label { color: var(--ifx-content-text-faint); }
+/* Same coverage gap, three more paper-card descendants main.css's own
+   .screener-pro-v4-scoped rules never got a paper-ink counterpart for:
+   .ai-map-levels b (level values inside the AI Trade Map grid),
+   .gate-grid b (PASS/WAIT/BLOCK verdict pills -- .warn/.pass/.block bg is
+   always a pale tint regardless of theme, same "paper" logic), and
+   .direction-command-panel b (CE/PE strike-count line). */
+.ifx-scanner .ai-map-levels b,
+.ifx-scanner .gate-grid b,
+.ifx-scanner .direction-command-panel b { color: var(--ifx-content-text); }
+.ifx-scanner .ai-map-head span:first-child { color: var(--ifx-accent-on-paper); }
 .ifx-scanner .trade-plan-metric small, .ifx-scanner .trade-plan-wide small { font-size: 9px; color: var(--ifx-content-text-faint); }
 .ifx-scanner .trade-plan-empty { padding: var(--ifx-space-4); text-align: center; color: var(--ifx-content-text-faint); }
 .ifx-scanner .trade-plan-advanced summary { cursor: pointer; font-size: var(--ifx-text-2xs); font-weight: 700; color: var(--ifx-content-text-muted); text-transform: uppercase; letter-spacing: .4px; padding: 6px 0; border-top: 1px dashed var(--ifx-content-border); margin-top: 4px; }
@@ -983,8 +1063,18 @@
 /* ── Command Answers, AI Trade Map, Option Pick (advanced details) ───── */
 .ifx-scanner .command-answer-block { padding: var(--ifx-space-3); background: var(--ifx-content-bg); border-radius: var(--ifx-radius-md); margin-top: 6px; }
 .ifx-scanner .command-answer-head { display: flex; align-items: center; gap: 8px; font-size: var(--ifx-text-xs); color: var(--ifx-content-text-muted); margin-bottom: 4px; }
-.ifx-scanner .command-answer-head b { color: var(--ifx-accent-strong); }
-.ifx-scanner .command-answer-block p { font-size: var(--ifx-text-sm); color: var(--ifx-content-text); margin-bottom: 8px; }
+.ifx-scanner .command-answer-head b { color: var(--ifx-accent-on-paper); }
+.ifx-scanner .command-answer-block p {
+  font-size: var(--ifx-text-sm); color: var(--ifx-content-text); margin-bottom: 8px;
+  /* main.css's own ".command-answer-block p{background:var(--bg-surface)}"
+     paints its OWN opaque background on this exact element (Classic's
+     theme-varying token, dark in dark theme) -- this rule previously only
+     overrode `color`, leaving that background unchallenged and closest-
+     ancestor to the text, beating the parent .command-answer-block's
+     !important gradient at the box-model level (this <p> sits in front of
+     it). Same paper-ink text on the now-correctly-dark --bg-surface. */
+  background: var(--ifx-content-surface);
+}
 .ifx-scanner .command-answer-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 6px; }
 .ifx-scanner .command-answer-grid span { display: flex; flex-direction: column; gap: 1px; padding: 6px 8px; background: var(--ifx-content-surface); border: 1px solid var(--ifx-content-border); border-radius: var(--ifx-radius-sm); }
 .ifx-scanner .command-answer-grid label { font-size: 8px; text-transform: uppercase; color: var(--ifx-content-text-faint); }
@@ -1003,7 +1093,15 @@
    much unused space". Forcing a plain column stack here lets each
    child's OWN width rule (.ai-map-head/.ai-map-levels below) use the
    full row instead of one slice of a stale legacy template. */
-.ifx-scanner .trade-plan-ai-map { display: flex; flex-direction: column; gap: 6px; }
+.ifx-scanner .trade-plan-ai-map {
+  display: flex; flex-direction: column; gap: 6px;
+  /* Same paper-box treatment as the sibling .command-answer-block --
+     .trade-plan-ai-map lives inside .trade-plan-advanced (a grandchild of
+     .trade-plan-card, not a direct child), so the .trade-plan-card > div
+     paper-background fix never reached it; its own head/levels text
+     assumed a white ground that was never actually painted here. */
+  padding: var(--ifx-space-3); background: var(--ifx-content-bg); border-radius: var(--ifx-radius-md);
+}
 .ifx-scanner .ai-map-head, .ifx-scanner .ai-map-levels, .ifx-scanner .option-pick-head, .ifx-scanner .option-pick-grid, .ifx-scanner .gate-grid {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px; margin-top: 6px;
 }
@@ -1039,11 +1137,21 @@
   flex: 1 1 150px; max-width: 260px; padding: 8px 10px;
   background: var(--ifx-content-surface); border: 1px solid var(--ifx-content-border); border-radius: var(--ifx-radius-md);
   cursor: pointer; transition: transform var(--ifx-fast) var(--ifx-ease);
+  /* Color-refresh: main.css's own ".leader-card b{color:var(--text-primary)}"
+     has no competitor here for `color` (only for `background`, which this
+     rule already force-wins to paper-white) -- so in dark theme the symbol
+     name inherited Classic's theme-varying --text-primary (light, meant
+     for the dark shell) painted onto this now-forced-white card. Forcing
+     paper ink here the same way background is already forced fixes every
+     descendant that doesn't set its own explicit color (symbol name,
+     position badge), without touching the ones that do (buy/sell/hold
+     accents). */
+  color: var(--ifx-content-text);
 }
 .ifx-scanner .leader-cards > *:hover, .ifx-scanner .trigger-radar-cards > *:hover { transform: translateY(-1px); box-shadow: var(--ifx-shadow-sm); }
 .ifx-scanner .leader-pos {
   display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px;
-  border-radius: 50%; background: var(--ifx-accent-dim); color: var(--ifx-accent-strong); font-size: 8px; font-weight: 800;
+  border-radius: 50%; background: var(--ifx-accent-dim); color: var(--ifx-accent-on-paper); font-size: 8px; font-weight: 800;
 }
 .ifx-scanner .leader-empty, .ifx-scanner .trigger-radar-empty, .ifx-scanner .filter-empty { padding: var(--ifx-space-3); text-align: center; color: var(--ifx-content-text-faint); font-size: var(--ifx-text-xs); }
 .ifx-scanner .summary-total { font-family: var(--ifx-font-mono); font-weight: 700; color: var(--ifx-content-text); }
@@ -1334,7 +1442,7 @@
   color: var(--ifx-shell-text-faint); margin: 0 0 10px;
 }
 .ifx-section-rule { flex: 1; height: 1px; background: var(--ifx-shell-border); }
-.ifx-section-count { font-family: var(--ifx-font-mono); color: var(--ifx-accent); text-transform: none; letter-spacing: 0; }
+.ifx-section-count { font-family: var(--ifx-font-mono); color: var(--ifx-accent-strong); text-transform: none; letter-spacing: 0; }
 
 .ifx-deck-wrap { color: var(--ifx-shell-text); }
 .ifx-deck { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; }
@@ -1444,7 +1552,7 @@
   background: var(--ifx-shell-surface); color: var(--ifx-shell-text-faint); font-size: var(--ifx-text-xs);
   font-weight: 700; cursor: pointer; white-space: nowrap;
 }
-.ifx-scr-col-toggle-btn:hover { color: var(--ifx-shell-text); border-color: var(--ifx-accent); }
+.ifx-scr-col-toggle-btn:hover { color: var(--ifx-shell-text); border-color: var(--ifx-accent-strong); }
 .ifx-scr-col-panel {
   display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 10px 12px; margin-bottom: 10px;
   border: 1px solid var(--ifx-shell-border); border-radius: var(--ifx-radius-sm); background: var(--ifx-shell-surface);
@@ -1464,8 +1572,8 @@
   background: var(--ifx-shell-surface); color: var(--ifx-shell-text-faint); font-size: var(--ifx-text-xs);
   font-weight: 700; cursor: pointer; white-space: nowrap;
 }
-.ifx-radar-filter-btn:hover { color: var(--ifx-shell-text); border-color: var(--ifx-accent); }
-.ifx-radar-filter-btn.active { background: var(--ifx-accent-dim); color: var(--ifx-accent); border-color: var(--ifx-accent); }
+.ifx-radar-filter-btn:hover { color: var(--ifx-shell-text); border-color: var(--ifx-accent-strong); }
+.ifx-radar-filter-btn.active { background: var(--ifx-accent-dim); color: var(--ifx-accent-strong); border-color: var(--ifx-accent-strong); }
 
 .ifx-scr-table-wrap { border: 1px solid var(--ifx-shell-border); border-radius: var(--ifx-radius-lg); overflow: hidden; background: var(--ifx-shell-surface); }
 .ifx-scr-head {
@@ -1477,7 +1585,7 @@
   color: var(--ifx-shell-text-faint); cursor: pointer; white-space: nowrap; text-align: right; user-select: none;
 }
 .ifx-scr-th:first-child, .ifx-scr-th:nth-child(2) { text-align: left; }
-.ifx-scr-th.sorted { color: var(--ifx-accent); }
+.ifx-scr-th.sorted { color: var(--ifx-accent-strong); }
 .ifx-scr-arrow { font-size: 8px; margin-left: 2px; }
 
 /* VirtualScroll's own contract: the container needs a real height +
@@ -1543,11 +1651,11 @@
 }
 .ifx-rail-item:last-child { border-bottom: none; }
 .ifx-rail-item:hover { background: rgba(255,255,255,.03); }
-.ifx-rail-item.active { background: var(--ifx-accent-dim); color: var(--ifx-accent); }
+.ifx-rail-item.active { background: var(--ifx-accent-dim); color: var(--ifx-accent-strong); }
 .ifx-rail-icon { width: 22px; text-align: center; flex: none; font-size: 13px; }
 .ifx-rail-item-label { flex: 1; }
 .ifx-rail-chevron { color: var(--ifx-shell-text-faint); font-size: 11px; flex: none; }
-.ifx-rail-item.active .ifx-rail-chevron { color: var(--ifx-accent); }
+.ifx-rail-item.active .ifx-rail-chevron { color: var(--ifx-accent-strong); }
 
 /* Phase O.5 -- rail-v2.js groups its rows under a label instead of one
    flat 17-item list. Each group's last item keeps the shared bottom
@@ -1608,7 +1716,7 @@
   border-radius: 50%; border: 1px solid var(--ifx-shell-border); background: var(--ifx-shell-surface);
   color: var(--ifx-shell-text); cursor: pointer; font-size: 13px; box-shadow: var(--ifx-shadow-sm);
 }
-.ifx-sound-switch:hover { border-color: var(--ifx-accent); }
+.ifx-sound-switch:hover { border-color: var(--ifx-accent-strong); }
 
 .ifx-deck-card.just-fired { animation: ifx-card-fire 1.4s var(--ifx-ease); }
 @keyframes ifx-card-fire {

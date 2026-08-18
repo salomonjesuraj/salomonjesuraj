@@ -9,8 +9,8 @@ function sectorTone(score) {
   const s = Number(score || 0);
   if (s >= 75) return 'var(--ifx-bull-strong)';
   if (s >= 60) return 'var(--ifx-bull)';
-  if (s >= 45) return 'var(--ifx-warn)';
-  if (s >= 30) return 'var(--ifx-accent-strong)';
+  if (s >= 45) return 'var(--ifx-accent-on-paper)';
+  if (s >= 30) return 'var(--ifx-accent-on-paper)';
   return 'var(--ifx-bear)';
 }
 
