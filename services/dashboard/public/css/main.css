@@ -1424,6 +1424,10 @@ body.layout-breakout-max{--signals-flex:2.1;--watchlist-flex:6.6;--alerts-flex:.
 .option-bias.buy{background:var(--green-dim);color:var(--green)}
 .option-bias.hold{background:var(--gold-dim);color:var(--gold)}
 .option-bias.sell{background:var(--red-dim);color:var(--red)}
+.option-bias.trade-ready{background:var(--green-dim);color:var(--green)}
+.option-bias.wait-contract{background:var(--gold-dim);color:var(--gold)}
+.option-bias.chain-pending{background:var(--bg-overlay);color:var(--text-muted)}
+.option-bias.avoid-contract{background:var(--red-dim);color:var(--red)}
 .option-score-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:5px}
 .option-score-card{background:var(--bg-base);border:1px solid var(--border-subtle);border-radius:var(--radius-sm);padding:5px 6px;display:flex;flex-direction:column;gap:2px}
 .option-score{font-family:var(--font-mono);font-size:18px;line-height:1;font-weight:900;font-variant-numeric:tabular-nums}

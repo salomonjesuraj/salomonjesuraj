@@ -22,6 +22,28 @@ function gate(label, state, detail = '') {
   return `<span class="option-gate ${cls}" title="${escapeHtml(detail)}">${icon} ${escapeHtml(label)}</span>`;
 }
 
+// R6: contract confirmation is a status independent of stock breakout
+// detection (that's the Radar panel's job). These four are the only
+// values the backend's execution_status ever means to emit
+// (market.py:821-827, _upstox_option_context) -- this map drives both
+// the label text and the badge color directly off that value, instead
+// of the previous ad-hoc tradeReady/optionReady/bias combination, which
+// could show a green "buy-looking" badge for a CHAIN_PENDING contract
+// (bias.toLowerCase() === 'ce') or the same gold as WAIT_CONTRACT for a
+// hard-blocked AVOID_CONTRACT.
+const EXECUTION_STATUS_META = {
+  TRADE_READY: { cls: 'trade-ready', label: 'TRADE READY' },
+  WAIT_CONTRACT: { cls: 'wait-contract', label: 'WAIT CONTRACT' },
+  CHAIN_PENDING: { cls: 'chain-pending', label: 'CHAIN PENDING' },
+  AVOID_CONTRACT: { cls: 'avoid-contract', label: 'AVOID CONTRACT' },
+  NO_SYMBOL: { cls: 'chain-pending', label: 'NO SYMBOL SELECTED' },
+};
+
+function executionStatusMeta(status) {
+  return EXECUTION_STATUS_META[status]
+    || { cls: 'chain-pending', label: String(status || 'CHAIN PENDING').replace(/_/g, ' ') };
+}
+
 export class OptionCockpit {
   constructor(containerEl, statusEl) {
     this._el = containerEl;
@@ -78,6 +100,7 @@ export class OptionCockpit {
     const reason = s.reason || 'Underlying scanner is live. Option-chain scoring will activate when CE/PE OI, IV, spread and strike data are available.';
     const event = metrics.event_calendar || s.event_calendar || {};
     const executionStatus = s.execution_status || (optionReady ? 'WAIT_CONTRACT' : 'CHAIN_PENDING');
+    const execMeta = executionStatusMeta(executionStatus);
     const tradeReady = Boolean(s.trade_ready);
     const qualityGrade = s.quality_grade || metrics.quality_grade || '—';
     const blockers = Array.isArray(s.hard_blockers) && s.hard_blockers.length
@@ -91,7 +114,7 @@ export class OptionCockpit {
             <div class="option-label">Focus</div>
             <div class="option-symbol">${escapeHtml(symbol)}</div>
           </div>
-          <div class="option-bias ${tradeReady ? 'buy' : optionReady ? 'hold' : bias.toLowerCase()}">${escapeHtml(executionStatus)}</div>
+          <div class="option-bias ${execMeta.cls}" title="Contract confirmation status -- separate from the stock's own breakout evidence in the Radar panel">${escapeHtml(execMeta.label)}</div>
         </div>
 
         <div class="option-score-grid">

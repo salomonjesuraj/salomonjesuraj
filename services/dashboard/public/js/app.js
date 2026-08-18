@@ -15,7 +15,7 @@ import { ChartPanel } from './chart.js';
 import { QuickControls } from './quick-controls.js?v=2.4.0-hybrid-scanner';
 import { MarketHealthTop } from './market-health-top.js?v=breadth-health-1';
 import { MarketTicker } from './market-ticker.js?v=vix-multiplier-1';
-import { OptionCockpit } from './options.js?v=6.4.4-summary-chip-polish';
+import { OptionCockpit } from './options.js?v=radar-r6-1';
 import { SectorRibbon } from './sector-ribbon.js?v=breadth-health-1';
 import { WorkbenchTabs } from './workbench-tabs.js?v=2.4.0-hybrid-scanner';
 import { ScannerInsight } from './scanner-insight.js?v=radar-r5-1';
