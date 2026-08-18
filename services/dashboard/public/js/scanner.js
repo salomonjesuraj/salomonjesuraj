@@ -48,12 +48,21 @@ const COLUMNS = [
   // cell's tooltip instead of 3 header slots.
   { key: 'targets_hint', label: 'Targets',   align: 'right',  width: '92px',   toggle: true },
   { key: 'stop_loss_hint', label: 'SL',        align: 'right',  width: '78px',   toggle: true },
-  { key: 'chain_execution_status', label: 'Chain', align: 'center', width: '112px', toggle: true },
-  // F&O ban (Phase 13.13) -- a hard NSE/SEBI legal constraint (MWPL>=95%),
-  // not a signal-quality read like everything else here, so it's visible
-  // by default rather than opt-in like the rest of this file's
-  // enrichment columns. Empty on non-banned rows (usually the vast
-  // majority) rather than a permanent column of noise.
+  // Phase R7 -- moved from default-visible to opt-in. Now that R4 split
+  // Stock Score/Contract apart, the default-visible Contract column
+  // already tells you whether real chain data is scored (a number) or
+  // not (an honest dash) -- this raw status-text badge duplicates that
+  // read for the vast majority of rows (most are WAIT_CONTRACT/
+  // CHAIN_PENDING, i.e. "not yet", which Contract's dash already says).
+  // Still one click away via Columns for anyone who wants the literal
+  // execution_status text or the filter dropdown built on it.
+  { key: 'chain_execution_status', label: 'Chain', align: 'center', width: '112px', toggle: true, defaultHidden: true },
+  // F&O ban (Phase 13.13) -- deliberately NOT touched by R7's default-hide
+  // pass. A hard NSE/SEBI legal constraint (MWPL>=95%), not a signal-
+  // quality read like Chain above -- hiding a live trading ban by default
+  // would be a real safety regression, not a noise-reduction win. Stays
+  // visible by default; empty on the (usually vast majority of)
+  // non-banned rows rather than a permanent column of noise.
   { key: 'fo_banned',    label: 'F&O',         align: 'center', width: '68px',   toggle: true },
 
   { key: 'prev_diff',    label: 'Prev close +/-', align: 'right', width: '118px', toggle: true, defaultHidden: true },
@@ -1298,8 +1307,19 @@ export class ScannerPanel {
     `).join('');
     panel.querySelectorAll('input[type=checkbox]').forEach(cb => {
       cb.addEventListener('change', () => {
-        if (cb.checked) this._hidden.delete(cb.dataset.col);
-        else this._hidden.add(cb.dataset.col);
+        const col = COLUMNS.find(c => c.key === cb.dataset.col);
+        if (cb.checked) {
+          this._hidden.delete(cb.dataset.col);
+          // Phase R7 fix: a defaultHidden column re-enabled here needs its
+          // own ':shown' marker recorded, or init()'s defaultHidden merge
+          // (line ~925) silently re-hides it again on the very next
+          // reload -- the checkbox previously only ever cleared the plain
+          // key, never wrote this, so the explicit choice never stuck.
+          if (col && col.defaultHidden) this._hidden.add(cb.dataset.col + ':shown');
+        } else {
+          this._hidden.add(cb.dataset.col);
+          this._hidden.delete(cb.dataset.col + ':shown');
+        }
         this._saveHidden();
         this._buildHeader();
         if (this._vs) this._vs.refresh();

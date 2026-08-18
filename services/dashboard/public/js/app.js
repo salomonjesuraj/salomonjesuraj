@@ -5,7 +5,7 @@
 import { Header } from './header.js';
 import { Footer } from './footer.js?v=6.4.4-summary-chip-polish';
 import { CockpitPanel } from './cockpit.js?v=7.0.0-signal-cockpit';
-import { ScannerPanel } from './scanner.js?v=radar-r4-1';
+import { ScannerPanel } from './scanner.js?v=radar-r7-1';
 import { SignalBoard } from './signals.js?v=2.5.1-options-first-hybrid';
 import { WatchlistPanel } from './watchlist.js';
 import { SectorPanel } from './sectors.js';
@@ -35,7 +35,7 @@ import { AiQueryPanel } from './ai-query-panel.js?v=8.0.0-phase-d';
 import { initModeSwitch } from './mode-switch.js?v=8.0.0-new-shell';
 import { CockpitV2Panel } from './cockpit-v2.js?v=8.0.0-new-shell';
 import { WatchStripV2Panel } from './watch-strip-v2.js?v=8.0.0-new-shell';
-import { ScannerV2Panel } from './scanner-v2.js?v=radar-r4-1';
+import { ScannerV2Panel } from './scanner-v2.js?v=radar-r7-1';
 import { BreakoutRadarPanel } from './breakout-radar.js?v=radar-daily-trend-1';
 import { initRailV2 } from './rail-v2.js?v=radar-r3-1';
 import { TrackRecordV2Panel } from './track-record-v2.js?v=8.0.0-new-shell';

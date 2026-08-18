@@ -40,7 +40,7 @@
 import { VirtualScroll } from './virtual-scroll.js';
 import { formatPrice, escapeHtml } from './utils.js';
 import { api } from './api.js';
-import { smartRank, deriveDirectionZone } from './scanner.js?v=radar-r4-1';
+import { smartRank, deriveDirectionZone } from './scanner.js?v=radar-r7-1';
 
 const DASH = '—';
 
@@ -314,8 +314,21 @@ export class ScannerV2Panel {
     `).join('');
     panel.querySelectorAll('input[type=checkbox]').forEach((cb) => {
       cb.addEventListener('change', () => {
-        if (cb.checked) this._hidden.delete(cb.dataset.col);
-        else this._hidden.add(cb.dataset.col);
+        const col = COLUMNS.find((c) => c.key === cb.dataset.col);
+        if (cb.checked) {
+          this._hidden.delete(cb.dataset.col);
+          // Real bug found while building the R7/Daily-Trend work: a
+          // defaultHidden column re-enabled here needs its own ':shown'
+          // marker recorded, or init()'s defaultHidden merge (line ~162)
+          // silently re-hides it again on the very next reload -- this
+          // handler previously only ever cleared the plain key, never
+          // wrote this, so an explicit re-enable never stuck. Same fix
+          // applied to Classic's scanner.js, which had the identical gap.
+          if (col && col.defaultHidden) this._hidden.add(cb.dataset.col + ':shown');
+        } else {
+          this._hidden.add(cb.dataset.col);
+          this._hidden.delete(cb.dataset.col + ':shown');
+        }
         this._saveHidden();
         this._buildHead();
         if (this._vscroll) this._vscroll.refresh();
