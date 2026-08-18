@@ -103,6 +103,10 @@
           <div class="workbench-tabs workbench-tabs--grouped" id="workbenchTabs">
             <div class="workbench-tab-group">
               <span class="workbench-tab-group-label">Screener &amp; Detail</span>
+              <!-- Phase R4 -- Breakout Radar ported here once New shell's
+                   R3 was verified live; first in the group, matching the
+                   reference plan's "first and largest panel" framing. -->
+              <button class="workbench-tab" data-tab="breakout-radar">Breakout Radar</button>
               <button class="workbench-tab active" data-tab="screener">Screener</button>
               <button class="workbench-tab" data-tab="watchlist">Watchlist</button>
               <button class="workbench-tab" data-tab="stock-detail">Stock Detail</button>
@@ -143,6 +147,11 @@
           <div class="workbench-pane active" data-pane="screener">
             <div class="workbench-section-title">F&amp;O Screener &mdash; auto-ranked by Strength + Conviction + Momentum</div>
             <div id="scannerPanel" class="scanner-table-zone"></div>
+          </div>
+
+          <div class="workbench-pane" data-pane="breakout-radar">
+            <div class="workbench-section-title">Stock Breakout Radar — ranked by underlying evidence, independent of option-chain readiness</div>
+            <div id="breakoutRadar" class="scanner-table-zone"></div>
           </div>
 
           <div class="workbench-pane" data-pane="watchlist">
@@ -320,6 +329,6 @@
     chart never depends on a third-party CDN being reachable.
   -->
   <script src="/js/vendor/lightweight-charts.standalone.production.js"></script>
-  <script type="module" src="/js/app.js?v=radar-r3-1"></script>
+  <script type="module" src="/js/app.js?v=radar-r4-1"></script>
 </body>
 </html>

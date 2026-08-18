@@ -21,8 +21,23 @@ const COLUMNS = [
   { key: 'sector_id',    label: 'Sector',      align: 'left',   width: '122px',  toggle: true },
   { key: 'ltp',          label: 'LTP',         align: 'right',  width: '92px',   toggle: false },
   { key: 'change_pct',   label: 'Chg%',        align: 'right',  width: '70px',   toggle: true },
+  // Phase R4 -- RVol moved up to default-visible, next to Chg% (was
+  // opt-in/hidden below) -- the reference plan's own Finding #2: this is
+  // the single best breakout signal the system has, and it was being
+  // buried behind a toggle. See docs/stock-options-dashboard-review-and-
+  // structure-plan.md.
+  { key: 'rel_vol',      label: 'RVol',        align: 'right',  width: '70px',   toggle: true },
   { key: 'setup_strength', label: 'Strength',  align: 'right',  width: '92px',   toggle: true },
-  { key: 'option_readiness', label: 'Conviction', align: 'right', width: '104px', toggle: true },
+  // Phase R4 -- "Conviction" split into two honest columns (the plan's
+  // Finding #1/#6, and this session's own re-check of ticks.py before
+  // building it): conviction_score is ALWAYS the stock-derived read,
+  // never overwritten anywhere in the pipeline; chain_option_score is
+  // ONLY ever set once real option-chain data is cached (dash otherwise
+  // -- deliberately not falling back to option_readiness, which WOULD
+  // silently show the stock score under a "Contract" label when chain
+  // data isn't ready, the exact conflation this fix exists to remove).
+  { key: 'conviction_score', label: 'Stock Score', align: 'right', width: '104px', toggle: true },
+  { key: 'contract_score', label: 'Contract',   align: 'right', width: '94px',   toggle: true },
   { key: 'mtf_dots',     label: 'MTF',         align: 'center', width: '124px',  toggle: true },
   { key: 'trade_decision', label: 'Bias',      align: 'center', width: '88px',   toggle: true },
   { key: 'entry_price_hint', label: 'Entry',   align: 'right',  width: '88px',   toggle: true },
@@ -42,7 +57,6 @@ const COLUMNS = [
   { key: 'fo_banned',    label: 'F&O',         align: 'center', width: '68px',   toggle: true },
 
   { key: 'prev_diff',    label: 'Prev close +/-', align: 'right', width: '118px', toggle: true, defaultHidden: true },
-  { key: 'rel_vol',      label: 'RVol',        align: 'right',  width: '66px',   toggle: true, defaultHidden: true },
   { key: 'smart_rank',   label: 'Rank',        align: 'right',  width: '86px',   toggle: true, defaultHidden: true },
   { key: 'mode_signal',  label: 'Mode Signal', align: 'center', width: '126px',  toggle: true, defaultHidden: true },
   { key: 'gate_score',   label: 'Gates',       align: 'center', width: '108px',  toggle: true, defaultHidden: true },
@@ -2323,6 +2337,15 @@ export class ScannerPanel {
 
     const setupHTML = scoreMeter(item.setup_strength || item.readiness || 0);
     const optionHTML = scoreMeter(item.option_readiness || 0);
+    // Phase R4 -- stockScoreHTML always reads conviction_score (never
+    // overwritten by chain data anywhere in ticks.py); contractHTML reads
+    // chain_option_score specifically, which the backend only ever sets
+    // once real Upstox option-chain data is cached -- an honest dash
+    // otherwise, not a silent fallback to the stock number.
+    const stockScoreHTML = scoreMeter(item.conviction_score || 0);
+    const contractHTML = item.chain_option_score != null
+      ? scoreMeter(item.chain_option_score)
+      : `<span class="text-muted" title="No option-chain data cached yet for this symbol">—</span>`;
     const trendHTML = stateChip(item.trend_bias || 'HOLD', item.trend_bias || 'HOLD');
     const decisionHTML = stateChip(item.direction_bias || item.trade_decision || 'HOLD', item.direction_bias || item.trade_decision || 'HOLD');
     const statusHTML = stateChip(String(item.status || 'WATCH').replace('_', ' '), item.status || 'HOLD');
@@ -2359,6 +2382,8 @@ export class ScannerPanel {
       ce_score: scoreMeter(item.ce_score || 0),
       pe_score: scoreMeter(item.pe_score || 0),
       option_readiness: optionHTML,
+      conviction_score: stockScoreHTML,
+      contract_score: contractHTML,
       chain_execution_status: chainCell(item),
       fo_banned: foBanCell(item),
       vcp_score: vcpCell(item),

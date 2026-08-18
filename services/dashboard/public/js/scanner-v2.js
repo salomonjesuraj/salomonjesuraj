@@ -40,7 +40,7 @@
 import { VirtualScroll } from './virtual-scroll.js';
 import { formatPrice, escapeHtml } from './utils.js';
 import { api } from './api.js';
-import { smartRank, deriveDirectionZone } from './scanner.js?v=noise-reduction-3';
+import { smartRank, deriveDirectionZone } from './scanner.js?v=radar-r4-1';
 
 const DASH = '—';
 
@@ -58,8 +58,16 @@ const COLUMNS = [
   { key: 'sector_id', label: 'Sector', width: 112, toggle: true },
   { key: 'ltp', label: 'LTP', width: 88, toggle: false },
   { key: 'change_pct', label: 'Chg', width: 92, toggle: true },
+  // Phase R4 -- RVol default-visible (this table never had it at all
+  // before, opt-in or otherwise); "Conviction" split into Stock Score
+  // (conviction_score, never overwritten by chain data) and Contract
+  // (chain_option_score, only ever set once real chain data is cached --
+  // honest dash otherwise, not a silent fallback to the stock number).
+  // Same reasoning as Classic scanner.js's identical R4 change.
+  { key: 'rel_vol', label: 'RVol', width: 76, toggle: true },
   { key: 'setup_strength', label: 'Strength', width: 90, toggle: true },
-  { key: 'option_readiness', label: 'Conviction', width: 100, toggle: true },
+  { key: 'conviction_score', label: 'Stock Score', width: 100, toggle: true },
+  { key: 'contract_score', label: 'Contract', width: 90, toggle: true },
   { key: 'mtf', label: 'MTF', width: 128, toggle: true },
   { key: 'direction_bias', label: 'Bias', width: 84, toggle: true },
   { key: 'entry', label: 'Entry', width: 118, toggle: false },
@@ -286,7 +294,9 @@ export class ScannerV2Panel {
       case 'ltp': return Number(item.ltp || 0);
       case 'change_pct': return Number(item.change_pct || 0);
       case 'setup_strength': return Number(item.setup_strength || 0);
-      case 'option_readiness': return Number(item.option_readiness || 0);
+      case 'rel_vol': return Number(item.rel_vol || 0);
+      case 'conviction_score': return Number(item.conviction_score || 0);
+      case 'contract_score': return Number(item.chain_option_score || 0);
       default: return Number(item.smart_rank || 0);
     }
   }
@@ -379,7 +389,14 @@ export class ScannerV2Panel {
     const bias = String(item.direction_bias || 'WAIT').toUpperCase();
     const biasCls = bias.includes('CE') ? 'ce' : bias.includes('PE') ? 'pe' : 'wait';
     const strength = Number(item.setup_strength || 0);
-    const conviction = Number(item.option_readiness || item.conviction_score || 0);
+    // Phase R4 -- stockScore always reads conviction_score (never
+    // overwritten by chain data); contractScore reads chain_option_score
+    // specifically, undefined/null (not 0) when no chain data is cached
+    // yet -- an honest dash in the cell, not a silent fallback to the
+    // stock number under a "Contract" label.
+    const stockScore = Number(item.conviction_score || 0);
+    const contractScore = item.chain_option_score;
+    const rvol = Number(item.rel_vol || 0);
     const isFrozen = Boolean(item.signal_active);
 
     function lvl(px, cls) {
@@ -404,7 +421,13 @@ export class ScannerV2Panel {
       ltp: `<span class="ifx-mono">${formatPrice(item.ltp)}</span>`,
       change_pct: `<div class="ifx-scr-chg ${chgCls}"><span class="ifx-mono">${chgAbs >= 0 ? '+' : ''}${chgAbs.toFixed(2)}</span><small class="ifx-mono">${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%</small></div>`,
       setup_strength: `<div class="ifx-scr-meter"><span class="ifx-mono">${strength ? Math.round(strength) : DASH}</span><div class="ifx-scr-meter-track"><i style="width:${Math.min(100, strength)}%;background:${strength >= 60 ? 'var(--ifx-bull)' : strength >= 45 ? 'var(--ifx-warn)' : 'var(--ifx-bear)'}"></i></div></div>`,
-      option_readiness: `<div class="ifx-scr-meter"><span class="ifx-mono">${conviction ? Math.round(conviction) : DASH}</span><div class="ifx-scr-meter-track"><i style="width:${Math.min(100, conviction)}%;background:${conviction >= 55 ? 'var(--ifx-bull)' : conviction >= 45 ? 'var(--ifx-warn)' : 'var(--ifx-bear)'}"></i></div></div>`,
+      rel_vol: item.volume_profile_ready === false
+        ? `<span class="ifx-scr-dash" title="Volume baseline hasn't bootstrapped for this symbol -- relative volume is unknown, not confirmed low">VOL?</span>`
+        : `<span class="ifx-mono ${rvol >= 2.5 ? 'ifx-tone-good' : ''}">${rvol.toFixed(2)}x</span>`,
+      conviction_score: `<div class="ifx-scr-meter"><span class="ifx-mono">${stockScore ? Math.round(stockScore) : DASH}</span><div class="ifx-scr-meter-track"><i style="width:${Math.min(100, stockScore)}%;background:${stockScore >= 55 ? 'var(--ifx-bull)' : stockScore >= 45 ? 'var(--ifx-warn)' : 'var(--ifx-bear)'}"></i></div></div>`,
+      contract_score: contractScore != null
+        ? `<div class="ifx-scr-meter"><span class="ifx-mono">${Math.round(contractScore)}</span><div class="ifx-scr-meter-track"><i style="width:${Math.min(100, contractScore)}%;background:${contractScore >= 55 ? 'var(--ifx-bull)' : contractScore >= 45 ? 'var(--ifx-warn)' : 'var(--ifx-bear)'}"></i></div></div>`
+        : `<span class="ifx-scr-dash" title="No option-chain data cached yet for this symbol">${DASH}</span>`,
       mtf: `<div class="ifx-scr-mtf">${mtfDotsHtml(item.mtf_dots)}</div>`,
       direction_bias: `<span class="ifx-badge ifx-badge--${biasCls === 'ce' ? 'bull' : biasCls === 'pe' ? 'bear' : 'warn'}">${escapeHtml(bias)}</span>`,
       favour: this._favourCellHtml(sym, isSelected),
