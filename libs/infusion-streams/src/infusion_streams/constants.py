@@ -80,3 +80,9 @@ KEY_CAPABILITY_PREFIX = "infusion:capability:"      # + {provider} → STRING (m
 KEY_SUBSCRIPTION_STATUS = "infusion:subscription:status"   # STRING (msgpack: tier counts + reconnect/gap)
 KEY_SUBSCRIPTION_TIER_PREFIX = "infusion:subtier:"  # + {instrument_key} → HASH {tier, mode, updated_at}
 
+# EBIE EB-1: canonical state machine (shadow mode) -- previous-state cache,
+# same "cheap bulk MGET, TTL so it ages out" shape as R2/R8/R9's own
+# transitional caches (infusion:vwap-state:, infusion:opening-range:,
+# infusion:radar-alert-tier:).
+KEY_EBIE_STATE_PREFIX = "infusion:ebie-state:"      # + {symbol}:{direction} → STRING (current EBIE state)
+

@@ -52,10 +52,12 @@ from api.routes.events import routes as events_routes
 from api.routes.strategy_selector import routes as strategy_selector_routes
 from api.routes.radar_alerts import routes as radar_alerts_routes
 from api.routes.system import routes as system_routes
+from api.routes.ebie_state import routes as ebie_state_routes
 from api.ai_advisor import OpenAIAdvisor
 from api.option_chain_queue import option_chain_queue_loop
 from api.mtf_queue import mtf_queue_loop
 from api.radar_alert_queue import radar_alert_loop
+from api.ebie_state_queue import ebie_state_loop
 from infusion_common.logging import setup_logging
 from infusion_common.health import HealthReporter
 
@@ -130,6 +132,7 @@ async def main():
     if pg_pool:
         app.router.add_routes(analytics_routes)
         app.router.add_routes(radar_alerts_routes)
+        app.router.add_routes(ebie_state_routes)
 
     runner = web.AppRunner(app)
     await runner.setup()
@@ -140,6 +143,7 @@ async def main():
     option_queue_task = asyncio.create_task(option_chain_queue_loop(app))
     mtf_queue_task = asyncio.create_task(mtf_queue_loop(app))
     radar_alert_task = asyncio.create_task(radar_alert_loop(app))
+    ebie_state_task = asyncio.create_task(ebie_state_loop(app))
 
     # Run forever
     try:
@@ -151,12 +155,15 @@ async def main():
         option_queue_task.cancel()
         mtf_queue_task.cancel()
         radar_alert_task.cancel()
+        ebie_state_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await option_queue_task
         with contextlib.suppress(asyncio.CancelledError):
             await mtf_queue_task
         with contextlib.suppress(asyncio.CancelledError):
             await radar_alert_task
+        with contextlib.suppress(asyncio.CancelledError):
+            await ebie_state_task
         await health.stop()
         await runner.cleanup()
         if pg_pool:
