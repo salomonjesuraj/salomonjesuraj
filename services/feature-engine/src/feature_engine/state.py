@@ -209,3 +209,7 @@ class SymbolState:
     # Timing
     last_tick_exchange_ms: int = 0
     last_feature_compute_us: int = 0
+    # EBIE EB-0: wall-clock receipt time (received_at_us) of the PREVIOUS
+    # tick processed for this symbol -- used to compute session_gap_ms
+    # (evidence of a feed gap / likely missed bar) at the next tick.
+    last_tick_received_at_us: int = 0

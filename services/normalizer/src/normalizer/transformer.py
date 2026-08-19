@@ -5,7 +5,7 @@ from normalizer.resolver import SymbolInfo
 from infusion_common.timing import now_us
 
 
-def transform(raw_payload: dict, info: SymbolInfo) -> NormalizedTickV1:
+def transform(raw_payload: dict, info: SymbolInfo, is_out_of_order: bool = False) -> NormalizedTickV1:
     """Transform raw tick payload + symbol info into NormalizedTick."""
     return NormalizedTickV1(
         symbol=info.symbol,
@@ -26,4 +26,5 @@ def transform(raw_payload: dict, info: SymbolInfo) -> NormalizedTickV1:
         exchange_timestamp_ms=raw_payload["exchange_timestamp_ms"],
         received_at_us=raw_payload["received_at_us"],
         normalized_at_us=now_us(),
+        is_out_of_order=is_out_of_order,
     )

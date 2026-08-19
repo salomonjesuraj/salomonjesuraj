@@ -84,6 +84,49 @@ def _squeeze_state(bb_width: float) -> str:
     return "NORMAL"
 
 
+def _compute_data_quality(
+    tick_lag_ms: int, session_gap_ms: int, is_out_of_order: bool
+) -> tuple[int, list[str]]:
+    """EBIE EB-0 Data Quality Score v1 (0-100).
+
+    Per docs/EBIE-IMPLEMENTATION-ANSWERS.md Q6.2's authorized hard-gate
+    policy: <80 -> DATA UNRELIABLE/NO TRADE, 80-89 -> DEGRADED (capped
+    below full actionability), >=90 -> fully verdict-eligible. This
+    increment only computes and exposes the score -- wiring the actual
+    NO-TRADE gate into the scanner is deferred until real DQ-score
+    distributions have been observed over live sessions, per the
+    authorization's own explicit sequencing ("log DQ distributions from
+    day one... after the first 10 trading sessions, review... do not
+    silently tune DQ to increase the number of signals").
+
+    reasons is always explicit, never a silent number -- matches this
+    file's own volume_profile_ready/indicator_ready convention of pairing
+    a value with why it is what it is.
+    """
+    score = 100
+    reasons: list[str] = []
+
+    if tick_lag_ms > 5000:
+        score -= 30
+        reasons.append(f"tick_lag_{tick_lag_ms}ms")
+    elif tick_lag_ms > 2000:
+        score -= 15
+        reasons.append(f"tick_lag_{tick_lag_ms}ms")
+
+    if session_gap_ms > 180_000:
+        score -= 50
+        reasons.append(f"feed_gap_{session_gap_ms}ms")
+    elif session_gap_ms > 90_000:
+        score -= 25
+        reasons.append(f"feed_gap_{session_gap_ms}ms")
+
+    if is_out_of_order:
+        score -= 20
+        reasons.append("out_of_order_tick")
+
+    return max(0, min(100, score)), reasons
+
+
 def _atr_trail(ltp: float, atr: float, ema20: float, macd_hist: float) -> tuple[float, str]:
     """Lightweight ATR trailing-stop proxy inspired by UT/ATR trail scanners."""
     if ltp <= 0 or atr <= 0:
@@ -256,13 +299,35 @@ class FeatureEngine:
         exchange_ms = int(tick.get("exchange_timestamp_ms", 0) or 0)
         if exchange_ms <= 0:
             exchange_ms = int(now_us() / 1000)
+
         ist = timezone(timedelta(minutes=330))
         session_date = datetime.fromtimestamp(exchange_ms / 1000, tz=timezone.utc).astimezone(ist).date().isoformat()
+        is_new_session = state.session_date != session_date
+
+        # EBIE EB-0: event-time lineage + Data Quality inputs. received_at_us
+        # is the tick's OWN wall-clock receipt time (set once in ingestion,
+        # carried unchanged through normalizer) -- comparing it against now
+        # gives real processing lag; comparing it against the PREVIOUS
+        # tick's received_at_us for this symbol gives a genuine feed-gap
+        # signal (likely missed bar) without needing a separate timer task.
+        # Gated on is_new_session: the overnight/weekend gap between two
+        # trading sessions is not a data-quality problem and must never be
+        # scored as one.
+        now_for_dq = now_us()
+        received_at_us = int(tick.get("received_at_us", 0) or 0)
+        is_out_of_order = bool(tick.get("is_out_of_order", False))
+        tick_lag_ms = max(0, (now_for_dq - received_at_us) // 1000) if received_at_us else 0
+        session_gap_ms = 0
+        if not is_new_session and received_at_us and state.last_tick_received_at_us:
+            session_gap_ms = max(0, (received_at_us - state.last_tick_received_at_us) // 1000)
+        if received_at_us:
+            state.last_tick_received_at_us = received_at_us
+        dq_score, dq_reasons = _compute_data_quality(tick_lag_ms, session_gap_ms, is_out_of_order)
 
         # Kite volume is cumulative for the session. Only its positive delta is
         # valid tick/bar volume. A restart starts from zero delta to avoid
         # assigning the entire day's volume to one candle.
-        if state.session_date != session_date:
+        if is_new_session:
             state.session_date = session_date
             state.vwap_numerator = 0.0
             state.vwap_denominator = 0
@@ -372,6 +437,13 @@ class FeatureEngine:
         return FeatureVectorV1(
             symbol=state.symbol,
             timestamp_us=now_us(),
+            source_exchange_timestamp_ms=exchange_ms,
+            source_received_at_us=received_at_us,
+            tick_lag_ms=tick_lag_ms,
+            session_gap_ms=session_gap_ms,
+            is_out_of_order=is_out_of_order,
+            data_quality_score=dq_score,
+            data_quality_reasons=dq_reasons,
             ltp=ltp,
             vwap=get_vwap(state),
             gap_pct=get_gap_pct(state),

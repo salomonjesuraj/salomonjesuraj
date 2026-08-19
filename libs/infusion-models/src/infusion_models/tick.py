@@ -52,3 +52,8 @@ class NormalizedTickV1(BaseModel, frozen=True):
     exchange_timestamp_ms: int
     received_at_us: int
     normalized_at_us: int
+    # EBIE EB-0 event-time integrity: True when this tick's
+    # exchange_timestamp_ms is older than the newest one already seen for
+    # this symbol (see normalizer/ordering.py). Never dropped for this --
+    # only flagged, so Data Quality scoring downstream can account for it.
+    is_out_of_order: bool = False

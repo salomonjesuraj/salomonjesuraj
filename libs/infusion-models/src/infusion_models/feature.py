@@ -13,6 +13,29 @@ class FeatureVectorV1(BaseModel, frozen=True):
     symbol: str
     timestamp_us: int                    # when features were computed
 
+    # EBIE EB-0 event-time lineage. Prior to this, the tick's own
+    # exchange_timestamp_ms/received_at_us were dropped by the time a
+    # feature vector was emitted -- nothing downstream of feature-engine
+    # could trace a feature back to the tick that produced it. These carry
+    # that lineage forward; tick_lag_ms/session_gap_ms are derived from it
+    # and feed data_quality_score below.
+    source_exchange_timestamp_ms: int = 0   # the underlying tick's exchange time
+    source_received_at_us: int = 0          # when ingestion received that tick
+    tick_lag_ms: int = 0                    # now - received_at_us, at feature-compute time
+    session_gap_ms: int = 0                 # gap since the PREVIOUS tick for this symbol
+    is_out_of_order: bool = False           # carried from normalizer (see NormalizedTickV1)
+
+    # EBIE EB-0 Data Quality Score v1 (0-100). Computed per docs/EBIE-
+    # IMPLEMENTATION-ANSWERS.md Q6.2's authorized policy from tick_lag_ms/
+    # session_gap_ms/is_out_of_order above. reasons is always explicit --
+    # never a silent number (matches this file's own volume_profile_ready/
+    # indicator_ready convention). NOT yet wired into any hard gate --
+    # this increment computes and exposes the score; gating live signal
+    # eligibility on it is deferred until real DQ distributions have been
+    # observed, per the authorization's own explicit sequencing.
+    data_quality_score: int = 100
+    data_quality_reasons: list[str] = []
+
     # Price
     ltp: float
     vwap: float = 0.0

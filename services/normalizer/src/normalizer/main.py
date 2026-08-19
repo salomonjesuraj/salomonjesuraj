@@ -14,6 +14,7 @@ from normalizer.config import NormalizerSettings
 from normalizer.resolver import SymbolResolver
 from normalizer.throttler import TierThrottler
 from normalizer.dedup import TickDedup
+from normalizer.ordering import OutOfOrderDetector
 from normalizer.transformer import transform
 from infusion_common.logging import setup_logging
 from infusion_common.lifecycle import ServiceLifecycle
@@ -50,6 +51,9 @@ async def main():
         tier3_ms=config.tier3_min_interval_ms,
     )
     dedup = TickDedup(ring_size=config.dedup_ring_size)
+    # EBIE EB-0: flags (never drops) a tick whose exchange_timestamp_ms is
+    # older than the newest one already seen for its symbol.
+    ordering = OutOfOrderDetector()
 
     # Stream I/O
     consumer = StreamConsumer(
@@ -66,6 +70,7 @@ async def main():
         "symbols_loaded": resolver.count,
         "throttled_dropped": throttler.dropped_count,
         "duplicates_dropped": dedup.duplicate_count,
+        "out_of_order_flagged": ordering.out_of_order_count,
         "consumed": consumer.stats,
         "published": producer.published_count,
     })
@@ -101,8 +106,11 @@ async def main():
             await ack()
             continue
 
+        # 3b. Out-of-order check (EBIE EB-0) -- flagged, never dropped.
+        is_ooo = ordering.check(info.symbol, payload.get("exchange_timestamp_ms", 0))
+
         # 4. Transform
-        normalized = transform(payload, info)
+        normalized = transform(payload, info, is_out_of_order=is_ooo)
 
         # 5. Publish to stream
         await producer.publish(
