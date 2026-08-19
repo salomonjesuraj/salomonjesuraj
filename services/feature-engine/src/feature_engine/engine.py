@@ -24,6 +24,7 @@ from feature_engine.features.microstructure import get_spread_bps, get_order_imb
 from feature_engine.features.structure import update_structure, structure_snapshot
 from feature_engine.features.divergence import detect_rsi_divergence
 from feature_engine.features.candles import update_body_ema, detect_candle_pattern, body_pct
+from feature_engine.features.accumulation import update_clv, clv_snapshot
 from feature_engine.features.zones import update_zones, zone_snapshot
 from feature_engine.features.fibonacci import fib_snapshot
 from feature_engine.features.ict import update_ict, ict_snapshot
@@ -341,6 +342,16 @@ class FeatureEngine:
             state.previous_cumulative_volume = volume
             state.session_cumulative_volume = volume
             volume_delta = 0
+            # EBIE EB-2: CLV accumulators reset with the rest of the
+            # session's VWAP-family state -- a fresh session is a fresh
+            # accumulation/distribution read.
+            state.clv_ema = 0.0
+            state.clv_ema_initialized = False
+            state.clv_vwap_numerator = 0.0
+            state.clv_vwap_denominator = 0
+            state.clv_upper_quartile_count = 0
+            state.clv_lower_quartile_count = 0
+            state.clv_bar_count = 0
         elif state.previous_cumulative_volume <= 0:
             volume_delta = 0
             state.previous_cumulative_volume = volume
@@ -389,6 +400,7 @@ class FeatureEngine:
             update_supertrend(state, completed_1m.high, completed_1m.low, close_1m, state.atr)
             update_body_ema(state, completed_1m.open, close_1m)
             update_heiken_ashi(state, completed_1m.open, completed_1m.high, completed_1m.low, close_1m)
+            update_clv(state, completed_1m.high, completed_1m.low, close_1m, completed_1m.volume)
             state.volume_history.append(completed_1m.volume)
             state.recent_1m_bars.append(_bar_dict(completed_1m))
             state.completed_1m_bars += 1
@@ -423,6 +435,10 @@ class FeatureEngine:
             **get_vwap_sd_bands(state),
             **heiken_ashi_snapshot(state),
             **detect_rsi_divergence(state.rsi_swing_points),
+            # EBIE EB-2: Close-Location Value accumulation/distribution
+            # evidence -- see feature_engine/features/accumulation.py.
+            # Informational only, same governance as every field above.
+            **clv_snapshot(state),
             "delivery_pct_avg_20d": state.delivery_pct_avg_20d,
             "delivery_avg_days": state.delivery_avg_days,
             "delivery_trade_date": state.delivery_trade_date,

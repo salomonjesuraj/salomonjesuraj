@@ -129,6 +129,10 @@ async def main():
         "vwap_sd2_upper", "vwap_sd2_lower", "vwap_sd_ready",
         "ha_trend", "ha_trend_streak", "ha_doji", "ha_color_flip",
         "delivery_pct_avg_20d", "delivery_avg_days", "delivery_trade_date",
+        # EBIE EB-2: CLV accumulation/distribution evidence -- see
+        # feature_engine/features/accumulation.py.
+        "clv_ema", "clv_volume_weighted", "clv_upper_quartile_rate",
+        "clv_lower_quartile_rate", "clv_ready",
     )
 
     async def on_feature(fv):

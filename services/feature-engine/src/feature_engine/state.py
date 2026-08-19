@@ -213,3 +213,16 @@ class SymbolState:
     # tick processed for this symbol -- used to compute session_gap_ms
     # (evidence of a feed gap / likely missed bar) at the next tick.
     last_tick_received_at_us: int = 0
+
+    # EBIE EB-2: Close-Location Value accumulation/distribution evidence
+    # -- see feature_engine/features/accumulation.py. Session-reset like
+    # the VWAP accumulators above (same reasoning: a fresh session is a
+    # fresh accumulation/distribution read, not a continuation of
+    # yesterday's).
+    clv_ema: float = 0.0
+    clv_ema_initialized: bool = False
+    clv_vwap_numerator: float = 0.0
+    clv_vwap_denominator: int = 0
+    clv_upper_quartile_count: int = 0
+    clv_lower_quartile_count: int = 0
+    clv_bar_count: int = 0
