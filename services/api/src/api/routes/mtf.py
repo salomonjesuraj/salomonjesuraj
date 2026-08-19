@@ -21,6 +21,7 @@ from api.chart_patterns import fractal_pivots_indexed, detect_chart_patterns
 from api.wyckoff import detect_structural_failure, detect_shortening_of_thrust, detect_sos_sow_bar
 from api.vcp import compute_vcp
 from api.daily_trend_filter import compute_daily_trend_filter
+from api.anchored_vwap import compute_anchored_vwaps
 
 routes = web.RouteTableDef()
 
@@ -845,6 +846,14 @@ async def compute_mtf(redis, symbol: str, store: bool = True) -> dict:
     # header. This gives that comparison a real surface instead of leaving
     # it as two disconnected tools.
     daily_trend = compute_daily_trend_filter(daily) if daily else {"available": False, "reason": "No daily bar history", "pass": False, "pass_count": 0, "total": 14, "conditions": {}}
+    # EBIE EB-2: multi-anchor AVWAP -- batch-computed from the same
+    # `intraday` 1m bar series already fetched above, no new I/O. See
+    # api/anchored_vwap.py's own header for why this is a batch pass over
+    # persisted history rather than a new live streaming accumulator.
+    anchored_vwaps = compute_anchored_vwaps(intraday, current_ltp) if current_ltp else {
+        "prev_close": None, "prev_high": None, "prev_low": None,
+        "week_open": None, "swing_high": None, "swing_low": None,
+    }
     quality = "historical" if any(row["bars"] for row in timeframes.values()) else "missing"
     if any(row["quality"] == "limited" for row in timeframes.values()) and quality == "historical":
         quality = "limited"
@@ -882,6 +891,7 @@ async def compute_mtf(redis, symbol: str, store: bool = True) -> dict:
         "week52": week52,
         "vcp": vcp,
         "daily_trend": daily_trend,
+        "anchored_vwaps": anchored_vwaps,
         "wyckoff_structural_failure": wyckoff_structural_failure,
         "wyckoff_sot": wyckoff_sot,
         "wyckoff_sos_sow": wyckoff_sos_sow,
