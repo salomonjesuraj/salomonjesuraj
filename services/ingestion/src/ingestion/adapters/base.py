@@ -40,6 +40,25 @@ class BrokerAdapter(ABC):
         ...
 
     @abstractmethod
+    async def unsubscribe(self, instrument_keys: list[str]) -> None:
+        """Unsubscribe from market data for instruments.
+
+        EBIE EB-0 infrastructure: added so a dynamic subscription registry
+        can exist, not because anything calls this yet. Tiered promotion
+        logic (EB-6) is what will actually invoke it.
+        """
+        ...
+
+    @abstractmethod
+    async def change_mode(self, instrument_keys: list[str], mode: str) -> None:
+        """Promote/demote already-subscribed instruments to a different feed
+        mode (e.g. Upstox "full" -> "full_d30") without a full resubscribe.
+
+        EBIE EB-0 infrastructure, same status as unsubscribe() above.
+        """
+        ...
+
+    @abstractmethod
     async def start_streaming(
         self, on_tick: Callable[[RawTickV1], Awaitable[None]]
     ) -> None:

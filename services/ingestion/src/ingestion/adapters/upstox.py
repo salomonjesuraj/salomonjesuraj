@@ -39,6 +39,16 @@ class UpstoxAdapter(BrokerAdapter):
         self._last_auth_error = ""
         self._token_source = ""
         self._token_expiry_ts = 0
+        # EBIE EB-0: reconnect-gap tracking. _reconnect_count previously
+        # existed but was never incremented anywhere -- health() always
+        # reported 0 regardless of how many reconnects actually happened.
+        # Fixed here: connect() increments it (and computes the gap since
+        # the prior disconnect) whenever this isn't the process's first
+        # connect.
+        self._has_connected_once = False
+        self._disconnected_at: float = 0.0
+        self._last_gap_ms: int = 0
+        self._cumulative_gap_ms: int = 0
 
     def set_redis(self, redis):
         """Provide Redis for OAuth token lookup."""
@@ -109,6 +119,24 @@ class UpstoxAdapter(BrokerAdapter):
     async def connect(self) -> None:
         """Get authorized V3 WS URI and connect."""
         self.state = ConnectionState.CONNECTING
+
+        # EBIE EB-0: this is a genuine reconnect (not the process's first
+        # connect) the moment we've connected before -- record it and the
+        # gap since the last disconnect so it's actually visible, instead
+        # of the previously-dead _reconnect_count that always read 0.
+        if self._has_connected_once:
+            self._reconnect_count += 1
+            if self._disconnected_at:
+                gap_ms = int((time.time() - self._disconnected_at) * 1000)
+                self._last_gap_ms = gap_ms
+                self._cumulative_gap_ms += gap_ms
+                logger.info(
+                    "upstox_reconnect_gap",
+                    gap_ms=gap_ms,
+                    reconnect_count=self._reconnect_count,
+                )
+        self._has_connected_once = True
+
         self._session = aiohttp.ClientSession()
 
         auth_url = "https://api.upstox.com/v3/feed/market-data-feed/authorize"
@@ -175,6 +203,60 @@ class UpstoxAdapter(BrokerAdapter):
 
         self.state = ConnectionState.STREAMING
         logger.info("upstox_subscribed_all", total=len(instrument_keys))
+
+    async def unsubscribe(self, instrument_keys: list[str]) -> None:
+        """Unsubscribe in batches using Upstox V3's "unsub" method.
+
+        EBIE EB-0 infrastructure -- not yet called by any tiering logic.
+        """
+        if not self._ws:
+            raise RuntimeError("Upstox WebSocket is not connected")
+
+        batch_size = self.config.subscribe_batch_size
+        for i in range(0, len(instrument_keys), batch_size):
+            batch = instrument_keys[i:i + batch_size]
+            msg = {
+                "guid": f"infusion-unsub-{int(time.time() * 1000)}-{i}",
+                "method": "unsub",
+                "data": {"instrumentKeys": batch},
+            }
+            await self._ws.send_bytes(json.dumps(msg, separators=(",", ":")).encode("utf-8"))
+            logger.info(
+                "upstox_unsubscribed_batch",
+                batch=i // batch_size + 1,
+                count=len(batch),
+            )
+            await asyncio.sleep(self.config.subscribe_batch_delay_ms / 1000)
+
+    async def change_mode(self, instrument_keys: list[str], mode: str) -> None:
+        """Promote/demote already-subscribed instruments to a different feed
+        mode (e.g. "full" -> "full_d30") using Upstox V3's "change_mode"
+        method, in batches, same pattern as subscribe()/unsubscribe().
+
+        EBIE EB-0 infrastructure -- not yet called by any tiering logic;
+        EB-6 (microstructure) is what will invoke this to promote Tier-3
+        candidates to deeper depth when infusion_models.capability's
+        supports_full_d30 is True.
+        """
+        if not self._ws:
+            raise RuntimeError("Upstox WebSocket is not connected")
+
+        batch_size = self.config.subscribe_batch_size
+        for i in range(0, len(instrument_keys), batch_size):
+            batch = instrument_keys[i:i + batch_size]
+            msg = {
+                "guid": f"infusion-mode-{int(time.time() * 1000)}-{i}",
+                "method": "change_mode",
+                "data": {"mode": mode, "instrumentKeys": batch},
+            }
+            await self._ws.send_bytes(json.dumps(msg, separators=(",", ":")).encode("utf-8"))
+            logger.info(
+                "upstox_mode_changed_batch",
+                batch=i // batch_size + 1,
+                count=len(batch),
+                mode=mode,
+            )
+            await asyncio.sleep(self.config.subscribe_batch_delay_ms / 1000)
 
     async def start_streaming(self, on_tick) -> None:
         """Read WS frames, decode protobuf, invoke callback."""
@@ -248,6 +330,7 @@ class UpstoxAdapter(BrokerAdapter):
 
     async def disconnect(self) -> None:
         self.state = ConnectionState.DISCONNECTED
+        self._disconnected_at = time.time()
         if self._ws and not self._ws.closed:
             await self._ws.close()
         if self._session:
@@ -272,4 +355,6 @@ class UpstoxAdapter(BrokerAdapter):
             if self._last_tick_time
             else -1,
             "reconnect_count": self._reconnect_count,
+            "last_gap_ms": self._last_gap_ms,
+            "cumulative_gap_ms": self._cumulative_gap_ms,
         }

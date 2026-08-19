@@ -75,3 +75,8 @@ KEY_ALERT_MUTE_STRATEGIES = "infusion:alert:mute:strat"  # SET of muted strategi
 # Archiver hot state
 KEY_ARCHIVER_CHECKPOINT = "infusion:archiver:checkpoint"  # HASH: stream → last_id
 
+# EBIE EB-0: provider capability registry + dynamic subscription state
+KEY_CAPABILITY_PREFIX = "infusion:capability:"      # + {provider} → STRING (msgpack ProviderCapabilityV1)
+KEY_SUBSCRIPTION_STATUS = "infusion:subscription:status"   # STRING (msgpack: tier counts + reconnect/gap)
+KEY_SUBSCRIPTION_TIER_PREFIX = "infusion:subtier:"  # + {instrument_key} → HASH {tier, mode, updated_at}
+

@@ -54,6 +54,12 @@ class MockAdapter(BrokerAdapter):
         self.state = ConnectionState.STREAMING
         logger.info("mock_subscribed", count=len(MOCK_SYMBOLS))
 
+    async def unsubscribe(self, instrument_keys: list[str]) -> None:
+        logger.info("mock_unsubscribed", count=len(instrument_keys))
+
+    async def change_mode(self, instrument_keys: list[str], mode: str) -> None:
+        logger.info("mock_mode_changed", count=len(instrument_keys), mode=mode)
+
     async def start_streaming(self, on_tick) -> None:
         self.state = ConnectionState.STREAMING
         interval = 1.0 / max(self.config.mock_tick_rate_hz, 1)

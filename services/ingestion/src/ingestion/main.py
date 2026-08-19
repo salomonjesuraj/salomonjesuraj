@@ -18,9 +18,12 @@ from ingestion.supervisor import ConnectionSupervisor
 from ingestion.publisher import TickPublisher
 from ingestion.adapters.mock import MockAdapter
 from ingestion.adapters.upstox import UpstoxAdapter
+from ingestion.subscription_registry import SubscriptionRegistry
+from ingestion.capability_registry import CapabilityRegistry
 from infusion_common.logging import setup_logging
 from infusion_common.lifecycle import ServiceLifecycle
 from infusion_common.health import HealthReporter
+from infusion_models.capability import ProviderCapabilityV1
 
 logger = structlog.get_logger()
 
@@ -114,12 +117,38 @@ async def main():
         **publisher.stats,
     })
 
+    # EBIE EB-0: provider capability registry + dynamic subscription
+    # registry. The registry starts every symbol at Tier 1 (the only
+    # behavior actually turned on today) -- see subscription_registry.py's
+    # module docstring for why nothing promotes yet.
+    capability = ProviderCapabilityV1(
+        provider=config.broker_primary,
+        ws_connections_available=config.upstox_ws_connections_available,
+        supports_full_d5=True,
+        supports_full_d30=config.upstox_supports_full_d30,
+        supports_option_greeks=True,
+        supports_news=config.upstox_supports_news,
+    )
+    subscription_registry = SubscriptionRegistry(redis, adapter)
+    await subscription_registry.initialize(instruments)
+
+    capability_registry = CapabilityRegistry(
+        redis,
+        capability,
+        subscription_registry,
+        adapter,
+        interval_sec=config.capability_publish_interval_sec,
+        ttl_sec=config.capability_publish_ttl_sec,
+    )
+
     # Cleanup
     lifecycle.register_cleanup(health.stop)
+    lifecycle.register_cleanup(capability_registry.stop)
     lifecycle.register_cleanup(redis.aclose)
 
     # Start
     await health.start()
+    await capability_registry.start()
 
     try:
         await supervisor.run()
