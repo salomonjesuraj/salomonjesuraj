@@ -25,6 +25,7 @@ from feature_engine.features.structure import update_structure, structure_snapsh
 from feature_engine.features.divergence import detect_rsi_divergence
 from feature_engine.features.candles import update_body_ema, detect_candle_pattern, body_pct
 from feature_engine.features.accumulation import update_clv, clv_snapshot
+from feature_engine.features.pullback import pullback_dryup_snapshot
 from feature_engine.features.zones import update_zones, zone_snapshot
 from feature_engine.features.fibonacci import fib_snapshot
 from feature_engine.features.ict import update_ict, ict_snapshot
@@ -439,6 +440,11 @@ class FeatureEngine:
             # evidence -- see feature_engine/features/accumulation.py.
             # Informational only, same governance as every field above.
             **clv_snapshot(state),
+            # EBIE EB-2: pullback-volume dry-up -- see
+            # feature_engine/features/pullback.py. Nested (not spread)
+            # since it's already a small, self-contained object rather
+            # than several flat scalar keys.
+            "pullback_dryup": pullback_dryup_snapshot(state, state.trend_state),
             "delivery_pct_avg_20d": state.delivery_pct_avg_20d,
             "delivery_avg_days": state.delivery_avg_days,
             "delivery_trade_date": state.delivery_trade_date,
