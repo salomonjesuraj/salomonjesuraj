@@ -21,6 +21,8 @@ import structlog
 
 from api.event_calendar import EVENT_KEY_PREFIX
 from api.intelligence import build_intelligence_layer
+from api.market_breadth import compute_market_breadth
+from api.market_context import compute_directional_context
 
 routes = web.RouteTableDef()
 logger = structlog.get_logger()
@@ -1613,6 +1615,27 @@ async def _build_ticks(redis, sector_filter: str = "", tier_filter: str = "") ->
     for rank, entry in enumerate(by_rvol, start=1):
         entry["rvol_rank"] = rank
 
+    # EBIE EB-3 -- RS percentile rank (api/relative_strength.py's
+    # multi_timeframe_rs.rs_20d, already merged into each row via
+    # entry.update(mtf_cache) above). Same shape as rvol_rank: needs the
+    # whole universe to rank against. Percentile = % of the (rs_20d-
+    # available) universe this row's RS beats or ties -- None (not a
+    # fabricated number) for a row whose own rs_20d isn't available yet.
+    rs20_values = sorted(
+        float((e.get("multi_timeframe_rs") or {}).get("rs_20d"))
+        for e in ticks
+        if (e.get("multi_timeframe_rs") or {}).get("rs_20d") is not None
+    )
+    rs20_n = len(rs20_values)
+    for entry in ticks:
+        rs20 = (entry.get("multi_timeframe_rs") or {}).get("rs_20d")
+        if rs20 is None or rs20_n == 0:
+            entry["rs_20d_percentile"] = None
+            continue
+        rs20 = float(rs20)
+        beats_or_ties = sum(1 for v in rs20_values if v <= rs20)
+        entry["rs_20d_percentile"] = round(beats_or_ties / rs20_n * 100, 1)
+
     # Phase R8 -- Sector/Index relative strength, the stock_breakout_score's
     # deferred 10th component (see STOCK_BREAKOUT_SCORE_MAX in
     # _scanner_intel). Needs the whole universe's change_pct/sector_id to
@@ -1628,6 +1651,16 @@ async def _build_ticks(redis, sector_filter: str = "", tier_filter: str = "") ->
         if sid:
             sector_changes.setdefault(sid, []).append(float(entry.get("change_pct") or 0))
     sector_avg_change = {sid: sum(vals) / len(vals) for sid, vals in sector_changes.items() if vals}
+
+    # EBIE EB-3 -- market/sector directional context (api/market_context.py).
+    # One whole-universe breadth read per request (not per row -- cheap,
+    # same "~0.1s, pure Redis" cost this function already carries
+    # elsewhere per market_breadth.py's own header), then synthesized
+    # per row against that row's own bias inside the loop below.
+    try:
+        market_health_score = (await compute_market_breadth(redis)).get("health_score")
+    except Exception:
+        market_health_score = None
 
     for entry in ticks:
         sid = entry.get("sector_id") or ""
@@ -1654,6 +1687,19 @@ async def _build_ticks(redis, sector_filter: str = "", tier_filter: str = "") ->
         # ever holds one value, so folding this in there would force
         # losing one fact to show the other.
         entry["sector_leader"] = bool(sector_rs is not None and sector_rs >= 0.5)
+
+        # EBIE EB-3 -- directional market/sector context, read against
+        # this row's own bias. See api/market_context.py's own docstring
+        # for why this is one direction-aware score rather than the
+        # blueprint's literal 4-field bull/bear split.
+        context = compute_directional_context(
+            is_sell_bias=is_sell,
+            nifty_change_pct=nifty_chg,
+            sector_avg_change_pct=sector_avg,
+            market_health_score=market_health_score,
+        )
+        entry["market_sector_context_score"] = context["score"]
+        entry["market_sector_context_reasons"] = context["reasons"]
 
         rs_points = 0.0
         if sector_rs is not None and sector_rs >= 0.5:
