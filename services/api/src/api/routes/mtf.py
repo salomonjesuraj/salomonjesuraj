@@ -22,6 +22,7 @@ from api.wyckoff import detect_structural_failure, detect_shortening_of_thrust, 
 from api.vcp import compute_vcp
 from api.daily_trend_filter import compute_daily_trend_filter
 from api.anchored_vwap import compute_anchored_vwaps
+from api.relative_strength import compute_multi_timeframe_rs
 
 routes = web.RouteTableDef()
 
@@ -854,6 +855,10 @@ async def compute_mtf(redis, symbol: str, store: bool = True) -> dict:
         "prev_close": None, "prev_high": None, "prev_low": None,
         "week_open": None, "swing_high": None, "swing_low": None,
     }
+    # EBIE EB-3: multi-timeframe relative strength -- see
+    # api/relative_strength.py. Batch-computed from the same daily/
+    # nifty_daily bars already fetched above, no new I/O.
+    multi_rs = compute_multi_timeframe_rs(daily, nifty_daily)
     quality = "historical" if any(row["bars"] for row in timeframes.values()) else "missing"
     if any(row["quality"] == "limited" for row in timeframes.values()) and quality == "historical":
         quality = "limited"
@@ -892,6 +897,7 @@ async def compute_mtf(redis, symbol: str, store: bool = True) -> dict:
         "vcp": vcp,
         "daily_trend": daily_trend,
         "anchored_vwaps": anchored_vwaps,
+        "multi_timeframe_rs": multi_rs,
         "wyckoff_structural_failure": wyckoff_structural_failure,
         "wyckoff_sot": wyckoff_sot,
         "wyckoff_sos_sow": wyckoff_sos_sow,
