@@ -55,6 +55,7 @@ from api.routes.system import routes as system_routes
 from api.routes.futures import routes as futures_routes
 from api.routes.options_dynamics import routes as options_dynamics_routes
 from api.routes.ebie_state import routes as ebie_state_routes
+from api.routes.upstox_news import routes as upstox_news_routes
 from api.ai_advisor import OpenAIAdvisor
 from api.option_chain_queue import option_chain_queue_loop
 from api.mtf_queue import mtf_queue_loop
@@ -62,6 +63,7 @@ from api.radar_alert_queue import radar_alert_loop
 from api.futures_queue import futures_queue_loop
 from api.options_dynamics_queue import options_dynamics_loop
 from api.ebie_state_queue import ebie_state_loop
+from api.news_queue import news_queue_loop
 from infusion_common.logging import setup_logging
 from infusion_common.health import HealthReporter
 
@@ -139,6 +141,7 @@ async def main():
         app.router.add_routes(analytics_routes)
         app.router.add_routes(radar_alerts_routes)
         app.router.add_routes(ebie_state_routes)
+        app.router.add_routes(upstox_news_routes)
 
     runner = web.AppRunner(app)
     await runner.setup()
@@ -152,6 +155,7 @@ async def main():
     ebie_state_task = asyncio.create_task(ebie_state_loop(app))
     futures_queue_task = asyncio.create_task(futures_queue_loop(app))
     options_dynamics_task = asyncio.create_task(options_dynamics_loop(app))
+    news_queue_task = asyncio.create_task(news_queue_loop(app))
 
     # Run forever
     try:
@@ -166,6 +170,7 @@ async def main():
         ebie_state_task.cancel()
         futures_queue_task.cancel()
         options_dynamics_task.cancel()
+        news_queue_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await option_queue_task
         with contextlib.suppress(asyncio.CancelledError):
@@ -178,6 +183,8 @@ async def main():
             await futures_queue_task
         with contextlib.suppress(asyncio.CancelledError):
             await options_dynamics_task
+        with contextlib.suppress(asyncio.CancelledError):
+            await news_queue_task
         await health.stop()
         await runner.cleanup()
         if pg_pool:
