@@ -59,6 +59,7 @@ from api.routes.upstox_news import routes as upstox_news_routes
 from api.routes.sentiment import routes as sentiment_routes
 from api.routes.portfolio_risk import routes as portfolio_risk_routes
 from api.routes.ebie_candidates import routes as ebie_candidates_routes
+from api.routes.shadow_validation import routes as shadow_validation_routes
 from api.ai_advisor import OpenAIAdvisor
 from api.option_chain_queue import option_chain_queue_loop
 from api.mtf_queue import mtf_queue_loop
@@ -150,6 +151,7 @@ async def main():
         app.router.add_routes(sentiment_routes)
         app.router.add_routes(portfolio_risk_routes)
         app.router.add_routes(ebie_candidates_routes)
+        app.router.add_routes(shadow_validation_routes)
 
     runner = web.AppRunner(app)
     await runner.setup()
