@@ -248,6 +248,12 @@ class VolVwapBreakout(BaseStrategy):
                 "anti_chase_reasons": pine.anti_chase_reasons,
                 "rejection_reasons": pine.rejection_reasons,
                 "candle_pattern": features.get("candle_pattern", ""),
+                # EBIE EB-0 -- Data Quality Score, a first-class
+                # FeatureVectorV1 field on the raw tick payload (not
+                # nested under ml_features). See options_first_hybrid.py's
+                # identical addition for the full rationale.
+                "data_quality_score": features.get("data_quality_score"),
+                "data_quality_reasons": features.get("data_quality_reasons"),
                 "trend_state": ml.get("trend_state"),
                 "trend_text": ml.get("trend_text"),
                 "last_event_label": ml.get("last_event_label"),

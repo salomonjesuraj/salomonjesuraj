@@ -287,6 +287,12 @@ class OptionsFirstHybrid(BaseStrategy):
             # Structure/zone story from feature_engine (Pine v6 alignment) —
             # same vocabulary the TradingView chart shows, so alerter and AI
             # advisor can say the same thing the chart says.
+            # EBIE EB-0 -- Data Quality Score, a first-class FeatureVectorV1
+            # field on the raw tick payload (not nested under ml_features,
+            # same reasoning as delivery_pct above). Added here for EB-12's
+            # dashboard, which was otherwise reading an always-null value.
+            "data_quality_score": features.get("data_quality_score"),
+            "data_quality_reasons": features.get("data_quality_reasons"),
             "trend_state": ml.get("trend_state"),
             "trend_text": ml.get("trend_text"),
             "last_event_label": ml.get("last_event_label"),
