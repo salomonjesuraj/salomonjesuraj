@@ -27,4 +27,5 @@ def transform(raw_payload: dict, info: SymbolInfo, is_out_of_order: bool = False
         received_at_us=raw_payload["received_at_us"],
         normalized_at_us=now_us(),
         is_out_of_order=is_out_of_order,
+        depth_levels=raw_payload.get("depth_levels") or [],
     )

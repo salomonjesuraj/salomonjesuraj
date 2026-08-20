@@ -29,6 +29,14 @@ class RawTickV1(BaseModel, frozen=True):
     best_ask_qty: int = 0
     exchange_timestamp_ms: int           # UTC epoch milliseconds (authoritative)
     received_at_us: int                  # Local receipt epoch microseconds
+    # EBIE EB-6: up to 5 {bidP,bidQ,askP,askQ} levels, best-first --
+    # real data, not a placeholder: Upstox's "full" subscription mode
+    # (the only mode this adapter has ever used) already sends 5 levels
+    # per tick; a codec bug (upstox_codec.py's _parse_market_level)
+    # previously discarded levels 2-5 by returning on the first repeated
+    # protobuf field instead of collecting all of them. Empty list for
+    # feed types that only ever carry one level (index feeds).
+    depth_levels: list = []
 
 
 class NormalizedTickV1(BaseModel, frozen=True):
@@ -52,6 +60,9 @@ class NormalizedTickV1(BaseModel, frozen=True):
     exchange_timestamp_ms: int
     received_at_us: int
     normalized_at_us: int
+    # EBIE EB-6: real 5-level depth, carried through unchanged from
+    # RawTickV1 -- see that model's own field comment for the full story.
+    depth_levels: list = []
     # EBIE EB-0 event-time integrity: True when this tick's
     # exchange_timestamp_ms is older than the newest one already seen for
     # this symbol (see normalizer/ordering.py). Never dropped for this --

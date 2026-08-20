@@ -318,6 +318,7 @@ class UpstoxAdapter(BrokerAdapter):
             best_ask_qty=decoded.best_ask_qty,
             exchange_timestamp_ms=decoded.exchange_timestamp_ms,
             received_at_us=received_at_us,
+            depth_levels=decoded.depth_levels or [],
         )
 
     @staticmethod

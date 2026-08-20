@@ -33,6 +33,10 @@ class DecodedFeed:
     best_bid_qty: int = 0
     best_ask_qty: int = 0
     exchange_timestamp_ms: int = 0
+    # EBIE EB-6: up to 5 {bidP,bidQ,askP,askQ} levels, best-first. Empty
+    # for feed types that only ever carry one level (index feeds, the
+    # FirstLevelWithGreeks options message type) -- never fabricated.
+    depth_levels: list | None = None
 
 
 def _read_varint(data: bytes, pos: int) -> tuple[int, int]:
@@ -117,11 +121,24 @@ def _parse_quote(data: bytes) -> dict:
     return out
 
 
-def _parse_market_level(data: bytes) -> dict:
+def _parse_market_level(data: bytes) -> list[dict]:
+    """Parse EVERY depth level in a MarketLevel message.
+
+    EBIE EB-6 fix: Upstox's real MarketLevel message has a REPEATED
+    Quote field (field_no==1 occurs once per depth level -- up to 5 for
+    the "full" subscription mode ingestion has used since it first
+    connected). The original version of this function returned on the
+    FIRST occurrence only, silently discarding levels 2-5 on every
+    single tick -- real 5-level depth has been arriving over the wire
+    the whole time, not something that needed a new subscription mode
+    or Upstox Plus entitlement to unlock. See docs/EBIE-BLUEPRINT.md
+    Section 4.6 / the authorized D5-baseline decision.
+    """
+    levels: list[dict] = []
     for field_no, _, value in _fields(data):
         if field_no == 1 and isinstance(value, bytes):
-            return _parse_quote(value)
-    return {}
+            levels.append(_parse_quote(value))
+    return levels
 
 
 def _parse_ohlc(data: bytes) -> dict:
@@ -165,7 +182,12 @@ def _parse_market_full_feed(data: bytes) -> dict:
         if field_no == 1 and isinstance(value, bytes):
             out["ltpc"] = _parse_ltpc(value)
         elif field_no == 2 and isinstance(value, bytes):
-            out["first_depth"] = _parse_market_level(value)
+            # EBIE EB-6: depth_levels is the full (up to 5) parsed list;
+            # first_depth stays level[0] exactly as before this fix, so
+            # every existing best_bid/best_ask consumer is unaffected.
+            levels = _parse_market_level(value)
+            out["depth_levels"] = levels
+            out["first_depth"] = levels[0] if levels else {}
         elif field_no == 4 and isinstance(value, bytes):
             out["ohlc"] = _parse_market_ohlc(value)
         elif field_no == 6:
@@ -261,6 +283,7 @@ def _to_decoded_feed(instrument_key: str, feed: dict, current_ts: int) -> Decode
         best_bid_qty=int(depth.get("bidQ") or 0),
         best_ask_qty=int(depth.get("askQ") or 0),
         exchange_timestamp_ms=int(ltpc.get("ltt") or current_ts or 0),
+        depth_levels=feed.get("depth_levels") or [],
     )
 
 
