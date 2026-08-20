@@ -42,6 +42,7 @@ from scanner.strategies import get_strategies
 from scanner.strategies.base import SignalCandidate
 from scanner.ml_score import score_signal as ml_score_signal, classify_session_ist
 from scanner.verdict_engine import compute_verdict
+from scanner.trap_model import compute_trap_risk
 
 from infusion_models.events import EventType
 from infusion_models.signal import ScanSignalV2
@@ -479,6 +480,25 @@ class ScannerEngine:
             tick_lag_ms=features.get("tick_lag_ms"),
             session_gap_ms=features.get("session_gap_ms"),
             chaseable=bool(fs.get("chaseable")),
+        )
+
+        # ── EBIE EB-9 (increment 1): real-time trap-risk heuristic ──
+        # (shadow only, same governance as the verdict above). A
+        # deliberately DIFFERENT signal from the verdict's bull/bear
+        # evidence-agreement score -- see verdict_engine.py's own
+        # module docstring for why a candidate can score well on both
+        # and still carry real trap risk.
+        sub_scores["trap_risk"] = compute_trap_risk(
+            bullish=candidate.signal_type == "bullish",
+            anti_chase_ok=fs.get("anti_chase_ok"),
+            rel_vol_20d=fs.get("rel_vol_20d"),
+            candle_pattern=str(fs.get("candle_pattern") or ""),
+            change_pct=fs.get("change_pct"),
+            spread_bps=fs.get("spread_bps"),
+            call_wall_state=fs.get("call_wall_state"),
+            put_wall_state=fs.get("put_wall_state"),
+            rs_slope_20d=(mtf_cache.get("multi_timeframe_rs") or {}).get("rs_slope_20d"),
+            sector_strength=sector_strength,
         )
 
         # ── Suppression gate ───────────────────────────
