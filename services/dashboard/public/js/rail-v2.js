@@ -1,44 +1,69 @@
 /**
- * Left rail — Phase N5 shipped this as a flat, 1:1 restyle of the "More"
- * drawer's destinations (screener excluded -- it's already the primary
- * New shell view, not tucked away): same panel classes underneath, just a
- * vertical list instead of a horizontal tab bar. That phase deliberately
- * deferred grouping ("ship flat first, group only once it's live and
- * stable" -- see the plan). Phase O.5 does that grouping now, applying
- * the same 5 clusters used for Classic's More drawer (index.html's
- * .workbench-tab-group) so the two navigation systems read as the same
- * taxonomy even though they're separately maintained (this rail is its
- * own generated-from-ROWS mechanism, not literally shared code with
- * workbench-tabs.js -- confirmed by reading both before this phase,
- * correcting an earlier assumption that they were the same system).
+ * Left rail — Clean Sweep LC-1 regroups this from 5 loosely-named groups
+ * (19 rows) into 4 workflow-named groups (~15 top-level rows), per the
+ * plan file's "Clean Sweep" section. Reasoning per group:
+ *   - Trade: detection through contract decision (the moment-to-moment
+ *     trading surfaces). Options Analytics / Strategy Selector stay
+ *     their own rows here for now, even though the plan's end state
+ *     folds them into Option Basis as internal sections -- that fold is
+ *     LC-3's job (needs options.js itself restructured); removing their
+ *     rail entry before that UI exists would strand real functionality
+ *     with no way to reach it. Deliberate sequencing, not an oversight.
+ *   - Manage: capital + paper-trade lifecycle.
+ *   - Performance: Optimizer, Diagnostics, Signal Integrity, and Alert
+ *     Log collapsed into ONE rail row with an internal sub-tab bar
+ *     (see PERFORMANCE_TABS/showPane below) -- all four are "is this
+ *     actually working" evidence, not trading-decision surfaces, and
+ *     genuinely overlapped in purpose (walk-forward/ML/Kelly/ablation,
+ *     precision proof, outcome ledger, delivery audit are all flavors
+ *     of the same question). Their underlying panel classes/containers
+ *     in index.html/app.js are UNCHANGED -- only the rail entry point
+ *     collapses, not the panels themselves.
+ *   - Context: unchanged, already coherent (News/Events/Ask Infusion).
+ * Watchlist's rail row is retired outright (not moved) -- its content
+ * ("Pre-Breakout Watch") is fully covered by the primary view's own
+ * Watch Strip plus the Breakout Radar and EBIE Verdict panes (confirmed
+ * duplication: same /api/prebreakout source). Its underlying
+ * WatchlistPanel/#watchlistBodyV2 mount is left completely untouched in
+ * index.html/app.js (Classic still uses the same class) -- it simply
+ * has no rail button pointing at it anymore, the same "mounted but
+ * unreached" trade-off this codebase already accepts elsewhere (every
+ * panel mounts and polls regardless of which one is currently visible).
  */
-const GROUPS = ['Screener & Detail', 'Options', 'Backtest & Optimizer', 'Execution & Journal', 'Info'];
+// Note: 'Performance' is deliberately NOT a real group here -- it has no
+// ROWS entries of its own (see PERFORMANCE_TABS below); its single rail
+// button is injected directly after 'Manage' in initRailV2() instead.
+const GROUPS = ['Trade', 'Manage', 'Context'];
 const ROWS = [
-  // Phase R3 -- Stock Breakout Radar, first in its group per the reference
-  // plan's "first and largest panel" framing (docs/stock-options-
-  // dashboard-review-and-structure-plan.md).
-  { key: 'breakout-radar', icon: '📡', label: 'Breakout Radar', group: 'Screener & Detail' },
-  // EBIE EB-12 -- ranked candidate list + Why-Now/Why-Not evidence,
-  // per docs/EBIE-IMPLEMENTATION-ANSWERS.md Q4.1 (New-shell only).
-  { key: 'ebie-verdict', icon: '⚡', label: 'EBIE Verdict', group: 'Screener & Detail' },
-  { key: 'watchlist', icon: '◑', label: 'Watchlist', group: 'Screener & Detail' },
-  { key: 'stock-detail', icon: '◎', label: 'Stock Detail', group: 'Screener & Detail' },
-  { key: 'triggers', icon: '▲', label: 'Triggers', group: 'Screener & Detail' },
-  { key: 'option-basis', icon: '⌘', label: 'Option Basis', group: 'Options' },
-  { key: 'options-analytics', icon: '⌗', label: 'Options Analytics', group: 'Options' },
-  { key: 'strategy-selector', icon: '⚖', label: 'Strategy Selector', group: 'Options' },
-  { key: 'optimizer', icon: '↻', label: 'Optimizer', group: 'Backtest & Optimizer' },
-  { key: 'diagnostics', icon: '📊', label: 'Diagnostics', group: 'Backtest & Optimizer' },
-  { key: 'risk', icon: '◈', label: 'Risk', group: 'Backtest & Optimizer' },
-  { key: 'signal-integrity', icon: '✓', label: 'Signal Integrity', group: 'Backtest & Optimizer' },
-  { key: 'execution', icon: '⚙', label: 'Execution', group: 'Execution & Journal' },
-  { key: 'journal', icon: '▤', label: 'Journal', group: 'Execution & Journal' },
-  { key: 'safety', icon: '🛡', label: 'Safety', group: 'Execution & Journal' },
-  { key: 'alerts', icon: '🔔', label: 'Alert Log', group: 'Execution & Journal' },
-  { key: 'news', icon: '📰', label: 'News', group: 'Info' },
-  { key: 'events', icon: '📅', label: 'Events', group: 'Info' },
-  { key: 'ask-infusion', icon: '✦', label: 'Ask Infusion', group: 'Info' },
+  // Phase R3 -- Stock Breakout Radar, first per the reference plan's
+  // "first and largest panel" framing.
+  { key: 'breakout-radar', icon: '📡', label: 'Breakout Radar', group: 'Trade' },
+  { key: 'ebie-verdict', icon: '⚡', label: 'EBIE Verdict', group: 'Trade' },
+  { key: 'stock-detail', icon: '◎', label: 'Stock Detail', group: 'Trade' },
+  { key: 'option-basis', icon: '⌘', label: 'Option Basis', group: 'Trade' },
+  { key: 'options-analytics', icon: '⌗', label: 'Options Analytics', group: 'Trade' },
+  { key: 'strategy-selector', icon: '⚖', label: 'Strategy Selector', group: 'Trade' },
+  { key: 'triggers', icon: '▲', label: 'Triggers', group: 'Trade' },
+  { key: 'risk', icon: '◈', label: 'Risk', group: 'Manage' },
+  { key: 'execution', icon: '⚙', label: 'Execution', group: 'Manage' },
+  { key: 'journal', icon: '▤', label: 'Journal', group: 'Manage' },
+  { key: 'safety', icon: '🛡', label: 'Safety', group: 'Manage' },
+  { key: 'news', icon: '📰', label: 'News', group: 'Context' },
+  { key: 'events', icon: '📅', label: 'Events', group: 'Context' },
+  { key: 'ask-infusion', icon: '✦', label: 'Ask Infusion', group: 'Context' },
 ];
+
+// The 4 panes merged under the single "Performance" rail row. Each
+// entry's `key` still matches its real, untouched data-pane-v2 value in
+// index.html -- only the rail navigation collapses, not the panes.
+const PERFORMANCE_TABS = [
+  { key: 'optimizer', label: 'Optimizer' },
+  { key: 'diagnostics', label: 'Diagnostics' },
+  { key: 'signal-integrity', label: 'Signal Integrity' },
+  { key: 'alerts', label: 'Alert Log' },
+];
+
+const PERFORMANCE_KEYS = new Set(PERFORMANCE_TABS.map((t) => t.key));
 
 export function initRailV2() {
   const rail = document.getElementById('railV2');
@@ -58,30 +83,68 @@ export function initRailV2() {
         </button>
       `).join('')}
     </div>
+    ${g === 'Manage' ? `
+    <div class="ifx-rail-group">
+      <span class="ifx-rail-group-label">Performance</span>
+      <button type="button" class="ifx-rail-item" data-rail-key="performance">
+        <span class="ifx-rail-icon">📊</span><span class="ifx-rail-item-label">Performance</span>
+        <span class="ifx-rail-chevron">→</span>
+      </button>
+    </div>` : ''}
   `).join('');
 
+  // Sub-tab bar for the merged Performance pane -- built once, inserted
+  // right after the "← Back" row, hidden unless the Performance cluster
+  // is the active pane. Reuses .ifx-btn (the existing shared component)
+  // for the tab buttons rather than inventing a second tab-bar system.
+  const perfBar = document.createElement('div');
+  perfBar.id = 'performanceSubTabsV2';
+  perfBar.className = 'ifx-perf-subtabs';
+  perfBar.style.display = 'none';
+  perfBar.innerHTML = PERFORMANCE_TABS.map((t, i) =>
+    `<button type="button" class="ifx-btn ifx-btn--on-paper" data-perf-key="${t.key}">${t.label}</button>`
+  ).join('');
+  const sectionLabel = paneView.querySelector('.ifx-section-label');
+  sectionLabel?.insertAdjacentElement('afterend', perfBar);
+
   function showPane(key) {
-    const row = ROWS.find((r) => r.key === key);
+    const isPerf = PERFORMANCE_KEYS.has(key) || key === 'performance';
+    const activeKey = isPerf && key === 'performance' ? PERFORMANCE_TABS[0].key : key;
+    const row = isPerf
+      ? { label: 'Performance' }
+      : ROWS.find((r) => r.key === key);
     if (!row) return;
+
     primary.style.display = 'none';
     paneView.style.display = 'block';
     paneTitle.textContent = row.label;
     paneView.querySelectorAll('[data-pane-v2]').forEach((el) => {
-      el.style.display = el.dataset.paneV2 === key ? 'block' : 'none';
+      el.style.display = el.dataset.paneV2 === activeKey ? 'block' : 'none';
     });
     rail.querySelectorAll('.ifx-rail-item').forEach((btn) => {
-      btn.classList.toggle('active', btn.dataset.railKey === key);
+      btn.classList.toggle('active', btn.dataset.railKey === (isPerf ? 'performance' : key));
     });
+
+    perfBar.style.display = isPerf ? 'flex' : 'none';
+    if (isPerf) {
+      perfBar.querySelectorAll('[data-perf-key]').forEach((btn) => {
+        btn.classList.toggle('ifx-btn--active', btn.dataset.perfKey === activeKey);
+      });
+    }
   }
 
   function showPrimary() {
     paneView.style.display = 'none';
     primary.style.display = 'block';
+    perfBar.style.display = 'none';
     rail.querySelectorAll('.ifx-rail-item').forEach((btn) => btn.classList.remove('active'));
   }
 
   rail.querySelectorAll('[data-rail-key]').forEach((btn) => {
     btn.addEventListener('click', () => showPane(btn.dataset.railKey));
+  });
+  perfBar.querySelectorAll('[data-perf-key]').forEach((btn) => {
+    btn.addEventListener('click', () => showPane(btn.dataset.perfKey));
   });
   backBtn?.addEventListener('click', showPrimary);
 

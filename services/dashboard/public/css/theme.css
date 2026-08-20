@@ -290,6 +290,16 @@
 }
 .ifx-btn.ifx-btn--on-paper:hover { color: var(--ifx-content-text); border-color: var(--ifx-content-text-faint); }
 .ifx-btn.ifx-btn--on-paper:focus-visible { box-shadow: 0 0 0 2px var(--ifx-content-surface), 0 0 0 4px var(--ifx-accent-strong); }
+/* Clean Sweep LC-1: .ifx-btn--on-paper's own color/border-color (above)
+   would otherwise win over .ifx-btn--active's at equal specificity when
+   both classes are combined (as the Performance sub-tabs do) since it's
+   declared later in the file -- this explicit 3-class rule restores the
+   correct active look on a paper surface. */
+.ifx-btn.ifx-btn--on-paper.ifx-btn--active {
+  background: var(--ifx-accent-dim);
+  border-color: var(--ifx-accent-strong);
+  color: var(--ifx-accent-strong);
+}
 
 .ifx-badge {
   display: inline-flex;
@@ -1459,6 +1469,10 @@
 }
 .ifx-section-rule { flex: 1; height: 1px; background: var(--ifx-shell-border); }
 .ifx-section-count { font-family: var(--ifx-font-mono); color: var(--ifx-accent-strong); text-transform: none; letter-spacing: 0; }
+
+/* Clean Sweep LC-1 -- sub-tab bar for the merged Performance rail row
+   (rail-v2.js). Reuses .ifx-btn/.ifx-btn--active, no new button system. */
+.ifx-perf-subtabs { display: flex; gap: 6px; margin: 0 0 14px; flex-wrap: wrap; }
 
 .ifx-deck-wrap { color: var(--ifx-shell-text); }
 .ifx-deck { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; }
