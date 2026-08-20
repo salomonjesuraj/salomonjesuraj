@@ -39,15 +39,16 @@ function sparkPath(vals, w, h) {
   }).join(' ');
 }
 
-function gaugeArc(score, glowVar) {
-  const r = 30, c = 2 * Math.PI * r, clamped = Math.max(0, Math.min(100, score)), off = c - (clamped / 100) * c;
+// Clean Sweep LC-2: the score was previously a circular gauge (SVG ring
+// + centered number) -- a legitimate design element, but the reference
+// screenshot's whole visual language is number-forward and reads faster
+// at a glance than a dial does; a beginner shouldn't need to parse a
+// ring fill to know "how good is this." Replaced with a plain, bold,
+// tone-colored score badge -- same information, less to visually parse.
+function scoreBadge(score, glowVar) {
   return `
-    <div class="ifx-deck-gauge">
-      <svg viewBox="0 0 76 76"><circle class="ifx-deck-gauge-track" cx="38" cy="38" r="${r}"/>
-        <circle class="ifx-deck-gauge-fill" cx="38" cy="38" r="${r}" stroke="${glowVar}"
-          stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}"
-          transform="rotate(-90 38 38)"/></svg>
-      <div class="ifx-deck-gauge-num"><b style="color:${glowVar}">${Math.round(score)}</b><span>score</span></div>
+    <div class="ifx-deck-score">
+      <b style="color:${glowVar}">${Math.round(score)}</b><span>score</span>
     </div>`;
 }
 
@@ -174,7 +175,7 @@ export class CockpitV2Panel {
         <div class="ifx-deck-lock" title="Frozen at signal time — never recalculated as price moves">🔒 as of ${signalTime(sig.created_at_us)} · ${ageStr(sig.created_at_us)}</div>
       </div>
       <div class="ifx-deck-mid">
-        ${gaugeArc(score, glow)}
+        ${scoreBadge(score, glow)}
         <div class="ifx-deck-verdict"><div class="ifx-deck-verdict-word ifx-deck-verdict-word--${side}">${escapeHtml(label)}</div>
           <div class="ifx-deck-verdict-reason">Grade ${escapeHtml(grade)} · Rank #${rank}${rr ? ` · R:R ${rr.toFixed(1)}:1` : ''}</div></div>
       </div>

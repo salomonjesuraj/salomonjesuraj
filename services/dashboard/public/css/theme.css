@@ -1487,28 +1487,30 @@
 
 .ifx-deck-card {
   position: relative; overflow: hidden;
-  border-radius: var(--ifx-radius-lg); border: 1px solid var(--ifx-shell-border);
-  background: linear-gradient(155deg, var(--ifx-shell-raised), var(--ifx-shell-surface));
+  border-radius: var(--ifx-radius-md); border: 1px solid var(--ifx-shell-border);
+  background: var(--ifx-shell-surface);
   padding: var(--ifx-space-4);
 }
-.ifx-deck-card::before {
-  content: ''; position: absolute; inset: 0; opacity: .5; pointer-events: none;
-  background: radial-gradient(420px 200px at 85% -10%, var(--ifx-glow, var(--ifx-bear-dim)), transparent 70%);
-}
-.ifx-deck-card--bull { --ifx-glow: var(--ifx-bull-dim); border-left: 3px solid var(--ifx-bull); }
-.ifx-deck-card--bear { --ifx-glow: var(--ifx-bear-dim); border-left: 3px solid var(--ifx-bear); }
+/* Clean Sweep LC-2: dropped the gradient background + radial-gradient
+   ::before "glow" overlay -- pure decoration with no informational
+   value, and the reference's whole visual language is a single flat
+   surface, not layered gradients. The colored left border already
+   carries the bull/bear read; that's kept. */
+/* --ifx-glow stays set (just not used for a background overlay anymore)
+   -- the just-fired pulse animation further down still reads it for a
+   correctly bull/bear-tinted flash when a new signal arrives. */
+.ifx-deck-card--bull { border-left: 3px solid var(--ifx-bull); --ifx-glow: var(--ifx-bull-dim); }
+.ifx-deck-card--bear { border-left: 3px solid var(--ifx-bear); --ifx-glow: var(--ifx-bear-dim); }
 .ifx-deck-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; position: relative; }
 .ifx-deck-symbol { font-family: var(--ifx-font-mono); font-size: 19px; font-weight: 800; letter-spacing: .3px; }
 .ifx-deck-sector { font-size: var(--ifx-text-2xs); color: var(--ifx-shell-text-faint); margin-top: 2px; text-transform: uppercase; letter-spacing: .3px; }
 .ifx-deck-lock { font-size: var(--ifx-text-2xs); color: var(--ifx-shell-text-faint); white-space: nowrap; }
 .ifx-deck-mid { display: flex; align-items: center; gap: 16px; margin: 14px 0; position: relative; }
-.ifx-deck-gauge { position: relative; width: 76px; height: 76px; flex: none; }
-.ifx-deck-gauge svg { width: 100%; height: 100%; }
-.ifx-deck-gauge-track { fill: none; stroke: var(--ifx-shell-border); stroke-width: 7; }
-.ifx-deck-gauge-fill { fill: none; stroke-width: 7; stroke-linecap: round; }
-.ifx-deck-gauge-num { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-.ifx-deck-gauge-num b { font-family: var(--ifx-font-mono); font-size: 20px; font-weight: 800; line-height: 1; }
-.ifx-deck-gauge-num span { font-size: 8px; color: var(--ifx-shell-text-faint); text-transform: uppercase; letter-spacing: .4px; margin-top: 2px; }
+/* Clean Sweep LC-2: replaced the circular gauge (SVG ring) with a plain
+   bold score badge -- see cockpit-v2.js's scoreBadge(), same reasoning. */
+.ifx-deck-score { display: flex; flex-direction: column; align-items: flex-start; flex: none; }
+.ifx-deck-score b { font-family: var(--ifx-font-mono); font-size: 32px; font-weight: 800; line-height: 1; }
+.ifx-deck-score span { font-size: 9px; color: var(--ifx-shell-text-faint); text-transform: uppercase; letter-spacing: .5px; margin-top: 3px; }
 .ifx-deck-verdict { flex: 1; min-width: 0; }
 .ifx-deck-verdict-word { font-size: 21px; font-weight: 900; letter-spacing: .2px; line-height: 1.1; }
 .ifx-deck-verdict-word--bull { color: var(--ifx-bull); }
@@ -1627,6 +1629,15 @@
 .ifx-scr-row { display: grid; grid-template-columns: var(--ifx-scr-grid); height: 100%; border-bottom: 1px solid var(--ifx-shell-border); cursor: pointer; }
 .ifx-scr-row:hover { background: var(--ifx-scrim-1); }
 .ifx-scr-row.selected { background: var(--ifx-accent-dim); box-shadow: inset 3px 0 0 var(--ifx-accent); }
+/* Clean Sweep LC-2 -- highlight band for the #1-ranked row (only while
+   actually sorted by rank, see scanner-v2.js's _renderRows()), mirroring
+   the reference screenshot's ATM-strike treatment: a soft tinted band,
+   not just a border, marking the one row that matters most. Distinct
+   from .selected (a stronger accent-dim fill for "currently viewing")
+   so the two read as separate, coexistable meanings -- a soft gold
+   left-edge accent plus a small rank badge in the symbol cell area. */
+.ifx-scr-row.top-rank { background: var(--ifx-scrim-2); box-shadow: inset 3px 0 0 var(--ifx-accent-strong); }
+.ifx-scr-row.top-rank.selected { background: var(--ifx-accent-dim); }
 .ifx-scr-td { display: flex; align-items: center; justify-content: flex-end; padding: 0 10px; font-size: 12px; overflow: hidden; white-space: nowrap; }
 .ifx-scr-td.left { justify-content: flex-start; }
 .ifx-scr-td small { color: var(--ifx-shell-text-faint); text-transform: capitalize; }

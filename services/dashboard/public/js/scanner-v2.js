@@ -55,7 +55,11 @@ const DASH = '—';
 // price levels, and the one hard legal gate.
 const COLUMNS = [
   { key: 'symbol', label: 'Symbol', width: 108, toggle: false },
-  { key: 'sector_id', label: 'Sector', width: 112, toggle: true },
+  // Clean Sweep LC-2 -- Sector moved to default-hidden (still one click
+  // away via Columns): a beginner scanning for the top setup doesn't
+  // need sector on every row by default, and the reference's own table
+  // stays lean on secondary metadata too.
+  { key: 'sector_id', label: 'Sector', width: 112, toggle: true, defaultHidden: true },
   { key: 'ltp', label: 'LTP', width: 88, toggle: false },
   { key: 'change_pct', label: 'Chg', width: 92, toggle: true },
   // Phase R4 -- RVol default-visible (this table never had it at all
@@ -68,7 +72,10 @@ const COLUMNS = [
   { key: 'setup_strength', label: 'Strength', width: 90, toggle: true },
   { key: 'conviction_score', label: 'Stock Score', width: 100, toggle: true },
   { key: 'contract_score', label: 'Contract', width: 90, toggle: true },
-  { key: 'mtf', label: 'MTF', width: 128, toggle: true },
+  // Clean Sweep LC-2 -- MTF (a compressed multi-timeframe dot composite)
+  // is genuinely useful but reads as internal jargon to a beginner at a
+  // glance; moved to default-hidden alongside Sector, same reasoning.
+  { key: 'mtf', label: 'MTF', width: 128, toggle: true, defaultHidden: true },
   { key: 'direction_bias', label: 'Bias', width: 84, toggle: true },
   { key: 'entry', label: 'Entry', width: 118, toggle: false },
   { key: 'targets', label: 'Targets', width: 108, toggle: true },
@@ -350,6 +357,13 @@ export class ScannerV2Panel {
     });
     const count = this._el.querySelector('#scrV2Count');
     if (count) count.textContent = `${items.length} symbols`;
+    // Clean Sweep LC-2: highlight band for the #1-ranked row, mirroring
+    // the reference screenshot's ATM-strike treatment -- only meaningful
+    // while actually sorted by the real ranking (smart_rank); a row
+    // that's merely first under some OTHER column sort (e.g. clicking
+    // "LTP" to sort by price) isn't "the top pick," so the band only
+    // applies in the default/ranked view.
+    this._topRankSymbol = (this._sortKey === 'smart_rank' && items.length) ? items[0].symbol : null;
     this._vscroll.setData(items);
   }
 
@@ -455,8 +469,9 @@ export class ScannerV2Panel {
       .map((c) => `<div class="ifx-scr-td${leftKeys.has(c.key) ? ' left' : ''}">${cellMap[c.key] ?? DASH}</div>`)
       .join('');
 
+    const isTopRank = sym === this._topRankSymbol;
     return `
-    <div class="ifx-scr-row${isSelected ? ' selected' : ''}" data-scr-sym="${escapeHtml(sym)}">
+    <div class="ifx-scr-row${isSelected ? ' selected' : ''}${isTopRank ? ' top-rank' : ''}" data-scr-sym="${escapeHtml(sym)}">
       ${cells}
     </div>`;
   }
