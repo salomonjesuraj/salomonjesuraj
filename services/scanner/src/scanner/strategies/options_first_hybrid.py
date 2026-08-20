@@ -221,6 +221,11 @@ class OptionsFirstHybrid(BaseStrategy):
         wyckoff_sot = mtf_cache.get("wyckoff_sot")
         wyckoff_sos_sow = mtf_cache.get("wyckoff_sos_sow")
         vcp = mtf_cache.get("vcp") or {}
+        # EBIE EB-7 (increment 3) -- see scanner/engine.py's
+        # _fetch_sentiment_cache() and api/sentiment_queue.py. A
+        # SEPARATE Redis-cached blob from mtf_cache (its own sweep,
+        # its own key), not nested under it.
+        sentiment_cache = features.get("sentiment_cache") or {}
         alignment = compute_signal_alignment(
             bullish=bullish, ml=ml, ma_regime=ma_regime, donchian=donchian,
             wyckoff_sos_sow=wyckoff_sos_sow, atr_trend=atr_trend, candle_pattern=candle_pattern,
@@ -369,6 +374,14 @@ class OptionsFirstHybrid(BaseStrategy):
             "vcp_score": vcp.get("score"),
             "vcp_grade": vcp.get("grade"),
             "vcp_reliable": vcp.get("reliable"),
+            # EBIE EB-7 (increment 3) -- live, decay-weighted news
+            # sentiment. None (never a fabricated NEUTRAL) when there's
+            # no recent classified news for this symbol -- matches
+            # Q4.2's authorized UNKNOWN failure mode. Informational
+            # only, not wired into score.
+            "news_sentiment": sentiment_cache.get("sentiment"),
+            "news_sentiment_impact": sentiment_cache.get("weighted_impact"),
+            "news_article_count": sentiment_cache.get("article_count"),
         }
 
         return SignalCandidate(

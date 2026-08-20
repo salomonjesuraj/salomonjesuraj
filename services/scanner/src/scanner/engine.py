@@ -132,6 +132,15 @@ class ScannerEngine:
         if mtf_cache is not None:
             payload = {**payload, "mtf_cache": mtf_cache}
 
+        # EBIE EB-7 (increment 3): live, decay-weighted news sentiment
+        # (api/sentiment_queue.py, kept warm by its own 60s sweep) --
+        # same I/O-before-evaluate() pattern as mtf_cache above.
+        # Informational only; strategies read it purely, no scoring
+        # wired in yet per this whole roadmap's shadow-first governance.
+        sentiment_cache = await self._fetch_sentiment_cache(symbol)
+        if sentiment_cache is not None:
+            payload = {**payload, "sentiment_cache": sentiment_cache}
+
         # Run all registered strategies
         strategies = get_strategies()
         for strategy in strategies:
@@ -257,6 +266,25 @@ class ScannerEngine:
                 return None
             text = raw.decode() if isinstance(raw, bytes) else raw
             return json.loads(text)
+        except Exception:
+            return None
+
+    async def _fetch_sentiment_cache(self, symbol: str) -> dict | None:
+        """Best-effort read of api/sentiment_queue.py's live sentiment
+        summary for this symbol. Never raises into the hot path: a
+        missing/stale cache (no recent news, sweep hasn't run yet, or
+        sentiment-engine itself is down) just means strategies see no
+        sentiment_cache and their features_snapshot fields come back
+        None -- an honest gap, never a fabricated neutral."""
+        try:
+            raw = await self.redis.get(f"infusion:sentiment:{symbol.upper()}")
+            if not raw:
+                return None
+            text = raw.decode() if isinstance(raw, bytes) else raw
+            decoded = json.loads(text)
+            if not decoded.get("available"):
+                return None
+            return decoded
         except Exception:
             return None
 

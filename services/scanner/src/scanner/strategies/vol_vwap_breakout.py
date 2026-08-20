@@ -196,6 +196,9 @@ class VolVwapBreakout(BaseStrategy):
         wyckoff_sot = mtf_cache.get("wyckoff_sot")
         wyckoff_sos_sow = mtf_cache.get("wyckoff_sos_sow")
         vcp = mtf_cache.get("vcp") or {}
+        # EBIE EB-7 (increment 3) -- see options_first_hybrid.py's
+        # identical comment for the full rationale.
+        sentiment_cache = features.get("sentiment_cache") or {}
         alignment = compute_signal_alignment(
             bullish=True, ml=ml, ma_regime=ma_regime, donchian=donchian,
             wyckoff_sos_sow=wyckoff_sos_sow,
@@ -308,6 +311,12 @@ class VolVwapBreakout(BaseStrategy):
                 "vcp_score": vcp.get("score"),
                 "vcp_grade": vcp.get("grade"),
                 "vcp_reliable": vcp.get("reliable"),
+                # EBIE EB-7 (increment 3) -- live, decay-weighted news
+                # sentiment. None when there's no recent classified news
+                # for this symbol. Informational only, not wired into score.
+                "news_sentiment": sentiment_cache.get("sentiment"),
+                "news_sentiment_impact": sentiment_cache.get("weighted_impact"),
+                "news_article_count": sentiment_cache.get("article_count"),
             },
             entry_price=entry,
             invalidation_price=invalidation,
