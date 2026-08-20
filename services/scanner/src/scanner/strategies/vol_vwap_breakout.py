@@ -199,6 +199,13 @@ class VolVwapBreakout(BaseStrategy):
         # EBIE EB-7 (increment 3) -- see options_first_hybrid.py's
         # identical comment for the full rationale.
         sentiment_cache = features.get("sentiment_cache") or {}
+        # EBIE EB-8 prerequisite -- see options_first_hybrid.py's
+        # identical comment for the full rationale.
+        futures_cache = features.get("futures_cache") or {}
+        options_dynamics_cache = features.get("options_dynamics_cache") or {}
+        odyn_wall = options_dynamics_cache.get("wall") or {}
+        odyn_call_wall = (odyn_wall.get("call_wall") or [{}])[0]
+        odyn_put_wall = (odyn_wall.get("put_wall") or [{}])[0]
         alignment = compute_signal_alignment(
             bullish=True, ml=ml, ma_regime=ma_regime, donchian=donchian,
             wyckoff_sos_sow=wyckoff_sos_sow,
@@ -317,6 +324,16 @@ class VolVwapBreakout(BaseStrategy):
                 "news_sentiment": sentiment_cache.get("sentiment"),
                 "news_sentiment_impact": sentiment_cache.get("weighted_impact"),
                 "news_article_count": sentiment_cache.get("article_count"),
+                # EBIE EB-4/EB-5 -- see options_first_hybrid.py's
+                # identical fields for the full rationale.
+                "futures_basis_pct": futures_cache.get("basis_pct"),
+                "futures_oi_change_pct": futures_cache.get("oi_change_pct"),
+                "weighted_pcr": (options_dynamics_cache.get("weighted_pcr") or {}).get("weighted_pcr"),
+                "pcr_velocity": options_dynamics_cache.get("pcr_velocity"),
+                "call_wall_state": odyn_call_wall.get("state"),
+                "put_wall_state": odyn_put_wall.get("state"),
+                "call_wall_migrated": odyn_wall.get("call_wall_migrated"),
+                "put_wall_migrated": odyn_wall.get("put_wall_migrated"),
             },
             entry_price=entry,
             invalidation_price=invalidation,

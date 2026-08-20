@@ -141,6 +141,20 @@ class ScannerEngine:
         if sentiment_cache is not None:
             payload = {**payload, "sentiment_cache": sentiment_cache}
 
+        # EBIE EB-8 prerequisite: futures positioning (EB-4) and dynamic
+        # option-chain (EB-5) were built and cached in `api` but never
+        # actually threaded into scanner's features_snapshot before now
+        # -- a real gap found while scoping EB-8, since a unified
+        # verdict needs both evidence families as inputs. Same
+        # best-effort, I/O-before-evaluate() pattern as mtf_cache/
+        # sentiment_cache above.
+        futures_cache = await self._fetch_futures_cache(symbol)
+        if futures_cache is not None:
+            payload = {**payload, "futures_cache": futures_cache}
+        options_dynamics_cache = await self._fetch_options_dynamics_cache(symbol)
+        if options_dynamics_cache is not None:
+            payload = {**payload, "options_dynamics_cache": options_dynamics_cache}
+
         # Run all registered strategies
         strategies = get_strategies()
         for strategy in strategies:
@@ -285,6 +299,48 @@ class ScannerEngine:
             if not decoded.get("available"):
                 return None
             return decoded
+        except Exception:
+            return None
+
+    async def _fetch_futures_cache(self, symbol: str) -> dict | None:
+        """Best-effort read of api/futures_queue.py's per-symbol futures
+        hash (basis, OI/OI-delta, futures LTP) -- EBIE EB-4. Stored as a
+        Redis hash (not JSON), so this does the same string->number
+        coercion routes/futures.py's own read route does. Never raises
+        into the hot path: a missing/stale cache just means
+        features_snapshot's futures fields come back None."""
+        try:
+            raw = await self.redis.hgetall(f"infusion:futures:{symbol.upper()}")
+            if not raw:
+                return None
+            out: dict = {}
+            for k, v in raw.items():
+                key = k.decode() if isinstance(k, bytes) else k
+                val = v.decode() if isinstance(v, bytes) else v
+                if val == "":
+                    out[key] = None
+                    continue
+                try:
+                    out[key] = float(val) if "." in val or key in ("basis_pct", "oi_change_pct") else int(val)
+                except (ValueError, TypeError):
+                    out[key] = val
+            return out
+        except Exception:
+            return None
+
+    async def _fetch_options_dynamics_cache(self, symbol: str) -> dict | None:
+        """Best-effort read of api/options_dynamics_queue.py's per-symbol
+        weighted-PCR/PCR-velocity/wall-dynamics JSON blob -- EBIE EB-5.
+        Never raises into the hot path: a missing/stale cache (symbol
+        wasn't a candidate this sweep, or the sweep hasn't run yet)
+        just means features_snapshot's options-dynamics fields come
+        back None."""
+        try:
+            raw = await self.redis.get(f"infusion:options-dynamics:{symbol.upper()}")
+            if not raw:
+                return None
+            text = raw.decode() if isinstance(raw, bytes) else raw
+            return json.loads(text)
         except Exception:
             return None
 

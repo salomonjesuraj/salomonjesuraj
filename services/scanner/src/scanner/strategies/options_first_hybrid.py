@@ -226,6 +226,13 @@ class OptionsFirstHybrid(BaseStrategy):
         # SEPARATE Redis-cached blob from mtf_cache (its own sweep,
         # its own key), not nested under it.
         sentiment_cache = features.get("sentiment_cache") or {}
+        # EBIE EB-8 prerequisite -- see scanner/engine.py's
+        # _fetch_futures_cache()/_fetch_options_dynamics_cache().
+        futures_cache = features.get("futures_cache") or {}
+        options_dynamics_cache = features.get("options_dynamics_cache") or {}
+        odyn_wall = options_dynamics_cache.get("wall") or {}
+        odyn_call_wall = (odyn_wall.get("call_wall") or [{}])[0]
+        odyn_put_wall = (odyn_wall.get("put_wall") or [{}])[0]
         alignment = compute_signal_alignment(
             bullish=bullish, ml=ml, ma_regime=ma_regime, donchian=donchian,
             wyckoff_sos_sow=wyckoff_sos_sow, atr_trend=atr_trend, candle_pattern=candle_pattern,
@@ -382,6 +389,22 @@ class OptionsFirstHybrid(BaseStrategy):
             "news_sentiment": sentiment_cache.get("sentiment"),
             "news_sentiment_impact": sentiment_cache.get("weighted_impact"),
             "news_article_count": sentiment_cache.get("article_count"),
+            # EBIE EB-4 -- futures positioning (basis, OI delta). See
+            # api/futures.py/futures_queue.py. Informational only.
+            "futures_basis_pct": futures_cache.get("basis_pct"),
+            "futures_oi_change_pct": futures_cache.get("oi_change_pct"),
+            # EBIE EB-5 -- dynamic option chain (weighted PCR, PCR
+            # velocity, wall dynamics). See api/options_analytics_v2.py/
+            # options_dynamics_queue.py. Informational only, distinct
+            # from the existing static PCR/Max Pain read elsewhere in
+            # this file per docs/EBIE-IMPLEMENTATION-ANSWERS.md Q3.4
+            # ("keep for display/research" vs "new verdict inputs").
+            "weighted_pcr": (options_dynamics_cache.get("weighted_pcr") or {}).get("weighted_pcr"),
+            "pcr_velocity": options_dynamics_cache.get("pcr_velocity"),
+            "call_wall_state": odyn_call_wall.get("state"),
+            "put_wall_state": odyn_put_wall.get("state"),
+            "call_wall_migrated": odyn_wall.get("call_wall_migrated"),
+            "put_wall_migrated": odyn_wall.get("put_wall_migrated"),
         }
 
         return SignalCandidate(
