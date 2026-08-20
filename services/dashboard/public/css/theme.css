@@ -1816,6 +1816,8 @@
 .ifx-ebie-metric.flat { color: var(--ifx-shell-text); }
 .ifx-ebie-metric.risk { color: var(--ifx-risk); font-weight: 800; }
 .ifx-ebie-metric.muted { color: var(--ifx-shell-text-faint); }
+/* EBIE EB-15 Phase 1 item 3 -- data-quality DEGRADED badge tone. */
+.ifx-ebie-metric.warn { color: var(--ifx-warn); font-weight: 800; }
 .ifx-ebie-suppressed, .ifx-ebie-age { color: var(--ifx-shell-text-faint); font-size: 10px; text-align: center; }
 .ifx-ebie-chevron { color: var(--ifx-shell-text-faint); text-align: center; }
 .ifx-ebie-detail {

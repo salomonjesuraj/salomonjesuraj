@@ -41,7 +41,7 @@ import { initRailV2 } from './rail-v2.js?v=eb12-1';
 import { TrackRecordV2Panel } from './track-record-v2.js?v=8.0.0-new-shell';
 import { SignalAlertV2 } from './signal-alert-v2.js?v=radar-r9-1';
 import { IntegrityPanelV2 } from './integrity-panel-v2.js?v=8.0.0-new-shell';
-import { EbieVerdictPanel } from './ebie-verdict-panel.js?v=eb12-2';
+import { EbieVerdictPanel } from './ebie-verdict-panel.js?v=eb15-dq1';
 
 class InfusionApp {
   constructor() {

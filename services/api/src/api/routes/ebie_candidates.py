@@ -52,6 +52,23 @@ def _num(v) -> float | None:
     return float(v) if v is not None else None
 
 
+# EBIE EB-15 Phase 1 item 3 -- literal P6 data-quality policy (the exact
+# thresholds already enforced inside scanner/verdict_engine.py's
+# DQ_HARD_FAIL/DQ_DEGRADED gates), surfaced here as the plain-language
+# status label the directive requires the dashboard to show. This route
+# computes no new number -- data_quality_score already exists in
+# features_snapshot (EB-0); this just labels it consistently with the
+# gate that already acts on it.
+def _dq_status(score) -> str:
+    if score is None:
+        return "UNKNOWN"
+    if score < 80:
+        return "DATA_UNRELIABLE"
+    if score < 90:
+        return "DEGRADED"
+    return "READY"
+
+
 def _row_to_candidate(r) -> dict:
     d = dict(r)
     sub_scores = _decode_json(d.get("sub_scores"))
@@ -89,6 +106,17 @@ def _row_to_candidate(r) -> dict:
         "data_quality_score": features.get("data_quality_score"),
         "sector_id": d.get("sector_id"),
         "risk_reward_ratio": _num(d.get("risk_reward_ratio")),
+
+        # EBIE EB-15 Phase 1 item 3: the dashboard must show data-quality
+        # status "without hiding the setup" (the directive's own wording)
+        # -- so this is additive detail on the existing row/expand-row,
+        # never a filter that removes a candidate from the list.
+        "data_quality": {
+            "score": features.get("data_quality_score"),
+            "status": _dq_status(features.get("data_quality_score")),
+            "reasons": features.get("data_quality_reasons") or [],
+            "unavailable_evidence_families": verdict.get("unavailable_families") or [],
+        },
 
         # Expand-row sections
         "why_now": verdict.get("top_reasons") or [],

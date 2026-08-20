@@ -22,6 +22,13 @@ const VERDICT_TONE = {
   DEVELOPING: 'flat', NO_EDGE: 'bad', HARD_BLOCKED: 'bad',
 };
 
+// EBIE EB-15 Phase 1 item 3 -- matches the literal P6 policy/labels
+// (ebie_candidates.py's _dq_status()); shown as a badge, never as a
+// filter that hides the row -- the directive is explicit that a
+// data-quality problem must stay VISIBLE on the setup, not conceal it.
+const DQ_TONE = { READY: 'flat', DEGRADED: 'warn', DATA_UNRELIABLE: 'bad', UNKNOWN: 'muted' };
+const DQ_LABEL = { READY: 'DQ OK', DEGRADED: 'DQ DEGRADED', DATA_UNRELIABLE: 'DQ UNRELIABLE', UNKNOWN: 'DQ —' };
+
 function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
@@ -129,6 +136,9 @@ export class EbieVerdictPanel {
     const expanded = this._expanded.has(String(i));
     const trapTone = c.trap_risk_score == null ? 'muted' : c.trap_risk_score >= 50 ? 'risk' : 'flat';
     const pfTone = c.portfolio_fit_score == null ? 'muted' : c.portfolio_fit_score < 60 ? 'risk' : 'flat';
+    const dq = c.data_quality || {};
+    const dqStatus = dq.status || 'UNKNOWN';
+    const dqTone = DQ_TONE[dqStatus] || 'muted';
 
     const header = `
       <div class="ifx-ebie-row${expanded ? ' expanded' : ''}" data-ebie-row="${i}">
@@ -140,6 +150,7 @@ export class EbieVerdictPanel {
         ${scorePill('Bear', c.bear_score, 'bad')}
         ${scorePill('Trap', c.trap_risk_score, trapTone)}
         ${scorePill('Portfolio', c.portfolio_fit_score, pfTone)}
+        <span class="ifx-ebie-metric ${dqTone}" title="Data quality score: ${dq.score == null ? 'unavailable' : dq.score}">${DQ_LABEL[dqStatus] || dqStatus}</span>
         <span class="ifx-ebie-suppressed">${c.suppressed ? 'rejected' : 'fired'}</span>
         <span class="ifx-ebie-age">${ageLabel(c.created_at)}</span>
         <span class="ifx-ebie-chevron">${expanded ? '▾' : '▸'}</span>
@@ -161,6 +172,7 @@ export class EbieVerdictPanel {
     const acc = c.accumulation || {};
     const der = c.derivatives || {};
     const sent = c.sentiment || {};
+    const dq = c.data_quality || {};
 
     return `
       <div class="ifx-ebie-detail">
@@ -197,7 +209,14 @@ export class EbieVerdictPanel {
             ${kv('Impact', sent.news_sentiment_impact != null ? Number(sent.news_sentiment_impact).toFixed(3) : null)}
             ${kv('Articles', sent.news_article_count)}
           </div>
+          <div class="ifx-ebie-detail-block">
+            <h5>Data Quality</h5>
+            ${kv('Status', dq.status || 'UNKNOWN')}
+            ${kv('Score', dq.score)}
+          </div>
         </div>
+        ${listBlock('Data Quality Reasons', dq.reasons)}
+        ${listBlock('Evidence Families Unavailable', dq.unavailable_evidence_families)}
         ${listBlock('Portfolio Correlation', (c.risk || {}).correlated_symbols)}
       </div>`;
   }
