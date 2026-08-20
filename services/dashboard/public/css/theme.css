@@ -712,7 +712,7 @@
 }
 
 /* Same catch-all for "paper" content roots (.ifx-scanner/.ifx-oa/.ifx-opt/
-   .ifx-ask/.ifx-pulse) -- these are deliberately NOT .ifx-shell (see the
+   .ifx-scrip/.ifx-ask/.ifx-pulse) -- these are deliberately NOT .ifx-shell (see the
    file header's shell-vs-paper design note), so the rule above never
    matched their buttons. Phase E accessibility pass found this: leader
    cards, trigger-radar cards, filter/preset/density buttons, and the
@@ -725,6 +725,7 @@
 .ifx-oa button:focus-visible, .ifx-oa a:focus-visible, .ifx-oa [tabindex]:focus-visible,
 .ifx-ss button:focus-visible, .ifx-ss a:focus-visible, .ifx-ss [tabindex]:focus-visible,
 .ifx-opt button:focus-visible, .ifx-opt a:focus-visible, .ifx-opt [tabindex]:focus-visible,
+.ifx-scrip button:focus-visible, .ifx-scrip a:focus-visible, .ifx-scrip [tabindex]:focus-visible,
 .ifx-ask button:focus-visible, .ifx-ask a:focus-visible, .ifx-ask [tabindex]:focus-visible,
 .ifx-pulse button:focus-visible, .ifx-pulse a:focus-visible, .ifx-pulse [tabindex]:focus-visible,
 .ifx-cockpit-panel button:focus-visible, .ifx-cockpit-panel a:focus-visible {
@@ -1192,6 +1193,70 @@
    explicit background + color, not inherited, per the invisible-cockpit
    lesson from earlier in this rebuild) that live inside workbench tabs.
    ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── Option Basis / "Scrip Info" drawer (Clean Sweep LC-3) ─────────────
+   OptionCockpit's New-shell render (options.js's _renderNewShell()) --
+   a prominent status banner, always-visible score/contract read, and a
+   collapsed-by-default gates checklist. Same --ifx-content-* "paper"
+   token convention as .ifx-oa below.
+   NAMING NOTE: deliberately "ifx-scrip-*", NOT "ifx-opt-*" -- optimizer-
+   panel.js already owns that entire namespace (.ifx-opt root class,
+   .ifx-opt-section/.ifx-opt-subsection, data-opt-toggle) for its own,
+   completely unrelated Walk-Forward/DSR/Kelly sections. A first attempt
+   at this used "ifx-opt" (thinking "option"), which silently collided
+   with "optimizer"'s existing classes -- caught before shipping by
+   inspecting the live DOM and finding 10 unexpected .ifx-opt-subsection
+   matches that turned out to belong to the Performance pane's Optimizer
+   tab, not Option Basis. */
+.ifx-scrip { display: flex; flex-direction: column; gap: var(--ifx-space-3); color: var(--ifx-content-text); font-family: var(--ifx-font-ui); }
+.ifx-scrip-banner {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--ifx-space-3); flex-wrap: wrap;
+  padding: var(--ifx-space-4); border-radius: var(--ifx-radius-lg);
+  background: var(--ifx-content-surface); border: 1px solid var(--ifx-content-border);
+  border-left: 4px solid var(--ifx-flat);
+}
+.ifx-scrip-banner--bull { border-left-color: var(--ifx-bull); }
+.ifx-scrip-banner--bear { border-left-color: var(--ifx-bear); }
+.ifx-scrip-banner--warn { border-left-color: var(--ifx-warn); }
+.ifx-scrip-banner-label { font-size: var(--ifx-text-2xs); font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--ifx-content-text-faint); }
+.ifx-scrip-banner-symbol { font-family: var(--ifx-font-mono); font-size: var(--ifx-text-xl); font-weight: 800; letter-spacing: .3px; }
+.ifx-scrip-banner-status { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; text-align: right; }
+.ifx-scrip-banner-badge { font-size: var(--ifx-text-sm); padding: 5px 12px; }
+.ifx-scrip-banner-note { font-size: var(--ifx-text-2xs); color: var(--ifx-content-text-faint); max-width: 32ch; }
+
+.ifx-scrip-scores { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--ifx-space-2); }
+.ifx-scrip-score-card {
+  display: flex; flex-direction: column; gap: 3px; padding: var(--ifx-space-3);
+  background: var(--ifx-content-surface); border: 1px solid var(--ifx-content-border); border-radius: var(--ifx-radius-md);
+}
+.ifx-scrip-score-label { font-size: var(--ifx-text-2xs); font-weight: 700; text-transform: uppercase; letter-spacing: .3px; color: var(--ifx-content-text-faint); }
+.ifx-scrip-score-card b { font-size: var(--ifx-text-xl); font-weight: 800; }
+.ifx-scrip-score-card small { font-size: var(--ifx-text-2xs); color: var(--ifx-content-text-faint); }
+
+.ifx-scrip-contract {
+  display: flex; flex-direction: column; gap: 4px; padding: var(--ifx-space-3);
+  background: var(--ifx-content-surface); border: 1px solid var(--ifx-content-border); border-radius: var(--ifx-radius-md);
+}
+.ifx-scrip-contract-label { font-size: var(--ifx-text-2xs); font-weight: 700; text-transform: uppercase; letter-spacing: .3px; color: var(--ifx-content-text-faint); margin-right: 8px; }
+.ifx-scrip-contract-line { font-size: var(--ifx-text-2xs); color: var(--ifx-content-text-muted); }
+.ifx-scrip-reason { font-size: var(--ifx-text-xs); color: var(--ifx-content-text-muted); margin: 0; line-height: 1.5; }
+.ifx-scrip-blocker { font-size: var(--ifx-text-2xs); color: var(--ifx-bear); margin: 0; }
+.ifx-scrip-gates { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* Static sub-sections (Chain Analytics / Strategies) -- siblings of
+   OptionCockpit's own re-rendered content, toggled by app.js's one-time
+   delegated listener, never touched by any panel's own render cycle. */
+.ifx-scrip-subsection { border: 1px solid var(--ifx-content-border); border-radius: var(--ifx-radius-lg); background: var(--ifx-content-surface); overflow: hidden; }
+.ifx-scrip-subsection-head {
+  width: 100%; display: flex; align-items: center; gap: var(--ifx-space-2); padding: var(--ifx-space-3) var(--ifx-space-4);
+  background: none; border: none; cursor: pointer; text-align: left; font-family: var(--ifx-font-ui);
+}
+.ifx-scrip-subsection-title { font-size: var(--ifx-text-sm); font-weight: 700; color: var(--ifx-content-text); }
+.ifx-scrip-subsection-note { font-size: var(--ifx-text-2xs); color: var(--ifx-content-text-faint); flex: 1; }
+.ifx-scrip-subsection-chevron { color: var(--ifx-content-text-faint); transition: transform var(--ifx-fast) var(--ifx-ease); }
+.ifx-scrip-subsection:not(.is-collapsed) .ifx-scrip-subsection-chevron { transform: rotate(90deg); }
+.ifx-scrip-subsection.is-collapsed .ifx-scrip-subsection-body { display: none; }
+.ifx-scrip-subsection-body { border-top: 1px solid var(--ifx-content-border); }
 
 /* ── Options Analytics ─────────────────────────────────────────────── */
 .ifx-oa {

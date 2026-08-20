@@ -40,9 +40,12 @@ const ROWS = [
   { key: 'breakout-radar', icon: '📡', label: 'Breakout Radar', group: 'Trade' },
   { key: 'ebie-verdict', icon: '⚡', label: 'EBIE Verdict', group: 'Trade' },
   { key: 'stock-detail', icon: '◎', label: 'Stock Detail', group: 'Trade' },
+  // Clean Sweep LC-3: Options Analytics / Strategy Selector no longer
+  // have their own rail rows -- they're now internal collapsible
+  // sections inside Option Basis itself (the reference screenshot's own
+  // "one option-chain-centric panel" shape). Their panel classes/mount
+  // containers are unchanged, just relocated in index.html.
   { key: 'option-basis', icon: '⌘', label: 'Option Basis', group: 'Trade' },
-  { key: 'options-analytics', icon: '⌗', label: 'Options Analytics', group: 'Trade' },
-  { key: 'strategy-selector', icon: '⚖', label: 'Strategy Selector', group: 'Trade' },
   { key: 'triggers', icon: '▲', label: 'Triggers', group: 'Trade' },
   { key: 'risk', icon: '◈', label: 'Risk', group: 'Manage' },
   { key: 'execution', icon: '⚙', label: 'Execution', group: 'Manage' },

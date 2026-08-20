@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
   <link rel="stylesheet" href="/css/main.css?v=color-refresh-10">
-  <link rel="stylesheet" href="/css/theme.css?v=clean-sweep-lc2">
+  <link rel="stylesheet" href="/css/theme.css?v=clean-sweep-lc3">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ctext y='14' font-size='14'%3EI%3C/text%3E%3C/svg%3E">
   <script>
     // Anti-FOUC: set data-theme before first paint, mirroring theme.js's
@@ -295,7 +295,43 @@
           <div data-pane-v2="breakout-radar"><div class="ifx-pane-title">Stock Breakout Radar — ranked by underlying evidence, independent of option-chain readiness</div><div id="breakoutRadarV2"></div></div>
           <div data-pane-v2="ebie-verdict"><div class="ifx-pane-title">EBIE Verdict — bull/bear evidence, trap risk, and portfolio fit for every candidate, fired or rejected</div><div id="ebieVerdictV2"></div></div>
           <div data-pane-v2="watchlist"><div class="ifx-pane-title">Pre-Breakout Watch</div><div id="watchlistBodyV2"></div></div>
-          <div data-pane-v2="option-basis"><div class="ifx-pane-title">Option Basis</div><div class="ifx-pane-badge" id="optionStatusV2">READY</div><div id="optionCockpitBodyV2"></div></div>
+          <!-- Clean Sweep LC-3: Option Basis is now the "Scrip Info"-style
+               drawer -- OptionCockpit's own re-rendered content (banner/
+               scores/contract/gates) plus two STATIC sibling sub-sections
+               housing OptionsAnalyticsPanel/StrategySelectorPanel.
+               Deliberately siblings, not children of #optionCockpitBodyV2:
+               that div's innerHTML is fully replaced on every ~3s poll, so
+               nesting another panel's own mount point inside it would
+               destroy that panel's DOM (and its state) every render cycle.
+               These two panel classes are unchanged -- same container ids
+               as before, just relocated here from their own standalone
+               panes; app.js's mount calls need no changes. -->
+          <div data-pane-v2="option-basis">
+            <div class="ifx-pane-title">Option Basis</div>
+            <div class="ifx-pane-badge" id="optionStatusV2">READY</div>
+            <div id="optionCockpitBodyV2"></div>
+
+            <!-- "ifx-scrip-*" / "data-scrip-*" naming, not "ifx-opt-*" --
+                 optimizer-panel.js already owns that namespace for its
+                 own unrelated sections (see theme.css's comment). -->
+            <div class="ifx-scrip-subsection" data-scrip-subsection="chain-analytics">
+              <button type="button" class="ifx-scrip-subsection-head" data-scrip-toggle="chain-analytics">
+                <span class="ifx-scrip-subsection-title">Chain Analytics</span>
+                <span class="ifx-scrip-subsection-note">PCR, OI-based levels, Max Pain — informational only</span>
+                <span class="ifx-scrip-subsection-chevron" aria-hidden="true">›</span>
+              </button>
+              <div class="ifx-scrip-subsection-body" id="optionsAnalyticsPanelV2"></div>
+            </div>
+
+            <div class="ifx-scrip-subsection" data-scrip-subsection="strategies">
+              <button type="button" class="ifx-scrip-subsection-head" data-scrip-toggle="strategies">
+                <span class="ifx-scrip-subsection-title">Strategies</span>
+                <span class="ifx-scrip-subsection-note">Ranked multi-leg shortlist — advisory only</span>
+                <span class="ifx-scrip-subsection-chevron" aria-hidden="true">›</span>
+              </button>
+              <div class="ifx-scrip-subsection-body" id="strategySelectorPanelV2"></div>
+            </div>
+          </div>
           <div data-pane-v2="risk"><div id="riskConsoleV2"></div></div>
           <div data-pane-v2="stock-detail"><div class="ifx-pane-title">Selected Stock Detail</div><div id="scannerInsightPanelV2" class="scanner-insight-panel"></div></div>
           <div data-pane-v2="triggers"><div class="ifx-pane-title">Manual Price Triggers</div><div id="triggerBodyV2"></div></div>
@@ -306,8 +342,6 @@
           <div data-pane-v2="safety"><div class="ifx-pane-title">Safety Cockpit</div><div id="safetyBodyV2"></div></div>
           <div data-pane-v2="alerts"><div class="ifx-pane-title">Alert Log</div><div id="alertBodyV2"></div></div>
           <div data-pane-v2="diagnostics"><div class="ifx-pane-title">Diagnostics + Precision</div><div id="analyticsBodyV2"></div></div>
-          <div data-pane-v2="options-analytics"><div class="ifx-pane-title">Options Analytics — PCR, OI Levels, Max Pain</div><div id="optionsAnalyticsPanelV2"></div></div>
-          <div data-pane-v2="strategy-selector"><div class="ifx-pane-title">Strategy Selector — Ranked Multi-Leg Shortlist</div><div id="strategySelectorPanelV2"></div></div>
           <div data-pane-v2="optimizer"><div class="ifx-pane-title">Optimizer — Walk-Forward, Proposal Drift, Feature Ablation</div><div id="optimizerPanelV2"></div></div>
           <div data-pane-v2="ask-infusion"><div class="ifx-pane-title">Ask Infusion</div><div id="aiQueryPanelV2"></div></div>
           <div data-pane-v2="signal-integrity"><div class="ifx-pane-title">Signal Integrity — every signal Infusion has fired, and what actually happened</div><div id="integrityPanelV2"></div></div>
@@ -329,6 +363,6 @@
     chart never depends on a third-party CDN being reachable.
   -->
   <script src="/js/vendor/lightweight-charts.standalone.production.js"></script>
-  <script type="module" src="/js/app.js?v=clean-sweep-lc2"></script>
+  <script type="module" src="/js/app.js?v=clean-sweep-lc3"></script>
 </body>
 </html>

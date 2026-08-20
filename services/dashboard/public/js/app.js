@@ -15,7 +15,7 @@ import { ChartPanel } from './chart.js';
 import { QuickControls } from './quick-controls.js?v=2.4.0-hybrid-scanner';
 import { MarketHealthTop } from './market-health-top.js?v=breadth-health-1';
 import { MarketTicker } from './market-ticker.js?v=vix-multiplier-1';
-import { OptionCockpit } from './options.js?v=radar-r6-1';
+import { OptionCockpit } from './options.js?v=clean-sweep-lc3';
 import { SectorRibbon } from './sector-ribbon.js?v=breadth-health-1';
 import { WorkbenchTabs } from './workbench-tabs.js?v=2.4.0-hybrid-scanner';
 import { ScannerInsight } from './scanner-insight.js?v=radar-r8-1';
@@ -37,7 +37,7 @@ import { CockpitV2Panel } from './cockpit-v2.js?v=clean-sweep-lc2';
 import { WatchStripV2Panel } from './watch-strip-v2.js?v=8.0.0-new-shell';
 import { ScannerV2Panel } from './scanner-v2.js?v=clean-sweep-lc2';
 import { BreakoutRadarPanel } from './breakout-radar.js?v=radar-r9-1';
-import { initRailV2 } from './rail-v2.js?v=clean-sweep-lc1';
+import { initRailV2 } from './rail-v2.js?v=clean-sweep-lc3';
 import { TrackRecordV2Panel } from './track-record-v2.js?v=8.0.0-new-shell';
 import { SignalAlertV2 } from './signal-alert-v2.js?v=radar-r9-1';
 import { IntegrityPanelV2 } from './integrity-panel-v2.js?v=8.0.0-new-shell';
@@ -152,13 +152,35 @@ class InfusionApp {
     // api.js singleton, so this doesn't double any actual network polling.
     initRailV2();
 
+    // Clean Sweep LC-3 -- toggle for Option Basis's two static "Scrip
+    // Info"-style sub-sections (Chain Analytics / Strategies). These
+    // wrap already-independent, already-mounted panel instances
+    // (OptionsAnalyticsPanel/StrategySelectorPanel below), not markup
+    // OptionCockpit itself re-renders, so a simple one-time delegated
+    // listener is safe -- nothing here ever gets replaced via innerHTML.
+    // Collapsed by default (Phase O.1's own "core stays open, evidence
+    // collapses" convention). Uses "data-scrip-*", NOT "data-opt-*" --
+    // optimizer-panel.js already has its own same-shaped data-opt-toggle
+    // mechanism for its unrelated Walk-Forward/DSR/Kelly sections inside
+    // the very same #paneViewV2 (the merged Performance pane); a global
+    // listener keyed on "data-opt-toggle" here would also catch clicks
+    // on Optimizer's own buttons. Caught before shipping, not assumed.
+    document.querySelectorAll('[data-scrip-subsection]').forEach((el) => el.classList.add('is-collapsed'));
+    document.querySelector('#paneViewV2')?.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-scrip-toggle]');
+      if (!btn) return;
+      const wrap = btn.closest('[data-scrip-subsection]');
+      wrap?.classList.toggle('is-collapsed');
+    });
+
     const watchlistV2 = new WatchlistPanel(document.getElementById('watchlistBodyV2'));
     watchlistV2.init();
     this._panels.push(watchlistV2);
 
     const optionCockpitV2 = new OptionCockpit(
       document.getElementById('optionCockpitBodyV2'),
-      document.getElementById('optionStatusV2')
+      document.getElementById('optionStatusV2'),
+      true // Clean Sweep LC-3 -- New shell gets the redesigned "Scrip Info" rendering
     );
     optionCockpitV2.init();
     this._panels.push(optionCockpitV2);
