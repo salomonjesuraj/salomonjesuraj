@@ -41,16 +41,20 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+
+import msgpack
+import structlog
 from datetime import datetime, timezone
 
-import structlog
-
 from api.routes.ticks import _build_ticks
-from infusion_streams.constants import KEY_EBIE_STATE_PREFIX, KEY_SIGNAL_PREFIX
+from infusion_streams.constants import (
+    KEY_EBIE_STATE_PREFIX, KEY_EBIE_VERDICT_LITE_PREFIX, KEY_SIGNAL_PREFIX,
+)
 
 logger = structlog.get_logger()
 
 EBIE_STATE_TTL_SEC = 24 * 3600  # same TTL-bound principle as R2/R8/R9's own transitional caches
+EBIE_VERDICT_LITE_TTL_SEC = 24 * 3600
 SWEEP_INTERVAL_SEC = 60
 STATUS_KEY = "infusion:ebie-state-queue:status"
 
@@ -58,6 +62,134 @@ CANONICAL_STATES = (
     "IDLE", "DEVELOPING", "PRE_BREAKOUT", "PRE_BREAKDOWN",
     "READY", "ARMED", "TRIGGERED", "CONFIRMED", "FAILED",
 )
+
+# EBIE EB-15 Phase 3 (P2 item 4, "Generate Lightweight Verdicts for
+# Developing Universe Symbols") -- the directive's own required label
+# set, verbatim. This is deliberately a SEPARATE, cheaper verdict from
+# EB-8's compute_verdict() (scanner/verdict_engine.py): that one needs
+# futures/options-dynamics/sentiment caches and only ever runs for a
+# promoted SignalCandidate; this one runs for EVERY symbol EVERY sweep
+# (208 symbols/60s) using only what _build_ticks() already computes --
+# the directive's own "two-stage verdict model" (lightweight for the
+# whole universe, full after candidate promotion).
+LIGHTWEIGHT_VERDICT_LABELS = (
+    "NO_TRADE", "WATCH_LONG", "WATCH_SHORT", "LONG_DEVELOPING", "SHORT_DEVELOPING",
+    "LONG_READY", "SHORT_READY", "BREAKOUT_ARMED", "BREAKDOWN_ARMED",
+    "AVOID_TRAP_RISK", "DATA_UNRELIABLE",
+)
+
+# Same literal P6 policy as api/routes/ebie_candidates.py's _dq_status()
+# and scanner/verdict_engine.py's DQ_HARD_FAIL/DQ_DEGRADED -- kept as a
+# separate copy (not imported across the scanner/api service boundary)
+# since these are two independent services; the THRESHOLDS must still
+# match exactly, so keep any change to one in sync with the other two.
+DQ_HARD_FAIL = 80
+DQ_DEGRADED = 90
+
+# Pre-calibration confidence bands (item 10's required display before a
+# real calibrated probability exists -- "LOW / MEDIUM / HIGH / VERY_HIGH").
+# Thresholds are against stock_breakout_score, which is a real 0-100
+# scale as of Phase R8 (opening-range/sector/RS components completed the
+# score to its full 100 points) -- this session's own calibration, not
+# from the directive (which specifies the labels but not thresholds).
+CONFIDENCE_BANDS = (
+    (80, "VERY_HIGH"),
+    (60, "HIGH"),
+    (40, "MEDIUM"),
+    (0, "LOW"),
+)
+
+
+def _confidence_band(score) -> str:
+    if not isinstance(score, (int, float)):
+        return "LOW"
+    for threshold, label in CONFIDENCE_BANDS:
+        if score >= threshold:
+            return label
+    return "LOW"
+
+
+def compute_lightweight_verdict(entry: dict, state: str, direction: str) -> dict:
+    """Phase 3 -- one lightweight verdict per (symbol, direction) per
+    sweep. Pure function, no I/O, same testability shape as
+    map_ebie_state() above -- takes the already-mapped canonical `state`
+    (so the two functions can never independently disagree about what
+    state a symbol is in) and derives the directive's required verdict
+    label, a pre-calibration confidence band, a short reason summary, a
+    qualitative invalidation reason, and the real data-quality status
+    (never fabricated -- UNKNOWN when the score itself is unavailable).
+    """
+    dq_score = entry.get("data_quality_score")
+    if isinstance(dq_score, (int, float)) and dq_score < DQ_HARD_FAIL:
+        dq_status = "DATA_UNRELIABLE"
+    elif isinstance(dq_score, (int, float)) and dq_score < DQ_DEGRADED:
+        dq_status = "DEGRADED"
+    elif isinstance(dq_score, (int, float)):
+        dq_status = "READY"
+    else:
+        dq_status = "UNKNOWN"
+
+    bullish = direction == "BULLISH"
+    anti_chase_reasons = list(entry.get("anti_chase_reasons") or [])
+    confidence_band = _confidence_band(entry.get("stock_breakout_score"))
+
+    reasons: list[str] = []
+    if entry.get("breakout_type"):
+        reasons.append(f"breakout_type={entry['breakout_type']}")
+    if entry.get("stock_breakout_tier"):
+        reasons.append(f"tier={entry['stock_breakout_tier']}")
+    if entry.get("vwap_state") in {"ABOVE", "BELOW"}:
+        reasons.append(f"vwap={entry['vwap_state']}")
+    rel_vol = entry.get("rel_vol")
+    if isinstance(rel_vol, (int, float)) and rel_vol > 0:
+        reasons.append(f"rvol={rel_vol:.2f}x")
+
+    day_high = entry.get("day_high")
+    day_low = entry.get("day_low")
+    if bullish and isinstance(day_low, (int, float)) and day_low > 0:
+        invalidation_reason = f"Would invalidate on a sustained break below day low (~₹{day_low:.2f})"
+    elif not bullish and isinstance(day_high, (int, float)) and day_high > 0:
+        invalidation_reason = f"Would invalidate on a sustained break above day high (~₹{day_high:.2f})"
+    else:
+        invalidation_reason = "No structural invalidation level available yet"
+
+    # Data quality is checked FIRST and overrides everything else -- per
+    # item 12's own policy (DQ<80 hard-fails), a verdict must never claim
+    # directional conviction on data that's already known unreliable.
+    if dq_status == "DATA_UNRELIABLE":
+        verdict = "DATA_UNRELIABLE"
+    elif anti_chase_reasons and state in {"READY", "ARMED", "TRIGGERED", "CONFIRMED"}:
+        # Structurally close to actionable, but the same anti-chase
+        # evidence this codebase already computes (R1/R8's own
+        # anti_chase_reasons -- VWAP stretch, large candle, chase RSI)
+        # flags it as a real chase-trap risk -- the trap reasons are WHY
+        # this fired, so they lead the reason summary.
+        verdict = "AVOID_TRAP_RISK"
+        reasons = anti_chase_reasons[:3] + reasons
+    elif state in {"IDLE", "FAILED"}:
+        verdict = "NO_TRADE"
+    elif state == "DEVELOPING":
+        verdict = "LONG_DEVELOPING" if bullish else "SHORT_DEVELOPING"
+    elif state == "PRE_BREAKOUT":
+        verdict = "WATCH_LONG"
+    elif state == "PRE_BREAKDOWN":
+        verdict = "WATCH_SHORT"
+    elif state == "READY":
+        verdict = "LONG_READY" if bullish else "SHORT_READY"
+    elif state in {"ARMED", "TRIGGERED", "CONFIRMED"}:
+        verdict = "BREAKOUT_ARMED" if bullish else "BREAKDOWN_ARMED"
+    else:
+        verdict = "NO_TRADE"
+
+    return {
+        "verdict": verdict,
+        "direction": direction,
+        "confidence_band": confidence_band,
+        "reasons": reasons[:5],
+        "invalidation_reason": invalidation_reason,
+        "data_quality_status": dq_status,
+        "data_quality_score": dq_score,
+    }
 
 
 def map_ebie_state(entry: dict, has_active_signal: bool) -> tuple[str, str, str]:
@@ -185,10 +317,32 @@ async def sweep_once(app) -> dict:
 
     await _write_states(redis, state_updates)
 
+    # EBIE EB-15 Phase 3: compute + cache one lightweight verdict per
+    # symbol, every sweep -- reuses `mapped`/`by_entry` already built
+    # above, zero extra I/O beyond the pipeline write itself.
+    verdict_pipe = redis.pipeline(transaction=False)
+    verdicts_written = 0
+    for symbol, (state, direction, _reason) in mapped.items():
+        entry = by_entry.get(symbol, {})
+        verdict = compute_lightweight_verdict(entry, state, direction)
+        verdict["symbol"] = symbol
+        verdict["ebie_state"] = state
+        verdict["sector_id"] = entry.get("sector_id")
+        verdict["checked_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        verdict_pipe.set(
+            f"{KEY_EBIE_VERDICT_LITE_PREFIX}{symbol}",
+            msgpack.packb(verdict, use_bin_type=True),
+            ex=EBIE_VERDICT_LITE_TTL_SEC,
+        )
+        verdicts_written += 1
+    if verdicts_written:
+        await verdict_pipe.execute()
+
     status = {
         "available": True,
         "swept": len(ticks),
         "transitions": transitions,
+        "verdicts_written": verdicts_written,
         "checked_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
     await redis.set(STATUS_KEY, json.dumps(status, separators=(",", ":")), ex=600)

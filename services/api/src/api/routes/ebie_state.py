@@ -14,9 +14,23 @@ from __future__ import annotations
 
 import json
 
+import msgpack
 from aiohttp import web
 
+from infusion_streams.constants import KEY_EBIE_VERDICT_LITE_PREFIX
+
 routes = web.RouteTableDef()
+
+# EBIE EB-15 Phase 3 -- verdicts genuinely worth a human glancing at.
+# NO_TRADE is deliberately excluded by default (it's the "nothing to see
+# here" bucket for most of the 208-symbol universe most of the time,
+# same reasoning as the Breakout Radar's own NO_CHASE-heavy tiering) --
+# pass ?include_no_trade=true to see the full unfiltered universe.
+_ACTIONABLE_LIGHTWEIGHT_VERDICTS = {
+    "WATCH_LONG", "WATCH_SHORT", "LONG_DEVELOPING", "SHORT_DEVELOPING",
+    "LONG_READY", "SHORT_READY", "BREAKOUT_ARMED", "BREAKDOWN_ARMED",
+    "AVOID_TRAP_RISK", "DATA_UNRELIABLE",
+}
 
 
 @routes.get("/api/ebie/status")
@@ -137,4 +151,61 @@ async def ebie_comparison(request):
             {"state": r["state"], "legacy_tier": r["legacy_tier"], "count": r["n"]}
             for r in cross_tab
         ],
+    })
+
+
+@routes.get("/api/ebie/lightweight-verdicts")
+async def ebie_lightweight_verdicts(request):
+    """GET /api/ebie/lightweight-verdicts?include_no_trade=false --
+    Phase 3's universe-wide LIGHTWEIGHT verdict, one per symbol, written
+    every 60s by ebie_state_queue.py's sweep (compute_lightweight_verdict()).
+    This is the directive's own "every DEVELOPING/PRE_BREAKOUT/
+    PRE_BREAKDOWN symbol has a visible verdict BEFORE a strategy candidate
+    ever fires" requirement -- distinct from /api/ebie/candidates, which
+    only ever covers symbols that already produced a SignalCandidate.
+    """
+    redis = request.app["redis"]
+    include_no_trade = str(request.query.get("include_no_trade", "false")).lower() == "true"
+
+    all_symbols_raw = await redis.hgetall("infusion:symbols")
+    if not all_symbols_raw:
+        return web.json_response({"available": False, "reason": "Symbol universe not loaded yet.", "verdicts": []})
+
+    symbols: list[str] = []
+    for meta_raw in all_symbols_raw.values():
+        try:
+            meta = msgpack.unpackb(meta_raw, raw=False) if isinstance(meta_raw, bytes) else meta_raw
+            symbol = meta.get("symbol")
+            if symbol:
+                symbols.append(symbol)
+        except Exception:
+            continue
+
+    if not symbols:
+        return web.json_response({"available": True, "count": 0, "verdicts": []})
+
+    raw_values = await redis.mget([f"{KEY_EBIE_VERDICT_LITE_PREFIX}{s}" for s in symbols])
+
+    verdicts = []
+    for raw in raw_values:
+        if not raw:
+            continue
+        try:
+            v = msgpack.unpackb(raw, raw=False)
+        except Exception:
+            continue
+        if not include_no_trade and v.get("verdict") not in _ACTIONABLE_LIGHTWEIGHT_VERDICTS:
+            continue
+        verdicts.append(v)
+
+    # Rank by confidence band (VERY_HIGH first), same descending-priority
+    # feel as the Radar/Command Center panels.
+    band_rank = {"VERY_HIGH": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
+    verdicts.sort(key=lambda v: band_rank.get(v.get("confidence_band"), 9))
+
+    return web.json_response({
+        "available": True,
+        "count": len(verdicts),
+        "universe_size": len(symbols),
+        "verdicts": verdicts,
     })

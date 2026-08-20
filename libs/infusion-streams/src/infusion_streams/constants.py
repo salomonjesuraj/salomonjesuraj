@@ -86,3 +86,10 @@ KEY_SUBSCRIPTION_TIER_PREFIX = "infusion:subtier:"  # + {instrument_key} → HAS
 # infusion:radar-alert-tier:).
 KEY_EBIE_STATE_PREFIX = "infusion:ebie-state:"      # + {symbol}:{direction} → STRING (current EBIE state)
 
+# EBIE EB-15 Phase 3: lightweight universe-wide verdict (one per symbol,
+# every sweep) -- same single-key msgpack-blob STRING shape as
+# infusion:mtf:{symbol}/infusion:sentiment:{symbol}, since this carries a
+# small structured dict (verdict/confidence/reasons/invalidation/DQ), not
+# a plain scalar like KEY_EBIE_STATE_PREFIX above.
+KEY_EBIE_VERDICT_LITE_PREFIX = "infusion:ebie-verdict-lite:"  # + {symbol} → STRING (msgpack'd lightweight verdict dict)
+

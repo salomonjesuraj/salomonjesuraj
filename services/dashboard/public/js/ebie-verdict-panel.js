@@ -29,6 +29,20 @@ const VERDICT_TONE = {
 const DQ_TONE = { READY: 'flat', DEGRADED: 'warn', DATA_UNRELIABLE: 'bad', UNKNOWN: 'muted' };
 const DQ_LABEL = { READY: 'DQ OK', DEGRADED: 'DQ DEGRADED', DATA_UNRELIABLE: 'DQ UNRELIABLE', UNKNOWN: 'DQ —' };
 
+// EBIE EB-15 Phase 3 -- tone for the directive's own lightweight-verdict
+// label set (compute_lightweight_verdict(), api/ebie_state_queue.py).
+// Deliberately a separate map from VERDICT_TONE above -- the full
+// candidate-level verdict (EB-8) and this universe-wide lightweight one
+// share no label strings, so there's nothing to reuse.
+const LIGHTWEIGHT_VERDICT_TONE = {
+  BREAKOUT_ARMED: 'good', BREAKDOWN_ARMED: 'good',
+  LONG_READY: 'good', SHORT_READY: 'good',
+  WATCH_LONG: 'warn', WATCH_SHORT: 'warn',
+  LONG_DEVELOPING: 'flat', SHORT_DEVELOPING: 'flat',
+  AVOID_TRAP_RISK: 'bad', DATA_UNRELIABLE: 'bad', NO_TRADE: 'muted',
+};
+const CONFIDENCE_TONE = { VERY_HIGH: 'good', HIGH: 'flat', MEDIUM: 'warn', LOW: 'muted' };
+
 function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
@@ -55,6 +69,8 @@ export class EbieVerdictPanel {
     this._filter = 'all';
     this._expanded = new Set();
     this._candidates = [];
+    this._verdicts = [];
+    this._isUniverse = false;
     this._loadGen = 0;
   }
 
@@ -71,6 +87,14 @@ export class EbieVerdictPanel {
       { key: 'all', label: 'All' },
       { key: 'false', label: 'Fired' },
       { key: 'true', label: 'Rejected' },
+      // EBIE EB-15 Phase 3 -- the universe-wide LIGHTWEIGHT verdict, a
+      // fundamentally different data source (/api/ebie/lightweight-
+      // verdicts) from the three pills above (all of which read /api/
+      // ebie/candidates, i.e. only symbols that already produced a
+      // SignalCandidate). This is the directive's own "every developing/
+      // pre-breakout/pre-breakdown symbol has a visible verdict BEFORE a
+      // strategy candidate ever fires" requirement.
+      { key: 'universe', label: 'Universe (Lightweight)' },
     ];
     const pillsEl = this._el.querySelector('#ebieFilterPills');
     pillsEl.innerHTML = pills.map((p) =>
@@ -79,6 +103,10 @@ export class EbieVerdictPanel {
     pillsEl.querySelectorAll('[data-filter]').forEach((btn) => {
       btn.addEventListener('click', () => {
         this._filter = btn.dataset.filter;
+        // Row indices are reused across candidate-mode and universe-mode
+        // arrays -- clear expand state on a mode switch so a stale index
+        // from one array's rows can't misapply to the other's.
+        this._expanded.clear();
         pillsEl.querySelectorAll('.ifx-ebie-pill').forEach((b) => b.classList.toggle('on', b === btn));
         this._load();
       });
@@ -102,25 +130,35 @@ export class EbieVerdictPanel {
     // monotonic request generation counter -- a response only renders
     // if it's still the most recent request issued.
     const listEl = this._el.querySelector('#ebieList');
-    const suppressedParam = this._filter === 'all' ? 'all' : this._filter;
     const requestGen = ++this._loadGen;
-    const data = await api.fetch(`/api/ebie/candidates?limit=40&suppressed=${suppressedParam}`);
+    const isUniverse = this._filter === 'universe';
+    const data = await api.fetch(
+      isUniverse
+        ? '/api/ebie/lightweight-verdicts'
+        : `/api/ebie/candidates?limit=40&suppressed=${this._filter === 'all' ? 'all' : this._filter}`
+    );
     if (requestGen !== this._loadGen) return; // a newer request has since started -- discard this stale one
     if (!data || data.available === false) {
       listEl.innerHTML = `<div class="ifx-ebie-empty">${esc(data?.reason || 'Request failed.')}</div>`;
       return;
     }
-    this._candidates = data.candidates || [];
+    this._isUniverse = isUniverse;
+    if (isUniverse) {
+      this._verdicts = data.verdicts || [];
+    } else {
+      this._candidates = data.candidates || [];
+    }
     this._render();
   }
 
   _render() {
     const listEl = this._el.querySelector('#ebieList');
-    if (!this._candidates.length) {
-      listEl.innerHTML = `<div class="ifx-ebie-empty">No candidates in this window.</div>`;
+    const rows = this._isUniverse ? this._verdicts : this._candidates;
+    if (!rows.length) {
+      listEl.innerHTML = `<div class="ifx-ebie-empty">${this._isUniverse ? 'No actionable lightweight verdicts right now (try Columns/include_no_trade for the full universe).' : 'No candidates in this window.'}</div>`;
       return;
     }
-    listEl.innerHTML = this._candidates.map((c, i) => this._rowHtml(c, i)).join('');
+    listEl.innerHTML = rows.map((c, i) => this._isUniverse ? this._liteRowHtml(c, i) : this._rowHtml(c, i)).join('');
     listEl.querySelectorAll('[data-ebie-row]').forEach((row) => {
       row.addEventListener('click', () => {
         const idx = row.dataset.ebieRow;
@@ -128,6 +166,48 @@ export class EbieVerdictPanel {
         this._render();
       });
     });
+  }
+
+  _liteRowHtml(v, i) {
+    // EBIE EB-15 Phase 3 -- universe-wide lightweight verdict row. A
+    // deliberately different shape from _rowHtml() above: no bull/bear/
+    // trap/portfolio scores exist for a symbol that never became a
+    // candidate -- only what compute_lightweight_verdict() actually
+    // computes (state, verdict, confidence band, reasons, invalidation,
+    // DQ).
+    const tone = LIGHTWEIGHT_VERDICT_TONE[v.verdict] || 'flat';
+    const dirTone = v.direction === 'BULLISH' ? 'good' : v.direction === 'BEARISH' ? 'bad' : 'flat';
+    const confTone = CONFIDENCE_TONE[v.confidence_band] || 'muted';
+    const dqTone = DQ_TONE[v.data_quality_status] || 'muted';
+    const expanded = this._expanded.has(String(i));
+
+    const header = `
+      <div class="ifx-ebie-row-lite${expanded ? ' expanded' : ''}" data-ebie-row="${i}">
+        <span class="ifx-ebie-symbol">${esc(v.symbol)}</span>
+        <span class="ifx-ebie-metric flat">${esc(v.sector_id || '—')}</span>
+        <span class="ifx-ebie-dir ${dirTone}">${esc(v.direction || '—')}</span>
+        <span class="ifx-ebie-metric flat">${esc((v.ebie_state || '—').replace(/_/g, ' '))}</span>
+        <span class="ifx-ebie-verdict ${tone}">${esc((v.verdict || '—').replace(/_/g, ' '))}</span>
+        <span class="ifx-ebie-metric ${confTone}">${esc(v.confidence_band || '—')}</span>
+        <span class="ifx-ebie-metric ${dqTone}" title="Data quality score: ${v.data_quality_score == null ? 'unavailable' : v.data_quality_score}">${DQ_LABEL[v.data_quality_status] || v.data_quality_status || 'DQ —'}</span>
+        <span class="ifx-ebie-chevron">${expanded ? '▾' : '▸'}</span>
+      </div>`;
+
+    if (!expanded) return header;
+    return header + `
+      <div class="ifx-ebie-detail">
+        <div class="ifx-ebie-detail-cols">
+          <div class="ifx-ebie-detail-block">
+            <h5>Reasons</h5>
+            ${v.reasons && v.reasons.length ? `<ul>${v.reasons.map((r) => `<li>${esc(r)}</li>`).join('')}</ul>` : '<p class="ifx-ebie-none">None</p>'}
+          </div>
+          <div class="ifx-ebie-detail-block">
+            <h5>Invalidation</h5>
+            <p>${esc(v.invalidation_reason || '—')}</p>
+          </div>
+        </div>
+        <p class="ifx-ebie-none">Lightweight, universe-wide verdict (Phase 3) -- computed for every symbol every sweep, before any strategy candidate exists. No bull/bear evidence-family breakdown, trap risk, or portfolio fit yet -- those are the FULL verdict's job (EB-8), which only runs once this setup is promoted to a real candidate.</p>
+      </div>`;
   }
 
   _rowHtml(c, i) {

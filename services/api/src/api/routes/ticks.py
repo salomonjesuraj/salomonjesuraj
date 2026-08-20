@@ -571,6 +571,13 @@ def _scanner_intel(entry: dict, features: dict, prebreak: dict | None = None, se
     prev_close = float(features.get("prev_close") or entry.get("prev_close") or 0)
     day_high = float(features.get("day_high") or entry.get("day_high") or ltp or 0)
     day_low = float(features.get("day_low") or entry.get("day_low") or ltp or 0)
+    # EBIE EB-15 Phase 3: already computed by feature-engine (EB-0) and
+    # already sitting in this same infusion:feature:{symbol} hash (a
+    # top-level FeatureVectorV1 field, not inside ml_features, so
+    # _decode_hash's float() coercion already handles it) -- just never
+    # read out here before. None (not 0.0) when genuinely absent.
+    data_quality_score = features.get("data_quality_score")
+    data_quality_score = float(data_quality_score) if isinstance(data_quality_score, (int, float)) else None
 
     above_vwap = ltp > vwap > 0
     below_vwap = vwap > ltp > 0
@@ -1066,6 +1073,7 @@ def _scanner_intel(entry: dict, features: dict, prebreak: dict | None = None, se
         "breakdown_to": round(breakdown_to, 2),
         "breakout_explanation": breakout_explanation,
         "primary_trade_map": primary_trade_map,
+        "data_quality_score": data_quality_score,
         "mtf_conflict": False,
         "mtf_conflict_note": "",
         "mtf_alternate_trade_map": None,
