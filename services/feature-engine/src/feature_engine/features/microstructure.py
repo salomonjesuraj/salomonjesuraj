@@ -25,6 +25,16 @@ from feature_engine.state import SymbolState
 BOOK_IMBALANCE_EMA_PERIOD = 5   # short -- this is meant to track FAST book pressure shifts
 DEPTH_LEVEL_WEIGHTS = [1.0, 0.5, 0.333, 0.25, 0.2]   # harmonic decay, level 1 counts most
 
+# EBIE EB-15 Phase 1 item 4 -- depth feed policy (D5 required baseline,
+# D30 optional Tier-3, never block core EBIE on D30 -- see
+# infusion_models.capability.ProviderCapabilityV1.supports_full_d30,
+# which is published but not yet consumed by any feature, since no D30
+# feature exists to gate). D5_MAX_LEVELS bounds every depth computation
+# in this module today (compute_book_imbalance/compute_depth_concentration
+# both slice depth_levels[:D5_MAX_LEVELS]) -- this constant makes that boundary a
+# named, single-sourced value instead of a repeated magic-number "5".
+D5_MAX_LEVELS = 5
+
 
 def get_spread_bps(state: SymbolState) -> float:
     """Bid-ask spread in basis points."""
@@ -56,7 +66,7 @@ def compute_book_imbalance(depth_levels: list[dict]) -> float | None:
         return None
     weighted_bid = 0.0
     weighted_ask = 0.0
-    for i, level in enumerate(depth_levels[:5]):
+    for i, level in enumerate(depth_levels[:D5_MAX_LEVELS]):
         weight = DEPTH_LEVEL_WEIGHTS[i]
         weighted_bid += float(level.get("bidQ") or 0) * weight
         weighted_ask += float(level.get("askQ") or 0) * weight
@@ -75,7 +85,7 @@ def compute_depth_concentration(depth_levels: list[dict]) -> float | None:
     if not depth_levels:
         return None
     total_qty = sum(
-        float(lv.get("bidQ") or 0) + float(lv.get("askQ") or 0) for lv in depth_levels[:5]
+        float(lv.get("bidQ") or 0) + float(lv.get("askQ") or 0) for lv in depth_levels[:D5_MAX_LEVELS]
     )
     if total_qty <= 0:
         return None
@@ -106,6 +116,21 @@ def microstructure_depth_snapshot(state: SymbolState) -> dict:
     codebase's "compute it, let feature-ablation earn its way in"
     governance used for every prior EBIE/Phase field."""
     depth_levels = state.latest_depth_levels
+    count = len(depth_levels)
+    # EBIE EB-15 Phase 1 item 4: name the depth basis explicitly rather
+    # than leaving a bare level count for the reader to interpret. Every
+    # feature above already caps its own computation at D5_MAX_LEVELS --
+    # this label makes that cap visible in the snapshot itself, and
+    # flags (never silently drops) the case where the wire genuinely
+    # carried MORE than the D5 baseline this account is configured for
+    # (see ProviderCapabilityV1.supports_full_d30) -- worth a human
+    # noticing, not something to quietly slice away unremarked.
+    if count == 0:
+        depth_tier = "UNAVAILABLE"
+    elif count <= D5_MAX_LEVELS:
+        depth_tier = "D5"
+    else:
+        depth_tier = "D30_CANDIDATE_UNCONFIRMED"
     return {
         "book_imbalance": (
             round(compute_book_imbalance(depth_levels), 4) if depth_levels else None
@@ -116,5 +141,6 @@ def microstructure_depth_snapshot(state: SymbolState) -> dict:
         "depth_concentration": (
             round(compute_depth_concentration(depth_levels), 4) if depth_levels else None
         ),
-        "depth_levels_count": len(depth_levels),
+        "depth_levels_count": count,
+        "depth_tier": depth_tier,
     }
