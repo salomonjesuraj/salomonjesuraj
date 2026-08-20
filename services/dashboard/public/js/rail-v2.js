@@ -18,6 +18,9 @@ const ROWS = [
   // plan's "first and largest panel" framing (docs/stock-options-
   // dashboard-review-and-structure-plan.md).
   { key: 'breakout-radar', icon: '📡', label: 'Breakout Radar', group: 'Screener & Detail' },
+  // EBIE EB-12 -- ranked candidate list + Why-Now/Why-Not evidence,
+  // per docs/EBIE-IMPLEMENTATION-ANSWERS.md Q4.1 (New-shell only).
+  { key: 'ebie-verdict', icon: '⚡', label: 'EBIE Verdict', group: 'Screener & Detail' },
   { key: 'watchlist', icon: '◑', label: 'Watchlist', group: 'Screener & Detail' },
   { key: 'stock-detail', icon: '◎', label: 'Stock Detail', group: 'Screener & Detail' },
   { key: 'triggers', icon: '▲', label: 'Triggers', group: 'Screener & Detail' },

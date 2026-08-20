@@ -37,10 +37,11 @@ import { CockpitV2Panel } from './cockpit-v2.js?v=8.0.0-new-shell';
 import { WatchStripV2Panel } from './watch-strip-v2.js?v=8.0.0-new-shell';
 import { ScannerV2Panel } from './scanner-v2.js?v=radar-r7-1';
 import { BreakoutRadarPanel } from './breakout-radar.js?v=radar-r9-1';
-import { initRailV2 } from './rail-v2.js?v=radar-r3-1';
+import { initRailV2 } from './rail-v2.js?v=eb12-1';
 import { TrackRecordV2Panel } from './track-record-v2.js?v=8.0.0-new-shell';
 import { SignalAlertV2 } from './signal-alert-v2.js?v=radar-r9-1';
 import { IntegrityPanelV2 } from './integrity-panel-v2.js?v=8.0.0-new-shell';
+import { EbieVerdictPanel } from './ebie-verdict-panel.js?v=eb12-2';
 
 class InfusionApp {
   constructor() {
@@ -127,6 +128,10 @@ class InfusionApp {
     const breakoutRadarV2 = new BreakoutRadarPanel(document.getElementById('breakoutRadarV2'));
     breakoutRadarV2.init();
     this._panels.push(breakoutRadarV2);
+
+    const ebieVerdictV2 = new EbieVerdictPanel(document.getElementById('ebieVerdictV2'));
+    ebieVerdictV2.init();
+    this._panels.push(ebieVerdictV2);
 
     const trackRecordV2 = new TrackRecordV2Panel(document.getElementById('trackRecordV2'));
     trackRecordV2.init();
