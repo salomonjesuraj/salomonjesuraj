@@ -15,6 +15,40 @@ import structlog
 logger = structlog.get_logger()
 UPSTOX_API_BASE = "https://api.upstox.com/v3"
 
+# EB-15 Phase 1 item 1 -- relative-strength benchmark indices.
+#
+# EB-3's multi-timeframe RS (api/relative_strength.py) and VCP's own RS
+# component (api/vcp.py) both hardcode NIFTY50 as the sole benchmark,
+# reading infusion:ohlc:NIFTY50:daily directly (see mtf.py's
+# NIFTY50_DAILY_KEY). That key is populated by this same bootstrap loop,
+# via _universe()'s instrument list below -- but _universe() only ever saw
+# whatever nse-scraper had already written to infusion:symbols, and
+# nse-scraper's own loader.py deliberately EXCLUDES indices.json whenever
+# INFUSION_SYMBOL_UNIVERSE=fno ("fno is stocks-only for scanner purity...
+# Top market ticker fetches NIFTY/BANKNIFTY separately" -- see loader.py's
+# own docstring/comment). Confirmed live: this deployment's real .env sets
+# SYMBOL_UNIVERSE=fno, so infusion:symbols has held zero NSE_INDEX| keys
+# since the day EBIE's RS/VCP features shipped -- NIFTY50 was never
+# bootstrapped and every RS/VCP consumer has been silently reporting
+# "unavailable" (correctly, honestly -- but never actually working).
+#
+# Fixed HERE, not in nse-scraper: this loop's job is fetching benchmark
+# history for RS math, not defining the tradeable/scanned universe, so it
+# independently guarantees these regardless of which tier nse-scraper is
+# configured for. nse-scraper's fno-tier exclusion stays exactly as
+# designed -- indices still never enter the scanner's own symbol universe.
+BENCHMARK_INDICES: dict[str, str] = {
+    "NIFTY50": "NSE_INDEX|Nifty 50",
+}
+
+# Below this many cached daily bars, an RS/VCP 60D lookback window can't be
+# trusted even though the Redis key technically exists (e.g. moments after a
+# fresh bootstrap). Real precedent already observed live during EB-3/VCP:
+# Upstox's historical-candle endpoint caps index lookback tighter than
+# equity lookback (NIFTY50 ~120-250 trading days vs a stock's ~250-370).
+_BENCHMARK_READY_MIN_BARS = 200
+_BENCHMARK_DEGRADED_MIN_BARS = 1
+
 
 def _bar(raw: list) -> tuple[int, dict] | None:
     if len(raw) < 6:
@@ -46,7 +80,38 @@ async def _universe(redis) -> dict[str, str]:
                 result[symbol] = instrument_key
         except Exception:
             continue
+    # Always ensure RS-benchmark indices are present, regardless of what
+    # infusion:symbols contains for the currently-configured tier (see the
+    # BENCHMARK_INDICES comment above). setdefault -- a tier that already
+    # includes indices (nifty50/100/200/500) is left untouched, this only
+    # fills the gap fno-tier deployments otherwise leave permanently empty.
+    for symbol, instrument_key in BENCHMARK_INDICES.items():
+        result.setdefault(symbol, instrument_key)
     return result
+
+
+async def _benchmark_status(redis) -> dict[str, str]:
+    """READY / DEGRADED(n_bars) / UNAVAILABLE per benchmark index, from a
+    real ZCARD count -- never inferred, never assumed present. Folded into
+    bootstrap_historical()'s own return dict so the scheduler's existing
+    per-cycle log line (main.py: logger.info("historical_bootstrap",
+    **result)) surfaces this on every run including the very first one at
+    startup -- a missing/thin RS benchmark is now visible in ops logs
+    directly, not just buried as a per-symbol "unavailable" reason deep
+    inside an individual RS/VCP feature response."""
+    status: dict[str, str] = {}
+    for symbol in BENCHMARK_INDICES:
+        try:
+            count = await redis.zcard(f"infusion:ohlc:{symbol}:daily")
+        except Exception:
+            count = 0
+        if count >= _BENCHMARK_READY_MIN_BARS:
+            status[symbol] = "READY"
+        elif count >= _BENCHMARK_DEGRADED_MIN_BARS:
+            status[symbol] = f"DEGRADED({count}_bars)"
+        else:
+            status[symbol] = "UNAVAILABLE"
+    return status
 
 
 async def _fetch_historical(
@@ -133,6 +198,11 @@ async def bootstrap_historical(redis) -> dict:
     instruments = await _universe(redis)
     if not instruments:
         return {"status": "waiting_for_symbols", "symbols": 0}
+    # Note: instruments is never empty from here on even before nse-scraper
+    # has written anything, since _universe() now always seeds the
+    # BENCHMARK_INDICES entries -- this loop will make its first NIFTY50
+    # history call slightly earlier (before real symbols exist) than
+    # before, which is harmless and gets the RS benchmark flowing sooner.
 
     today = date.today()
     completed = 0
@@ -176,4 +246,10 @@ async def bootstrap_historical(redis) -> dict:
                 if "rate_limited" in str(exc):
                     await asyncio.sleep(2)
 
-    return {"status": "complete", "symbols": completed, "requested": len(instruments)}
+    benchmark_status = await _benchmark_status(redis)
+    return {
+        "status": "complete",
+        "symbols": completed,
+        "requested": len(instruments),
+        "benchmark_status": benchmark_status,
+    }
