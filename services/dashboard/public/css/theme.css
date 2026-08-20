@@ -151,6 +151,16 @@
   --ifx-shadow-md: 0 10px 28px rgba(6,6,14,.34);
   --ifx-shadow-lg: 0 20px 48px rgba(6,6,14,.40);
   --ifx-focus-ring: 0 0 0 2px var(--ifx-shell-bg), 0 0 0 4px var(--ifx-accent);
+
+  /* Clean Sweep (light-first) -- a subtle "surface elevation" tint used
+     for hover states / raised chips / neutral badges (.ifx-rail-item:hover,
+     .ifx-scr-row:hover, .ifx-badge--neutral, .ifx-deck-lvl, .ifx-outcome-
+     pill.expired). A white-tinted overlay reads correctly on the dark
+     shell but is a near-invisible no-op on a light/white one -- this
+     token flips sign per theme instead of leaving those 5 rules
+     hardcoded to a dark-mode-only value. */
+  --ifx-scrim-1: rgba(255,255,255,.03);
+  --ifx-scrim-2: rgba(255,255,255,.06);
 }
 
 [data-theme="light"] {
@@ -198,6 +208,12 @@
   --ifx-shadow-md: 0 8px 20px rgba(20,21,42,.10);
   --ifx-shadow-lg: 0 16px 36px rgba(20,21,42,.14);
   --ifx-focus-ring: 0 0 0 2px var(--ifx-content-surface), 0 0 0 4px var(--ifx-accent-strong);
+
+  /* Ink-tinted, not white-tinted -- see the dark block's own comment on
+     --ifx-scrim-1/-2. Same visual weight (elevation/hover), correct sign
+     for a light ground. */
+  --ifx-scrim-1: rgba(20,21,42,.035);
+  --ifx-scrim-2: rgba(20,21,42,.06);
 }
 
 :root {
@@ -292,7 +308,7 @@
 .ifx-badge--bear { background: var(--ifx-bear-dim); color: var(--ifx-bear); }
 .ifx-badge--warn { background: var(--ifx-warn-dim); color: var(--ifx-warn); }
 .ifx-badge--info { background: var(--ifx-info-dim); color: var(--ifx-info); }
-.ifx-badge--neutral { background: rgba(255,255,255,.06); color: var(--ifx-shell-text-muted); }
+.ifx-badge--neutral { background: var(--ifx-scrim-2); color: var(--ifx-shell-text-muted); }
 .ifx-badge--on-paper.ifx-badge--neutral { background: var(--ifx-content-border); color: var(--ifx-content-text-muted); }
 /* Phase N2 -- risk/flat variants for Chain Favour (New shell, Phase N4). */
 .ifx-badge--risk { background: var(--ifx-risk-dim); color: var(--ifx-risk-strong); }
@@ -1487,7 +1503,7 @@
 .ifx-deck-levels { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; position: relative; }
 .ifx-deck-lvl {
   display: flex; flex-direction: column; gap: 2px; padding: 8px 9px;
-  border-radius: var(--ifx-radius-sm); background: rgba(255,255,255,.03); border: 1px solid var(--ifx-shell-border);
+  border-radius: var(--ifx-radius-sm); background: var(--ifx-scrim-1); border: 1px solid var(--ifx-shell-border);
 }
 .ifx-deck-lvl label { font-size: 8.5px; text-transform: uppercase; letter-spacing: .4px; color: var(--ifx-shell-text-faint); }
 .ifx-deck-lvl b { font-family: var(--ifx-font-mono); font-size: 13px; font-weight: 700; color: var(--ifx-shell-text); }
@@ -1595,7 +1611,7 @@
 .ifx-scr-body.vscroll-viewport { height: 560px; overflow-y: auto; position: relative; }
 
 .ifx-scr-row { display: grid; grid-template-columns: var(--ifx-scr-grid); height: 100%; border-bottom: 1px solid var(--ifx-shell-border); cursor: pointer; }
-.ifx-scr-row:hover { background: rgba(255,255,255,.025); }
+.ifx-scr-row:hover { background: var(--ifx-scrim-1); }
 .ifx-scr-row.selected { background: var(--ifx-accent-dim); box-shadow: inset 3px 0 0 var(--ifx-accent); }
 .ifx-scr-td { display: flex; align-items: center; justify-content: flex-end; padding: 0 10px; font-size: 12px; overflow: hidden; white-space: nowrap; }
 .ifx-scr-td.left { justify-content: flex-start; }
@@ -1650,7 +1666,7 @@
   cursor: pointer; text-align: left; font-size: 12.5px; font-weight: 600; font-family: var(--ifx-font-ui);
 }
 .ifx-rail-item:last-child { border-bottom: none; }
-.ifx-rail-item:hover { background: rgba(255,255,255,.03); }
+.ifx-rail-item:hover { background: var(--ifx-scrim-1); }
 .ifx-rail-item.active { background: var(--ifx-accent-dim); color: var(--ifx-accent-strong); }
 .ifx-rail-icon { width: 22px; text-align: center; flex: none; font-size: 13px; }
 .ifx-rail-item-label { flex: 1; }
@@ -1782,7 +1798,7 @@
 .ifx-outcome-pill { display: inline-flex; padding: 2px 8px; border-radius: 999px; font-size: 9.5px; font-weight: 800; }
 .ifx-outcome-pill.target { background: var(--ifx-bull-dim); color: var(--ifx-bull); }
 .ifx-outcome-pill.stop { background: var(--ifx-bear-dim); color: var(--ifx-bear); }
-.ifx-outcome-pill.expired { background: rgba(255,255,255,.06); color: var(--ifx-shell-text-faint); }
+.ifx-outcome-pill.expired { background: var(--ifx-scrim-2); color: var(--ifx-shell-text-faint); }
 
 /* EBIE Verdict panel -- Phase EB-12 increment 2 */
 .ifx-ebie-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }

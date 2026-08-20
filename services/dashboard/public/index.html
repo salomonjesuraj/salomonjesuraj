@@ -9,22 +9,21 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
   <link rel="stylesheet" href="/css/main.css?v=color-refresh-10">
-  <link rel="stylesheet" href="/css/theme.css?v=eb12-1">
+  <link rel="stylesheet" href="/css/theme.css?v=clean-sweep-lc0">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ctext y='14' font-size='14'%3EI%3C/text%3E%3C/svg%3E">
   <script>
     // Anti-FOUC: set data-theme before first paint, mirroring theme.js's
-    // initialTheme() logic exactly (localStorage else OS preference) so
+    // initialTheme() logic exactly (localStorage else light -- Clean
+    // Sweep's light-first default, see theme.js's own docstring) so
     // there's never a flash of the wrong theme or a mismatch with what
     // theme.js believes the current theme is once it loads as a module.
     (function () {
       try {
         var saved = localStorage.getItem('infusion:theme');
-        var theme = (saved === 'dark' || saved === 'light')
-          ? saved
-          : (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+        var theme = (saved === 'dark' || saved === 'light') ? saved : 'light';
         document.documentElement.setAttribute('data-theme', theme);
       } catch (e) {
-        document.documentElement.setAttribute('data-theme', 'dark');
+        document.documentElement.setAttribute('data-theme', 'light');
       }
     })();
     // Same anti-FOUC reasoning as the theme script above, mirrors

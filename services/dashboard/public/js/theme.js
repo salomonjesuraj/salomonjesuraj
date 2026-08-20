@@ -2,24 +2,25 @@
  * Theme controller — dark/light toggle for the v2 design system (theme.css).
  *
  * Applies `data-theme="dark"|"light"` on <html>, persisted to localStorage.
- * Defaults to the OS preference (prefers-color-scheme) on first visit, then
- * whatever the user last chose. A tiny module by design — the actual color
- * values live entirely in theme.css's [data-theme] blocks, this only ever
- * flips the attribute.
+ *
+ * Clean Sweep (light-first): light is now the hard default for a
+ * first-time visitor, not "whichever the OS prefers." Previously this
+ * fell back to `prefers-color-scheme`, so a visitor on a dark-OS machine
+ * landed in the dark console shell on their very first load -- the
+ * opposite of the "light, clean, Upstox-reference" identity the
+ * dashboard is meant to lead with now. Dark mode is NOT removed -- an
+ * explicit toggle still reaches it and is still remembered exactly as
+ * before; this only changes the untouched, no-preference-saved-yet case.
  */
 
 const STORAGE_KEY = 'infusion:theme';
-
-function systemPrefersLight() {
-  return window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
-}
 
 function initialTheme() {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved === 'dark' || saved === 'light') return saved;
   } catch (e) { /* ignore */ }
-  return systemPrefersLight() ? 'light' : 'dark';
+  return 'light';
 }
 
 export const theme = {
