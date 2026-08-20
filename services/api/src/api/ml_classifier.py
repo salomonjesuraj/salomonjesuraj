@@ -431,6 +431,22 @@ def _train_sync(train_rows: list[dict], test_rows: list[dict]) -> dict:
     else:
         interpretation = "Underperforms the existing conviction score on held-out data -- not worth trusting yet."
 
+    # EBIE EB-10B: probability calibration (api/calibration.py), fit and
+    # validated entirely within this SAME offline/scheduled training
+    # pass (never inside a live HTTP request, per Non-Negotiable Rule
+    # #9 -- calibration fitting is itself a form of training). Uses the
+    # classifier's own held-out test_scores/y_test -- already out-of-
+    # sample from training -- further split in half so the reported
+    # Brier/ECE numbers are genuinely out-of-sample for the calibration
+    # mapping too, not just for the raw model (Q2.6's explicit
+    # requirement). Per Q2.6's own worked example ("EBIE Score: 82/100"
+    # is allowed, "78% breakout probability" is not unless calibration
+    # is validated): calibration["available"] gates whether a consumer
+    # may ever show test_scores as a percentage probability at all.
+    from api.calibration import calibrate_and_validate
+
+    calibration = calibrate_and_validate(test_scores, y_test)
+
     return {
         "available": True,
         "trained_at": datetime.now(timezone.utc).isoformat(),
@@ -448,6 +464,7 @@ def _train_sync(train_rows: list[dict], test_rows: list[dict]) -> dict:
         "majority_class_accuracy": round(majority_accuracy, 4) if majority_accuracy is not None else None,
         "train_win_rate": round(sum(y_train) / len(y_train), 4) if y_train else None,
         "reliable": reliable,
+        "calibration": calibration,
     }
 
 
