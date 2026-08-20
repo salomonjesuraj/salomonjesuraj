@@ -388,6 +388,32 @@ class ScannerEngine:
             })
         return portfolio
 
+    async def _fetch_daily_loss_budget(self) -> dict | None:
+        """Best-effort read of api/portfolio_risk_queue.py's daily-loss-
+        budget cache -- EBIE EB-11 increment 2. Never raises into the
+        hot path: missing/stale cache just means portfolio_fit's
+        daily-loss fields come back None."""
+        try:
+            raw = await self.redis.get("infusion:portfolio-risk:daily-loss")
+            if not raw:
+                return None
+            decoded = json.loads(raw.decode() if isinstance(raw, bytes) else raw)
+            return decoded if decoded.get("available") else None
+        except Exception:
+            return None
+
+    async def _fetch_consecutive_losses(self) -> dict | None:
+        """Best-effort read of api/portfolio_risk_queue.py's consecutive-
+        losses cache -- EBIE EB-11 increment 2."""
+        try:
+            raw = await self.redis.get("infusion:portfolio-risk:consecutive-losses")
+            if not raw:
+                return None
+            decoded = json.loads(raw.decode() if isinstance(raw, bytes) else raw)
+            return decoded if decoded.get("available") else None
+        except Exception:
+            return None
+
     async def _persist_diagnostics(self, symbol, strategy_id, features, state, candidate):
         """Persist explainable gates for zero-signal investigation."""
         if strategy_id != "vol_vwap_breakout":
@@ -559,6 +585,17 @@ class ScannerEngine:
             candidate_risk_amount=float((sub_scores.get("position_sizing") or {}).get("risk_amount") or 0.0),
             active_portfolio=active_portfolio,
         )
+        # EBIE EB-11 (increment 2): daily loss budget + consecutive
+        # losses -- computed from real archived Postgres history in
+        # `api` (scanner has no direct Postgres access), cached to
+        # Redis, read cheaply here. None (not merged) when the sweep
+        # hasn't run yet or the cache is stale -- never fabricated.
+        daily_loss = await self._fetch_daily_loss_budget()
+        if daily_loss is not None:
+            sub_scores["portfolio_fit"]["daily_loss_budget"] = daily_loss
+        consecutive_losses = await self._fetch_consecutive_losses()
+        if consecutive_losses is not None:
+            sub_scores["portfolio_fit"]["consecutive_losses"] = consecutive_losses
 
         # ── Suppression gate ───────────────────────────
         result = await self.suppression.evaluate(

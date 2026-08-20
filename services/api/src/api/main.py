@@ -57,6 +57,7 @@ from api.routes.options_dynamics import routes as options_dynamics_routes
 from api.routes.ebie_state import routes as ebie_state_routes
 from api.routes.upstox_news import routes as upstox_news_routes
 from api.routes.sentiment import routes as sentiment_routes
+from api.routes.portfolio_risk import routes as portfolio_risk_routes
 from api.ai_advisor import OpenAIAdvisor
 from api.option_chain_queue import option_chain_queue_loop
 from api.mtf_queue import mtf_queue_loop
@@ -66,6 +67,7 @@ from api.options_dynamics_queue import options_dynamics_loop
 from api.ebie_state_queue import ebie_state_loop
 from api.news_queue import news_queue_loop
 from api.sentiment_queue import sentiment_cache_loop
+from api.portfolio_risk_queue import portfolio_risk_loop
 from infusion_common.logging import setup_logging
 from infusion_common.health import HealthReporter
 
@@ -145,6 +147,7 @@ async def main():
         app.router.add_routes(ebie_state_routes)
         app.router.add_routes(upstox_news_routes)
         app.router.add_routes(sentiment_routes)
+        app.router.add_routes(portfolio_risk_routes)
 
     runner = web.AppRunner(app)
     await runner.setup()
@@ -160,6 +163,7 @@ async def main():
     options_dynamics_task = asyncio.create_task(options_dynamics_loop(app))
     news_queue_task = asyncio.create_task(news_queue_loop(app))
     sentiment_cache_task = asyncio.create_task(sentiment_cache_loop(app))
+    portfolio_risk_task = asyncio.create_task(portfolio_risk_loop(app))
 
     # Run forever
     try:
@@ -176,6 +180,7 @@ async def main():
         options_dynamics_task.cancel()
         news_queue_task.cancel()
         sentiment_cache_task.cancel()
+        portfolio_risk_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await option_queue_task
         with contextlib.suppress(asyncio.CancelledError):
@@ -192,6 +197,8 @@ async def main():
             await news_queue_task
         with contextlib.suppress(asyncio.CancelledError):
             await sentiment_cache_task
+        with contextlib.suppress(asyncio.CancelledError):
+            await portfolio_risk_task
         await health.stop()
         await runner.cleanup()
         if pg_pool:
