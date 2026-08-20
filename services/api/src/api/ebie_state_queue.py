@@ -46,15 +46,18 @@ import msgpack
 import structlog
 from datetime import datetime, timezone
 
+from api.market_breadth import compute_market_breadth
 from api.routes.ticks import _build_ticks
 from infusion_streams.constants import (
-    KEY_EBIE_STATE_PREFIX, KEY_EBIE_VERDICT_LITE_PREFIX, KEY_SIGNAL_PREFIX,
+    KEY_EBIE_STATE_PREFIX, KEY_EBIE_VERDICT_LITE_PREFIX, KEY_MARKET_CONTEXT_PREFIX,
+    KEY_SIGNAL_PREFIX,
 )
 
 logger = structlog.get_logger()
 
 EBIE_STATE_TTL_SEC = 24 * 3600  # same TTL-bound principle as R2/R8/R9's own transitional caches
 EBIE_VERDICT_LITE_TTL_SEC = 24 * 3600
+MARKET_CONTEXT_TTL_SEC = 24 * 3600
 SWEEP_INTERVAL_SEC = 60
 STATUS_KEY = "infusion:ebie-state-queue:status"
 
@@ -338,11 +341,59 @@ async def sweep_once(app) -> dict:
     if verdicts_written:
         await verdict_pipe.execute()
 
+    # EBIE EB-15 Phase 4 item 5: cache raw market/sector-context inputs
+    # per symbol -- reuses `ticks` (already fetched above for this same
+    # sweep) for a cheap sector-average pass, matching ticks.py's own
+    # _build_ticks() computation exactly (same grouping logic, so the
+    # two never quietly diverge), plus one whole-universe breadth read
+    # (already the established "~0.1s, pure Redis, once per request"
+    # cost per market_breadth.py's own header). See constants.py's own
+    # comment on KEY_MARKET_CONTEXT_PREFIX for why RAW inputs are cached
+    # here rather than a pre-biased score.
+    sector_changes: dict[str, list[float]] = {}
+    for entry in ticks:
+        sid = entry.get("sector_id") or ""
+        if sid:
+            sector_changes.setdefault(sid, []).append(float(entry.get("change_pct") or 0))
+    sector_avg_change = {sid: sum(vals) / len(vals) for sid, vals in sector_changes.items() if vals}
+    try:
+        market_health_score = (await compute_market_breadth(redis)).get("health_score")
+    except Exception:
+        market_health_score = None
+
+    market_context_pipe = redis.pipeline(transaction=False)
+    market_context_written = 0
+    for entry in ticks:
+        symbol = entry.get("symbol")
+        if not symbol:
+            continue
+        sid = entry.get("sector_id") or ""
+        payload = {
+            "nifty_change_pct": entry.get("nifty_change_pct"),
+            "sector_avg_change_pct": sector_avg_change.get(sid),
+            "market_health_score": market_health_score,
+        }
+        # JSON, not msgpack -- this cache is read scanner-side, which
+        # already reads every other per-symbol cache (mtf/sentiment/
+        # futures/options-dynamics) as JSON via json.loads(), not msgpack
+        # (that dependency isn't even in scanner's own pyproject.toml).
+        # KEY_EBIE_VERDICT_LITE_PREFIX above stays msgpack correctly --
+        # that one's consumed by api's own routes, a different reader.
+        market_context_pipe.set(
+            f"{KEY_MARKET_CONTEXT_PREFIX}{symbol}",
+            json.dumps(payload, separators=(",", ":")),
+            ex=MARKET_CONTEXT_TTL_SEC,
+        )
+        market_context_written += 1
+    if market_context_written:
+        await market_context_pipe.execute()
+
     status = {
         "available": True,
         "swept": len(ticks),
         "transitions": transitions,
         "verdicts_written": verdicts_written,
+        "market_context_written": market_context_written,
         "checked_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
     await redis.set(STATUS_KEY, json.dumps(status, separators=(",", ":")), ex=600)

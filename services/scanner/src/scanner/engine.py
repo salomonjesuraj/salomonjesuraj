@@ -158,6 +158,13 @@ class ScannerEngine:
         if options_dynamics_cache is not None:
             payload = {**payload, "options_dynamics_cache": options_dynamics_cache}
 
+        # EBIE EB-15 Phase 4 item 5: raw market/sector-context inputs
+        # (api/ebie_state_queue.py's own sweep). Same best-effort,
+        # I/O-before-evaluate() pattern as every cache above.
+        market_context_cache = await self._fetch_market_context_cache(symbol)
+        if market_context_cache is not None:
+            payload = {**payload, "market_context_cache": market_context_cache}
+
         # Run all registered strategies
         strategies = get_strategies()
         for strategy in strategies:
@@ -340,6 +347,26 @@ class ScannerEngine:
         back None."""
         try:
             raw = await self.redis.get(f"infusion:options-dynamics:{symbol.upper()}")
+            if not raw:
+                return None
+            text = raw.decode() if isinstance(raw, bytes) else raw
+            return json.loads(text)
+        except Exception:
+            return None
+
+    async def _fetch_market_context_cache(self, symbol: str) -> dict | None:
+        """Best-effort read of api/ebie_state_queue.py's per-symbol raw
+        market/sector-context inputs (nifty_change_pct, this symbol's
+        sector average change, market breadth health) -- EBIE EB-15
+        Phase 4 item 5. Deliberately RAW, not a pre-computed directional
+        score -- verdict_engine.py computes the direction-aware read
+        itself, against its own `bullish` parameter (see
+        KEY_MARKET_CONTEXT_PREFIX's own comment for why). Never raises
+        into the hot path: a missing/stale cache just means the market-
+        context family reports unavailable, same convention as every
+        other best-effort cache read in this file."""
+        try:
+            raw = await self.redis.get(f"infusion:market-context:{symbol.upper()}")
             if not raw:
                 return None
             text = raw.decode() if isinstance(raw, bytes) else raw
@@ -536,6 +563,8 @@ class ScannerEngine:
             sentiment_cache=features.get("sentiment_cache") or {},
             futures_cache=features.get("futures_cache") or {},
             options_dynamics_cache=features.get("options_dynamics_cache") or {},
+            market_context_cache=features.get("market_context_cache") or {},
+            rel_vol_20d=fs.get("rel_vol_20d"),
             ma_regime=mtf_cache.get("ma_regime"),
             donchian=mtf_cache.get("donchian"),
             wyckoff_sos_sow=mtf_cache.get("wyckoff_sos_sow"),

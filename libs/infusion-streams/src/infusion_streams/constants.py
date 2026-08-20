@@ -93,3 +93,16 @@ KEY_EBIE_STATE_PREFIX = "infusion:ebie-state:"      # + {symbol}:{direction} →
 # a plain scalar like KEY_EBIE_STATE_PREFIX above.
 KEY_EBIE_VERDICT_LITE_PREFIX = "infusion:ebie-verdict-lite:"  # + {symbol} → STRING (msgpack'd lightweight verdict dict)
 
+# EBIE EB-15 Phase 4 item 5: raw market/sector-context inputs, one per
+# symbol, cached by ebie_state_queue.py's own sweep (reuses that sweep's
+# already-fetched ticks/market-breadth data -- no new I/O). Deliberately
+# caches the RAW inputs (nifty_change_pct, this symbol's sector average
+# change, market breadth health), not a pre-computed direction-aware
+# score -- api/market_context.py's compute_directional_context() bakes
+# in a caller-supplied bias direction, and that bias (ticks.py's own
+# trend_bias) is a separate, independently-derived read from EB-8's own
+# `bullish` candidate parameter; caching the already-biased score would
+# risk a real directional mismatch. scanner/verdict_engine.py computes
+# the direction-aware score itself, fresh, against its own `bullish`.
+KEY_MARKET_CONTEXT_PREFIX = "infusion:market-context:"  # + {symbol} → STRING (msgpack'd raw inputs)
+

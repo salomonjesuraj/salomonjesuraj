@@ -44,6 +44,58 @@ resistance/support"): the options_positioning family below deliberately
 does NOT use weighted_pcr's absolute LEVEL as a directional signal --
 only wall STATE changes (strengthening/weakening) and migration flags,
 which Q3.4 explicitly approves as new verdict inputs.
+
+EBIE EB-15 Phase 4 (items 5+6 of the "EBIE Consolidation, Calibration
+and Production Readiness" directive) -- two changes to this module's own
+scoring core, done together since item 5 is naturally expressed as one
+more weighted family rather than a separate multiplier mechanism:
+
+1. Market/Sector Context (item 5) is now wired in as its own family
+   (`market_context`), using RAW inputs cached by api/ebie_state_queue.py
+   (see that module and KEY_MARKET_CONTEXT_PREFIX's own comments for why
+   raw, not pre-biased). `_compute_directional_context()` below is a
+   deliberate, self-contained duplication of api/market_context.py's own
+   pure function -- scanner and api are separate services/containers
+   with no shared-lib import path between them, matching the same
+   cross-service duplication precedent already used elsewhere in this
+   codebase (e.g. api/vcp.py's own "self-contained... to avoid a
+   circular import" note).
+
+2. Equal evidence voting is replaced with WEIGHTED evidence families
+   (item 6). Previously every family counted as exactly 1 vote --
+   the 8 existing alignment.py families (structure/candlestick/zone/
+   ict/regime/ma_regime/donchian/wyckoff) could together contribute up
+   to 8 votes to a single underlying concept (price structure), silently
+   outweighing single-vote families like relative_strength or the new
+   market_context even when the latter are more differentiated,
+   higher-quality reads -- exactly the failure mode item 6 names
+   ("equal voting lets weak or redundant indicators overpower high-
+   quality evidence"). Fixed by giving the 8 alignment families a
+   shared, capped cluster weight (STRUCTURE_CLUSTER_WEIGHT), split
+   evenly among however many of the 8 are actually available that tick,
+   and giving every other family its own fixed, capped weight
+   (FAMILY_WEIGHTS) -- so no single family, and no single correlated
+   cluster of families, can dominate the score regardless of how many
+   sub-indicators happen to agree. Weights are this session's own
+   calibration (the directive names the CATEGORIES needing weights, not
+   exact numbers) -- disclosed, not hidden, and easy to retune later
+   since they're one named table, not scattered magic numbers.
+
+Also new: a `volume` family (RVOL, already computed by ticks.py/
+features_snapshot, never wired into a verdict family before now).
+
+Disclosed, NOT built in this pass: option tradeability (still no live
+option-chain liquidity data reaches this module -- same gap EB-8's
+original pass disclosed) and portfolio/risk constraints as a verdict
+input (EB-11's portfolio_fit is computed AFTER compute_verdict() in
+engine.py's own call order today; wiring it in as an advisory modifier
+would need that ordering changed, scoped out of this pass to avoid an
+unrelated behavior change to an already-shipped, working call sequence).
+Bearish compression/distribution (item 7) is a separate, distinctly-
+scoped follow-up -- see this phase's own commit message for what's
+already symmetric today (CLV/accumulation, and all 8 alignment.py
+families) versus what still needs new logic (VCP's genuinely bull-only-
+by-construction compression read).
 """
 
 from __future__ import annotations
@@ -67,6 +119,35 @@ DQ_DEGRADED = 90
 CLV_THRESHOLD = 0.15
 MICROSTRUCTURE_THRESHOLD = 0.15
 VCP_MIN_SCORE = 60
+RVOL_BULL_THRESHOLD = 2.0   # matches trap_model.py's/breakout-radar's own "real volume" bar
+MARKET_CONTEXT_NEUTRAL_BAND = 3.0  # +/- around the 50-neutral midpoint that counts as "no read"
+
+# EBIE EB-15 Phase 4 item 6 -- weighted evidence families, replacing
+# equal-vote counting. See this module's own docstring for the full
+# reasoning. STRUCTURE_FAMILIES are alignment.py's 8 existing families,
+# clustered under one capped weight; every other family gets its own
+# fixed weight. Both tables sum to 100 -- "the weighted score" is a real
+# 0-100 percentage of available, weighted evidence, not an arbitrary unit.
+STRUCTURE_FAMILIES = frozenset({
+    "structure", "candlestick", "zone", "ict", "regime", "ma_regime", "donchian", "wyckoff",
+})
+STRUCTURE_CLUSTER_WEIGHT = 25.0
+
+FAMILY_WEIGHTS = {
+    "accumulation": 8.0,
+    "compression": 6.0,
+    "relative_strength": 10.0,
+    "market_context": 13.0,
+    "microstructure": 8.0,
+    "futures_positioning": 8.0,
+    "options_positioning": 8.0,
+    "sentiment": 8.0,
+    "volume": 6.0,
+}
+# STRUCTURE_CLUSTER_WEIGHT + sum(FAMILY_WEIGHTS.values()) == 100 -- kept
+# as an assertion, not just a comment, so a future edit that breaks the
+# total fails loudly instead of silently shifting what "0-100" means.
+assert STRUCTURE_CLUSTER_WEIGHT + sum(FAMILY_WEIGHTS.values()) == 100.0
 
 
 def _direction_label(score_diff: float, threshold: float = 0.0) -> bool | None:
@@ -78,7 +159,20 @@ def _direction_label(score_diff: float, threshold: float = 0.0) -> bool | None:
 
 
 def _accumulation_family(ml: dict) -> bool | None:
-    """CLV (EB-2) -- persistent close-location pressure."""
+    """CLV (EB-2) -- persistent close-location pressure.
+
+    EB-15 Phase 4 item 7 note: despite the family's name/key
+    ("accumulation"), this read has ALWAYS been genuinely symmetric --
+    CLV above +CLV_THRESHOLD is real accumulation (closes persistently
+    near session highs), below -CLV_THRESHOLD is real DISTRIBUTION
+    (closes persistently near session lows, i.e. selling pressure) --
+    just never described that way. Previously mislabeled as if it only
+    ever argued for a bullish thesis, which is not what the function
+    itself does. FAMILY_DESCRIPTIONS below now names both directions
+    explicitly, and this is the one item-7 fix landing in this same
+    phase -- VCP's compression family (below) remains genuinely
+    bull-only by construction and needs real new logic to mirror,
+    scoped out as a separate follow-up (see this module's docstring)."""
     clv = ml.get("clv_ema")
     if clv is None:
         return None
@@ -173,6 +267,85 @@ def _sentiment_family(sentiment_cache: dict) -> bool | None:
     return None
 
 
+def _volume_family(rel_vol_20d) -> bool | None:
+    """EB-15 Phase 4 item 6 -- RVOL, already computed by ticks.py/
+    features_snapshot for every candidate but never wired into a
+    verdict family before now. Deliberately one-sided: real volume
+    expansion argues FOR whichever direction the candidate already is
+    (more participation behind a move, either way), but LOW volume is
+    genuinely inconclusive, not evidence against -- quiet volume doesn't
+    itself argue for the opposite direction, so this abstains rather
+    than voting bearish-for-bullish-candidates on thin volume alone."""
+    if rel_vol_20d is None:
+        return None
+    return True if float(rel_vol_20d) >= RVOL_BULL_THRESHOLD else None
+
+
+def _compute_directional_context(
+    *,
+    is_sell_bias: bool,
+    nifty_change_pct: float | None,
+    sector_avg_change_pct: float | None,
+    market_health_score: float | None,
+) -> float | None:
+    """Self-contained duplication of api/market_context.py's
+    compute_directional_context() -- see this module's own docstring for
+    why (no shared-lib import path between the scanner and api
+    services). Weights/scales kept identical to the original so the two
+    can never quietly diverge in behavior, only in that this version
+    returns just the score (verdict_engine.py only ever needs the
+    number, not the human-readable reasons -- those are reconstructed
+    separately for top_reasons/risks via FAMILY_DESCRIPTIONS like every
+    other family here)."""
+    if nifty_change_pct is None and sector_avg_change_pct is None and market_health_score is None:
+        return None
+    score = 50.0
+    nifty_weight, nifty_scale = 20.0, 8.0
+    sector_weight, sector_scale = 15.0, 6.0
+    breadth_weight = 0.3
+
+    if nifty_change_pct is not None:
+        supportive = (nifty_change_pct >= 0) if not is_sell_bias else (nifty_change_pct <= 0)
+        delta = min(abs(nifty_change_pct) * nifty_scale, nifty_weight)
+        score += delta if supportive else -delta
+
+    if sector_avg_change_pct is not None:
+        supportive = (sector_avg_change_pct >= 0) if not is_sell_bias else (sector_avg_change_pct <= 0)
+        delta = min(abs(sector_avg_change_pct) * sector_scale, sector_weight)
+        score += delta if supportive else -delta
+
+    if market_health_score is not None:
+        health_component = market_health_score if not is_sell_bias else (100.0 - market_health_score)
+        score += (health_component - 50.0) * breadth_weight
+
+    return round(max(0.0, min(100.0, score)), 1)
+
+
+def _market_context_family(market_context_cache: dict, bullish: bool) -> bool | None:
+    """EB-15 Phase 4 item 5 -- market/sector/breadth context, read
+    against THIS candidate's own posited direction (bullish param),
+    never a separately-cached, potentially-mismatched bias -- see
+    _compute_directional_context()'s own docstring. score > 50 means
+    the broader market/sector genuinely supports this candidate's own
+    direction; < 50 means it's fighting it (the directive's own "a
+    strong stock setup in a hostile market should be downgraded" case);
+    within MARKET_CONTEXT_NEUTRAL_BAND of 50 is a genuine no-read, not
+    forced to a side."""
+    score = _compute_directional_context(
+        is_sell_bias=not bullish,
+        nifty_change_pct=market_context_cache.get("nifty_change_pct"),
+        sector_avg_change_pct=market_context_cache.get("sector_avg_change_pct"),
+        market_health_score=market_context_cache.get("market_health_score"),
+    )
+    if score is None:
+        return None
+    if score > 50.0 + MARKET_CONTEXT_NEUTRAL_BAND:
+        return bullish
+    if score < 50.0 - MARKET_CONTEXT_NEUTRAL_BAND:
+        return not bullish
+    return None
+
+
 NEW_FAMILY_SCORERS = {
     "accumulation": lambda ctx: _accumulation_family(ctx["ml"]),
     "compression": lambda ctx: _compression_family(ctx["mtf_cache"]),
@@ -181,6 +354,13 @@ NEW_FAMILY_SCORERS = {
     "futures_positioning": lambda ctx: _futures_positioning_family(ctx["futures_cache"]),
     "options_positioning": lambda ctx: _options_positioning_family(ctx["options_dynamics_cache"]),
     "sentiment": lambda ctx: _sentiment_family(ctx["sentiment_cache"]),
+    "volume": lambda ctx: _volume_family(ctx["rel_vol_20d"]),
+    # market_context is deliberately NOT in this dict -- every other
+    # scorer here computes an ABSOLUTE bullish/bearish read, independent
+    # of the candidate's own direction; market_context's read is
+    # inherently relative to `bullish` (see _market_context_family's own
+    # docstring), so it needs that parameter threaded through explicitly
+    # in compute_verdict() below rather than fitting this ctx-only shape.
 }
 
 FAMILY_DESCRIPTIONS = {
@@ -192,13 +372,15 @@ FAMILY_DESCRIPTIONS = {
     "ma_regime": "daily MA regime",
     "donchian": "Donchian fresh breakout",
     "wyckoff": "Wyckoff SOS/SOW",
-    "accumulation": "close-location accumulation pressure",
+    "accumulation": "close-location accumulation/distribution pressure",
     "compression": "volatility-contraction base quality",
     "relative_strength": "relative strength vs NIFTY, accelerating",
     "microstructure": "order-book imbalance pressure",
     "futures_positioning": "futures OI/basis buildup",
     "options_positioning": "option-chain wall dynamics",
     "sentiment": "news sentiment",
+    "volume": "relative volume expansion",
+    "market_context": "NIFTY/sector/breadth context",
 }
 
 
@@ -236,6 +418,34 @@ def _verdict_band(directional_score: float) -> str:
     return "NO_EDGE"
 
 
+# EB-15 Phase 4 item 6's own acceptance criterion ("weights are
+# configurable and versioned") -- a plain version string, bumped
+# whenever FAMILY_WEIGHTS/STRUCTURE_CLUSTER_WEIGHT actually change, so a
+# shadow-comparison report (EB-13) or archived signal row can always be
+# read against the exact weighting scheme that produced it.
+WEIGHTS_VERSION = "v1-2026-08-20"
+
+
+def _family_weights(available_families: list[str]) -> dict[str, float]:
+    """Per-family weight for THIS tick's actually-available family set --
+    the structure cluster's fixed total is split evenly among however
+    many of the 8 alignment.py families are available right now (2 of 8
+    available still only ever contributes up to STRUCTURE_CLUSTER_WEIGHT
+    combined, never more), so the cluster's own sub-indicator count can
+    never inflate its share of the total score."""
+    structure_available = [f for f in available_families if f in STRUCTURE_FAMILIES]
+    per_structure_weight = (
+        STRUCTURE_CLUSTER_WEIGHT / len(structure_available) if structure_available else 0.0
+    )
+    weights: dict[str, float] = {}
+    for name in available_families:
+        if name in STRUCTURE_FAMILIES:
+            weights[name] = per_structure_weight
+        else:
+            weights[name] = FAMILY_WEIGHTS.get(name, 0.0)
+    return weights
+
+
 def compute_verdict(
     *,
     bullish: bool,
@@ -244,6 +454,8 @@ def compute_verdict(
     sentiment_cache: dict,
     futures_cache: dict,
     options_dynamics_cache: dict,
+    market_context_cache: dict,
+    rel_vol_20d,
     ma_regime: dict | None,
     donchian: dict | None,
     wyckoff_sos_sow: dict | None,
@@ -262,10 +474,16 @@ def compute_verdict(
     bear_score are computed independently of it (so a genuinely
     conflicted setup, evidence on both sides, is visible), while
     top_reasons/risks and the verdict band are read relative to it.
+
+    EB-15 Phase 4 item 6: bull_score/bear_score are now WEIGHTED
+    percentages of available evidence (see _family_weights()), not raw
+    family counts -- see this module's own docstring for the full
+    reasoning.
     """
     ctx = {
         "ml": ml, "mtf_cache": mtf_cache, "sentiment_cache": sentiment_cache,
         "futures_cache": futures_cache, "options_dynamics_cache": options_dynamics_cache,
+        "rel_vol_20d": rel_vol_20d,
     }
 
     # Reuse the proven 8-family alignment mechanism unmodified -- calling
@@ -292,17 +510,36 @@ def compute_verdict(
         else:
             absolute[name] = result
 
+    # market_context is scored separately -- it's the one family whose
+    # read is inherently relative to `bullish`, not an absolute read
+    # NEW_FAMILY_SCORERS' ctx-only shape can express (see
+    # _market_context_family's own docstring).
+    market_context_result = _market_context_family(market_context_cache, bullish)
+    if market_context_result is None:
+        unavailable_families.append("market_context")
+    else:
+        absolute["market_context"] = market_context_result
+
     checked = list(absolute.keys())
     bullish_families = [k for k, v in absolute.items() if v]
     bearish_families = [k for k, v in absolute.items() if not v]
 
-    total_checked = len(checked)
-    bull_score = round(100 * len(bullish_families) / total_checked, 1) if total_checked else 0.0
-    bear_score = round(100 * len(bearish_families) / total_checked, 1) if total_checked else 0.0
+    weights = _family_weights(checked)
+    total_weight = sum(weights.values())
+    bull_weight = sum(weights[f] for f in bullish_families)
+    bear_weight = sum(weights[f] for f in bearish_families)
+    bull_score = round(100 * bull_weight / total_weight, 1) if total_weight else 0.0
+    bear_score = round(100 * bear_weight / total_weight, 1) if total_weight else 0.0
 
     directional_score = bull_score if bullish else bear_score
     supporting = bullish_families if bullish else bearish_families
     contradicting = bearish_families if bullish else bullish_families
+    # Rank reasons/risks by their own WEIGHT, not dict insertion order --
+    # the directive's own "verdict output exposes TOP positive/negative
+    # evidence families" means the highest-weighted ones, not merely the
+    # first ones that happened to be available.
+    supporting_ranked = sorted(supporting, key=lambda f: weights.get(f, 0.0), reverse=True)
+    contradicting_ranked = sorted(contradicting, key=lambda f: weights.get(f, 0.0), reverse=True)
 
     hard_gate_reasons = _hard_gates(
         fo_banned=fo_banned, data_quality_score=data_quality_score,
@@ -317,7 +554,13 @@ def compute_verdict(
         # Q6.3: 85+ alone is NOT sufficient for ARMED_CANDIDATE -- also
         # requires trigger proximity (chaseable), DQ fully eligible
         # (>=90, not just clear of the hard-fail line), and a real
-        # minimum breadth of evidence-family agreement.
+        # minimum BREADTH of evidence-family agreement (family COUNT,
+        # deliberately separate from the weighted score above -- per
+        # item 6's own "no single static indicator can create a
+        # high-confidence verdict by itself", this catches the case a
+        # capped weight scheme alone doesn't: a handful of low-weight
+        # families combining to clear 85% of a thin available-evidence
+        # base without genuinely broad confirmation).
         if band == "ARMED_CANDIDATE" and not (
             chaseable
             and (data_quality_score is None or data_quality_score >= DQ_DEGRADED)
@@ -329,13 +572,14 @@ def compute_verdict(
         "bull_score": bull_score,
         "bear_score": bear_score,
         "directional_score": directional_score,
-        "families_checked": total_checked,
+        "families_checked": len(checked),
         "families_total": len(absolute) + len(unavailable_families),
         "bullish_families": bullish_families,
         "bearish_families": bearish_families,
         "unavailable_families": unavailable_families,
-        "top_reasons": [FAMILY_DESCRIPTIONS.get(f, f) for f in supporting][:6],
-        "risks": [FAMILY_DESCRIPTIONS.get(f, f) for f in contradicting][:4],
+        "weights_version": WEIGHTS_VERSION,
+        "top_reasons": [FAMILY_DESCRIPTIONS.get(f, f) for f in supporting_ranked][:6],
+        "risks": [FAMILY_DESCRIPTIONS.get(f, f) for f in contradicting_ranked][:4],
         "hard_gates": hard_gate_reasons,
         "verdict": band,
         # Per Non-Negotiable Rule #7 -- no fabricated probability until
