@@ -1525,6 +1525,16 @@
    whole-shell decision made here.
    ═══════════════════════════════════════════════════════════════════════ */
 .ifx-new-shell { background: var(--ifx-shell-bg); min-height: 100vh; }
+/* Clean Sweep LC-4 -- RiskConsole (risk-console.js) is a dual-mounted
+   shared class rendering identical markup in both shells, including a
+   Classic-only drag-to-reorder handle and expand/collapse buttons
+   (section-controls.js's data-section-action mechanism, which needs a
+   [data-collapsible-section] wrapper New shell's rail-based layout never
+   provides). Verified live before hiding, not assumed: clicking these in
+   New shell produces zero DOM change (no [data-collapsible-section]
+   ancestor exists there) -- genuinely dead chrome in this shell, not a
+   removed capability. */
+#paneViewV2 .section-drag-handle, #paneViewV2 [data-section-action] { display: none; }
 .ifx-new-shell-inner { max-width: 1680px; margin: 0 auto; padding: 20px 24px 60px; }
 
 .ifx-section-label {
