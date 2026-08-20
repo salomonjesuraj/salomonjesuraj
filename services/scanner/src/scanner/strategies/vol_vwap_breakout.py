@@ -118,8 +118,12 @@ class VolVwapBreakout(BaseStrategy):
         flow_ok = order_imbalance > self._s.vvb_min_order_imbalance
         conditions["order_flow"] = flow_ok
         if flow_ok:
+            # EB-15 Phase 1 item 2: state the depth basis explicitly --
+            # this is the exchange-wide TBQ/TSQ read (get_order_imbalance,
+            # all resting orders), distinct from the 5-level weighted
+            # book_imbalance/book_imbalance_ema evidence family (EB-6).
             explanation.append(
-                f"Buy-side order imbalance {order_imbalance:+.2f}"
+                f"Buy-side order imbalance {order_imbalance:+.2f} (exchange-wide TBQ/TSQ)"
             )
 
         # ── Condition 7: Spread filter ─────────────────────

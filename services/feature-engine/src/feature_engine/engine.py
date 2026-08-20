@@ -376,8 +376,14 @@ class FeatureEngine:
         state.oi = tick.get("oi", 0)
         state.best_bid = tick.get("best_bid", 0.0)
         state.best_ask = tick.get("best_ask", 0.0)
-        state.total_buy_qty = tick.get("best_bid_qty", 0)
-        state.total_sell_qty = tick.get("best_ask_qty", 0)
+        # EBIE EB-15 Phase 1 item 2 fix: these were reading best_bid_qty/
+        # best_ask_qty (level-1 depth only) -- a naming bug that silently
+        # made get_order_imbalance() a level-1-only read despite its
+        # exchange-wide-sounding field names. NormalizedTickV1 now carries
+        # the real Upstox tbq/tsq (see transformer.py/tick.py), so this
+        # reads the genuine exchange-wide aggregate quantities instead.
+        state.total_buy_qty = tick.get("total_buy_qty", 0)
+        state.total_sell_qty = tick.get("total_sell_qty", 0)
         # EBIE EB-6: real 5-level depth (see upstox_codec.py's depth-codec
         # fix) -- overwritten each tick, not accumulated. Advance the book-
         # imbalance EMA every tick (not gated to completed-1m-bar) since

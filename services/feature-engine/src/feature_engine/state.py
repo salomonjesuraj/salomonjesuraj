@@ -37,6 +37,9 @@ class SymbolState:
     oi: int = 0
     best_bid: float = 0.0
     best_ask: float = 0.0
+    # Real exchange-wide TBQ/TSQ (Upstox tbq/tsq), NOT level-1 depth qty --
+    # see features/microstructure.py's module docstring for the EB-15
+    # Phase 1 item 2 wiring fix that made this field genuinely true.
     total_buy_qty: int = 0
     total_sell_qty: int = 0
 

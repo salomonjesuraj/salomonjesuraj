@@ -23,6 +23,11 @@ def transform(raw_payload: dict, info: SymbolInfo, is_out_of_order: bool = False
         best_ask=raw_payload.get("best_ask", 0.0),
         best_bid_qty=raw_payload.get("best_bid_qty", 0),
         best_ask_qty=raw_payload.get("best_ask_qty", 0),
+        # EBIE EB-15 Phase 1 item 2: real exchange-wide tbq/tsq, previously
+        # silently dropped here -- RawTickV1 has always had them (see that
+        # model's own field comment).
+        total_buy_qty=raw_payload.get("total_buy_qty", 0),
+        total_sell_qty=raw_payload.get("total_sell_qty", 0),
         exchange_timestamp_ms=raw_payload["exchange_timestamp_ms"],
         received_at_us=raw_payload["received_at_us"],
         normalized_at_us=now_us(),

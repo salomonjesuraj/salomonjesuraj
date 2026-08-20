@@ -1,20 +1,23 @@
 """Microstructure features — spread, order imbalance, and (EBIE EB-6)
 real multi-level book depth.
 
-Real naming/wiring quirk found while verifying this (pre-existing, not
-introduced here -- flagged separately, not fixed inline): despite its
-name, get_order_imbalance() below does NOT read Upstox's exchange-wide
-tbq/tsq aggregate fields. RawTickV1 computes those correctly from the
-codec, but normalizer/transformer.py's NormalizedTickV1 never carries
-them through -- engine.py instead feeds state.total_buy_qty/
-total_sell_qty from best_bid_qty/best_ask_qty (level-1 quantity only),
-so get_order_imbalance() is actually already a level-1-only imbalance
-read today, not the exchange-wide one its field names imply.
+EBIE EB-15 Phase 1 item 2: get_order_imbalance() below now IS a genuine
+exchange-wide imbalance read. Until this fix, despite its name, it did
+NOT read Upstox's exchange-wide tbq/tsq aggregate fields -- RawTickV1
+computed those correctly from the codec, but normalizer/transformer.py's
+NormalizedTickV1 never carried them through, so engine.py silently fed
+state.total_buy_qty/total_sell_qty from best_bid_qty/best_ask_qty
+(level-1 quantity only) instead. Fixed end to end: tick.py's
+NormalizedTickV1 now carries total_buy_qty/total_sell_qty, transformer.py
+copies them, engine.py reads the correct keys -- get_order_imbalance()
+below is unchanged code, it was always exchange-wide BY FORMULA, just
+starved of the right input.
 
-compute_book_imbalance below is still a genuine upgrade over it: a
-WEIGHTED imbalance across all 5 real depth levels (see upstox_codec.py's
-EB-6 fix -- this data was previously discarded after level 1), not just
-level 1 alone.
+compute_book_imbalance below is a related but genuinely distinct signal,
+not a duplicate: a WEIGHTED imbalance across all 5 real depth LEVELS (see
+upstox_codec.py's EB-6 fix), where get_order_imbalance() is the two
+single exchange-wide TOTALS (all resting buy orders vs. all resting sell
+orders across the whole book, not just the visible top-5 levels).
 """
 
 from feature_engine.state import SymbolState

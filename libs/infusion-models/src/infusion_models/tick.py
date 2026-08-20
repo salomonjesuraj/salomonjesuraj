@@ -57,6 +57,13 @@ class NormalizedTickV1(BaseModel, frozen=True):
     best_ask: float = 0.0
     best_bid_qty: int = 0
     best_ask_qty: int = 0
+    # EBIE EB-15 Phase 1 item 2: real exchange-wide aggregate quantities
+    # (Upstox's MarketFullFeed tbq/tsq protobuf fields -- distinct from
+    # best_bid_qty/best_ask_qty above, which are level-1 depth only).
+    # RawTickV1 has always computed these correctly; this model just never
+    # carried them through before now -- see transformer.py's transform().
+    total_buy_qty: int = 0
+    total_sell_qty: int = 0
     exchange_timestamp_ms: int
     received_at_us: int
     normalized_at_us: int
