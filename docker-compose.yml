@@ -222,6 +222,46 @@ services:
           memory: 256M
     <<: *service-defaults
 
+  # EBIE EB-7 (increment 2): self-hosted FinBERT news classifier. The
+  # one service split pre-approved in advance (docs/EBIE-IMPLEMENTATION-
+  # ANSWERS.md Q4.2) -- Transformers/PyTorch have a heavier, slower
+  # init lifecycle than every other Python service here, and an NLP
+  # failure must never destabilize price/scanner APIs. Talks only to
+  # Postgres for classification work (polls news_events, writes
+  # sentiment_scores); Redis is used only for the standard health
+  # heartbeat, same as every other service.
+  sentiment-engine:
+    build:
+      context: .
+      dockerfile: services/sentiment-engine/Dockerfile
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    volumes:
+      # Persist the ~440MB FinBERT model download across redeploys --
+      # without this, every `docker compose up` after a rebuild would
+      # re-download it from the HF hub on first startup.
+      - sentimentcache:/home/appuser/.cache/huggingface
+    environment:
+      - INFUSION_SERVICE_NAME=sentiment-engine
+      - INFUSION_REDIS_URL=redis://redis:6379/0
+      - INFUSION_DATABASE_URL=postgresql://${POSTGRES_USER:-infusion}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-infusion}
+      - INFUSION_LOG_LEVEL=${LOG_LEVEL:-info}
+    deploy:
+      resources:
+        limits:
+          # Heaviest single Python service in this stack by design --
+          # torch + transformers + a loaded FinBERT model need
+          # meaningfully more headroom than every other service here
+          # (compare feature-engine's own 512M, the next highest
+          # application service).
+          memory: 1536M
+        reservations:
+          memory: 512M
+    <<: *service-defaults
+
   # ════════════════════════════════════════════
   # DELIVERY SERVICES
   # ════════════════════════════════════════════
@@ -366,6 +406,7 @@ services:
 volumes:
   pgdata:
   redisdata:
+  sentimentcache:
 
 networks:
   infusion:
