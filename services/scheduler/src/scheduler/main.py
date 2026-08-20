@@ -27,6 +27,15 @@ OPTIMIZER_PROPOSAL_RETRY_SEC = 120  # short retry on failure (e.g. api not up
                                      # yet on a fresh cold start) instead of
                                      # stranding the sweep for a full day
 
+# EBIE EB-14: weekly promotion-review snapshot, per docs/EBIE-
+# IMPLEMENTATION-ANSWERS.md Q5.3 ("Evaluate weekly; promote manually at
+# first"). This ONLY persists a durable record of EB-13's shadow-
+# validation report (api/promotion_review.py) -- it never changes which
+# model drives a live signal; see that module's own docstring for the
+# full, deliberately-scoped rationale.
+PROMOTION_REVIEW_INTERVAL_SEC = 7 * 24 * 3600
+PROMOTION_REVIEW_RETRY_SEC = 600
+
 # Phase 13.4: option-premium capture for net-of-cost walk-forward
 # validation. Short interval on purpose -- the endpoint's own LIMIT 20
 # per pass bounds each call, and live daily published-signal volume is
@@ -74,6 +83,21 @@ async def run_optimizer_proposal_sweep() -> dict:
     url = f"{API_BASE_URL}/api/backtest/optimizer-proposal"
     async with aiohttp.ClientSession() as session:
         async with session.get(url, timeout=aiohttp.ClientTimeout(total=120)) as resp:
+            resp.raise_for_status()
+            return await resp.json()
+
+
+async def run_promotion_review_sweep() -> dict:
+    """Calls the api service's EB-14 promotion-review endpoint. This only
+    ever causes api to compute the current EB-13 shadow-validation
+    report and INSERT one durable snapshot row into
+    ebie_promotion_reviews -- never changes which model (scanner's
+    existing conviction_score/suppression gate, still champion) drives
+    a live signal. See api/promotion_review.py for the full rationale.
+    """
+    url = f"{API_BASE_URL}/api/ebie/promotion-review"
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, timeout=aiohttp.ClientTimeout(total=60)) as resp:
             resp.raise_for_status()
             return await resp.json()
 
@@ -176,6 +200,31 @@ async def run() -> None:
             except Exception as exc:
                 logger.warning("optimizer_proposal_sweep_failed", error=str(exc))
                 delay = OPTIMIZER_PROPOSAL_RETRY_SEC
+            try:
+                await asyncio.wait_for(
+                    lifecycle.shutdown_event.wait(),
+                    timeout=delay,
+                )
+            except asyncio.TimeoutError:
+                pass
+
+    # EBIE EB-14: weekly promotion-review snapshot -- independent of
+    # every loop above. Runs once shortly after startup too (same
+    # reasoning as optimizer_proposal_loop above) so a first review
+    # snapshot exists immediately rather than waiting a full week.
+    async def promotion_review_loop():
+        while not lifecycle.shutdown_event.is_set():
+            delay = PROMOTION_REVIEW_INTERVAL_SEC
+            try:
+                result = await run_promotion_review_sweep()
+                logger.info(
+                    "promotion_review_sweep",
+                    readiness=result.get("readiness"),
+                    review_id=result.get("review_id"),
+                )
+            except Exception as exc:
+                logger.warning("promotion_review_sweep_failed", error=str(exc))
+                delay = PROMOTION_REVIEW_RETRY_SEC
             try:
                 await asyncio.wait_for(
                     lifecycle.shutdown_event.wait(),
@@ -288,7 +337,7 @@ async def run() -> None:
     async def combined_loop():
         await asyncio.gather(
             main_loop(), optimizer_proposal_loop(), premium_capture_loop(), kelly_sizing_loop(),
-            ml_classifier_loop(), vix_multiplier_loop(),
+            ml_classifier_loop(), vix_multiplier_loop(), promotion_review_loop(),
         )
 
     await lifecycle.run_until_shutdown(combined_loop)
