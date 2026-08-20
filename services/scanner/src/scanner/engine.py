@@ -43,6 +43,7 @@ from scanner.strategies.base import SignalCandidate
 from scanner.ml_score import score_signal as ml_score_signal, classify_session_ist
 from scanner.verdict_engine import compute_verdict
 from scanner.trap_model import compute_trap_risk
+from scanner.portfolio_risk import compute_portfolio_fit
 
 from infusion_models.events import EventType
 from infusion_models.signal import ScanSignalV2
@@ -346,6 +347,47 @@ class ScannerEngine:
         except Exception:
             return None
 
+    async def _fetch_active_portfolio(self) -> list[dict]:
+        """Best-effort read of every currently-active signal's key
+        portfolio-relevant fields -- EBIE EB-11's "current open
+        portfolio" proxy (see portfolio_risk.py's own module docstring
+        for why this, and not a real position ledger, is the honest
+        choice for a paper-trading system). Never raises into the hot
+        path: any Redis/decode failure just means the returned list is
+        shorter than reality, degrading portfolio_fit's read rather
+        than crashing candidate processing."""
+        try:
+            members = await self.redis.zrange(KEY_SIGNAL_ACTIVE, 0, -1)
+        except Exception:
+            return []
+        portfolio: list[dict] = []
+        for m in members:
+            member = m.decode() if isinstance(m, bytes) else m
+            if ":" not in member:
+                continue
+            symbol, strategy_id = member.split(":", 1)
+            try:
+                raw = await self.redis.hgetall(f"{KEY_SIGNAL_PREFIX}{symbol}:{strategy_id}")
+            except Exception:
+                continue
+            if not raw:
+                continue
+            decoded = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in raw.items()}
+            risk_amount = 0.0
+            try:
+                sub_scores = json.loads(decoded.get("sub_scores") or "{}")
+                risk_amount = float((sub_scores.get("position_sizing") or {}).get("risk_amount") or 0.0)
+            except Exception:
+                pass
+            portfolio.append({
+                "symbol": symbol,
+                "strategy_id": strategy_id,
+                "sector_id": decoded.get("sector_id"),
+                "direction": decoded.get("signal_type"),
+                "risk_amount": risk_amount,
+            })
+        return portfolio
+
     async def _persist_diagnostics(self, symbol, strategy_id, features, state, candidate):
         """Persist explainable gates for zero-signal investigation."""
         if strategy_id != "vol_vwap_breakout":
@@ -499,6 +541,23 @@ class ScannerEngine:
             put_wall_state=fs.get("put_wall_state"),
             rs_slope_20d=(mtf_cache.get("multi_timeframe_rs") or {}).get("rs_slope_20d"),
             sector_strength=sector_strength,
+        )
+
+        # ── EBIE EB-11 (increment 1): portfolio-level guardrails ──
+        # (informational/advisory only -- per Q2.4, never suppresses
+        # the underlying setup while paper-only; see portfolio_risk.py's
+        # own module docstring). The "current open portfolio" is every
+        # other currently-active signal (KEY_SIGNAL_ACTIVE), the honest
+        # proxy for "positions a user could act on right now" in a
+        # paper-trading system with no executed-position ledger.
+        active_portfolio = await self._fetch_active_portfolio()
+        sub_scores["portfolio_fit"] = compute_portfolio_fit(
+            candidate_symbol=candidate.symbol,
+            candidate_sector=state.sector_id,
+            candidate_direction=candidate.signal_type,
+            candidate_strategy_id=candidate.strategy_id,
+            candidate_risk_amount=float((sub_scores.get("position_sizing") or {}).get("risk_amount") or 0.0),
+            active_portfolio=active_portfolio,
         )
 
         # ── Suppression gate ───────────────────────────
