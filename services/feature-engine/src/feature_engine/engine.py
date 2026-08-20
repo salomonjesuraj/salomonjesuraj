@@ -20,7 +20,10 @@ from feature_engine.features.volatility import (
     update_atr, update_bollinger, get_bollinger, update_supertrend, get_supertrend,
 )
 from feature_engine.features.volume import update_obv, get_relative_volume, get_volume_sma
-from feature_engine.features.microstructure import get_spread_bps, get_order_imbalance
+from feature_engine.features.microstructure import (
+    get_spread_bps, get_order_imbalance,
+    update_book_imbalance_ema, microstructure_depth_snapshot,
+)
 from feature_engine.features.structure import update_structure, structure_snapshot
 from feature_engine.features.divergence import detect_rsi_divergence
 from feature_engine.features.candles import update_body_ema, detect_candle_pattern, body_pct
@@ -375,6 +378,12 @@ class FeatureEngine:
         state.best_ask = tick.get("best_ask", 0.0)
         state.total_buy_qty = tick.get("best_bid_qty", 0)
         state.total_sell_qty = tick.get("best_ask_qty", 0)
+        # EBIE EB-6: real 5-level depth (see upstox_codec.py's depth-codec
+        # fix) -- overwritten each tick, not accumulated. Advance the book-
+        # imbalance EMA every tick (not gated to completed-1m-bar) since
+        # book pressure is meaningful tick-by-tick, same reasoning as CLV.
+        state.latest_depth_levels = tick.get("depth_levels") or []
+        update_book_imbalance_ema(state, state.latest_depth_levels)
         state.last_tick_exchange_ms = exchange_ms
 
         if state.prev_close == 0 and close > 0:
@@ -445,6 +454,10 @@ class FeatureEngine:
             # since it's already a small, self-contained object rather
             # than several flat scalar keys.
             "pullback_dryup": pullback_dryup_snapshot(state, state.trend_state),
+            # EBIE EB-6: real multi-level book-depth microstructure --
+            # see feature_engine/features/microstructure.py. Nested for
+            # the same reason as pullback_dryup above.
+            "microstructure_depth": microstructure_depth_snapshot(state),
             "delivery_pct_avg_20d": state.delivery_pct_avg_20d,
             "delivery_avg_days": state.delivery_avg_days,
             "delivery_trade_date": state.delivery_trade_date,

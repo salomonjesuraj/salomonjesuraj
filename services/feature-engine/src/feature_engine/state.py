@@ -226,3 +226,12 @@ class SymbolState:
     clv_upper_quartile_count: int = 0
     clv_lower_quartile_count: int = 0
     clv_bar_count: int = 0
+
+    # EBIE EB-6: real 5-level order-book depth from the latest tick --
+    # see feature_engine/features/microstructure.py and upstox_codec.py's
+    # depth-codec fix. Not session-reset (unlike CLV above): book depth
+    # is a point-in-time read, not something that accumulates across a
+    # session, so it just gets overwritten each tick.
+    latest_depth_levels: list = field(default_factory=list)
+    book_imbalance_ema: float = 0.0
+    book_imbalance_ema_initialized: bool = False
