@@ -19,6 +19,7 @@ from api.statistics_utils import (
 )
 from api.cost_model import compute as cost_model_compute, OptionTradeCostInput
 from api.ml_classifier import train_classifier, read_cached_model
+from api.trap_labels import compute_false_break_stats
 
 routes = web.RouteTableDef()
 
@@ -1412,6 +1413,19 @@ async def backtest_feature_ic(request):
     pool = request.app.get("pg_pool")
     days = request.query.get("days", "90")
     result = await compute_feature_ic(pool, days=int(days) if days else 90)
+    return web.json_response(result)
+
+
+@routes.get("/api/backtest/false-break-rate")
+async def backtest_false_break_rate(request):
+    """GET /api/backtest/false-break-rate?days=90 -- EBIE EB-9 increment
+    2. Real false-break rate from archived outcomes, by strategy/grade,
+    plus a live check of whether EB-9 increment 1's trap_risk heuristic
+    actually correlates with real trap outcomes. See
+    api/trap_labels.py's compute_false_break_stats()."""
+    pool = request.app.get("pg_pool")
+    days = request.query.get("days", "90")
+    result = await compute_false_break_stats(pool, days=int(days) if days else 90)
     return web.json_response(result)
 
 
