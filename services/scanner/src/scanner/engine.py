@@ -41,6 +41,7 @@ from scanner.sector import SectorEngine
 from scanner.strategies import get_strategies
 from scanner.strategies.base import SignalCandidate
 from scanner.ml_score import score_signal as ml_score_signal, classify_session_ist
+from scanner.verdict_engine import compute_verdict
 
 from infusion_models.events import EventType
 from infusion_models.signal import ScanSignalV2
@@ -446,6 +447,38 @@ class ScannerEngine:
             },
             features=candidate.features_snapshot,
             sub_scores=sub_scores,
+        )
+
+        # ── EBIE EB-8: Unified Verdict (shadow only) ───
+        # Computed and persisted (via sub_scores, same JSONB path every
+        # other informational field here already uses) for EVERY
+        # candidate, published or suppressed -- per Q3.5, never gates or
+        # overrides the suppression pipeline/alignment gate below. The
+        # old alignment gate's own agree/disagree counts are already in
+        # candidate.features_snapshot (the **alignment spread each
+        # strategy does), so both decisions land in the same signal row
+        # side by side without needing new persistence infrastructure.
+        mtf_cache = features.get("mtf_cache") or {}
+        fs = candidate.features_snapshot
+        sub_scores["verdict"] = compute_verdict(
+            bullish=candidate.signal_type == "bullish",
+            ml=features.get("ml_features") or {},
+            mtf_cache=mtf_cache,
+            sentiment_cache=features.get("sentiment_cache") or {},
+            futures_cache=features.get("futures_cache") or {},
+            options_dynamics_cache=features.get("options_dynamics_cache") or {},
+            ma_regime=mtf_cache.get("ma_regime"),
+            donchian=mtf_cache.get("donchian"),
+            wyckoff_sos_sow=mtf_cache.get("wyckoff_sos_sow"),
+            atr_trend=str(fs.get("atr_trend") or ""),
+            candle_pattern=str(fs.get("candle_pattern") or ""),
+            entry_price=candidate.entry_price,
+            invalidation_price=candidate.invalidation_price,
+            fo_banned=await self.suppression._check_fo_ban(candidate.symbol),
+            data_quality_score=features.get("data_quality_score"),
+            tick_lag_ms=features.get("tick_lag_ms"),
+            session_gap_ms=features.get("session_gap_ms"),
+            chaseable=bool(fs.get("chaseable")),
         )
 
         # ── Suppression gate ───────────────────────────
