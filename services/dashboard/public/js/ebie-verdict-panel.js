@@ -63,6 +63,30 @@ function scorePill(label, value, tone) {
   return `<span class="ifx-ebie-metric ${tone}">${label} ${Number(value).toFixed(0)}</span>`;
 }
 
+function ageLabelSec(sec) {
+  if (sec == null) return null;
+  const min = Math.floor(sec / 60);
+  if (min < 1) return 'just now';
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  return `${Math.floor(hr / 24)}d ago`;
+}
+
+// EBIE-KNOWN-GAPS.md §1.7 -- ebie_candidates.py's new cache_freshness
+// field distinguishes "never cached" from "cached but stale" for the
+// three rolling-subset-queue-backed evidence sources (relative_strength/
+// mtf, options_positioning/options-dynamics, option_tradeability/
+// option-chain). This turns one freshness entry into a short, honest
+// suffix -- never claims a family IS available, only explains WHY it
+// currently isn't.
+function freshnessSuffix(freshness) {
+  if (!freshness) return '';
+  if (freshness.status === 'never_cached') return ' — never cached for this symbol';
+  if (freshness.status === 'stale') return ` — last checked ${ageLabelSec(freshness.age_sec)}, cache since expired`;
+  return '';
+}
+
 export class EbieVerdictPanel {
   constructor(containerEl) {
     this._el = containerEl;
@@ -372,6 +396,20 @@ export class EbieVerdictPanel {
     const mc = c.market_context || null;
     const opt = c.option_chain || null;
     const optTone = { TRADE_READY: 'good', WAIT_CONTRACT: 'warn', CHAIN_PENDING: 'flat', AVOID_CONTRACT: 'bad' }[opt?.execution_status] || 'muted';
+    // EBIE-KNOWN-GAPS.md §1.7 -- per-family freshness (fresh/stale/
+    // never_cached), only meaningful for the three rolling-subset-cache
+    // families ebie_candidates.py actually computes it for; every other
+    // key is simply absent from cacheFreshness, and freshnessSuffix()
+    // returns '' for a missing entry, so this never fabricates a status
+    // for a family it wasn't computed for.
+    const unavailableFamilies = dq.unavailable_evidence_families || [];
+    const cacheFreshness = dq.cache_freshness || {};
+    const optFreshness = cacheFreshness.option_tradeability;
+    const optTradeabilityEmptyMsg = optFreshness?.status === 'never_cached'
+      ? 'Never checked for this symbol.'
+      : optFreshness?.status === 'stale'
+      ? `Not currently cached — last checked ${ageLabelSec(optFreshness.age_sec)}.`
+      : 'Not cached for this symbol yet.';
 
     return `
       <div class="ifx-ebie-detail">
@@ -428,11 +466,16 @@ export class EbieVerdictPanel {
               ${kv('Grade', opt.quality_grade)}
               ${kv('Score', opt.option_score != null ? Number(opt.option_score).toFixed(0) : null)}
               ${kv('Strike/Expiry', opt.strike != null ? `${opt.strike} / ${opt.expiry || '—'}` : null)}
-            ` : '<p class="ifx-ebie-none">Not cached for this symbol yet.</p>'}
+            ` : `<p class="ifx-ebie-none">${esc(optTradeabilityEmptyMsg)}</p>`}
           </div>
         </div>
         ${listBlock('Data Quality Reasons', dq.reasons)}
-        ${listBlock('Evidence Families Unavailable', dq.unavailable_evidence_families)}
+        <div class="ifx-ebie-detail-block">
+          <h5>Evidence Families Unavailable</h5>
+          ${unavailableFamilies.length ? `<ul>${unavailableFamilies.map((f) =>
+            `<li>${esc(f)}${esc(freshnessSuffix(cacheFreshness[f]))}</li>`
+          ).join('')}</ul>` : '<p class="ifx-ebie-none">None</p>'}
+        </div>
         ${opt ? listBlock('Option Tradeability Blockers', [...(opt.hard_blockers || []), ...(opt.blockers || [])]) : ''}
         ${listBlock('Portfolio Correlation', (c.risk || {}).correlated_symbols)}
         <div class="ifx-ebie-detail-block">

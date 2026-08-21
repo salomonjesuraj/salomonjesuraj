@@ -30,10 +30,29 @@ reader can tell which gate actually fired.
 from __future__ import annotations
 
 import json
+import time
+from datetime import datetime
 
 from aiohttp import web
 
 routes = web.RouteTableDef()
+
+# EBIE-KNOWN-GAPS.md §1.7 -- the three rolling-subset caches this route
+# already reads from (mtf/options-dynamics/option-chain) only cover a
+# 7-24% slice of the universe at any moment. A candidate's
+# `unavailable_evidence_families` list can't currently tell a reader
+# "this evidence has never been computed for this symbol" apart from
+# "it was computed recently but the short-TTL cache already expired" --
+# those look identical today. This maps each rolling family to its live
+# short-TTL cache prefix and its companion long-lived last-seen marker
+# (see mtf.py's MTF_LAST_SEEN_PREFIX / options_dynamics_queue.py's
+# LAST_SEEN_PREFIX / option_chain_queue.py's now-widened LAST_REFRESH_PREFIX
+# for why each marker exists).
+_FRESHNESS_SOURCES = {
+    "relative_strength": ("infusion:mtf:", "infusion:mtf-last-seen:", "epoch"),
+    "options_positioning": ("infusion:options-dynamics:", "infusion:options-dynamics-last-seen:", "epoch"),
+    "option_tradeability": ("infusion:option-chain:", "infusion:option-chain-last-refresh:", "refreshed_at_iso"),
+}
 
 
 def _decode_json(raw) -> dict:
@@ -69,7 +88,49 @@ def _dq_status(score) -> str:
     return "READY"
 
 
-def _row_to_candidate(r, market_ctx: dict | None = None, opt_ctx: dict | None = None) -> dict:
+def _parse_last_seen_age_sec(raw, kind: str, now: float) -> float | None:
+    """Best-effort age (seconds) from a last-seen marker's raw redis value.
+    `raw` is bytes or None. Returns None (never a guessed 0) on absence or
+    any decode failure -- a garbled marker is treated the same as no
+    marker, not as "just seen"."""
+    if not raw:
+        return None
+    try:
+        if kind == "epoch":
+            ts = float(raw.decode() if isinstance(raw, bytes) else raw)
+            return max(0.0, now - ts)
+        if kind == "refreshed_at_iso":
+            payload = json.loads(raw)
+            iso = payload.get("refreshed_at")
+            if not iso:
+                return None
+            ts = datetime.fromisoformat(iso).timestamp()
+            return max(0.0, now - ts)
+    except (ValueError, TypeError, json.JSONDecodeError, AttributeError):
+        return None
+    return None
+
+
+def _freshness_status(live_present: bool, last_seen_age_sec: float | None) -> dict:
+    """EBIE-KNOWN-GAPS.md §1.7's own suggested fix: distinguish "never
+    cached" from "cached but stale" for the three rolling-subset caches,
+    rather than leaving both look identical as a bare absence.
+    - `fresh`: the live short-TTL cache has this symbol right now.
+    - `stale`: no live cache, but a real last-seen marker exists -- this
+      symbol WAS computed before, just not recently.
+    - `never_cached`: no live cache and no last-seen marker at all --
+      this symbol has never had this evidence computed, as far as this
+      long-lived marker's own TTL window can tell.
+    """
+    if live_present:
+        return {"status": "fresh", "age_sec": 0}
+    if last_seen_age_sec is not None:
+        return {"status": "stale", "age_sec": round(last_seen_age_sec)}
+    return {"status": "never_cached", "age_sec": None}
+
+
+def _row_to_candidate(r, market_ctx: dict | None = None, opt_ctx: dict | None = None,
+                       cache_freshness: dict | None = None) -> dict:
     d = dict(r)
     sub_scores = _decode_json(d.get("sub_scores"))
     features = _decode_json(d.get("features"))
@@ -116,6 +177,16 @@ def _row_to_candidate(r, market_ctx: dict | None = None, opt_ctx: dict | None = 
             "status": _dq_status(features.get("data_quality_score")),
             "reasons": features.get("data_quality_reasons") or [],
             "unavailable_evidence_families": verdict.get("unavailable_families") or [],
+            # EBIE-KNOWN-GAPS.md §1.7 -- per-family cache freshness for the
+            # three families backed by a rolling-subset queue (relative_
+            # strength/mtf, options_positioning/options-dynamics), plus
+            # option_tradeability (the Phase 5 hard-gate's own cache, not
+            # itself a scored "family"). A LIVE, right-now read -- may
+            # differ from what was true when this candidate actually
+            # fired, same disclosed caveat as market_context/option_chain
+            # below. None when the freshness enrichment wasn't computed
+            # (e.g. Redis unavailable) -- never a guessed status.
+            "cache_freshness": cache_freshness,
         },
 
         # Expand-row sections
@@ -260,11 +331,51 @@ async def ebie_candidates(request):
         except Exception:
             pass
 
+    # EBIE-KNOWN-GAPS.md §1.7 -- per-symbol freshness for the three
+    # rolling-subset caches (see _FRESHNESS_SOURCES). Reuses the
+    # option-chain live-cache read above (opt_ctx_map) rather than a
+    # redundant second mget of the same key; only the other two live
+    # caches (mtf/options-dynamics) plus all three last-seen markers need
+    # fresh mgets. Six mgets total (2 already done above + 4 here) for up
+    # to 100 symbols -- six round trips, not up to 600.
+    freshness_map: dict[str, dict] = {s: {} for s in symbols}
+    now = time.time()
+    if redis and symbols:
+        for family, (live_prefix, last_seen_prefix, kind) in _FRESHNESS_SOURCES.items():
+            live_present: dict[str, bool] = {}
+            last_seen_age: dict[str, float | None] = {}
+            if family == "option_tradeability":
+                # Live presence already fetched into opt_ctx_map above.
+                for s in symbols:
+                    live_present[s] = s in opt_ctx_map
+            else:
+                try:
+                    live_raw = await redis.mget([f"{live_prefix}{s}" for s in symbols])
+                    for s, raw in zip(symbols, live_raw):
+                        live_present[s] = bool(raw)
+                except Exception:
+                    for s in symbols:
+                        live_present[s] = False
+            try:
+                seen_raw = await redis.mget([f"{last_seen_prefix}{s}" for s in symbols])
+                for s, raw in zip(symbols, seen_raw):
+                    last_seen_age[s] = _parse_last_seen_age_sec(raw, kind, now)
+            except Exception:
+                for s in symbols:
+                    last_seen_age[s] = None
+            for s in symbols:
+                freshness_map[s][family] = _freshness_status(live_present.get(s, False), last_seen_age.get(s))
+
     return web.json_response({
         "available": True,
         "count": len(rows),
         "candidates": [
-            _row_to_candidate(r, market_ctx_map.get(r.get("symbol")), opt_ctx_map.get(r.get("symbol")))
+            _row_to_candidate(
+                r,
+                market_ctx_map.get(r.get("symbol")),
+                opt_ctx_map.get(r.get("symbol")),
+                freshness_map.get(r.get("symbol")) if redis else None,
+            )
             for r in rows
         ],
     })

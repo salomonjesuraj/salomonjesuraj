@@ -26,6 +26,20 @@ from api.relative_strength import compute_multi_timeframe_rs
 
 routes = web.RouteTableDef()
 
+# EBIE-KNOWN-GAPS.md §1.7 -- the main infusion:mtf:{symbol} cache below is
+# only ever warm for a rolling ~50/208-symbol subset (mtf_queue.py's own
+# priority-limited sweep), with a 300s TTL. Once a symbol drops out of that
+# rotation, its cache entry simply expires and disappears -- there is then
+# no way to tell "this symbol's relative-strength evidence has never been
+# computed" apart from "it WAS computed recently but the short-TTL cache
+# already expired." This separate, much-longer-lived marker (no evidence
+# payload, just a timestamp) answers exactly that question for
+# api/routes/ebie_candidates.py's cache_freshness enrichment, without
+# changing the main cache's own short TTL (still correct for its own
+# "is this reading fresh enough to score" purpose).
+MTF_LAST_SEEN_PREFIX = "infusion:mtf-last-seen:"
+MTF_LAST_SEEN_TTL_SEC = 7 * 24 * 3600
+
 _IST = ZoneInfo("Asia/Kolkata")
 _SESSION_OPEN = dt_time(9, 15)
 _SESSION_CLOSE = dt_time(15, 30)
@@ -910,6 +924,10 @@ async def compute_mtf(redis, symbol: str, store: bool = True) -> dict:
 
     if store:
         await redis.setex(f"infusion:mtf:{symbol}", 300, json.dumps(payload, separators=(",", ":")))
+        # See MTF_LAST_SEEN_PREFIX's own comment above -- a long-lived
+        # "was this symbol ever actually computed" marker, independent of
+        # the short-TTL cache's own freshness window.
+        await redis.setex(f"{MTF_LAST_SEEN_PREFIX}{symbol}", MTF_LAST_SEEN_TTL_SEC, str(int(time.time())))
     return payload
 
 

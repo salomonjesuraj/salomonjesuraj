@@ -24,6 +24,18 @@ logger = structlog.get_logger()
 STATUS_KEY = "infusion:option-chain-queue:status"
 REFRESH_LOCK_PREFIX = "infusion:option-chain-refresh-lock:"
 LAST_REFRESH_PREFIX = "infusion:option-chain-last-refresh:"
+# EBIE-KNOWN-GAPS.md §1.7 -- this key already carries exactly the
+# "was this symbol ever actually checked" signal api/routes/
+# ebie_candidates.py's cache_freshness enrichment needs, but its original
+# 600s (10min) TTL was tuned for the /api/options/queue/status diagnostics
+# view's own "recent" list, not for distinguishing never-checked from
+# checked-a-while-ago -- widened so it actually answers that question
+# (the queue only covers ~14/208 symbols per cycle; a symbol can easily go
+# unrefreshed far longer than 10 minutes without ever having been "never
+# cached"). The diagnostics view is unaffected: it still sorts by
+# refreshed_at descending and caps at 30, so a wider TTL just means more
+# real history to sort from, not different behavior.
+LAST_REFRESH_TTL_SEC = 7 * 24 * 3600
 
 
 def _num(value: Any, default: float = 0.0) -> float:
@@ -193,7 +205,7 @@ async def refresh_candidates_once(redis, *, limit: int = 28, delay_ms: int = 350
                     "refreshed_at": datetime.now().isoformat(timespec="seconds"),
                     "source": row.get("source"),
                 }, separators=(",", ":")),
-                ex=600,
+                ex=LAST_REFRESH_TTL_SEC,
             )
             refreshed.append(symbol)
         except Exception as exc:

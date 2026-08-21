@@ -37,6 +37,14 @@ CANDIDATE_LIMIT = 20
 STATUS_KEY = "infusion:options-dynamics-queue:status"
 STATE_PREFIX = "infusion:options-dynamics:"   # + {symbol} -> STRING (JSON)
 STATE_TTL_SEC = 300
+# EBIE-KNOWN-GAPS.md §1.7 -- same "distinguish never-cached from cached-
+# but-stale" marker as mtf.py's MTF_LAST_SEEN_PREFIX. This sweep only ever
+# covers CANDIDATE_LIMIT=20 priority symbols per cycle out of 208, so most
+# symbols' STATE_PREFIX entry is routinely absent -- this longer-lived,
+# payload-free marker is the only way api/routes/ebie_candidates.py can
+# tell "never computed" apart from "computed a while ago, since expired."
+LAST_SEEN_PREFIX = "infusion:options-dynamics-last-seen:"
+LAST_SEEN_TTL_SEC = 7 * 24 * 3600
 
 
 async def sweep_once(app) -> dict:
@@ -88,6 +96,7 @@ async def sweep_once(app) -> dict:
                 "updated_at": int(time.time()),
             }
             await redis.setex(f"{STATE_PREFIX}{symbol}", STATE_TTL_SEC, json.dumps(state, default=str))
+            await redis.setex(f"{LAST_SEEN_PREFIX}{symbol}", LAST_SEEN_TTL_SEC, str(int(time.time())))
             swept += 1
         except Exception as exc:
             failed += 1

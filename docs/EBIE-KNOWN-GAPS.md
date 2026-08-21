@@ -111,9 +111,9 @@ display layer. No shadow-comparison report exists comparing the two engines' out
 each other.
 
 ### 1.7 Three of six per-symbol evidence caches are deliberately-narrow rolling queues, not
-full-universe sweeps — a real, systemic reason "unavailable" shows up so often
+full-universe sweeps — RESOLVED (dashboard-legibility fix, coverage itself unchanged by design)
 Found while re-verifying §1.3 above, then checked across every other per-symbol cache this
-session touches. As of this check, out of 208 live symbols:
+session touches. As of that check, out of 208 live symbols:
 
 | Cache | Key prefix | Live coverage | Pattern |
 |---|---|---|---|
@@ -126,15 +126,29 @@ session touches. As of this check, out of 208 live symbols:
 
 The three rolling-subset queues are an intentional, disclosed design choice (`market_breadth.py`'s
 own comment: "mtf_queue warming loop only keeps warm for a rolling subset at any given time") —
-built to protect Upstox rate limits and dashboard responsiveness, not a bug. But it means
-`relative_strength`, `options_positioning`, and (per §2.4 below) the new EB-15 Phase 5
-option-tradeability gate all silently score `None`/absent for the large majority of symbols at
-any single moment, **not because the evidence doesn't exist for that symbol, but because its
-particular cache entry hasn't rotated into the warm set recently.** A reader seeing
-`unavailable_evidence_families: ["relative_strength", ...]` on a candidate has no way to tell
-"this evidence is currently unknowable" apart from "this symbol just hasn't been refreshed
-yet" — the two look identical today. Worth a `cache_age_sec`/`never_cached` distinction if this
-becomes confusing in practice; not built by either this document or EB-15.
+built to protect Upstox rate limits and dashboard responsiveness, not a bug, and this fix does
+**not** widen any of them (correctly out of this fix's scope). What it fixes is the specific
+legibility problem this section named: `relative_strength`, `options_positioning`, and the Phase
+5 option-tradeability gate all silently scored `None`/absent with no way for a reader to tell
+"never computed" apart from "computed recently, cache since expired."
+
+Fixed exactly as this section's own suggestion named it: each of the three short-TTL caches
+gained (or, for option-chain, had widened) a companion long-lived (7-day) "last seen" marker —
+`api/routes/mtf.py`'s `MTF_LAST_SEEN_PREFIX`, `api/options_dynamics_queue.py`'s
+`LAST_SEEN_PREFIX`, and `api/option_chain_queue.py`'s pre-existing `LAST_REFRESH_PREFIX` (which
+already stored exactly the needed timestamp — just had a 600s TTL, too short to answer this
+question given the queue only covers ~14/208 symbols per cycle; widened, its only consumer
+re-confirmed unaffected). `api/routes/ebie_candidates.py` now returns a `cache_freshness` object
+per candidate (`fresh`/`stale`/`never_cached` + `age_sec` for each of the three), and
+`ebie-verdict-panel.js` surfaces it inline: "options_positioning — never cached for this symbol",
+or "Not currently cached — last checked 3m ago." for the option-tradeability block specifically.
+
+A real nuance preserved rather than smoothed over: a family's cache can be genuinely `fresh` and
+the family can *still* be unavailable (confirmed live: HDFCLIFE's `relative_strength` — the mtf
+cache was live, but the family's own separate requirement of 30+ days of the stock's own history
+wasn't met). The freshness suffix correctly stays blank in that case rather than misattributing
+an unrelated gap to cache coverage. Live-verified all three real states occurring in production
+data before shipping (`fresh`, `stale` with real ages like 57-549s, `never_cached`).
 
 ---
 
@@ -204,7 +218,10 @@ above**: `infusion:option-chain:*` is the narrowest of the three rolling-subset 
 14/208 symbols (~7%) at any sampled moment. So this gate only ever fires for whichever handful
 of symbols the option-chain queue happened to have refreshed recently; the other ~93% of
 candidates pass through with **no option-side check performed at all**, not because their
-contract was checked and found fine. The four originally-missing checks are now real and wired
+contract was checked and found fine. The §1.7 fix at least makes this ~93% legible now (the
+dashboard's Option Tradeability block says "Never checked for this symbol" rather than looking
+identical to "checked, all clear") -- but the underlying gate still doesn't run for most
+candidates. The four originally-missing checks are now real and wired
 in — but only for a small, rotating slice of the universe, not every candidate at signal time.
 
 ### 2.5 Wall-migration flags are computed but never voted on
@@ -450,29 +467,25 @@ specifically, unlike the rest of the row which carries `created_at`).
 ## 8. Suggested priority order for whoever picks this up
 
 Items 1-3 from the original list (NIFTY50 bootstrap, tbq/tsq naming, market/sector context
-wiring) are now RESOLVED by EB-15 — see §1.2, §1.3, §2.1 above. Re-prioritized for what's
-actually left, roughly in order of leverage-per-effort, not urgency (nothing here is broken or
-blocking):
+wiring) are RESOLVED by EB-15 — see §1.2, §1.3, §2.1 above. Item 1 from the re-prioritized list
+below (rolling-subset queue legibility) is now also RESOLVED — see §1.7 above. Re-prioritized
+again for what's actually left, roughly in order of leverage-per-effort, not urgency (nothing
+here is broken or blocking):
 
-1. **§1.7 Rolling-subset queue coverage** — now that market_context/tbq-tsq/NIFTY50 are fixed,
-   this is the single biggest remaining reason evidence families still read "unavailable" day to
-   day (mtf 24%, options-dynamics 12%, option-chain 7% of the universe warm at any moment). Not
-   necessarily "widen every queue to 100%" (the rate-limit reasons they're narrow are real) — but
-   at minimum, distinguishing "never cached" from "cached but stale" in the dashboard (per §1.7's
-   own suggestion) would remove a real, current source of confusion cheaply.
-2. **§2.4 Option-tradeability gate coverage** — same root cause as #1, specific to the highest-
-   stakes gate (an actually-untradeable contract). Prioritizing this cache's refresh rate over
-   the other two would directly reduce how often a hard-blockable candidate slips through
-   unchecked.
-3. **§7.1 Reconcile the two verdict computations** — the full weighted verdict and the Phase 3
+1. **§2.4 Option-tradeability gate coverage** — now the single highest-leverage remaining item.
+   §1.7's fix makes the ~93%-uncovered gap *legible* (the dashboard now says "never checked"
+   rather than looking clean); it does not close the gap itself. Widening `option_chain_queue.py`'s
+   own per-cycle candidate limit (or its cycle frequency) would directly reduce how often a
+   hard-blockable, actually-untradeable contract slips through with zero check performed.
+2. **§7.1 Reconcile the two verdict computations** — the full weighted verdict and the Phase 3
    lightweight verdict can now genuinely disagree for the same symbol with no flag surfaced when
    they do; a real, EB-15-introduced duplication worth resolving before it's load-bearing for a
    human's trust in either number.
-4. **§5.2 Full label-sensitivity grid study** — EB-15 ran a narrower 30/45/60-minute version;
+3. **§5.2 Full label-sensitivity grid study** — EB-15 ran a narrower 30/45/60-minute version;
    the blueprint's original 9+-definition grid across horizon/excursion/stability cuts has still
    never been run. Remains the single highest-value, highest-effort item once enough post-EB-10
    episodes accumulate to make it meaningful.
-5. **§6.5 / §1.1 deeper architectural consolidation** — the dashboard-visibility half of this is
+4. **§6.5 / §1.1 deeper architectural consolidation** — the dashboard-visibility half of this is
    now fixed (Phase 3+7); the underlying question of whether EB-1's universe-wide state should
    ever feed EB-8's full weighted verdict for every symbol (not just fired candidates), and
    whether the legacy trackers (§1.1) can finally be deprecated, remains a bigger, riskier change
