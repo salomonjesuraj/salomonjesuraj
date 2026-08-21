@@ -141,6 +141,29 @@ VERDICT_BANDS = (
     (0, "NO_EDGE"),
 )
 
+# EBIE EB-15 Phase 6 item 10's own required PRE-calibration display
+# ("Use confidence bands until calibration is statistically valid"),
+# same thresholds/labels as ebie_state_queue.py's own Phase 3
+# lightweight-verdict confidence band -- one vocabulary across the whole
+# EBIE surface, not two separately-tuned band systems for what's
+# conceptually the same "how sure is this" read. This is still NOT a
+# probability (Rule #7) -- see calibrated_probability below, which stays
+# None until a real, sample-gated calibration exists (item 10's own
+# "probability output is blocked unless calibration exists").
+CONFIDENCE_BANDS = (
+    (80, "VERY_HIGH"),
+    (60, "HIGH"),
+    (40, "MEDIUM"),
+    (0, "LOW"),
+)
+
+
+def _confidence_band(score: float) -> str:
+    for threshold, label in CONFIDENCE_BANDS:
+        if score >= threshold:
+            return label
+    return "LOW"
+
 # Q6.2's authorized DQ policy.
 DQ_HARD_FAIL = 80
 DQ_DEGRADED = 90
@@ -618,12 +641,22 @@ def compute_verdict(
         "bearish_families": bearish_families,
         "unavailable_families": unavailable_families,
         "weights_version": WEIGHTS_VERSION,
+        # EB-15 Phase 6 item 10 -- the required PRE-calibration display
+        # ("use confidence bands until calibration is statistically
+        # valid"). Read off directional_score (the candidate's OWN
+        # direction), not the unconditional bull_score, since that's
+        # what a reader actually cares about ("how sure is THIS setup").
+        "confidence_band": _confidence_band(directional_score),
         "top_reasons": [FAMILY_DESCRIPTIONS.get(f, f) for f in supporting_ranked][:6],
         "risks": [FAMILY_DESCRIPTIONS.get(f, f) for f in contradicting_ranked][:4],
         "hard_gates": hard_gate_reasons,
         "verdict": band,
-        # Per Non-Negotiable Rule #7 -- no fabricated probability until
-        # EB-10's calibration work exists.
+        # Per Non-Negotiable Rule #7 -- no fabricated probability until a
+        # real calibration exists. See api/verdict_calibration.py /
+        # GET /api/ebie/verdict-calibration (EB-15 Phase 6 item 10) for
+        # the real, on-demand, sample-gated check -- still NOT_READY as
+        # of this phase (far fewer than the required 300 episodes/25
+        # sessions), so this stays None, correctly, not a placeholder.
         "calibrated_probability": None,
-        "calibrated_probability_reason": "Not yet calibrated (EB-10).",
+        "calibrated_probability_reason": "Not yet calibrated -- see GET /api/ebie/verdict-calibration (EB-15 Phase 6).",
     }

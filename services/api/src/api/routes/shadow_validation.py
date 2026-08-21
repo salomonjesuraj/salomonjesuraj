@@ -22,6 +22,7 @@ from aiohttp import web
 
 from api.shadow_validation import compute_shadow_validation_report
 from api.promotion_review import record_promotion_review, fetch_promotion_review_history
+from api.verdict_calibration import compute_verdict_calibration
 
 routes = web.RouteTableDef()
 
@@ -39,6 +40,21 @@ async def ebie_shadow_validation(request):
     redis = request.app.get("redis")
     days = request.query.get("days", "90")
     result = await compute_shadow_validation_report(pool, redis, days=int(days) if days else 90)
+    return web.json_response(result)
+
+
+@routes.get("/api/ebie/verdict-calibration")
+async def ebie_verdict_calibration(request):
+    """GET /api/ebie/verdict-calibration -- EBIE EB-15 Phase 6 item 10.
+    Real, on-demand check of whether the Unified Verdict Engine's own
+    directional_score can be honestly calibrated yet (the directive's
+    own 300-episode/25-session gate, not a softer proxy) -- and, once
+    that gate is genuinely cleared, the real Platt/isotonic calibration
+    result (Brier score, ECE, reliability curve) against the real
+    archive. See api/verdict_calibration.py's own module docstring for
+    the full reasoning."""
+    pool = request.app.get("pg_pool")
+    result = await compute_verdict_calibration(pool)
     return web.json_response(result)
 
 

@@ -20,6 +20,7 @@ from api.statistics_utils import (
 from api.cost_model import compute as cost_model_compute, OptionTradeCostInput
 from api.ml_classifier import train_classifier, read_cached_model
 from api.trap_labels import compute_false_break_stats
+from api.label_study import compute_label_study
 
 routes = web.RouteTableDef()
 
@@ -1426,6 +1427,20 @@ async def backtest_false_break_rate(request):
     pool = request.app.get("pg_pool")
     days = request.query.get("days", "90")
     result = await compute_false_break_stats(pool, days=int(days) if days else 90)
+    return web.json_response(result)
+
+
+@routes.get("/api/backtest/label-study")
+async def backtest_label_study(request):
+    """GET /api/backtest/label-study -- EBIE EB-15 Phase 6 item 11, the
+    deferred 30/45/60-minute ATR label study. Real, on-demand report
+    over every real decided signal created since EB-10's TTL widen (the
+    first point this system could ever observe an outcome past ~5.5
+    minutes) -- see api/label_study.py's own module docstring for the
+    full reasoning and why this is honest even off a tiny current
+    sample."""
+    pool = request.app.get("pg_pool")
+    result = await compute_label_study(pool)
     return web.json_response(result)
 
 
