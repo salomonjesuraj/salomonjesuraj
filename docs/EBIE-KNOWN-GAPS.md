@@ -420,8 +420,9 @@ named in that checklist and was not added. A reviewer today would still need to 
 endpoints directly (curl/Postman) rather than using the dashboard.
 
 ### 6.5 EB-1's universe-wide state and EB-8's candidate-only verdict are still architecturally
-split — PARTIALLY RESOLVED (EB-15 Phase 3 + Phase 7): the dashboard-visibility half is fixed,
-the deeper scoring split is not
+split — PARTIALLY RESOLVED (EB-15 Phase 3 + Phase 7 + a scoped middle-ground enrichment):
+visibility is fixed, two evidence sources are now shared, the full weighted engine stays split
+by deliberate design
 EB-1's shadow state machine evaluates *every* symbol every sweep, regardless of whether a
 strategy ever produces a candidate. EB-8's verdict, trap-risk, and portfolio-fit scores only
 ever get computed for symbols that *do* produce a real `SignalCandidate`. The specific
@@ -432,13 +433,28 @@ to the dashboard" — is now false: EB-15 Phase 3 added `compute_lightweight_ver
 (Lightweight)" view, with the same long/short filtering as the full-candidate view. Every
 symbol now has *some* visible verdict at all times.
 
-**What remains genuinely split, unchanged**: the lightweight verdict is a deliberately simpler
-heuristic — it does not use the weighted family engine, does not read market context, futures,
-sentiment, or options data at all, only breakout-tier/VWAP/rel-vol/anti-chase signals already on
-the `/api/ticks` row. It is not a "preview" of what the full EB-8 verdict would say if a candidate
-existed — it's a genuinely different, second computation that can and does disagree with the full
-verdict for the same symbol at the same moment. See the new §7.1 below for why this itself is now
-a disclosed, real gap.
+**What remains genuinely split, largely unchanged**: the lightweight verdict is still a
+deliberately simpler heuristic, and deliberately NOT merged with the weighted family engine (see
+the middle-ground decision below) -- it is not a "preview" of what the full EB-8 verdict would
+say if a candidate existed; it's a genuinely different, second computation that can and does
+disagree with the full verdict for the same symbol at the same moment. See §7.1 above for why
+this itself is a disclosed, real gap (now RESOLVED at the visibility level).
+
+**Middle-ground fix applied**: fully merging the two engines was explicitly rejected -- routing
+the weighted family engine's `mtf`/`options-dynamics`/`option-chain` reads through all 208
+symbols every 60s would multiply real Upstox rate-limit load ~10-15x, directly undermining
+§1.7's own deliberate rolling-subset design, and would need new sweep-loop architecture the
+lightweight verdict doesn't have today. But two of the missing evidence sources -- market
+context and futures -- are already fully-universe-covered (208/208 and 209/208 respectively per
+§1.7's own table), with zero rate-limit cost. `compute_lightweight_verdict()` now accepts
+optional `market_context`/`futures` params (`ebie_state_queue.py`'s `sweep_once()` already
+computes market-context inputs and now also batch-reads the futures cache in the SAME sweep, no
+extra Redis round trip), surfaced as real reason strings (`nifty=+1.60%`, `futures_basis=-0.74%`,
+...) and as new structured `market_context`/`futures_context` fields on every lightweight
+verdict. Deliberately informational only -- does NOT feed into `verdict`/`confidence_band` (that
+would be recalibrating this function's own decision logic, a materially bigger, unvalidated
+change nobody asked for). Live-verified: all 208/208 symbols carry real, non-null
+`market_context` and `futures_context` post-deploy.
 
 ---
 
@@ -505,18 +521,21 @@ wiring) are RESOLVED by EB-15 — see §1.2, §1.3, §2.1 above. Item 1 from the
 list (rolling-subset queue legibility) is RESOLVED — see §1.7 above. Item 2 from that list
 (option-tradeability gate coverage) is PARTIALLY RESOLVED — see §2.4 above. Item 1 from the
 second re-prioritized list (reconcile the two verdict computations) is RESOLVED — see §7.1
-above. Re-prioritized again for what's actually left, roughly in order of leverage-per-effort,
-not urgency (nothing here is broken or blocking):
+above. §6.5's dashboard-visibility gap is RESOLVED and its two rate-limit-free evidence sources
+(market context, futures) are now shared with the lightweight verdict — see §6.5 above. What's
+left in that item, and everything else, remains explicitly decision-gated, not a scoped fix:
 
-1. **§5.2 Full label-sensitivity grid study** — now the single highest-leverage remaining item.
-   EB-15 ran a narrower 30/45/60-minute version; the blueprint's original 9+-definition grid
-   across horizon/excursion/stability cuts has still never been run. The single highest-value,
-   highest-effort item once enough post-EB-10 episodes accumulate to make it meaningful.
-2. **§6.5 / §1.1 deeper architectural consolidation** — the dashboard-visibility half of this is
-   now fixed (Phase 3+7); the underlying question of whether EB-1's universe-wide state should
-   ever feed EB-8's full weighted verdict for every symbol (not just fired candidates), and
-   whether the legacy trackers (§1.1) can finally be deprecated, remains a bigger, riskier change
-   — correctly still not attempted casually.
+1. **§5.2 Full label-sensitivity grid study** — blocked on real trading data, not engineering
+   effort. EB-15 ran a narrower 30/45/60-minute version; the blueprint's original 9+-definition
+   grid across horizon/excursion/stability cuts has still never been run, and re-attempting it
+   now would just re-report the same "not enough data yet" result.
+2. **§6.5 / §1.1's remaining architectural question** — deliberately NOT resolved by the
+   middle-ground fix above, and correctly so: whether EB-1's universe-wide state should ever feed
+   EB-8's *full weighted* verdict for every symbol (not just fired candidates, and including the
+   rate-limited `mtf`/`options-dynamics`/`option-chain` families the middle ground explicitly did
+   NOT touch), and whether the legacy trackers (§1.1) can finally be deprecated once EBIE clears
+   its own promotion gate — both remain bigger, riskier, product-level calls, not something to
+   attempt without explicit direction.
 
 Everything else in this document is either a genuinely low-priority polish item or explicitly,
 correctly blocked on real time passing (more archived episodes, more trading sessions) rather

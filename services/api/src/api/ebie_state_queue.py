@@ -46,6 +46,7 @@ import msgpack
 import structlog
 from datetime import datetime, timezone
 
+from api.futures import FUTURES_STATE_PREFIX
 from api.market_breadth import compute_market_breadth
 from api.routes.ticks import _build_ticks
 from infusion_streams.constants import (
@@ -112,7 +113,10 @@ def _confidence_band(score) -> str:
     return "LOW"
 
 
-def compute_lightweight_verdict(entry: dict, state: str, direction: str) -> dict:
+def compute_lightweight_verdict(
+    entry: dict, state: str, direction: str,
+    market_context: dict | None = None, futures: dict | None = None,
+) -> dict:
     """Phase 3 -- one lightweight verdict per (symbol, direction) per
     sweep. Pure function, no I/O, same testability shape as
     map_ebie_state() above -- takes the already-mapped canonical `state`
@@ -121,6 +125,19 @@ def compute_lightweight_verdict(entry: dict, state: str, direction: str) -> dict
     label, a pre-calibration confidence band, a short reason summary, a
     qualitative invalidation reason, and the real data-quality status
     (never fabricated -- UNKNOWN when the score itself is unavailable).
+
+    EBIE-KNOWN-GAPS.md §6.5's own scoped middle ground: `market_context`/
+    `futures` are OPTIONAL, purely INFORMATIONAL enrichment -- both are
+    genuinely full-universe caches with no rolling-subset/rate-limit cost
+    (see §1.7's own coverage table: market-context 208/208, futures
+    209/208), unlike mtf/options-dynamics/option-chain which stay
+    deliberately narrow. Deliberately does NOT feed into `verdict`/
+    `confidence_band` -- that would be recalibrating this function's own
+    decision logic, a materially bigger, unvalidated change nobody asked
+    for. This only makes two already-fully-covered evidence sources
+    VISIBLE on every symbol's lightweight verdict, same "surface real
+    data without changing behavior" shape as every other EBIE-KNOWN-GAPS
+    fix this session (§1.7, §7.1, §7.2).
     """
     dq_score = entry.get("data_quality_score")
     if isinstance(dq_score, (int, float)) and dq_score < DQ_HARD_FAIL:
@@ -146,6 +163,18 @@ def compute_lightweight_verdict(entry: dict, state: str, direction: str) -> dict
     rel_vol = entry.get("rel_vol")
     if isinstance(rel_vol, (int, float)) and rel_vol > 0:
         reasons.append(f"rvol={rel_vol:.2f}x")
+    nifty_change = (market_context or {}).get("nifty_change_pct")
+    if isinstance(nifty_change, (int, float)):
+        reasons.append(f"nifty={nifty_change:+.2f}%")
+    sector_change = (market_context or {}).get("sector_avg_change_pct")
+    if isinstance(sector_change, (int, float)):
+        reasons.append(f"sector={sector_change:+.2f}%")
+    basis_pct = (futures or {}).get("basis_pct")
+    if isinstance(basis_pct, (int, float)):
+        reasons.append(f"futures_basis={basis_pct:+.2f}%")
+    oi_change_pct = (futures or {}).get("oi_change_pct")
+    if isinstance(oi_change_pct, (int, float)):
+        reasons.append(f"futures_oi={oi_change_pct:+.2f}%")
 
     day_high = entry.get("day_high")
     day_low = entry.get("day_low")
@@ -192,6 +221,24 @@ def compute_lightweight_verdict(entry: dict, state: str, direction: str) -> dict
         "invalidation_reason": invalidation_reason,
         "data_quality_status": dq_status,
         "data_quality_score": dq_score,
+        # EBIE-KNOWN-GAPS.md §6.5 middle ground -- informational only,
+        # see this function's own docstring. None (not a guessed value)
+        # when the sweep genuinely has nothing cached for this symbol.
+        "market_context": (
+            {
+                "nifty_change_pct": (market_context or {}).get("nifty_change_pct"),
+                "sector_avg_change_pct": (market_context or {}).get("sector_avg_change_pct"),
+                "market_health_score": (market_context or {}).get("market_health_score"),
+            }
+            if market_context else None
+        ),
+        "futures_context": (
+            {
+                "basis_pct": (futures or {}).get("basis_pct"),
+                "oi_change_pct": (futures or {}).get("oi_change_pct"),
+            }
+            if futures else None
+        ),
     }
 
 
@@ -320,6 +367,61 @@ async def sweep_once(app) -> dict:
 
     await _write_states(redis, state_updates)
 
+    # EBIE EB-15 Phase 4 item 5: raw market/sector-context inputs per
+    # symbol -- reuses `ticks` (already fetched above for this same
+    # sweep) for a cheap sector-average pass, matching ticks.py's own
+    # _build_ticks() computation exactly (same grouping logic, so the
+    # two never quietly diverge), plus one whole-universe breadth read
+    # (already the established "~0.1s, pure Redis, once per request"
+    # cost per market_breadth.py's own header). See constants.py's own
+    # comment on KEY_MARKET_CONTEXT_PREFIX for why RAW inputs are cached
+    # here rather than a pre-biased score. Computed BEFORE the
+    # lightweight-verdict loop below (moved up from its original
+    # position after that loop) so §6.5's middle-ground enrichment can
+    # reuse these in-process values directly -- zero extra Redis round
+    # trip for data already being computed this same sweep anyway.
+    sector_changes: dict[str, list[float]] = {}
+    for entry in ticks:
+        sid = entry.get("sector_id") or ""
+        if sid:
+            sector_changes.setdefault(sid, []).append(float(entry.get("change_pct") or 0))
+    sector_avg_change = {sid: sum(vals) / len(vals) for sid, vals in sector_changes.items() if vals}
+    try:
+        market_health_score = (await compute_market_breadth(redis)).get("health_score")
+    except Exception:
+        market_health_score = None
+
+    # EBIE-KNOWN-GAPS.md §6.5 middle ground -- one batched hgetall over
+    # the already-fully-covered futures cache (FUTURES_STATE_PREFIX,
+    # 209/208 symbols per §1.7's own table -- no rolling-subset/rate-
+    # limit concern here, unlike mtf/options-dynamics/option-chain).
+    # Best-effort: a decode failure on one symbol's hash never drops the
+    # others, and a total Redis failure just means every symbol's
+    # lightweight verdict gets futures_context=None this sweep, same
+    # "never a silent fabricated number" convention as everywhere else.
+    futures_map: dict[str, dict] = {}
+    try:
+        futures_pipe = redis.pipeline(transaction=False)
+        for symbol in symbols:
+            futures_pipe.hgetall(f"{FUTURES_STATE_PREFIX}{symbol}")
+        futures_results = await futures_pipe.execute()
+        for symbol, raw in zip(symbols, futures_results):
+            if not raw:
+                continue
+            decoded: dict = {}
+            for k, v in raw.items():
+                key = k.decode() if isinstance(k, bytes) else k
+                val = v.decode() if isinstance(v, bytes) else v
+                if key in ("basis_pct", "oi_change_pct") and val != "":
+                    try:
+                        decoded[key] = float(val)
+                    except (TypeError, ValueError):
+                        pass
+            if decoded:
+                futures_map[symbol] = decoded
+    except Exception:
+        futures_map = {}
+
     # EBIE EB-15 Phase 3: compute + cache one lightweight verdict per
     # symbol, every sweep -- reuses `mapped`/`by_entry` already built
     # above, zero extra I/O beyond the pipeline write itself.
@@ -327,7 +429,16 @@ async def sweep_once(app) -> dict:
     verdicts_written = 0
     for symbol, (state, direction, _reason) in mapped.items():
         entry = by_entry.get(symbol, {})
-        verdict = compute_lightweight_verdict(entry, state, direction)
+        sid = entry.get("sector_id") or ""
+        symbol_market_context = {
+            "nifty_change_pct": entry.get("nifty_change_pct"),
+            "sector_avg_change_pct": sector_avg_change.get(sid),
+            "market_health_score": market_health_score,
+        }
+        verdict = compute_lightweight_verdict(
+            entry, state, direction,
+            market_context=symbol_market_context, futures=futures_map.get(symbol),
+        )
         verdict["symbol"] = symbol
         verdict["ebie_state"] = state
         verdict["sector_id"] = entry.get("sector_id")
@@ -340,26 +451,6 @@ async def sweep_once(app) -> dict:
         verdicts_written += 1
     if verdicts_written:
         await verdict_pipe.execute()
-
-    # EBIE EB-15 Phase 4 item 5: cache raw market/sector-context inputs
-    # per symbol -- reuses `ticks` (already fetched above for this same
-    # sweep) for a cheap sector-average pass, matching ticks.py's own
-    # _build_ticks() computation exactly (same grouping logic, so the
-    # two never quietly diverge), plus one whole-universe breadth read
-    # (already the established "~0.1s, pure Redis, once per request"
-    # cost per market_breadth.py's own header). See constants.py's own
-    # comment on KEY_MARKET_CONTEXT_PREFIX for why RAW inputs are cached
-    # here rather than a pre-biased score.
-    sector_changes: dict[str, list[float]] = {}
-    for entry in ticks:
-        sid = entry.get("sector_id") or ""
-        if sid:
-            sector_changes.setdefault(sid, []).append(float(entry.get("change_pct") or 0))
-    sector_avg_change = {sid: sum(vals) / len(vals) for sid, vals in sector_changes.items() if vals}
-    try:
-        market_health_score = (await compute_market_breadth(redis)).get("health_score")
-    except Exception:
-        market_health_score = None
 
     market_context_pipe = redis.pipeline(transaction=False)
     market_context_written = 0
