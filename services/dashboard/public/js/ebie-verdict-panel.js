@@ -359,11 +359,20 @@ export class EbieVerdictPanel {
     const dq = c.data_quality || {};
     const dqStatus = dq.status || 'UNKNOWN';
     const dqTone = DQ_TONE[dqStatus] || 'muted';
+    // EBIE-KNOWN-GAPS.md §7.1 -- inline warning when this candidate's own
+    // direction disagrees with the SAME symbol's current universe-wide
+    // lightweight verdict (a genuinely different computation, EB-15 Phase
+    // 3). No new grid column (avoids the exact "forgot to update
+    // grid-template-columns" bug already caught once in this file) --
+    // just a marker on the existing direction pill, with the real other
+    // system's direction in the tooltip, not a fabricated score.
+    const liteDisagree = c.direction_agreement === 'disagree';
+    const liteDir = c.lightweight_verdict?.direction;
 
     const header = `
       <div class="ifx-ebie-row${expanded ? ' expanded' : ''}" data-ebie-row="${i}">
         <span class="ifx-ebie-symbol">${esc(c.symbol)}</span>
-        <span class="ifx-ebie-dir ${dirTone}">${esc(c.direction || '—')}</span>
+        <span class="ifx-ebie-dir ${dirTone}"${liteDisagree ? ` title="Universe-wide lightweight verdict currently reads ${esc(liteDir)} -- disagrees with this candidate's own direction"` : ''}>${esc(c.direction || '—')}${liteDisagree ? ' ⚠' : ''}</span>
         <span class="ifx-ebie-verdict ${tone}">${esc((c.verdict || '—').replace(/_/g, ' '))}</span>
         ${scorePill('Score', c.score, 'flat')}
         ${scorePill('Bull', c.bull_score, 'good')}
@@ -410,6 +419,14 @@ export class EbieVerdictPanel {
       : optFreshness?.status === 'stale'
       ? `Not currently cached — last checked ${ageLabelSec(optFreshness.age_sec)}.`
       : 'Not cached for this symbol yet.';
+    // EBIE-KNOWN-GAPS.md §7.1 -- the same symbol's current universe-wide
+    // lightweight verdict (EB-15 Phase 3), a genuinely independent
+    // computation from this full verdict (see the module-level comment
+    // above _rowHtml()). Shown as-is, not merged into this candidate's
+    // own numbers.
+    const lite = c.lightweight_verdict || null;
+    const AGREEMENT_LABEL = { agree: 'Agrees', disagree: 'Disagrees', unknown: '—' };
+    const AGREEMENT_TONE = { agree: 'good', disagree: 'bad', unknown: 'muted' };
 
     return `
       <div class="ifx-ebie-detail">
@@ -467,6 +484,16 @@ export class EbieVerdictPanel {
               ${kv('Score', opt.option_score != null ? Number(opt.option_score).toFixed(0) : null)}
               ${kv('Strike/Expiry', opt.strike != null ? `${opt.strike} / ${opt.expiry || '—'}` : null)}
             ` : `<p class="ifx-ebie-none">${esc(optTradeabilityEmptyMsg)}</p>`}
+          </div>
+          <div class="ifx-ebie-detail-block">
+            <h5>Universe Check (Lightweight)</h5>
+            ${lite ? `
+              <p><span class="ifx-ebie-verdict ${AGREEMENT_TONE[c.direction_agreement] || 'muted'}">${esc(AGREEMENT_LABEL[c.direction_agreement] || '—')}</span></p>
+              ${kv('Verdict', (lite.verdict || '—').replace(/_/g, ' '))}
+              ${kv('Direction', lite.direction)}
+              ${kv('EBIE State', (lite.ebie_state || '—').replace(/_/g, ' '))}
+              ${kv('Confidence', lite.confidence_band)}
+            ` : '<p class="ifx-ebie-none">No universe-wide verdict cached for this symbol right now.</p>'}
           </div>
         </div>
         ${listBlock('Data Quality Reasons', dq.reasons)}

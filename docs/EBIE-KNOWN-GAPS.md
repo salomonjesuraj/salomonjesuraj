@@ -445,18 +445,34 @@ a disclosed, real gap.
 ## 7. New items disclosed during EB-15 (this session's own work, not present in the original
 EB-0 → EB-14 review)
 
-### 7.1 Two independent, disagreeing verdict computations now exist for the same symbol
+### 7.1 Two independent, disagreeing verdict computations now exist for the same symbol —
+RESOLVED (disagreement made visible; the two computations remain deliberately separate)
 Per §6.5 above: the full weighted verdict (`verdict_engine.compute_verdict()`, EB-8 +
 EB-15 Phase 4's weighting) only runs for symbols with a real `SignalCandidate`; the lightweight
 verdict (`ebie_state_queue.compute_lightweight_verdict()`, EB-15 Phase 3) runs for every symbol
 every sweep using a simpler, unweighted heuristic over a different, smaller input set. These are
 not two views of one underlying score — they are genuinely different computations that can
-disagree for the same symbol at the same instant (e.g. the full verdict could read `NO_EDGE`
-off weighted evidence while the lightweight verdict simultaneously reads `LONG_READY` off
-breakout-tier state alone). Both are shown side by side in the same dashboard panel (EB-15 Phase
-7's "All"/"Universe (Lightweight)" pills) with no explicit reconciliation or disagreement flag
-between them — a real duplication in the same category as §1.1/§1.4, newly created by this
-session's own work, not inherited from before.
+disagree for the same symbol at the same instant. Both were shown side by side in the same
+dashboard panel (the "All"/"Universe (Lightweight)" pills) with no explicit reconciliation or
+disagreement flag between them.
+
+"Reconcile" here deliberately did NOT mean merging the two computations into one -- the
+lightweight verdict is intentionally cheap (no per-candidate options/futures/sentiment reads,
+run for the whole universe every 60s); forcing it through the full weighted engine would defeat
+that purpose. It also did NOT mean inventing a fabricated "agreement score" (same discipline as
+§7.2's drift-monitor). Instead, `ebie_candidates.py` now attaches each full candidate's SAME
+symbol's current lightweight verdict (`lightweight_verdict`: verdict/direction/ebie_state/
+confidence_band) plus a real, literal `direction_agreement` (`agree`/`disagree`/`unknown`,
+bullish-vs-bearish only -- no fuzzier semantic judgment attempted). The dashboard shows a ⚠ on
+the direction pill (with the other system's real direction in the tooltip) when they disagree,
+and a full "Universe Check (Lightweight)" detail block always shows both verdicts side by side.
+
+Live-verified with a real disagreement, not a synthetic one: of 15 sampled live candidates,
+SUPREMEIND's full verdict read `bearish` while its lightweight verdict simultaneously read
+`BULLISH` (and was itself `DATA_UNRELIABLE` -- a second, compounding reason not to trust it
+blindly). Confirmed rendering correctly in the browser: the row's direction pill showed
+`bearish ⚠` with the disagreement in its tooltip, and the detail block showed a red "Disagrees"
+badge alongside the real lightweight verdict fields.
 
 ### 7.2 The new EB-15 Phase 7 drift-monitoring strip deliberately shows raw counts, not a
 computed "agreement" metric
@@ -487,20 +503,16 @@ specifically, unlike the rest of the row which carries `created_at`).
 Items 1-3 from the original list (NIFTY50 bootstrap, tbq/tsq naming, market/sector context
 wiring) are RESOLVED by EB-15 — see §1.2, §1.3, §2.1 above. Item 1 from the first re-prioritized
 list (rolling-subset queue legibility) is RESOLVED — see §1.7 above. Item 2 from that list
-(option-tradeability gate coverage) is PARTIALLY RESOLVED — the candidate-selection gap that was
-actually suppressing coverage is fixed, the deliberate rate-limit-driven narrowness is not — see
-§2.4 above. Re-prioritized again for what's actually left, roughly in order of leverage-per-
-effort, not urgency (nothing here is broken or blocking):
+(option-tradeability gate coverage) is PARTIALLY RESOLVED — see §2.4 above. Item 1 from the
+second re-prioritized list (reconcile the two verdict computations) is RESOLVED — see §7.1
+above. Re-prioritized again for what's actually left, roughly in order of leverage-per-effort,
+not urgency (nothing here is broken or blocking):
 
-1. **§7.1 Reconcile the two verdict computations** — now the single highest-leverage remaining
-   item. The full weighted verdict and the Phase 3 lightweight verdict can genuinely disagree for
-   the same symbol with no flag surfaced when they do; a real, EB-15-introduced duplication worth
-   resolving before it's load-bearing for a human's trust in either number.
-2. **§5.2 Full label-sensitivity grid study** — EB-15 ran a narrower 30/45/60-minute version;
-   the blueprint's original 9+-definition grid across horizon/excursion/stability cuts has still
-   never been run. Remains the single highest-value, highest-effort item once enough post-EB-10
-   episodes accumulate to make it meaningful.
-3. **§6.5 / §1.1 deeper architectural consolidation** — the dashboard-visibility half of this is
+1. **§5.2 Full label-sensitivity grid study** — now the single highest-leverage remaining item.
+   EB-15 ran a narrower 30/45/60-minute version; the blueprint's original 9+-definition grid
+   across horizon/excursion/stability cuts has still never been run. The single highest-value,
+   highest-effort item once enough post-EB-10 episodes accumulate to make it meaningful.
+2. **§6.5 / §1.1 deeper architectural consolidation** — the dashboard-visibility half of this is
    now fixed (Phase 3+7); the underlying question of whether EB-1's universe-wide state should
    ever feed EB-8's full weighted verdict for every symbol (not just fired candidates), and
    whether the legacy trackers (§1.1) can finally be deprecated, remains a bigger, riskier change

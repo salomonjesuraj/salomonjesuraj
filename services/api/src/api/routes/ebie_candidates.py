@@ -33,7 +33,10 @@ import json
 import time
 from datetime import datetime
 
+import msgpack
 from aiohttp import web
+
+from infusion_streams.constants import KEY_EBIE_VERDICT_LITE_PREFIX
 
 routes = web.RouteTableDef()
 
@@ -129,8 +132,29 @@ def _freshness_status(live_present: bool, last_seen_age_sec: float | None) -> di
     return {"status": "never_cached", "age_sec": None}
 
 
+# EBIE-KNOWN-GAPS.md §7.1 -- two independent, disagreeing verdict
+# computations exist for the same symbol: this full weighted verdict
+# (EB-8 + EB-15 Phase 4) only runs for symbols with a real
+# SignalCandidate, while EB-15 Phase 3's lightweight verdict
+# (compute_lightweight_verdict()) runs for every symbol every 60s sweep
+# off a smaller, unweighted input set. They can genuinely disagree.
+# Reconciling here means making the disagreement VISIBLE where both
+# exist, not merging the two computations into one (the lightweight
+# verdict is deliberately cheap -- reading it against the full weighted
+# family engine's inputs for every symbol every sweep would defeat its
+# whole purpose) and not inventing a fabricated "agreement score" (same
+# discipline as §7.2's drift-monitor: a real state<->state comparison,
+# nothing dressed up as a number that doesn't exist yet).
+def _direction_agreement(full_direction, lite_direction) -> str:
+    full = str(full_direction or "").strip().lower()
+    lite = str(lite_direction or "").strip().lower()
+    if full not in ("bullish", "bearish") or lite not in ("bullish", "bearish"):
+        return "unknown"
+    return "agree" if full == lite else "disagree"
+
+
 def _row_to_candidate(r, market_ctx: dict | None = None, opt_ctx: dict | None = None,
-                       cache_freshness: dict | None = None) -> dict:
+                       cache_freshness: dict | None = None, lite_verdict: dict | None = None) -> dict:
     d = dict(r)
     sub_scores = _decode_json(d.get("sub_scores"))
     features = _decode_json(d.get("features"))
@@ -247,6 +271,27 @@ def _row_to_candidate(r, market_ctx: dict | None = None, opt_ctx: dict | None = 
             }
             if opt_ctx else None
         ),
+
+        # EBIE-KNOWN-GAPS.md §7.1 -- the SAME symbol's current lightweight
+        # verdict (EB-15 Phase 3), shown alongside this full verdict so a
+        # reader can see when the two disagree rather than trusting
+        # whichever one they happened to open. A LIVE, right-now read of
+        # a genuinely different, independently-computed system -- may not
+        # match what the lightweight verdict said at the moment THIS
+        # candidate actually fired. None when nothing is cached for this
+        # symbol right now (rare -- Phase 3's sweep covers the full
+        # universe every 60s, unlike the rolling-subset caches above).
+        "lightweight_verdict": (
+            {
+                "verdict": lite_verdict.get("verdict"),
+                "direction": lite_verdict.get("direction"),
+                "ebie_state": lite_verdict.get("ebie_state"),
+                "confidence_band": lite_verdict.get("confidence_band"),
+                "checked_at": lite_verdict.get("checked_at"),
+            }
+            if lite_verdict else None
+        ),
+        "direction_agreement": _direction_agreement(d.get("signal_type"), (lite_verdict or {}).get("direction")),
     }
 
 
@@ -331,6 +376,27 @@ async def ebie_candidates(request):
         except Exception:
             pass
 
+    # EBIE-KNOWN-GAPS.md §7.1 -- the lightweight verdict cache is
+    # msgpack (KEY_EBIE_VERDICT_LITE_PREFIX's own comment: consumed by
+    # api's own routes, unlike the JSON caches above which scanner also
+    # reads), same encoding ebie_state.py's own lightweight-verdicts
+    # route already unpacks.
+    lite_verdict_map: dict[str, dict] = {}
+    if redis and symbols:
+        try:
+            lite_raw = await redis.mget([f"{KEY_EBIE_VERDICT_LITE_PREFIX}{s}" for s in symbols])
+            for s, raw in zip(symbols, lite_raw):
+                if not raw:
+                    continue
+                try:
+                    parsed = msgpack.unpackb(raw, raw=False)
+                except Exception:
+                    continue
+                if isinstance(parsed, dict):
+                    lite_verdict_map[s] = parsed
+        except Exception:
+            pass
+
     # EBIE-KNOWN-GAPS.md §1.7 -- per-symbol freshness for the three
     # rolling-subset caches (see _FRESHNESS_SOURCES). Reuses the
     # option-chain live-cache read above (opt_ctx_map) rather than a
@@ -375,6 +441,7 @@ async def ebie_candidates(request):
                 market_ctx_map.get(r.get("symbol")),
                 opt_ctx_map.get(r.get("symbol")),
                 freshness_map.get(r.get("symbol")) if redis else None,
+                lite_verdict_map.get(r.get("symbol")),
             )
             for r in rows
         ],
