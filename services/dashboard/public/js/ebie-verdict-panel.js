@@ -67,11 +67,23 @@ export class EbieVerdictPanel {
   constructor(containerEl) {
     this._el = containerEl;
     this._filter = 'all';
+    // EBIE EB-15 Phase 7 -- long/short candidate separation, the one
+    // required P7 dashboard section that was entirely missing: every
+    // other section (Why Now, Why Not, DQ, ...) already existed, this
+    // was a real gap. Orthogonal to `_filter` (fired/rejected/universe)
+    // so it's a second, independent pill row, not folded into the first.
+    this._direction = 'all';
     this._expanded = new Set();
     this._candidates = [];
     this._verdicts = [];
     this._isUniverse = false;
     this._loadGen = 0;
+    // Event-timeline (Phase 7) -- lazy per-symbol cache. `/api/ebie/
+    // transitions/recent?symbol=X` is real, already-archived EB-1 data
+    // (never fabricated) but fetching it for every row up front would be
+    // an N+1 storm against a 30-100 row list; fetched only when a row is
+    // actually expanded, once per symbol per panel lifetime.
+    this._timelines = new Map(); // symbol -> transitions[] | 'loading' | 'error'
   }
 
   init() {
@@ -79,8 +91,10 @@ export class EbieVerdictPanel {
     this._el.innerHTML = `
       <div class="ifx-ebie-toolbar">
         <div class="ifx-ebie-pills" id="ebieFilterPills"></div>
+        <div class="ifx-ebie-pills" id="ebieDirPills"></div>
         <button type="button" class="ifx-btn" id="ebieRefreshBtn">Refresh</button>
       </div>
+      <div class="ifx-ebie-monitor" id="ebieMonitor"></div>
       <div class="ifx-ebie-list" id="ebieList"></div>
     `;
     const pills = [
@@ -111,10 +125,68 @@ export class EbieVerdictPanel {
         this._load();
       });
     });
-    this._el.querySelector('#ebieRefreshBtn').addEventListener('click', () => this._load());
+
+    const dirPills = [
+      { key: 'all', label: 'Long + Short' },
+      { key: 'long', label: 'Long' },
+      { key: 'short', label: 'Short' },
+    ];
+    const dirPillsEl = this._el.querySelector('#ebieDirPills');
+    dirPillsEl.innerHTML = dirPills.map((p) =>
+      `<button type="button" class="ifx-btn ifx-ebie-pill${p.key === this._direction ? ' on' : ''}" data-dir="${p.key}">${p.label}</button>`
+    ).join('');
+    dirPillsEl.querySelectorAll('[data-dir]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        this._direction = btn.dataset.dir;
+        this._expanded.clear();
+        dirPillsEl.querySelectorAll('.ifx-ebie-pill').forEach((b) => b.classList.toggle('on', b === btn));
+        this._render();
+      });
+    });
+
+    this._el.querySelector('#ebieRefreshBtn').addEventListener('click', () => { this._load(); this._loadMonitor(); });
 
     this._load();
+    this._loadMonitor();
     this._poll = setInterval(() => this._load(), 30000);
+    // Drift/disagreement monitoring (Phase 7 Implementation Sequence item
+    // 3) changes slowly (a 24h window) -- polled far less often than the
+    // candidate list itself.
+    this._monitorPoll = setInterval(() => this._loadMonitor(), 5 * 60000);
+  }
+
+  // EBIE EB-15 Phase 7 -- "add monitoring for drift, disagreement, and
+  // missing evidence" (Implementation Sequence item 3). Reuses EB-1's own
+  // already-built /api/ebie/comparison as-is; no new metric is invented
+  // here (an "agreement %" would require a state<->legacy_tier mapping
+  // that doesn't exist yet and would be a guess) -- shows the real
+  // cross-tab counts so a trader can see where the two systems line up
+  // or diverge, honestly, without a prejudged verdict on which is right.
+  async _loadMonitor() {
+    const monitorEl = this._el.querySelector('#ebieMonitor');
+    if (!monitorEl) return;
+    const data = await api.fetch('/api/ebie/comparison?hours=24');
+    if (!data || data.available === false) {
+      monitorEl.innerHTML = `<span class="ifx-ebie-none">Drift/disagreement monitoring unavailable${data?.reason ? ': ' + esc(data.reason) : ''}.</span>`;
+      return;
+    }
+    const top = (data.state_distribution || []).slice(0, 4)
+      .map((s) => `${esc((s.state || '—').replace(/_/g, ' '))} ${s.count}`).join(' · ');
+    monitorEl.innerHTML = `
+      <span class="ifx-ebie-monitor-label">EBIE vs legacy (last ${data.window_hours}h, ${data.total_transitions} transitions):</span>
+      <span class="ifx-ebie-monitor-body">${top || 'no transitions in this window'}</span>
+      <button type="button" class="ifx-btn ifx-ebie-monitor-toggle" id="ebieMonitorToggle">Cross-tab</button>
+      <div class="ifx-ebie-monitor-crosstab" id="ebieMonitorCrosstab" hidden></div>
+    `;
+    const crosstabEl = monitorEl.querySelector('#ebieMonitorCrosstab');
+    crosstabEl.innerHTML = (data.state_vs_legacy_tier || []).length
+      ? `<table><thead><tr><th>EBIE state</th><th>Legacy tier</th><th>Count</th></tr></thead><tbody>${
+          data.state_vs_legacy_tier.map((r) => `<tr><td>${esc((r.state || '—').replace(/_/g, ' '))}</td><td>${esc(r.legacy_tier || '—')}</td><td>${r.count}</td></tr>`).join('')
+        }</tbody></table>`
+      : '<p class="ifx-ebie-none">No transitions in this window.</p>';
+    monitorEl.querySelector('#ebieMonitorToggle').addEventListener('click', () => {
+      crosstabEl.hidden = !crosstabEl.hidden;
+    });
   }
 
   async _load() {
@@ -153,9 +225,19 @@ export class EbieVerdictPanel {
 
   _render() {
     const listEl = this._el.querySelector('#ebieList');
-    const rows = this._isUniverse ? this._verdicts : this._candidates;
+    const allRows = this._isUniverse ? this._verdicts : this._candidates;
+    // EBIE EB-15 Phase 7 -- long/short separation. Full candidates use
+    // lowercase 'bullish'/'bearish' (ebie_candidates.py's own
+    // signal_type passthrough); lightweight verdicts use uppercase
+    // 'BULLISH'/'BEARISH' (compute_lightweight_verdict()) -- normalized
+    // to one check rather than duplicating the filter per data source.
+    const rows = this._direction === 'all' ? allRows : allRows.filter((r) => {
+      const dir = String(r.direction || '').toLowerCase();
+      return this._direction === 'long' ? dir === 'bullish' : dir === 'bearish';
+    });
     if (!rows.length) {
-      listEl.innerHTML = `<div class="ifx-ebie-empty">${this._isUniverse ? 'No actionable lightweight verdicts right now (try Columns/include_no_trade for the full universe).' : 'No candidates in this window.'}</div>`;
+      const emptyMsg = this._isUniverse ? 'No actionable lightweight verdicts right now (try Columns/include_no_trade for the full universe).' : 'No candidates in this window.';
+      listEl.innerHTML = `<div class="ifx-ebie-empty">${allRows.length ? 'No candidates in this direction filter.' : emptyMsg}</div>`;
       return;
     }
     listEl.innerHTML = rows.map((c, i) => this._isUniverse ? this._liteRowHtml(c, i) : this._rowHtml(c, i)).join('');
@@ -166,6 +248,36 @@ export class EbieVerdictPanel {
         this._render();
       });
     });
+  }
+
+  // EBIE EB-15 Phase 7 -- "Event timeline per symbol", the one required
+  // P7 section with no existing surface anywhere. Built entirely from
+  // EB-1's already-archived, real ebie_state_transitions table (GET
+  // /api/ebie/transitions/recent?symbol=X) -- no new backend computation,
+  // just a chronological view over data that already exists. Lazy: only
+  // fetched the first time a given symbol's row is expanded.
+  _timelineHtml(symbol) {
+    const cached = this._timelines.get(symbol);
+    if (cached === undefined) {
+      this._timelines.set(symbol, 'loading');
+      this._fetchTimeline(symbol);
+      return '<p class="ifx-ebie-none">Loading timeline…</p>';
+    }
+    if (cached === 'loading') return '<p class="ifx-ebie-none">Loading timeline…</p>';
+    if (cached === 'error') return '<p class="ifx-ebie-none">Timeline unavailable.</p>';
+    if (!cached.length) return '<p class="ifx-ebie-none">No recorded state transitions yet for this symbol.</p>';
+    return `<ul class="ifx-ebie-timeline">${cached.map((t) => `
+      <li>
+        <span class="ifx-ebie-timeline-age">${ageLabel(t.transitioned_at)}</span>
+        <span class="ifx-ebie-timeline-transition">${esc((t.prev_state || '—').replace(/_/g, ' '))} → ${esc((t.state || '—').replace(/_/g, ' '))}</span>
+        <span class="ifx-ebie-timeline-reason">${esc(t.reason || '—')}</span>
+      </li>`).join('')}</ul>`;
+  }
+
+  async _fetchTimeline(symbol) {
+    const data = await api.fetch(`/api/ebie/transitions/recent?symbol=${encodeURIComponent(symbol)}&limit=8`);
+    this._timelines.set(symbol, (data && data.available !== false) ? (data.transitions || []) : 'error');
+    this._render();
   }
 
   _liteRowHtml(v, i) {
@@ -205,6 +317,10 @@ export class EbieVerdictPanel {
             <h5>Invalidation</h5>
             <p>${esc(v.invalidation_reason || '—')}</p>
           </div>
+        </div>
+        <div class="ifx-ebie-detail-block">
+          <h5>Event Timeline</h5>
+          ${this._timelineHtml(v.symbol)}
         </div>
         <p class="ifx-ebie-none">Lightweight, universe-wide verdict (Phase 3) -- computed for every symbol every sweep, before any strategy candidate exists. No bull/bear evidence-family breakdown, trap risk, or portfolio fit yet -- those are the FULL verdict's job (EB-8), which only runs once this setup is promoted to a real candidate.</p>
       </div>`;
@@ -253,6 +369,9 @@ export class EbieVerdictPanel {
     const der = c.derivatives || {};
     const sent = c.sentiment || {};
     const dq = c.data_quality || {};
+    const mc = c.market_context || null;
+    const opt = c.option_chain || null;
+    const optTone = { TRADE_READY: 'good', WAIT_CONTRACT: 'warn', CHAIN_PENDING: 'flat', AVOID_CONTRACT: 'bad' }[opt?.execution_status] || 'muted';
 
     return `
       <div class="ifx-ebie-detail">
@@ -294,14 +413,37 @@ export class EbieVerdictPanel {
             ${kv('Status', dq.status || 'UNKNOWN')}
             ${kv('Score', dq.score)}
           </div>
+          <div class="ifx-ebie-detail-block">
+            <h5>Market &amp; Sector Context</h5>
+            ${mc ? `
+              ${kv('NIFTY 50', mc.nifty_change_pct != null ? Number(mc.nifty_change_pct).toFixed(2) + '%' : null)}
+              ${kv('Sector Avg', mc.sector_avg_change_pct != null ? Number(mc.sector_avg_change_pct).toFixed(2) + '%' : null)}
+              ${kv('Market Health', mc.market_health_score != null ? Number(mc.market_health_score).toFixed(0) : null)}
+            ` : '<p class="ifx-ebie-none">Not cached for this symbol yet.</p>'}
+          </div>
+          <div class="ifx-ebie-detail-block">
+            <h5>Option Tradeability</h5>
+            ${opt ? `
+              <p><span class="ifx-ebie-verdict ${optTone}">${esc((opt.execution_status || '—').replace(/_/g, ' '))}</span></p>
+              ${kv('Grade', opt.quality_grade)}
+              ${kv('Score', opt.option_score != null ? Number(opt.option_score).toFixed(0) : null)}
+              ${kv('Strike/Expiry', opt.strike != null ? `${opt.strike} / ${opt.expiry || '—'}` : null)}
+            ` : '<p class="ifx-ebie-none">Not cached for this symbol yet.</p>'}
+          </div>
         </div>
         ${listBlock('Data Quality Reasons', dq.reasons)}
         ${listBlock('Evidence Families Unavailable', dq.unavailable_evidence_families)}
+        ${opt ? listBlock('Option Tradeability Blockers', [...(opt.hard_blockers || []), ...(opt.blockers || [])]) : ''}
         ${listBlock('Portfolio Correlation', (c.risk || {}).correlated_symbols)}
+        <div class="ifx-ebie-detail-block">
+          <h5>Event Timeline</h5>
+          ${this._timelineHtml(c.symbol)}
+        </div>
       </div>`;
   }
 
   destroy() {
     if (this._poll) clearInterval(this._poll);
+    if (this._monitorPoll) clearInterval(this._monitorPoll);
   }
 }

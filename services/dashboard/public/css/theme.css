@@ -1901,10 +1901,29 @@
 .ifx-outcome-pill.expired { background: var(--ifx-scrim-2); color: var(--ifx-shell-text-faint); }
 
 /* EBIE Verdict panel -- Phase EB-12 increment 2 */
-.ifx-ebie-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
-.ifx-ebie-pills { display: flex; gap: 6px; }
+.ifx-ebie-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
+.ifx-ebie-pills { display: flex; gap: 6px; flex-wrap: wrap; }
 .ifx-ebie-pill { border-radius: var(--ifx-radius-pill); }
 .ifx-ebie-pill.on { background: var(--ifx-accent-dim); border-color: var(--ifx-accent-strong); color: var(--ifx-accent-strong); }
+#ebieRefreshBtn { margin-left: auto; }
+/* EBIE EB-15 Phase 7 -- drift/disagreement monitoring strip
+   (Implementation Sequence item 3), a real read of EB-1's own
+   /api/ebie/comparison, not a new metric. Collapsed cross-tab by
+   default -- the headline counts are the thing worth a permanent glance,
+   the full state-vs-legacy-tier table is a click-to-expand detail. */
+.ifx-ebie-monitor {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+  padding: 6px 10px; margin-bottom: 10px; font-size: 10.5px;
+  border: 1px dashed var(--ifx-shell-border); border-radius: var(--ifx-radius-md);
+  background: var(--ifx-shell-surface-sunken, var(--ifx-shell-surface));
+  color: var(--ifx-shell-text-faint);
+}
+.ifx-ebie-monitor-label { font-weight: 700; color: var(--ifx-shell-text); }
+.ifx-ebie-monitor-toggle { margin-left: auto; font-size: 9.5px; padding: 2px 8px; }
+.ifx-ebie-monitor-crosstab { flex-basis: 100%; margin-top: 4px; overflow-x: auto; }
+.ifx-ebie-monitor-crosstab table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
+.ifx-ebie-monitor-crosstab th, .ifx-ebie-monitor-crosstab td { text-align: left; padding: 3px 8px; border-bottom: 1px dashed var(--ifx-shell-border); }
+.ifx-ebie-monitor-crosstab th { color: var(--ifx-shell-text-faint); font-weight: 700; }
 .ifx-ebie-empty { text-align: center; padding: var(--ifx-space-4); color: var(--ifx-shell-text-faint); font-style: italic; }
 .ifx-ebie-list { display: flex; flex-direction: column; gap: 4px; }
 .ifx-ebie-row {
@@ -1979,6 +1998,15 @@
 .ifx-ebie-kv { display: flex; justify-content: space-between; font-size: 11px; padding: 2px 0; border-bottom: 1px dashed var(--ifx-shell-border); }
 .ifx-ebie-kv label { color: var(--ifx-shell-text-faint); }
 .ifx-ebie-kv span { font-family: var(--ifx-font-mono); font-weight: 700; }
+/* EBIE EB-15 Phase 7 -- per-symbol event timeline, built from EB-1's
+   real ebie_state_transitions history (see _timelineHtml() in
+   ebie-verdict-panel.js). Newest-first list, same visual density as the
+   other detail blocks (no new column grid needed). */
+.ifx-ebie-timeline { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.ifx-ebie-timeline li { display: grid; grid-template-columns: 60px 1fr 2fr; gap: 8px; font-size: 10.5px; align-items: baseline; padding: 2px 0; border-bottom: 1px dashed var(--ifx-shell-border); }
+.ifx-ebie-timeline-age { color: var(--ifx-shell-text-faint); font-family: var(--ifx-font-mono); }
+.ifx-ebie-timeline-transition { font-weight: 700; }
+.ifx-ebie-timeline-reason { color: var(--ifx-shell-text-faint); }
 @media (max-width: 900px) {
   .ifx-ebie-row, .ifx-ebie-row-lite { grid-template-columns: repeat(6, 1fr); font-size: 10px; }
   .ifx-ebie-detail-cols, .ifx-ebie-detail-grid { grid-template-columns: 1fr; }

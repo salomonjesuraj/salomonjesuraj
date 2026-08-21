@@ -69,7 +69,7 @@ def _dq_status(score) -> str:
     return "READY"
 
 
-def _row_to_candidate(r) -> dict:
+def _row_to_candidate(r, market_ctx: dict | None = None, opt_ctx: dict | None = None) -> dict:
     d = dict(r)
     sub_scores = _decode_json(d.get("sub_scores"))
     features = _decode_json(d.get("features"))
@@ -152,6 +152,30 @@ def _row_to_candidate(r) -> dict:
             "portfolio_fit_reasons": portfolio.get("portfolio_fit_reasons") or [],
             "correlated_symbols": portfolio.get("correlated_symbols") or [],
         },
+
+        # EBIE EB-15 Phase 7 -- Phase 4's market-context family and Phase
+        # 5's option-tradeability gate already SCORE against this data
+        # (verdict.bullish_families/risks/hard_gates carry it as generic
+        # text), but the directive's own P7 checklist asks for "market and
+        # sector context" and "option tradeability status" as their own
+        # visible sections, not buried in a reasons list. Both are LIVE
+        # reads of the same Redis caches Phase 4/5 already populate (a
+        # snapshot as of right now, not the value in effect when this
+        # candidate fired minutes/hours ago) -- correctly None when the
+        # sweep hasn't cached anything for this symbol yet, never guessed.
+        "market_context": market_ctx,
+        "option_chain": (
+            {
+                "execution_status": opt_ctx.get("execution_status"),
+                "quality_grade": opt_ctx.get("quality_grade"),
+                "option_score": opt_ctx.get("option_score"),
+                "expiry": opt_ctx.get("expiry"),
+                "strike": opt_ctx.get("strike"),
+                "blockers": opt_ctx.get("blockers") or [],
+                "hard_blockers": opt_ctx.get("hard_blockers") or [],
+            }
+            if opt_ctx else None
+        ),
     }
 
 
@@ -193,8 +217,54 @@ async def ebie_candidates(request):
         except Exception as exc:
             return web.json_response({"available": False, "reason": f"candidate query failed: {exc}", "candidates": []})
 
+    # EBIE EB-15 Phase 7 -- live market-context (Phase 4) and option-chain
+    # (Phase 5) reads, batched with one mget per cache rather than N round
+    # trips. Best-effort: a Redis error here must never fail the whole
+    # candidate list, so a symbol with a missing/expired cache entry (or
+    # any read failure) just gets None -- the existing "never a silent
+    # number" convention, not a hidden zero.
+    redis = request.app.get("redis")
+    market_ctx_map: dict[str, dict] = {}
+    opt_ctx_map: dict[str, dict] = {}
+    symbols = sorted({r["symbol"] for r in rows if r.get("symbol")})
+    def _decode_cache_json(raw) -> dict:
+        # Redis client here is decode_responses=False (main.py), so `raw`
+        # is bytes, not str -- _decode_json() above only special-cases
+        # str (it's built for asyncpg's JSONB-as-str columns) and would
+        # silently return {} for every bytes value. json.loads() accepts
+        # bytes/bytearray directly, so this is a separate small helper
+        # rather than reusing _decode_json() and getting that wrong.
+        if not raw:
+            return {}
+        try:
+            parsed = json.loads(raw)
+        except (json.JSONDecodeError, TypeError, UnicodeDecodeError):
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+
+    if redis and symbols:
+        try:
+            market_raw = await redis.mget([f"infusion:market-context:{s}" for s in symbols])
+            for s, raw in zip(symbols, market_raw):
+                parsed = _decode_cache_json(raw)
+                if parsed:
+                    market_ctx_map[s] = parsed
+        except Exception:
+            pass
+        try:
+            opt_raw = await redis.mget([f"infusion:option-chain:{s}" for s in symbols])
+            for s, raw in zip(symbols, opt_raw):
+                parsed = _decode_cache_json(raw)
+                if parsed:
+                    opt_ctx_map[s] = parsed
+        except Exception:
+            pass
+
     return web.json_response({
         "available": True,
         "count": len(rows),
-        "candidates": [_row_to_candidate(r) for r in rows],
+        "candidates": [
+            _row_to_candidate(r, market_ctx_map.get(r.get("symbol")), opt_ctx_map.get(r.get("symbol")))
+            for r in rows
+        ],
     })
