@@ -197,7 +197,7 @@ bearish-equivalent factor (e.g. a distribution/breakdown-base pattern) was ever 
 the gap.
 
 ### 2.4 Hard gates cover only a subset of Q6.1's authorized list — PARTIALLY RESOLVED
-(EB-15 Phase 5), coverage is real but narrow
+(EB-15 Phase 5), coverage improved via better candidate selection, still narrow by design
 Implemented before EB-15: F&O ban, DQ hard-fail (<80), missing trigger/invalidation, stale
 underlying/feed-gap. **Missing, all disclosed as needing data scanner doesn't have at signal
 time**: invalid/stale derivative contract, invalid option quote, extreme/invalid option
@@ -213,16 +213,34 @@ best-effort read, and `verdict_engine.py`'s `_hard_gates()` now adds `OPTION_NOT
 `execution_status == "AVOID_CONTRACT"`. Live-verified with a real payload (CDSL, a genuine
 `AVOID_CONTRACT`): a candidate scoring `bull_score=100.0` was still correctly `HARD_BLOCKED`.
 
-**The real caveat, found during Phase 7's own live verification and covered fully in §1.7
-above**: `infusion:option-chain:*` is the narrowest of the three rolling-subset caches —
-14/208 symbols (~7%) at any sampled moment. So this gate only ever fires for whichever handful
-of symbols the option-chain queue happened to have refreshed recently; the other ~93% of
-candidates pass through with **no option-side check performed at all**, not because their
-contract was checked and found fine. The §1.7 fix at least makes this ~93% legible now (the
-dashboard's Option Tradeability block says "Never checked for this symbol" rather than looking
-identical to "checked, all clear") -- but the underlying gate still doesn't run for most
-candidates. The four originally-missing checks are now real and wired
-in — but only for a small, rotating slice of the universe, not every candidate at signal time.
+**The coverage caveat, found during Phase 7's own live verification (§1.7) and then narrowed
+by a follow-up fix**: `infusion:option-chain:*` is the narrowest of the three rolling-subset
+caches — 14/208 symbols (~7%) at any sampled moment. §1.7 first made this legible (the
+dashboard says "Never checked for this symbol" instead of looking identical to "checked, all
+clear"). Investigating further turned up a real, more useful finding: the low coverage was
+**not** a per-cycle limit problem (`candidate_limit=28`, but real `candidate_count` sampled as
+low as 2, with ~0 failures among whatever was found) — it was a **candidate-selection** gap.
+`option_chain_queue.py`'s `build_candidates()` only drew from two forward-looking sources
+(active signals, prebreak readiness≥55), missing a real, already-computed middle tier: EB-15
+Phase 3's lightweight verdict (every symbol, every 60s sweep) already flags exactly the symbols
+about to become a real candidate (`LONG_READY`/`SHORT_READY`/`BREAKOUT_ARMED`/`BREAKDOWN_ARMED`)
+*before* they fire. Without that source, a symbol's option-chain only started warming *after*
+it was already an active signal — but `verdict_engine.compute_verdict()` needs that same cache
+at the exact moment the signal first fires, so the very first hard-gate check for a brand-new
+signal could never benefit from a check that only starts after the signal already exists.
+
+Fixed by adding pre-fire lightweight-verdict symbols as a third `build_candidates()` source,
+ranked alongside real prebreak rows (below a genuine active signal, above a bare momentum row).
+Live-verified with a real, disclosed test (not synthetic-only): injected a real `LONG_READY`
+lightweight verdict for a symbol (SONACOMS) carrying no active signal or prebreak entry: the
+next real queue cycle picked it up (`source: "pre_fire_verdict"`), ran a genuine Upstox
+option-chain fetch, and cached a real result (`AVOID_CONTRACT`, "Wide spread 20.8%; below
+liquidity whitelist; delta outside directional band"). This closes the *selection* gap, not the
+underlying rate-limit-driven narrowness itself (`option_chain_queue.py`'s own docstring: "option-
+chain REST calls are heavier and broker rate limits can make the dashboard sluggish" — still a
+real, disclosed, deliberate constraint, unchanged) — the gate will still not run for every single
+candidate, but now has a real chance to run for ones that are genuinely about to fire, not only
+ones lucky enough to already be flagged active or a strong prebreak leader.
 
 ### 2.5 Wall-migration flags are computed but never voted on
 `options_dynamics_cache["wall"]["call_wall_migrated"]`/`put_wall_migrated` exist in the data
@@ -467,25 +485,22 @@ specifically, unlike the rest of the row which carries `created_at`).
 ## 8. Suggested priority order for whoever picks this up
 
 Items 1-3 from the original list (NIFTY50 bootstrap, tbq/tsq naming, market/sector context
-wiring) are RESOLVED by EB-15 — see §1.2, §1.3, §2.1 above. Item 1 from the re-prioritized list
-below (rolling-subset queue legibility) is now also RESOLVED — see §1.7 above. Re-prioritized
-again for what's actually left, roughly in order of leverage-per-effort, not urgency (nothing
-here is broken or blocking):
+wiring) are RESOLVED by EB-15 — see §1.2, §1.3, §2.1 above. Item 1 from the first re-prioritized
+list (rolling-subset queue legibility) is RESOLVED — see §1.7 above. Item 2 from that list
+(option-tradeability gate coverage) is PARTIALLY RESOLVED — the candidate-selection gap that was
+actually suppressing coverage is fixed, the deliberate rate-limit-driven narrowness is not — see
+§2.4 above. Re-prioritized again for what's actually left, roughly in order of leverage-per-
+effort, not urgency (nothing here is broken or blocking):
 
-1. **§2.4 Option-tradeability gate coverage** — now the single highest-leverage remaining item.
-   §1.7's fix makes the ~93%-uncovered gap *legible* (the dashboard now says "never checked"
-   rather than looking clean); it does not close the gap itself. Widening `option_chain_queue.py`'s
-   own per-cycle candidate limit (or its cycle frequency) would directly reduce how often a
-   hard-blockable, actually-untradeable contract slips through with zero check performed.
-2. **§7.1 Reconcile the two verdict computations** — the full weighted verdict and the Phase 3
-   lightweight verdict can now genuinely disagree for the same symbol with no flag surfaced when
-   they do; a real, EB-15-introduced duplication worth resolving before it's load-bearing for a
-   human's trust in either number.
-3. **§5.2 Full label-sensitivity grid study** — EB-15 ran a narrower 30/45/60-minute version;
+1. **§7.1 Reconcile the two verdict computations** — now the single highest-leverage remaining
+   item. The full weighted verdict and the Phase 3 lightweight verdict can genuinely disagree for
+   the same symbol with no flag surfaced when they do; a real, EB-15-introduced duplication worth
+   resolving before it's load-bearing for a human's trust in either number.
+2. **§5.2 Full label-sensitivity grid study** — EB-15 ran a narrower 30/45/60-minute version;
    the blueprint's original 9+-definition grid across horizon/excursion/stability cuts has still
    never been run. Remains the single highest-value, highest-effort item once enough post-EB-10
    episodes accumulate to make it meaningful.
-4. **§6.5 / §1.1 deeper architectural consolidation** — the dashboard-visibility half of this is
+3. **§6.5 / §1.1 deeper architectural consolidation** — the dashboard-visibility half of this is
    now fixed (Phase 3+7); the underlying question of whether EB-1's universe-wide state should
    ever feed EB-8's full weighted verdict for every symbol (not just fired candidates), and
    whether the legacy trackers (§1.1) can finally be deprecated, remains a bigger, riskier change

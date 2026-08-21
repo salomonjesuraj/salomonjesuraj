@@ -17,9 +17,35 @@ from typing import Any
 import msgpack
 import structlog
 
+from infusion_streams.constants import KEY_EBIE_VERDICT_LITE_PREFIX
+
 from api.routes.market import _feature, _signal, _upstox_option_context
 
 logger = structlog.get_logger()
+
+# EBIE-KNOWN-GAPS.md §2.4 -- real finding from investigating the option-
+# tradeability gate's own low coverage: it isn't a per-cycle LIMIT problem
+# (candidate_count is regularly well under the configured limit=28, and
+# whatever candidates ARE found refresh with ~0 failures) -- it's a
+# CANDIDATE-SELECTION gap. This queue's two forward-looking sources
+# (active signals, prebreak readiness>=55) miss a real, already-computed
+# middle ground: EB-15 Phase 3's lightweight verdict (every symbol, every
+# 60s sweep) already flags exactly the symbols about to become a real
+# candidate (LONG_READY/SHORT_READY/BREAKOUT_ARMED/BREAKDOWN_ARMED) --
+# BEFORE they fire. Without this, a symbol's option-chain only starts
+# warming AFTER it's already an active signal (engine.py's own zadd to
+# KEY_SIGNAL_ACTIVE happens at the same moment compute_verdict() already
+# ran and needed this cache), meaning the FIRST verdict computation for a
+# brand-new signal can never benefit from a fresh check -- only later
+# dashboard views of it can. Feeding pre-fire READY/ARMED symbols in here
+# gives the queue real lead time before that race matters.
+_PRE_FIRE_VERDICTS = {"LONG_READY", "SHORT_READY", "BREAKOUT_ARMED", "BREAKDOWN_ARMED"}
+# Ranks alongside real prebreak rows (>=55 threshold) in the same tier of
+# build_candidates()'s own sort key -- deliberately below a genuine
+# ACTIVE signal (which is already real, not a prediction) but above an
+# ordinary prebreak/momentum row, since a READY/ARMED lightweight verdict
+# is a stronger, more specific signal than a bare readiness score.
+_PRE_FIRE_PREBREAK_SCORE = 90.0
 
 STATUS_KEY = "infusion:option-chain-queue:status"
 REFRESH_LOCK_PREFIX = "infusion:option-chain-refresh-lock:"
@@ -110,6 +136,7 @@ async def _symbol_universe(redis) -> list[str]:
 async def build_candidates(redis, limit: int) -> list[dict]:
     """Return ranked symbols for option-chain confirmation."""
     ranked: dict[str, dict] = {}
+    symbols = await _symbol_universe(redis)
 
     active = await redis.zrevrange("infusion:signals:active", 0, max(limit - 1, 0), withscores=True)
     for member, score in active:
@@ -138,7 +165,30 @@ async def build_candidates(redis, limit: int) -> list[dict]:
         if cursor == 0:
             break
 
-    symbols = await _symbol_universe(redis)
+    # EBIE-KNOWN-GAPS.md §2.4 -- pre-fire lightweight-verdict candidates
+    # (see _PRE_FIRE_VERDICTS's own comment above). One mget over the
+    # already-fetched symbol universe, same batching shape as every other
+    # per-symbol cache read in this codebase -- best-effort, a decode
+    # failure on one symbol's entry never drops the others.
+    if symbols:
+        try:
+            lite_raw = await redis.mget([f"{KEY_EBIE_VERDICT_LITE_PREFIX}{s}" for s in symbols])
+            for symbol, raw in zip(symbols, lite_raw):
+                if not raw:
+                    continue
+                try:
+                    verdict = msgpack.unpackb(raw, raw=False)
+                except Exception:
+                    continue
+                if not isinstance(verdict, dict) or verdict.get("verdict") not in _PRE_FIRE_VERDICTS:
+                    continue
+                row = ranked.setdefault(symbol, {"symbol": symbol, "source": "pre_fire_verdict", "signal_score": 0.0})
+                row["prebreak_score"] = max(_num(row.get("prebreak_score")), _PRE_FIRE_PREBREAK_SCORE)
+                if "pre_fire_verdict" not in row["source"]:
+                    row["source"] = f"{row['source']},pre_fire_verdict".strip(",")
+        except Exception:
+            pass
+
     pipe = redis.pipeline(transaction=False)
     for symbol in symbols:
         pipe.hgetall(f"infusion:feature:{symbol}")
