@@ -9,21 +9,23 @@ import asyncio
 import json
 
 import structlog
+from infusion_common.health import HealthReporter
+from infusion_common.lifecycle import ServiceLifecycle
+from infusion_common.logging import setup_logging
+from infusion_models.events import EventType
+from infusion_streams.constants import (
+    CG_FEATURE,
+    KEY_FEATURE_PREFIX,
+    MAXLEN_FEATURE_COMPUTED,
+    STREAM_FEATURE_COMPUTED,
+    STREAM_TICK_NORMALIZED,
+)
+from infusion_streams.consumer import StreamConsumer
+from infusion_streams.producer import StreamProducer
 from redis.asyncio import Redis
 
 from feature_engine.config import FeatureEngineSettings
 from feature_engine.engine import FeatureEngine
-from infusion_common.logging import setup_logging
-from infusion_common.lifecycle import ServiceLifecycle
-from infusion_common.health import HealthReporter
-from infusion_models.events import EventType
-from infusion_streams.consumer import StreamConsumer
-from infusion_streams.producer import StreamProducer
-from infusion_streams.constants import (
-    STREAM_TICK_NORMALIZED, STREAM_FEATURE_COMPUTED,
-    CG_FEATURE, MAXLEN_FEATURE_COMPUTED,
-    KEY_FEATURE_PREFIX,
-)
 
 logger = structlog.get_logger()
 
@@ -41,8 +43,12 @@ async def main():
 
     # Stream I/O
     consumer = StreamConsumer(
-        redis, STREAM_TICK_NORMALIZED, CG_FEATURE, "feature-engine-1",
-        batch_size=config.consumer_batch_size, block_ms=config.consumer_block_ms,
+        redis,
+        STREAM_TICK_NORMALIZED,
+        CG_FEATURE,
+        "feature-engine-1",
+        batch_size=config.consumer_batch_size,
+        block_ms=config.consumer_block_ms,
     )
     await consumer.ensure_group()
 
@@ -90,7 +96,9 @@ async def main():
         try:
             return {
                 "delivery_pct": float(out.get("delivery_pct") or 0.0),
-                "avg_delivery_pct_20d": float(out["avg_delivery_pct_20d"]) if out.get("avg_delivery_pct_20d") else None,
+                "avg_delivery_pct_20d": float(out["avg_delivery_pct_20d"])
+                if out.get("avg_delivery_pct_20d")
+                else None,
                 "avg_days": int(out.get("avg_days") or 0),
                 "trade_date": out.get("trade_date", ""),
             }
@@ -103,10 +111,17 @@ async def main():
         """Persist every completed bar for charting and restart-safe history."""
         key = f"infusion:ohlc:{symbol}:{timeframe}m"
         ts = int(bar.bar_start_ms / 1000)
-        payload = json.dumps({
-            "t": ts, "o": bar.open, "h": bar.high,
-            "l": bar.low, "c": bar.close, "v": bar.volume,
-        }, separators=(",", ":"))
+        payload = json.dumps(
+            {
+                "t": ts,
+                "o": bar.open,
+                "h": bar.high,
+                "l": bar.low,
+                "c": bar.close,
+                "v": bar.volume,
+            },
+            separators=(",", ":"),
+        )
         maxlen = {
             1: config.ohlc_1m_max,
             5: config.ohlc_5m_max,
@@ -125,14 +140,26 @@ async def main():
     # feature hash -- api/routes/ticks.py reads this same hash for the
     # live scanner table and Stock Detail panel.
     HOT_STATE_ML_WHITELIST = (
-        "vwap_stdev", "vwap_sd1_upper", "vwap_sd1_lower",
-        "vwap_sd2_upper", "vwap_sd2_lower", "vwap_sd_ready",
-        "ha_trend", "ha_trend_streak", "ha_doji", "ha_color_flip",
-        "delivery_pct_avg_20d", "delivery_avg_days", "delivery_trade_date",
+        "vwap_stdev",
+        "vwap_sd1_upper",
+        "vwap_sd1_lower",
+        "vwap_sd2_upper",
+        "vwap_sd2_lower",
+        "vwap_sd_ready",
+        "ha_trend",
+        "ha_trend_streak",
+        "ha_doji",
+        "ha_color_flip",
+        "delivery_pct_avg_20d",
+        "delivery_avg_days",
+        "delivery_trade_date",
         # EBIE EB-2: CLV accumulation/distribution evidence -- see
         # feature_engine/features/accumulation.py.
-        "clv_ema", "clv_volume_weighted", "clv_upper_quartile_rate",
-        "clv_lower_quartile_rate", "clv_ready",
+        "clv_ema",
+        "clv_volume_weighted",
+        "clv_upper_quartile_rate",
+        "clv_lower_quartile_rate",
+        "clv_ready",
     )
 
     async def on_feature(fv):
@@ -156,11 +183,13 @@ async def main():
 
     # Health
     health = HealthReporter(redis, config.service_name)
-    health.set_details_fn(lambda: {
-        **engine.stats,
-        "consumed": consumer.stats,
-        "published": producer.published_count,
-    })
+    health.set_details_fn(
+        lambda: {
+            **engine.stats,
+            "consumed": consumer.stats,
+            "published": producer.published_count,
+        }
+    )
     await health.start()
     lifecycle.register_cleanup(health.stop)
     lifecycle.register_cleanup(redis.aclose)
@@ -171,7 +200,7 @@ async def main():
     # Main loop
     logger.info("feature_engine_consuming", stream=STREAM_TICK_NORMALIZED)
 
-    async for event_type, version, rx_us, payload, ack in consumer.consume():
+    async for _event_type, _version, _rx_us, payload, ack in consumer.consume():
         if not lifecycle.should_run:
             break
         await engine.ingest(payload)

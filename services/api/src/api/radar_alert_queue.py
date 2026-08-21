@@ -47,7 +47,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import structlog
 
@@ -63,7 +63,7 @@ TIER_RANK = {
     "BREAKOUT_NOW": 3,
     "OPTION_READY": 4,
 }
-ALERT_THRESHOLD_RANK = TIER_RANK["EARLY_WATCH"]      # user's own scoping answer
+ALERT_THRESHOLD_RANK = TIER_RANK["EARLY_WATCH"]  # user's own scoping answer
 GRADUATION_THRESHOLD_RANK = TIER_RANK["BREAKOUT_NOW"]
 RADAR_ALERT_STALE_HOURS = 6  # comfortably spans a full session (09:15-15:30 IST)
 
@@ -84,7 +84,7 @@ async def _read_tier_state(redis, symbols: list[str]) -> dict[str, str]:
     keys = [f"{TIER_STATE_PREFIX}{s}" for s in symbols]
     values = await redis.mget(keys)
     result: dict[str, str] = {}
-    for symbol, raw in zip(symbols, values):
+    for symbol, raw in zip(symbols, values, strict=False):
         if raw:
             result[symbol] = raw.decode() if isinstance(raw, bytes) else raw
     return result
@@ -143,9 +143,13 @@ async def sweep_once(app) -> dict:
                          best_tier_reached, best_tier_reached_at)
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $3, now())
                     """,
-                    symbol, entry.get("sector_id"), current_tier,
-                    entry.get("stock_breakout_score"), entry.get("breakout_type"),
-                    entry.get("rel_vol"), entry.get("ltp"),
+                    symbol,
+                    entry.get("sector_id"),
+                    current_tier,
+                    entry.get("stock_breakout_score"),
+                    entry.get("breakout_type"),
+                    entry.get("rel_vol"),
+                    entry.get("ltp"),
                 )
                 new_alerts += 1
                 continue
@@ -179,9 +183,13 @@ async def sweep_once(app) -> dict:
                          best_tier_reached, best_tier_reached_at)
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $3, now())
                     """,
-                    symbol, entry.get("sector_id"), current_tier,
-                    entry.get("stock_breakout_score"), entry.get("breakout_type"),
-                    entry.get("rel_vol"), entry.get("ltp"),
+                    symbol,
+                    entry.get("sector_id"),
+                    current_tier,
+                    entry.get("stock_breakout_score"),
+                    entry.get("breakout_type"),
+                    entry.get("rel_vol"),
+                    entry.get("ltp"),
                 )
                 new_alerts += 1
                 continue
@@ -189,11 +197,13 @@ async def sweep_once(app) -> dict:
             if current_rank > _rank(row["best_tier_reached"]):
                 await conn.execute(
                     "UPDATE radar_alerts SET best_tier_reached = $1, best_tier_reached_at = now(), last_checked_at = now() WHERE id = $2",
-                    current_tier, row["id"],
+                    current_tier,
+                    row["id"],
                 )
             else:
                 await conn.execute(
-                    "UPDATE radar_alerts SET last_checked_at = now() WHERE id = $1", row["id"],
+                    "UPDATE radar_alerts SET last_checked_at = now() WHERE id = $1",
+                    row["id"],
                 )
 
             if current_rank >= GRADUATION_THRESHOLD_RANK:
@@ -213,7 +223,7 @@ async def sweep_once(app) -> dict:
         # (a symbol that hovered at EARLY_WATCH without ever clearing
         # BREAKOUT_NOW or dropping back to NO_CHASE) gets marked EXPIRED
         # rather than staying open forever.
-        stale_cutoff = datetime.now(timezone.utc) - timedelta(hours=RADAR_ALERT_STALE_HOURS)
+        stale_cutoff = datetime.now(UTC) - timedelta(hours=RADAR_ALERT_STALE_HOURS)
         expired_rows = await conn.fetch(
             "UPDATE radar_alerts SET outcome_label = 'EXPIRED', resolved_at = now() WHERE outcome_label = 'PENDING' AND fired_at < $1 RETURNING id",
             stale_cutoff,
@@ -229,7 +239,7 @@ async def sweep_once(app) -> dict:
         "graduated": graduated,
         "faded": faded,
         "expired": expired,
-        "checked_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "checked_at": datetime.now(UTC).isoformat(timespec="seconds"),
     }
     await redis.set(STATUS_KEY, json.dumps(status, separators=(",", ":")), ex=600)
     return status
@@ -245,5 +255,7 @@ async def radar_alert_loop(app) -> None:
     while True:
         with contextlib.suppress(Exception):
             status = await sweep_once(app)
-            logger.info("radar_alert_sweep", **{k: v for k, v in status.items() if k != "checked_at"})
+            logger.info(
+                "radar_alert_sweep", **{k: v for k, v in status.items() if k != "checked_at"}
+            )
         await asyncio.sleep(SWEEP_INTERVAL_SEC)

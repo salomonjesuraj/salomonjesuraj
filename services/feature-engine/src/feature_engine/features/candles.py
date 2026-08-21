@@ -12,8 +12,8 @@ Shooting Star with flat range-ratio thresholds.
 from __future__ import annotations
 
 MINTICK = 0.01
-STRONG_BODY_PCT = 0.65        # Pine's candleBodyPct
-DOJI_BODY_PCT = 0.08          # Pine's dojiBodyPct
+STRONG_BODY_PCT = 0.65  # Pine's candleBodyPct
+DOJI_BODY_PCT = 0.08  # Pine's dojiBodyPct
 MARUBOZU_BODY_EMA_MULT = 1.3
 SOLDIER_CROW_BODY_EMA_MULT = 0.8
 BODY_EMA_PERIOD = 14
@@ -24,10 +24,10 @@ BODY_EMA_PERIOD = 14
 # its per-pattern-independent-signal model doesn't fit this function's
 # single-highest-priority-match design -- adding a new C-library Docker
 # dependency for 5 patterns wasn't worth breaking that consistency).
-HARAMI_BODY_RATIO = 0.6       # current body must be <= this fraction of prior body
+HARAMI_BODY_RATIO = 0.6  # current body must be <= this fraction of prior body
 TWEEZER_TOLERANCE_PCT = 0.10  # highs/lows "nearly equal" within 10% of the larger candle's range
-PIN_BAR_WICK_PCT = 0.66       # dominant wick >= this fraction of total range
-PIN_BAR_BODY_PCT = 0.33       # body <= this fraction of total range
+PIN_BAR_WICK_PCT = 0.66  # dominant wick >= this fraction of total range
+PIN_BAR_BODY_PCT = 0.33  # body <= this fraction of total range
 PIN_BAR_OPPOSITE_WICK_PCT = 0.15  # opposite wick must stay small
 
 
@@ -38,8 +38,8 @@ def body_pct(bars) -> float:
     if not items:
         return 0.0
     cur = items[-1]
-    o, h, l, c = (float(cur.get(k, 0.0)) for k in ("o", "h", "l", "c"))
-    rng = max(h - l, MINTICK)
+    o, h, low, c = (float(cur.get(k, 0.0)) for k in ("o", "h", "l", "c"))
+    rng = max(h - low, MINTICK)
     return abs(c - o) / rng
 
 
@@ -66,11 +66,11 @@ def detect_candle_pattern(bars, body_size_ema: float = 0.0) -> str:
     if not items:
         return ""
     cur = items[-1]
-    o, h, l, c = (float(cur.get(k, 0.0)) for k in ("o", "h", "l", "c"))
-    rng = max(h - l, MINTICK)
+    o, h, low, c = (float(cur.get(k, 0.0)) for k in ("o", "h", "l", "c"))
+    rng = max(h - low, MINTICK)
     body = abs(c - o)
     upper = h - max(o, c)
-    lower = min(o, c) - l
+    lower = min(o, c) - low
     body_pct = body / rng
 
     prev = items[-2] if len(items) >= 2 else None
@@ -90,36 +90,58 @@ def detect_candle_pattern(bars, body_size_ema: float = 0.0) -> str:
         piercing = pc < po and c > o and o < pc and c > (po + pc) / 2 and c < po
         dark_cloud = pc > po and c < o and o > pc and c < (po + pc) / 2 and c > po
 
-    hammer = lower >= body * 2 and upper <= max(body * 0.60, MINTICK) and c >= l + rng * 0.60
-    shooting_star = upper >= body * 2 and lower <= max(body * 0.60, MINTICK) and c <= l + rng * 0.40
+    hammer = lower >= body * 2 and upper <= max(body * 0.60, MINTICK) and c >= low + rng * 0.60
+    shooting_star = (
+        upper >= body * 2 and lower <= max(body * 0.60, MINTICK) and c <= low + rng * 0.40
+    )
 
     if prev is not None and prev2 is not None:
         po, pc = bo(prev)
         po2, pc2 = bo(prev2)
         prev_body = abs(pc - po)
         prev2_body = abs(pc2 - po2)
-        morning_star = pc2 < po2 and prev_body <= prev2_body * 0.55 and c > o and c >= (po2 + pc2) / 2
-        evening_star = pc2 > po2 and prev_body <= prev2_body * 0.55 and c < o and c <= (po2 + pc2) / 2
+        morning_star = (
+            pc2 < po2 and prev_body <= prev2_body * 0.55 and c > o and c >= (po2 + pc2) / 2
+        )
+        evening_star = (
+            pc2 > po2 and prev_body <= prev2_body * 0.55 and c < o and c <= (po2 + pc2) / 2
+        )
 
         ema = max(body_size_ema, MINTICK)
         three_soldiers = (
-            c > o and pc > po and pc2 > po2
-            and c > pc and pc > pc2
+            c > o
+            and pc > po
+            and pc2 > po2
+            and c > pc
+            and pc > pc2
             and body >= ema * SOLDIER_CROW_BODY_EMA_MULT
             and prev_body >= ema * SOLDIER_CROW_BODY_EMA_MULT
             and prev2_body >= ema * SOLDIER_CROW_BODY_EMA_MULT
         )
         three_crows = (
-            c < o and pc < po and pc2 < po2
-            and c < pc and pc < pc2
+            c < o
+            and pc < po
+            and pc2 < po2
+            and c < pc
+            and pc < pc2
             and body >= ema * SOLDIER_CROW_BODY_EMA_MULT
             and prev_body >= ema * SOLDIER_CROW_BODY_EMA_MULT
             and prev2_body >= ema * SOLDIER_CROW_BODY_EMA_MULT
         )
 
     ema = max(body_size_ema, MINTICK)
-    marubozu_bull = c > o and body >= ema * MARUBOZU_BODY_EMA_MULT and upper <= rng * 0.05 and lower <= rng * 0.05
-    marubozu_bear = c < o and body >= ema * MARUBOZU_BODY_EMA_MULT and upper <= rng * 0.05 and lower <= rng * 0.05
+    marubozu_bull = (
+        c > o
+        and body >= ema * MARUBOZU_BODY_EMA_MULT
+        and upper <= rng * 0.05
+        and lower <= rng * 0.05
+    )
+    marubozu_bear = (
+        c < o
+        and body >= ema * MARUBOZU_BODY_EMA_MULT
+        and upper <= rng * 0.05
+        and lower <= rng * 0.05
+    )
 
     bull_strong = c > o and body_pct >= STRONG_BODY_PCT and upper <= rng * 0.12
     bear_strong = c < o and body_pct >= STRONG_BODY_PCT and lower <= rng * 0.12
@@ -133,8 +155,12 @@ def detect_candle_pattern(bars, body_size_ema: float = 0.0) -> str:
         prev_lo, prev_hi = (po, pc) if po < pc else (pc, po)
         contained = prev_lo < min(o, c) and max(o, c) < prev_hi
         small_enough = body <= prev_body * HARAMI_BODY_RATIO and prev_body > MINTICK
-        bullish_harami = pc < po and c > o and contained and small_enough  # prior bearish, current small bullish inside it
-        bearish_harami = pc > po and c < o and contained and small_enough  # prior bullish, current small bearish inside it
+        bullish_harami = (
+            pc < po and c > o and contained and small_enough
+        )  # prior bearish, current small bullish inside it
+        bearish_harami = (
+            pc > po and c < o and contained and small_enough
+        )  # prior bullish, current small bearish inside it
 
     tweezer_top = tweezer_bottom = False
     if prev is not None:
@@ -143,7 +169,7 @@ def detect_candle_pattern(bars, body_size_ema: float = 0.0) -> str:
         prev_rng = max(prev_h - prev_l, MINTICK)
         tol = max(rng, prev_rng) * TWEEZER_TOLERANCE_PCT
         tweezer_top = pc > po and c < o and abs(h - prev_h) <= tol
-        tweezer_bottom = pc < po and c > o and abs(l - prev_l) <= tol
+        tweezer_bottom = pc < po and c > o and abs(low - prev_l) <= tol
 
     # Pin Bar requires a small-but-real body -- a near-zero body with the
     # same long-wick/short-opposite-wick shape is a Dragonfly/Gravestone

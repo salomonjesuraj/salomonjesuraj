@@ -21,12 +21,12 @@ sizing. Reused as-is, not duplicated.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 _IST = timezone(timedelta(hours=5, minutes=30))
 
 DEFAULT_MAX_DAILY_LOSS = 2500.0
-CONSECUTIVE_LOOKBACK = 20   # how many recent decided signals to scan for a losing streak
+CONSECUTIVE_LOOKBACK = 20  # how many recent decided signals to scan for a losing streak
 
 
 def _decode_json(raw) -> dict:
@@ -74,7 +74,9 @@ async def compute_daily_loss_budget(pool, redis) -> dict:
         return {"available": False, "reason": "Postgres analytics pool is not available."}
 
     today_ist = datetime.now(_IST).date()
-    day_start_utc = datetime(today_ist.year, today_ist.month, today_ist.day, tzinfo=_IST).astimezone(timezone.utc)
+    day_start_utc = datetime(
+        today_ist.year, today_ist.month, today_ist.day, tzinfo=_IST
+    ).astimezone(UTC)
 
     async with pool.acquire() as conn:
         try:
@@ -145,8 +147,7 @@ async def compute_consecutive_losses(pool) -> dict:
     for r in strategy_rows:
         by_strategy.setdefault(r["strategy"], []).append(r["outcome_label"])
     strategy_streaks = {
-        strategy: _streak(labels[:CONSECUTIVE_LOOKBACK])
-        for strategy, labels in by_strategy.items()
+        strategy: _streak(labels[:CONSECUTIVE_LOOKBACK]) for strategy, labels in by_strategy.items()
     }
 
     return {

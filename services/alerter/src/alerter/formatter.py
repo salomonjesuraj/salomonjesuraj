@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 
 _IST = timezone(timedelta(hours=5, minutes=30))
 _MD_SPECIAL = re.compile(r"([_*\[\]()~`>#+\-=|{}.!\\])")
@@ -92,8 +92,10 @@ def format_signal(payload: dict) -> str:
     fs = _features(payload)
     sub_scores = _sub_scores(payload)
 
-    option_bias = payload.get("option_bias") or fs.get("option_bias") or (
-        "BUY PE" if signal_type == "bearish" else "BUY CE"
+    option_bias = (
+        payload.get("option_bias")
+        or fs.get("option_bias")
+        or ("BUY PE" if signal_type == "bearish" else "BUY CE")
     )
     score = _num(payload.get("conviction_score"))
     grade = str(payload.get("conviction_grade") or "?")
@@ -111,7 +113,8 @@ def format_signal(payload: dict) -> str:
     created_us = _num(payload.get("created_at_us"))
     ts_str = (
         datetime.fromtimestamp(created_us / 1_000_000, tz=_IST).strftime("%H:%M:%S IST")
-        if created_us > 0 else "-"
+        if created_us > 0
+        else "-"
     )
 
     lines = [

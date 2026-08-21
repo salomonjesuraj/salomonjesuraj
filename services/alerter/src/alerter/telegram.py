@@ -143,7 +143,7 @@ class TelegramClient:
 
             # Exponential backoff: 2, 4, 8
             if attempt < self._retry_max - 1:
-                backoff = self._retry_base_sec * (2 ** attempt)
+                backoff = self._retry_base_sec * (2**attempt)
                 await asyncio.sleep(backoff)
 
         # All retries exhausted

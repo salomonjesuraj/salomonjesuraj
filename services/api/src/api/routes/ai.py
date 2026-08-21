@@ -61,18 +61,23 @@ def _fallback(snapshot: dict, reason: str = "") -> dict:
         ),
         "why_trade": why[:4],
         "blockers": blockers[:4],
-        "trigger": f"Underlying trigger: ₹{entry:,.2f}" if entry else "Use the deterministic scanner trigger.",
+        "trigger": f"Underlying trigger: ₹{entry:,.2f}"
+        if entry
+        else "Use the deterministic scanner trigger.",
         "invalidation": (
             f"Underlying invalidation: ₹{invalidation:,.2f}"
-            if invalidation else "Use the scanner invalidation level."
+            if invalidation
+            else "Use the scanner invalidation level."
         ),
         "option_view": (
             "Do not select a contract until strike, IV, OI and spread are live."
-            if not execution["chain_ready"] else "Confirm contract liquidity before entry."
+            if not execution["chain_ready"]
+            else "Confirm contract liquidity before entry."
         ),
         "risk_note": (
             f"Underlying target reference is ₹{target:,.2f}; manage the actual trade by option premium."
-            if target else "Manage risk using actual option premium, not estimated values."
+            if target
+            else "Manage risk using actual option premium, not estimated values."
         ),
         "source": "deterministic_fallback",
         "model": "",
@@ -83,12 +88,14 @@ def _fallback(snapshot: dict, reason: str = "") -> dict:
 @routes.get("/api/ai/status")
 async def ai_status(request):
     advisor = request.app["openai_advisor"]
-    return web.json_response({
-        "enabled": advisor.enabled,
-        "model": advisor.model if advisor.enabled else "",
-        "role": "advisory_only",
-        "scanner_authority": "deterministic",
-    })
+    return web.json_response(
+        {
+            "enabled": advisor.enabled,
+            "model": advisor.model if advisor.enabled else "",
+            "role": "advisory_only",
+            "scanner_authority": "deterministic",
+        }
+    )
 
 
 @routes.post("/api/ai/analyze/{symbol}")
@@ -127,13 +134,15 @@ async def analyze_symbol(request):
         except Exception as exc:
             result = _fallback(snapshot, str(exc)[:160])
 
-    result.update({
-        "symbol": symbol,
-        "mode": mode,
-        "cached": False,
-        "advisory_only": True,
-        "snapshot_digest": digest,
-    })
+    result.update(
+        {
+            "symbol": symbol,
+            "mode": mode,
+            "cached": False,
+            "advisory_only": True,
+            "snapshot_digest": digest,
+        }
+    )
     await request.app["redis"].set(
         cache_key,
         json.dumps(result),
@@ -180,7 +189,9 @@ async def ai_query_route(request):
     from api.routes.market import compute_options_chain_analytics
 
     facts = [
-        await ai_query.gather_facts(intent, redis=redis, pool=pool, options_chain_fn=compute_options_chain_analytics)
+        await ai_query.gather_facts(
+            intent, redis=redis, pool=pool, options_chain_fn=compute_options_chain_analytics
+        )
         for intent in intents
     ]
     deterministic_answer = ai_query.format_facts_as_text(question, intents, facts)
@@ -202,19 +213,23 @@ async def ai_query_route(request):
             result = {
                 "answer": deterministic_answer,
                 "data_sources_used": intent_types,
-                "caveats": [f"AI phrasing unavailable, showing the deterministic answer: {str(exc)[:120]}"],
+                "caveats": [
+                    f"AI phrasing unavailable, showing the deterministic answer: {str(exc)[:120]}"
+                ],
                 "source": "deterministic_fallback",
                 "model": "",
             }
 
-    result.update({
-        "question": question,
-        "intents_matched": intent_types,
-        "deterministic_answer": deterministic_answer,
-        "facts": facts,
-        "cached": False,
-        "advisory_only": True,
-    })
+    result.update(
+        {
+            "question": question,
+            "intents_matched": intent_types,
+            "deterministic_answer": deterministic_answer,
+            "facts": facts,
+            "cached": False,
+            "advisory_only": True,
+        }
+    )
     # Short TTL -- unlike the per-symbol advisory's 5-minute cache, this
     # covers live-changing aggregate state (sectors, regime, active
     # signals) that shouldn't go stale for long if asked again soon.

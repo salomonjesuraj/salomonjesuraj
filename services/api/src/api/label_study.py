@@ -37,7 +37,7 @@ different, unvalidated definition.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from api.trap_labels import FALSE_BREAK_FAST_STOP_MIN, classify_false_break
 
@@ -53,7 +53,7 @@ EB10_TTL_WIDEN_AT_ISO = "2026-08-20T08:37:19+00:00"  # 2026-08-20 14:07:19+05:30
 # string caused a real, live-caught bug here (asyncpg's own type
 # inference happens before the SQL-side cast runs), fixed by parsing
 # once at import time rather than passing the ISO string straight through.
-EB10_TTL_WIDEN_AT = datetime.fromisoformat(EB10_TTL_WIDEN_AT_ISO).astimezone(timezone.utc)
+EB10_TTL_WIDEN_AT = datetime.fromisoformat(EB10_TTL_WIDEN_AT_ISO).astimezone(UTC)
 
 # The directive's own minimum sample before a recommendation should be
 # trusted (matching item 10's own "300 episodes" scale of evidence, not
@@ -85,7 +85,9 @@ def classify_at_window(
 def _window_breakdown(rows: list[dict], window_min: int) -> dict:
     counts = {"TARGET_HIT": 0, "STOP_HIT": 0, "TIMEOUT": 0}
     for r in rows:
-        label = classify_at_window(r.get("time_to_target_min"), r.get("time_to_stop_min"), window_min)
+        label = classify_at_window(
+            r.get("time_to_target_min"), r.get("time_to_stop_min"), window_min
+        )
         counts[label] += 1
     total = len(rows)
     return {
@@ -140,8 +142,7 @@ async def compute_label_study(pool) -> dict:
     # window-scoped -- a fast reversal is a property of the actual
     # resolution, independent of which study window you're asking about).
     trap_flags = [
-        classify_false_break(r.get("outcome_label"), r.get("time_to_stop_min"))
-        for r in rows
+        classify_false_break(r.get("outcome_label"), r.get("time_to_stop_min")) for r in rows
     ]
     trap_labeled = [t for t in trap_flags if t is not None]
     trap_count = sum(1 for t in trap_labeled if t)
@@ -199,7 +200,9 @@ async def compute_label_study(pool) -> dict:
         "trap": {
             "n_labeled": len(trap_labeled),
             "trap_count": trap_count,
-            "trap_rate_pct": round(100 * trap_count / len(trap_labeled), 1) if trap_labeled else None,
+            "trap_rate_pct": round(100 * trap_count / len(trap_labeled), 1)
+            if trap_labeled
+            else None,
             "definition": f"STOP_HIT within {FALSE_BREAK_FAST_STOP_MIN} minutes of firing (reused from EB-9's own already-validated false-break label, not re-derived).",
         },
         "recommended_window_min": recommendation,

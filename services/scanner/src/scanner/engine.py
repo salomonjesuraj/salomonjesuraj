@@ -24,40 +24,39 @@ Design principles:
 
 from __future__ import annotations
 
-import time
-import uuid
 import json
+import uuid
 from datetime import datetime, timedelta, timezone
 
 import structlog
-from redis.asyncio import Redis
-
-from scanner.config import ScannerSettings
-from scanner.state import StateManager
-from scanner.scoring import compute_conviction, grade_conviction, compute_risk_reward
-from scanner.suppression import SuppressionGate
-from scanner.pre_breakout import PreBreakoutTracker
-from scanner.sector import SectorEngine
-from scanner.strategies import get_strategies
-from scanner.strategies.base import SignalCandidate
-from scanner.ml_score import score_signal as ml_score_signal, classify_session_ist
-from scanner.verdict_engine import compute_verdict
-from scanner.trap_model import compute_trap_risk
-from scanner.portfolio_risk import compute_portfolio_fit
-
+from infusion_common.sizing import compute_position_size
+from infusion_common.timing import now_us
 from infusion_models.events import EventType
 from infusion_models.signal import ScanSignalV2
 from infusion_streams.codec import encode_event
 from infusion_streams.constants import (
+    KEY_SIGNAL_ACTIVE,
+    KEY_SIGNAL_PREFIX,
+    MAXLEN_SCAN_SUPPRESSED,
+    MAXLEN_SIGNALS,
     STREAM_SCAN_SIGNALS,
     STREAM_SCAN_SUPPRESSED,
-    MAXLEN_SIGNALS,
-    MAXLEN_SCAN_SUPPRESSED,
-    KEY_SIGNAL_PREFIX,
-    KEY_SIGNAL_ACTIVE,
 )
-from infusion_common.timing import now_us
-from infusion_common.sizing import compute_position_size
+from redis.asyncio import Redis
+
+from scanner.config import ScannerSettings
+from scanner.ml_score import classify_session_ist
+from scanner.ml_score import score_signal as ml_score_signal
+from scanner.portfolio_risk import compute_portfolio_fit
+from scanner.pre_breakout import PreBreakoutTracker
+from scanner.scoring import compute_conviction, compute_risk_reward, grade_conviction
+from scanner.sector import SectorEngine
+from scanner.state import StateManager
+from scanner.strategies import get_strategies
+from scanner.strategies.base import SignalCandidate
+from scanner.suppression import SuppressionGate
+from scanner.trap_model import compute_trap_risk
+from scanner.verdict_engine import compute_verdict
 
 logger = structlog.get_logger()
 
@@ -176,7 +175,9 @@ class ScannerEngine:
         strategies = get_strategies()
         for strategy in strategies:
             candidate = strategy.evaluate(payload, state)
-            await self._persist_diagnostics(symbol, strategy.strategy_id, payload, state, candidate is not None)
+            await self._persist_diagnostics(
+                symbol, strategy.strategy_id, payload, state, candidate is not None
+            )
             if candidate is not None:
                 # Phase W: caller-side write-back of the watch-episode
                 # ladder a strategy decided on -- evaluate() only reads
@@ -194,8 +195,12 @@ class ScannerEngine:
         state.update_from_features(payload)
 
     async def _recommended_lots(
-        self, symbol: str, entry_price: float, invalidation_price: float,
-        atr: float | None = None, strategy_id: str = "",
+        self,
+        symbol: str,
+        entry_price: float,
+        invalidation_price: float,
+        atr: float | None = None,
+        strategy_id: str = "",
     ) -> dict:
         """Signal-time position-size estimate using underlying entry/stop —
         matches simple_structure_pivot_ma_plan_v6.pine's Position Sizing
@@ -227,10 +232,18 @@ class ScannerEngine:
             risk_pct = float(settings.get("risk_per_trade_pct") or 1.0)
             risk_amount = capital * risk_pct / 100.0
         max_lots = int(settings.get("max_lots") or 5)
-        sizing = compute_position_size(risk_amount, per_unit_risk, lot_size, max_lots=max_lots, atr=atr)
+        sizing = compute_position_size(
+            risk_amount, per_unit_risk, lot_size, max_lots=max_lots, atr=atr
+        )
         kelly = await self._read_kelly_sizing(strategy_id) if strategy_id else {}
         vix = await self._read_vix_multiplier()
-        return {**sizing, "lot_size": lot_size, "risk_amount": round(risk_amount, 2), **kelly, **vix}
+        return {
+            **sizing,
+            "lot_size": lot_size,
+            "risk_amount": round(risk_amount, 2),
+            **kelly,
+            **vix,
+        }
 
     async def _read_vix_multiplier(self) -> dict:
         """Best-effort read of the India VIX-tiered size multiplier the
@@ -278,8 +291,12 @@ class ScannerEngine:
             return {
                 "kelly_reliable": decoded.get("reliable") == "True",
                 "kelly_half_pct": float(half_kelly) if half_kelly not in (None, "None") else None,
-                "kelly_win_rate_pct": float(decoded["win_rate_pct"]) if decoded.get("win_rate_pct") not in (None, "None") else None,
-                "kelly_sample_size": int(float(decoded["decided"])) if decoded.get("decided") else 0,
+                "kelly_win_rate_pct": float(decoded["win_rate_pct"])
+                if decoded.get("win_rate_pct") not in (None, "None")
+                else None,
+                "kelly_sample_size": int(float(decoded["decided"]))
+                if decoded.get("decided")
+                else 0,
             }
         except Exception:
             return {}
@@ -338,7 +355,11 @@ class ScannerEngine:
                     out[key] = None
                     continue
                 try:
-                    out[key] = float(val) if "." in val or key in ("basis_pct", "oi_change_pct") else int(val)
+                    out[key] = (
+                        float(val)
+                        if "." in val or key in ("basis_pct", "oi_change_pct")
+                        else int(val)
+                    )
                 except (ValueError, TypeError):
                     out[key] = val
             return out
@@ -427,20 +448,29 @@ class ScannerEngine:
                 continue
             if not raw:
                 continue
-            decoded = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in raw.items()}
+            decoded = {
+                (k.decode() if isinstance(k, bytes) else k): (
+                    v.decode() if isinstance(v, bytes) else v
+                )
+                for k, v in raw.items()
+            }
             risk_amount = 0.0
             try:
                 sub_scores = json.loads(decoded.get("sub_scores") or "{}")
-                risk_amount = float((sub_scores.get("position_sizing") or {}).get("risk_amount") or 0.0)
+                risk_amount = float(
+                    (sub_scores.get("position_sizing") or {}).get("risk_amount") or 0.0
+                )
             except Exception:
                 pass
-            portfolio.append({
-                "symbol": symbol,
-                "strategy_id": strategy_id,
-                "sector_id": decoded.get("sector_id"),
-                "direction": decoded.get("signal_type"),
-                "risk_amount": risk_amount,
-            })
+            portfolio.append(
+                {
+                    "symbol": symbol,
+                    "strategy_id": strategy_id,
+                    "sector_id": decoded.get("sector_id"),
+                    "direction": decoded.get("signal_type"),
+                    "risk_amount": risk_amount,
+                }
+            )
         return portfolio
 
     async def _fetch_daily_loss_budget(self) -> dict | None:
@@ -482,21 +512,55 @@ class ScannerEngine:
         flow = float(features.get("order_imbalance", 0.0))
         spread = float(features.get("spread_bps", 0.0))
         gates = {
-            "history_ready": {"value": bool(features.get("volume_profile_ready")), "pass": bool(features.get("volume_profile_ready"))},
-            "indicators_ready": {"value": bool(features.get("indicator_ready")), "pass": bool(features.get("indicator_ready"))},
-            "volume_expansion": {"value": rel_vol, "required": self.settings.vvb_min_rel_vol, "pass": rel_vol >= self.settings.vvb_min_rel_vol},
-            "vwap_reclaim": {"value": ltp - vwap, "pass": ltp > vwap and state.prev_ltp <= (state.prev_vwap or vwap)},
+            "history_ready": {
+                "value": bool(features.get("volume_profile_ready")),
+                "pass": bool(features.get("volume_profile_ready")),
+            },
+            "indicators_ready": {
+                "value": bool(features.get("indicator_ready")),
+                "pass": bool(features.get("indicator_ready")),
+            },
+            "volume_expansion": {
+                "value": rel_vol,
+                "required": self.settings.vvb_min_rel_vol,
+                "pass": rel_vol >= self.settings.vvb_min_rel_vol,
+            },
+            "vwap_reclaim": {
+                "value": ltp - vwap,
+                "pass": ltp > vwap and state.prev_ltp <= (state.prev_vwap or vwap),
+            },
             "above_ema9": {"value": ltp - ema9, "pass": ltp > ema9 > 0},
-            "rsi_range": {"value": rsi, "required": [self.settings.vvb_min_rsi, self.settings.vvb_max_rsi], "pass": self.settings.vvb_min_rsi < rsi < self.settings.vvb_max_rsi},
-            "bollinger_context": {"value": bb, "required": self.settings.vvb_min_bb_width, "pass": bb > self.settings.vvb_min_bb_width},
-            "order_flow": {"value": flow, "required": self.settings.vvb_min_order_imbalance, "pass": flow > self.settings.vvb_min_order_imbalance},
-            "spread": {"value": spread, "required": self.settings.vvb_max_spread_bps, "pass": spread < self.settings.vvb_max_spread_bps},
+            "rsi_range": {
+                "value": rsi,
+                "required": [self.settings.vvb_min_rsi, self.settings.vvb_max_rsi],
+                "pass": self.settings.vvb_min_rsi < rsi < self.settings.vvb_max_rsi,
+            },
+            "bollinger_context": {
+                "value": bb,
+                "required": self.settings.vvb_min_bb_width,
+                "pass": bb > self.settings.vvb_min_bb_width,
+            },
+            "order_flow": {
+                "value": flow,
+                "required": self.settings.vvb_min_order_imbalance,
+                "pass": flow > self.settings.vvb_min_order_imbalance,
+            },
+            "spread": {
+                "value": spread,
+                "required": self.settings.vvb_max_spread_bps,
+                "pass": spread < self.settings.vvb_max_spread_bps,
+            },
         }
-        await self.redis.hset(f"infusion:signal-diagnostics:{symbol}", mapping={
-            "symbol": symbol, "strategy_id": strategy_id,
-            "candidate": "1" if candidate else "0",
-            "evaluated_at_us": str(now_us()), "gates": json.dumps(gates),
-        })
+        await self.redis.hset(
+            f"infusion:signal-diagnostics:{symbol}",
+            mapping={
+                "symbol": symbol,
+                "strategy_id": strategy_id,
+                "candidate": "1" if candidate else "0",
+                "evaluated_at_us": str(now_us()),
+                "gates": json.dumps(gates),
+            },
+        )
         await self.redis.expire(f"infusion:signal-diagnostics:{symbol}", 86400)
 
     async def _process_candidate(
@@ -536,8 +600,11 @@ class ScannerEngine:
         # ── Position sizing (early estimate) ───────────
         atr_for_sizing = candidate.features_snapshot.get("atr_14")
         sub_scores["position_sizing"] = await self._recommended_lots(
-            candidate.symbol, candidate.entry_price, candidate.invalidation_price,
-            atr=atr_for_sizing, strategy_id=candidate.strategy_id,
+            candidate.symbol,
+            candidate.entry_price,
+            candidate.invalidation_price,
+            atr=atr_for_sizing,
+            strategy_id=candidate.strategy_id,
         )
 
         created_us = now_us()
@@ -640,7 +707,9 @@ class ScannerEngine:
             candidate_sector=state.sector_id,
             candidate_direction=candidate.signal_type,
             candidate_strategy_id=candidate.strategy_id,
-            candidate_risk_amount=float((sub_scores.get("position_sizing") or {}).get("risk_amount") or 0.0),
+            candidate_risk_amount=float(
+                (sub_scores.get("position_sizing") or {}).get("risk_amount") or 0.0
+            ),
             active_portfolio=active_portfolio,
         )
         # EBIE EB-11 (increment 2): daily loss budget + consecutive
@@ -692,9 +761,7 @@ class ScannerEngine:
             tier=state.tier,
             suppressed=not result.passed,
             suppression_reason=result.reason if not result.passed else "",
-            explanation=self._enrich_explanation(
-                candidate.explanation, state, sector_explanations
-            ),
+            explanation=self._enrich_explanation(candidate.explanation, state, sector_explanations),
             conditions_met=candidate.conditions_met,
         )
 
@@ -714,9 +781,7 @@ class ScannerEngine:
             if entered_us > 0:
                 duration_sec = (now_us() - entered_us) / 1_000_000
                 duration_min = duration_sec / 60
-                enriched.append(
-                    f"Pre-breakout: was {pb.upper()} for {duration_min:.1f} min"
-                )
+                enriched.append(f"Pre-breakout: was {pb.upper()} for {duration_min:.1f} min")
             else:
                 enriched.append(f"Pre-breakout state: {pb.upper()}")
         if sector_explanations:
@@ -726,9 +791,7 @@ class ScannerEngine:
     async def _publish_active(self, signal: ScanSignalV2, state=None) -> None:
         """Publish confirmed signal and update active state."""
         payload = signal.model_dump()
-        encoded = encode_event(
-            EventType.SCAN_SIGNAL, payload, signal.created_at_us
-        )
+        encoded = encode_event(EventType.SCAN_SIGNAL, payload, signal.created_at_us)
 
         # Publish to signals stream
         await self.redis.xadd(
@@ -741,6 +804,7 @@ class ScannerEngine:
         # Update hot state: full intelligence payload per symbol
         # All fields from ScanSignalV2 persisted for dashboard consumption
         import json as _json
+
         conditions_str = _json.dumps(signal.conditions_met) if signal.conditions_met else "{}"
         sub_scores_str = _json.dumps(signal.sub_scores) if signal.sub_scores else "{}"
         snapshot_str = _json.dumps(signal.features_snapshot) if signal.features_snapshot else "{}"
@@ -748,65 +812,60 @@ class ScannerEngine:
         fs = signal.features_snapshot or {}
 
         signal_mapping = {
-                # Identity
-                "signal_id": signal.signal_id,
-                "symbol": signal.symbol,
-                "strategy_id": signal.strategy_id,
-                "signal_type": signal.signal_type,       # "bullish" | "bearish"
-                "option_bias": str(signal.features_snapshot.get("option_bias", "")),
-                "lifecycle": signal.lifecycle,
-
-                # Scoring
-                "conviction_score": str(round(signal.conviction_score, 2)),
-                "conviction_grade": signal.conviction_grade,
-                "sub_scores": sub_scores_str,
-                "features_snapshot": snapshot_str,
-                "pine_confidence": str(round(float(fs.get("pine_confidence") or 0), 2)),
-                "bull_confidence": str(round(float(fs.get("bull_confidence") or 0), 2)),
-                "bear_confidence": str(round(float(fs.get("bear_confidence") or 0), 2)),
-                "mtf_text": str(fs.get("mtf_text") or ""),
-                "mtf": _json.dumps(fs.get("mtf") or {}),
-                "mtf_dots": _json.dumps(fs.get("mtf_dots") or {}),
-                "anti_chase_ok": "1" if fs.get("anti_chase_ok") else "0",
-                "anti_chase_reasons": _json.dumps(fs.get("anti_chase_reasons") or []),
-                "rejection_reasons": _json.dumps(fs.get("rejection_reasons") or []),
-                "primary_trade_map": _json.dumps(fs.get("primary_trade_map") or {}),
-                "mtf_alternate_trade_map": _json.dumps(fs.get("mtf_alternate_trade_map") or {}),
-                "mtf_conflict": "1" if fs.get("mtf_conflict") else "0",
-                "mtf_conflict_note": str(fs.get("mtf_conflict_note") or ""),
-                "breakout_explanation": str(fs.get("breakout_explanation") or ""),
-                "trade_horizon": str(fs.get("trade_horizon") or ""),
-                "chase_quality": str(fs.get("chase_quality") or ""),
-                "sustain_rule": str(fs.get("sustain_rule") or ""),
-
-                # Price levels
-                "price_at_signal": str(round(signal.price_at_signal, 2)),
-                "entry_price": str(round(signal.entry_price, 2)),
-                "invalidation_price": str(round(signal.invalidation_price, 2)),
-                "target_price": str(round(signal.target_price, 2)),
-                "t1_price": str(round(float(fs.get("t1_price") or signal.target_price or 0), 2)),
-                "t2_price": str(round(float(fs.get("t2_price") or signal.target_price or 0), 2)),
-                "risk_per_share": str(round(float(fs.get("risk_per_share") or 0), 2)),
-                "target_method": str(fs.get("target_method") or ""),
-                "vwap_distance_atr": str(round(float(fs.get("vwap_distance_atr") or 0), 2)),
-                "signal_candle_atr": str(round(float(fs.get("signal_candle_atr") or 0), 2)),
-                "stop_distance_atr": str(round(float(fs.get("stop_distance_atr") or 0), 2)),
-                "risk_reward_ratio": str(round(signal.risk_reward_ratio, 2)),
-
-                # Context
-                "sector_id": signal.sector_id,
-                "sector_strength": str(round(signal.sector_strength, 2)),
-                "market_regime": signal.market_regime,
-                "pre_breakout_state": signal.pre_breakout_state,
-                "tier": str(signal.tier),
-
-                # Explanation & conditions
-                "explanation": explanation_str,
-                "conditions_met": conditions_str,
-
-                # Timestamps
-                "created_at_us": str(signal.created_at_us),
-                "ttl_sec": str(signal.ttl_sec),
+            # Identity
+            "signal_id": signal.signal_id,
+            "symbol": signal.symbol,
+            "strategy_id": signal.strategy_id,
+            "signal_type": signal.signal_type,  # "bullish" | "bearish"
+            "option_bias": str(signal.features_snapshot.get("option_bias", "")),
+            "lifecycle": signal.lifecycle,
+            # Scoring
+            "conviction_score": str(round(signal.conviction_score, 2)),
+            "conviction_grade": signal.conviction_grade,
+            "sub_scores": sub_scores_str,
+            "features_snapshot": snapshot_str,
+            "pine_confidence": str(round(float(fs.get("pine_confidence") or 0), 2)),
+            "bull_confidence": str(round(float(fs.get("bull_confidence") or 0), 2)),
+            "bear_confidence": str(round(float(fs.get("bear_confidence") or 0), 2)),
+            "mtf_text": str(fs.get("mtf_text") or ""),
+            "mtf": _json.dumps(fs.get("mtf") or {}),
+            "mtf_dots": _json.dumps(fs.get("mtf_dots") or {}),
+            "anti_chase_ok": "1" if fs.get("anti_chase_ok") else "0",
+            "anti_chase_reasons": _json.dumps(fs.get("anti_chase_reasons") or []),
+            "rejection_reasons": _json.dumps(fs.get("rejection_reasons") or []),
+            "primary_trade_map": _json.dumps(fs.get("primary_trade_map") or {}),
+            "mtf_alternate_trade_map": _json.dumps(fs.get("mtf_alternate_trade_map") or {}),
+            "mtf_conflict": "1" if fs.get("mtf_conflict") else "0",
+            "mtf_conflict_note": str(fs.get("mtf_conflict_note") or ""),
+            "breakout_explanation": str(fs.get("breakout_explanation") or ""),
+            "trade_horizon": str(fs.get("trade_horizon") or ""),
+            "chase_quality": str(fs.get("chase_quality") or ""),
+            "sustain_rule": str(fs.get("sustain_rule") or ""),
+            # Price levels
+            "price_at_signal": str(round(signal.price_at_signal, 2)),
+            "entry_price": str(round(signal.entry_price, 2)),
+            "invalidation_price": str(round(signal.invalidation_price, 2)),
+            "target_price": str(round(signal.target_price, 2)),
+            "t1_price": str(round(float(fs.get("t1_price") or signal.target_price or 0), 2)),
+            "t2_price": str(round(float(fs.get("t2_price") or signal.target_price or 0), 2)),
+            "risk_per_share": str(round(float(fs.get("risk_per_share") or 0), 2)),
+            "target_method": str(fs.get("target_method") or ""),
+            "vwap_distance_atr": str(round(float(fs.get("vwap_distance_atr") or 0), 2)),
+            "signal_candle_atr": str(round(float(fs.get("signal_candle_atr") or 0), 2)),
+            "stop_distance_atr": str(round(float(fs.get("stop_distance_atr") or 0), 2)),
+            "risk_reward_ratio": str(round(signal.risk_reward_ratio, 2)),
+            # Context
+            "sector_id": signal.sector_id,
+            "sector_strength": str(round(signal.sector_strength, 2)),
+            "market_regime": signal.market_regime,
+            "pre_breakout_state": signal.pre_breakout_state,
+            "tier": str(signal.tier),
+            # Explanation & conditions
+            "explanation": explanation_str,
+            "conditions_met": conditions_str,
+            # Timestamps
+            "created_at_us": str(signal.created_at_us),
+            "ttl_sec": str(signal.ttl_sec),
         }
 
         signal_key = f"{KEY_SIGNAL_PREFIX}{signal.symbol}:{signal.strategy_id}"
@@ -866,16 +925,27 @@ class ScannerEngine:
 
     async def _auto_log_signal(self, signal: ScanSignalV2, fs: dict) -> None:
         """Write an honest journal row for every emitted signal, idempotently."""
-        dedupe_id = signal.signal_id or f"{signal.symbol}:{signal.strategy_id}:{signal.created_at_us}"
+        dedupe_id = (
+            signal.signal_id or f"{signal.symbol}:{signal.strategy_id}:{signal.created_at_us}"
+        )
         added = await self.redis.sadd(JOURNAL_SIGNAL_IDS_KEY, dedupe_id)
         await self.redis.expire(JOURNAL_SIGNAL_IDS_KEY, 86400 * 120)
         if not added:
             return
 
-        decision = str(fs.get("option_bias") or ("BUY CE" if signal.signal_type == "bullish" else "BUY PE")).upper()
+        decision = str(
+            fs.get("option_bias") or ("BUY CE" if signal.signal_type == "bullish" else "BUY PE")
+        ).upper()
         option_bias = "CE" if "CE" in decision or signal.signal_type == "bullish" else "PE"
         risk_points = abs(float(signal.entry_price or 0) - float(signal.invalidation_price or 0))
-        rr1 = round(abs(float(signal.target_price or 0) - float(signal.entry_price or 0)) / risk_points, 2) if risk_points else 0.0
+        rr1 = (
+            round(
+                abs(float(signal.target_price or 0) - float(signal.entry_price or 0)) / risk_points,
+                2,
+            )
+            if risk_points
+            else 0.0
+        )
         row = {
             "id": f"auto_{signal.created_at_us}_{signal.symbol}",
             "created_at_ist": _now_ist(),
@@ -894,12 +964,18 @@ class ScannerEngine:
             "target1": round(float(fs.get("t1_price") or signal.target_price or 0), 4),
             "target2": round(float(fs.get("t2_price") or signal.target_price or 0), 4),
             "rr1": rr1,
-            "setup_strength": round(float(fs.get("setup_strength") or signal.conviction_score or 0), 4),
-            "option_readiness": round(float(fs.get("option_readiness") or signal.conviction_score or 0), 4),
+            "setup_strength": round(
+                float(fs.get("setup_strength") or signal.conviction_score or 0), 4
+            ),
+            "option_readiness": round(
+                float(fs.get("option_readiness") or signal.conviction_score or 0), 4
+            ),
             "mtf_score": round(float(fs.get("mtf_score") or fs.get("pine_confidence") or 0), 4),
             "mtf_text": str(fs.get("mtf_text") or ""),
             "positive_above": round(float(fs.get("positive_above") or signal.entry_price or 0), 4),
-            "negative_below": round(float(fs.get("negative_below") or signal.invalidation_price or 0), 4),
+            "negative_below": round(
+                float(fs.get("negative_below") or signal.invalidation_price or 0), 4
+            ),
             "risk_amount": 0.0,
             "risk_pct": 0.0,
             "option": {
@@ -948,9 +1024,7 @@ class ScannerEngine:
     async def _publish_suppressed(self, signal: ScanSignalV2) -> None:
         """Publish suppressed signal to audit stream."""
         payload = signal.model_dump()
-        encoded = encode_event(
-            EventType.SCAN_SUPPRESSED, payload, signal.created_at_us
-        )
+        encoded = encode_event(EventType.SCAN_SUPPRESSED, payload, signal.created_at_us)
 
         await self.redis.xadd(
             STREAM_SCAN_SUPPRESSED,

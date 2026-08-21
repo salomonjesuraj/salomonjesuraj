@@ -12,7 +12,6 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from aiohttp import web
-
 from infusion_common.sizing import compute_position_size  # noqa: F401 (re-exported)
 
 routes = web.RouteTableDef()
@@ -67,8 +66,12 @@ def _int(value, default: int, low: int | None = None, high: int | None = None) -
 def _normalise(raw: dict | None) -> dict:
     data = {**DEFAULT_RISK, **(raw or {})}
     capital = _num(data.get("capital"), DEFAULT_RISK["capital"], 1000, 100000000)
-    max_daily_loss = _num(data.get("max_daily_loss"), DEFAULT_RISK["max_daily_loss"], 0, capital * 0.05)
-    risk_per_trade_pct = _num(data.get("risk_per_trade_pct"), DEFAULT_RISK["risk_per_trade_pct"], 0.1, 5.0)
+    max_daily_loss = _num(
+        data.get("max_daily_loss"), DEFAULT_RISK["max_daily_loss"], 0, capital * 0.05
+    )
+    risk_per_trade_pct = _num(
+        data.get("risk_per_trade_pct"), DEFAULT_RISK["risk_per_trade_pct"], 0.1, 5.0
+    )
     high_conviction_risk_pct = _num(
         data.get("high_conviction_risk_pct"),
         DEFAULT_RISK["high_conviction_risk_pct"],
@@ -93,10 +96,12 @@ def _normalise(raw: dict | None) -> dict:
         "execution_mode": "paper_first",
         "trading_signal_mode": (
             str(data.get("trading_signal_mode") or DEFAULT_RISK["trading_signal_mode"])
-            if str(data.get("trading_signal_mode") or DEFAULT_RISK["trading_signal_mode"]) in VALID_TRADING_SIGNAL_MODES
+            if str(data.get("trading_signal_mode") or DEFAULT_RISK["trading_signal_mode"])
+            in VALID_TRADING_SIGNAL_MODES
             else DEFAULT_RISK["trading_signal_mode"]
         ),
-        "updated_at_ist": data.get("updated_at_ist") or datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST"),
+        "updated_at_ist": data.get("updated_at_ist")
+        or datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST"),
     }
     return out
 
@@ -127,6 +132,12 @@ async def save_risk_settings(request):
     except Exception:
         payload = {}
     current = await _load(redis)
-    settings = _normalise({**current, **(payload or {}), "updated_at_ist": datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")})
+    settings = _normalise(
+        {
+            **current,
+            **(payload or {}),
+            "updated_at_ist": datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST"),
+        }
+    )
     await redis.set(RISK_KEY, json.dumps(settings), ex=60 * 60 * 24 * 30)
     return web.json_response({"ok": True, "settings": settings})

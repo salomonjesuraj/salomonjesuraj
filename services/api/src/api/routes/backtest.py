@@ -10,17 +10,22 @@ from __future__ import annotations
 
 import json
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from aiohttp import web
 
-from api.statistics_utils import (
-    r_multiple, sharpe_stats, expected_max_sharpe, probabilistic_sharpe_ratio, pearson_r,
-)
-from api.cost_model import compute as cost_model_compute, OptionTradeCostInput
-from api.ml_classifier import train_classifier, read_cached_model
-from api.trap_labels import compute_false_break_stats
+from api.cost_model import OptionTradeCostInput
+from api.cost_model import compute as cost_model_compute
 from api.label_study import compute_label_study
+from api.ml_classifier import read_cached_model, train_classifier
+from api.statistics_utils import (
+    expected_max_sharpe,
+    pearson_r,
+    probabilistic_sharpe_ratio,
+    r_multiple,
+    sharpe_stats,
+)
+from api.trap_labels import compute_false_break_stats
 
 routes = web.RouteTableDef()
 
@@ -30,12 +35,22 @@ routes = web.RouteTableDef()
 # discoverability -- /api/backtest/feature-ablation accepts any top-level
 # features_snapshot key, this list is not enforced.
 KNOWN_ABLATION_FIELDS = [
-    "fib_targets", "ma_regime", "ma_regime_cross_recent", "chart_patterns",
-    "fvg_bullish_ce", "fvg_bearish_ce", "last_liquidity_sweep",
-    "order_block_bullish_validated", "order_block_bearish_validated",
-    "donchian_fresh_high_breakout", "donchian_fresh_low_breakout",
-    "wyckoff_structural_failure", "wyckoff_sot", "wyckoff_sos_sow",
-    "volman_entry_triggered", "vcp_grade",
+    "fib_targets",
+    "ma_regime",
+    "ma_regime_cross_recent",
+    "chart_patterns",
+    "fvg_bullish_ce",
+    "fvg_bearish_ce",
+    "last_liquidity_sweep",
+    "order_block_bullish_validated",
+    "order_block_bearish_validated",
+    "donchian_fresh_high_breakout",
+    "donchian_fresh_low_breakout",
+    "wyckoff_structural_failure",
+    "wyckoff_sot",
+    "wyckoff_sos_sow",
+    "volman_entry_triggered",
+    "vcp_grade",
 ]
 # cross_confirmation (Phase 9) lives in sub_scores, not features_snapshot --
 # every other field above is in features_snapshot. feature-ablation takes an
@@ -48,7 +63,7 @@ KNOWN_ABLATION_FIELDS_SUB_SCORES = ["cross_confirmation"]
 # here than a truthy/falsy split would be.
 CONTINUOUS_IC_FIELDS = ["vcp_score"]
 
-_LIVE_GUARD_DEPLOYED_AT_UTC = datetime(2026, 8, 1, 16, 48, tzinfo=timezone.utc)
+_LIVE_GUARD_DEPLOYED_AT_UTC = datetime(2026, 8, 1, 16, 48, tzinfo=UTC)
 _LIVE_GUARD_PROFILE = {
     "min_score": 80,
     "min_rr": 1.2,
@@ -78,7 +93,9 @@ def _precision(wins: int, losses: int) -> float | None:
     return round(wins / decided * 100, 1) if decided else None
 
 
-def _profile_status(precision: float | None, decided: int, days: int, target: float, min_decided: int) -> str:
+def _profile_status(
+    precision: float | None, decided: int, days: int, target: float, min_decided: int
+) -> str:
     trades_per_day = decided / max(days, 1)
     if precision is None or decided <= 0:
         return "NO_TRADES"
@@ -104,15 +121,25 @@ def _row_matches_profile(row: dict, profile: dict) -> bool:
         return False
     if _grade_rank(row.get("conviction_grade")) < profile["min_grade_rank"]:
         return False
-    if profile["sessions"] != "regular":
-        if (row.get("session_hour") or "unknown") != profile["sessions"]:
-            return False
-    return True
+    return not (
+        profile["sessions"] != "regular"
+        and (row.get("session_hour") or "unknown") != profile["sessions"]
+    )
 
 
 def _describe_profile(profile: dict) -> str:
-    grade_labels = {4: "A+ only", 3: "A and A+", 2: "B+ and above", 1: "B and above", 0: "All grades"}
-    session = "regular market only" if profile["sessions"] == "regular" else str(profile["sessions"]).replace("_", " ")
+    grade_labels = {
+        4: "A+ only",
+        3: "A and A+",
+        2: "B+ and above",
+        1: "B and above",
+        0: "All grades",
+    }
+    session = (
+        "regular market only"
+        if profile["sessions"] == "regular"
+        else str(profile["sessions"]).replace("_", " ")
+    )
     return (
         f"Score >= {profile['min_score']}, R:R >= {profile['min_rr']}, "
         f"{grade_labels.get(profile['min_grade_rank'], 'All grades')}, {session}"
@@ -131,8 +158,12 @@ def _profile_metrics(rows: list[dict], profile: dict, days: int) -> dict:
         "decided": decided,
         "precision_pct": precision,
         "trades_per_day": round(decided / max(days, 1), 2),
-        "avg_score": round(sum(float(r.get("conviction_score") or 0) for r in matched) / decided, 1) if decided else None,
-        "avg_rr": round(sum(float(r.get("risk_reward_ratio") or 0) for r in matched) / decided, 2) if decided else None,
+        "avg_score": round(sum(float(r.get("conviction_score") or 0) for r in matched) / decided, 1)
+        if decided
+        else None,
+        "avg_rr": round(sum(float(r.get("risk_reward_ratio") or 0) for r in matched) / decided, 2)
+        if decided
+        else None,
     }
 
 
@@ -148,13 +179,16 @@ def _profile_sharpe(rows: list[dict], profile: dict) -> dict:
     """
     matched = [r for r in rows if _row_matches_profile(r, profile)]
     r_multiples = [
-        rm for r in matched
+        rm
+        for r in matched
         if (rm := r_multiple(r.get("outcome_label"), r.get("risk_reward_ratio"))) is not None
     ]
     return sharpe_stats(r_multiples)
 
 
-MIN_NET_OF_COST_SAMPLE = 10  # below this, a net-precision % from real premium data is noise, not evidence
+MIN_NET_OF_COST_SAMPLE = (
+    10  # below this, a net-precision % from real premium data is noise, not evidence
+)
 
 
 def _net_of_cost_metrics(rows: list[dict], profile: dict | None = None) -> dict:
@@ -218,10 +252,16 @@ def _net_of_cost_metrics(rows: list[dict], profile: dict | None = None) -> dict:
             # rather than folding both into one undifferentiated count.
             n_zero_qty += 1
             continue
-        usable.append(cost_model_compute(OptionTradeCostInput(
-            entry_ask=float(entry_ask), exit_bid=float(exit_bid),
-            bid_at_entry=float(entry_bid), quantity=quantity,
-        )))
+        usable.append(
+            cost_model_compute(
+                OptionTradeCostInput(
+                    entry_ask=float(entry_ask),
+                    exit_bid=float(exit_bid),
+                    bid_at_entry=float(entry_bid),
+                    quantity=quantity,
+                )
+            )
+        )
 
     n = len(usable)
     if n < MIN_NET_OF_COST_SAMPLE:
@@ -302,7 +342,11 @@ def _purge_and_embargo(
     purged_train = []
     purged_count = 0
     for r in train_candidates:
-        resolved_at = r.get("target_hit_at") if r.get("outcome_label") == "TARGET_HIT" else r.get("stop_hit_at")
+        resolved_at = (
+            r.get("target_hit_at")
+            if r.get("outcome_label") == "TARGET_HIT"
+            else r.get("stop_hit_at")
+        )
         if resolved_at is not None and resolved_at >= split_ts:
             purged_count += 1
             continue
@@ -330,7 +374,8 @@ def _compute_dsr(profiles: list[dict], recommended: dict | None) -> dict:
     Prado). Advisory number only -- never gates target_met/status above.
     """
     trial_sharpes = [
-        p["test_sharpe"]["sharpe"] for p in profiles
+        p["test_sharpe"]["sharpe"]
+        for p in profiles
         if p.get("test_sharpe", {}).get("sharpe") is not None
     ]
     n_trials = len(trial_sharpes)
@@ -381,9 +426,15 @@ def _walkforward_status(test: dict, target: float, min_test: int) -> tuple[str, 
     if decided < min_test:
         return "FORWARD_BUILDING", "Out-of-sample sample is still too small for live confidence."
     if precision is not None and precision >= target:
-        return "FORWARD_TARGET_MET", "Out-of-sample proof is meeting target. Continue paper-forward until sample is larger."
+        return (
+            "FORWARD_TARGET_MET",
+            "Out-of-sample proof is meeting target. Continue paper-forward until sample is larger.",
+        )
     if precision is not None and precision >= max(55.0, target - 15.0):
-        return "FORWARD_MIXED", "Out-of-sample proof is below target but not broken. Review filters before tightening."
+        return (
+            "FORWARD_MIXED",
+            "Out-of-sample proof is below target but not broken. Review filters before tightening.",
+        )
     return "FORWARD_FAILED", "Out-of-sample proof failed target. Do not promote this profile."
 
 
@@ -489,13 +540,15 @@ async def _compute_backtest_summary(pool, days: int, strategy: str) -> dict:
             wins = int(d.get("target_hits") or 0)
             losses = int(d.get("stop_hits") or 0)
             dec = wins + losses
-            out.append({
-                "label": d.get(label_key) or "-",
-                "total": int(d.get("total") or 0),
-                "wins": wins,
-                "losses": losses,
-                "precision_pct": round(wins / dec * 100, 1) if dec else None,
-            })
+            out.append(
+                {
+                    "label": d.get(label_key) or "-",
+                    "total": int(d.get("total") or 0),
+                    "wins": wins,
+                    "losses": losses,
+                    "precision_pct": round(wins / dec * 100, 1) if dec else None,
+                }
+            )
         out.sort(key=lambda x: x["total"], reverse=True)
         return out[:8]
 
@@ -514,8 +567,12 @@ async def _compute_backtest_summary(pool, days: int, strategy: str) -> dict:
         "precision_pct": precision,
         "avg_score": round(float(o.get("avg_score") or 0), 1) if total else None,
         "avg_rr": round(float(o.get("avg_rr") or 0), 2) if total else None,
-        "avg_mfe_pct": round(float(o.get("avg_mfe") or 0), 2) if o.get("avg_mfe") is not None else None,
-        "avg_mae_pct": round(float(o.get("avg_mae") or 0), 2) if o.get("avg_mae") is not None else None,
+        "avg_mfe_pct": round(float(o.get("avg_mfe") or 0), 2)
+        if o.get("avg_mfe") is not None
+        else None,
+        "avg_mae_pct": round(float(o.get("avg_mae") or 0), 2)
+        if o.get("avg_mae") is not None
+        else None,
         "reliability": reliability,
         "note": note,
         "by_grade": rows(grade_rows, "grade_label"),
@@ -537,11 +594,13 @@ async def _compute_backtest_summary(pool, days: int, strategy: str) -> dict:
 async def backtest_summary(request):
     pool = request.app.get("pg_pool")
     if not pool:
-        return web.json_response({
-            "available": False,
-            "reason": "Postgres analytics pool is not available.",
-            "phase": "Phase 5",
-        })
+        return web.json_response(
+            {
+                "available": False,
+                "reason": "Postgres analytics pool is not available.",
+                "phase": "Phase 5",
+            }
+        )
 
     days = max(1, min(365, int(request.query.get("days", "60") or 60)))
     strategy = request.query.get("strategy", "")
@@ -558,7 +617,9 @@ async def backtest_summary(request):
     if redis is not None:
         cached_raw = await redis.get(cache_key)
         if cached_raw:
-            result = json.loads(cached_raw.decode() if isinstance(cached_raw, bytes) else cached_raw)
+            result = json.loads(
+                cached_raw.decode() if isinstance(cached_raw, bytes) else cached_raw
+            )
             result["cached"] = True
             return web.json_response(result)
 
@@ -580,11 +641,13 @@ async def backtest_optimize(request):
     """
     pool = request.app.get("pg_pool")
     if not pool:
-        return web.json_response({
-            "available": False,
-            "reason": "Postgres analytics pool is not available.",
-            "phase": "Phase 5.1",
-        })
+        return web.json_response(
+            {
+                "available": False,
+                "reason": "Postgres analytics pool is not available.",
+                "phase": "Phase 5.1",
+            }
+        )
 
     days = max(5, min(365, int(request.query.get("days", "60") or 60)))
     target = max(50.0, min(95.0, float(request.query.get("target", "80") or 80)))
@@ -593,7 +656,8 @@ async def backtest_optimize(request):
 
     async with pool.acquire() as conn:
         try:
-            records = await conn.fetch("""
+            records = await conn.fetch(
+                """
                 SELECT
                     symbol,
                     COALESCE(sector_id, '-') AS sector_id,
@@ -610,13 +674,18 @@ async def backtest_optimize(request):
                 WHERE created_at >= now() - ($1::int * interval '1 day')
                   AND outcome_label IN ('TARGET_HIT', 'STOP_HIT')
                   AND NOT COALESCE(suppressed, false)
-            """, days)
+            """,
+                days,
+            )
         except Exception as exc:
-            return web.json_response({
-                "available": False,
-                "phase": "Phase 5.1",
-                "reason": f"Precision optimizer could not read archived outcomes: {exc}",
-            }, status=200)
+            return web.json_response(
+                {
+                    "available": False,
+                    "phase": "Phase 5.1",
+                    "reason": f"Precision optimizer could not read archived outcomes: {exc}",
+                },
+                status=200,
+            )
 
     rows = []
     for record in records:
@@ -650,8 +719,12 @@ async def backtest_optimize(request):
                     precision = _precision(wins, losses)
                     if decided <= 0:
                         continue
-                    avg_score = round(sum(float(r.get("conviction_score") or 0) for r in matched) / decided, 1)
-                    avg_rr = round(sum(float(r.get("risk_reward_ratio") or 0) for r in matched) / decided, 2)
+                    avg_score = round(
+                        sum(float(r.get("conviction_score") or 0) for r in matched) / decided, 1
+                    )
+                    avg_rr = round(
+                        sum(float(r.get("risk_reward_ratio") or 0) for r in matched) / decided, 2
+                    )
                     status = _profile_status(precision, decided, days, target, min_decided)
                     utility = (
                         (precision or 0) * 100
@@ -661,26 +734,58 @@ async def backtest_optimize(request):
                         - (300 if status == "LOW_SAMPLE" else 0)
                         - (150 if status == "TOO_RARE" else 0)
                     )
-                    profiles.append({
-                        **profile,
-                        "label": _describe_profile(profile),
-                        "wins": wins,
-                        "losses": losses,
-                        "decided": decided,
-                        "precision_pct": precision,
-                        "trades_per_day": round(decided / days, 2),
-                        "avg_score": avg_score,
-                        "avg_rr": avg_rr,
-                        "status": status,
-                        "utility": round(utility, 1),
-                    })
+                    profiles.append(
+                        {
+                            **profile,
+                            "label": _describe_profile(profile),
+                            "wins": wins,
+                            "losses": losses,
+                            "decided": decided,
+                            "precision_pct": precision,
+                            "trades_per_day": round(decided / days, 2),
+                            "avg_score": avg_score,
+                            "avg_rr": avg_rr,
+                            "status": status,
+                            "utility": round(utility, 1),
+                        }
+                    )
 
-    profiles.sort(key=lambda p: (p["status"] == "TARGET_MET", p["utility"], p["precision_pct"] or 0, p["decided"]), reverse=True)
+    profiles.sort(
+        key=lambda p: (
+            p["status"] == "TARGET_MET",
+            p["utility"],
+            p["precision_pct"] or 0,
+            p["decided"],
+        ),
+        reverse=True,
+    )
     stable = [p for p in profiles if p["status"] == "TARGET_MET"]
-    near = [p for p in profiles if p["status"] in {"BELOW_TARGET", "TOO_RARE"} and p["decided"] >= min_decided]
-    low_sample = [p for p in profiles if p["precision_pct"] is not None and p["precision_pct"] >= target and p["status"] == "LOW_SAMPLE"]
-    recommended = stable[0] if stable else (near[0] if near else (low_sample[0] if low_sample else (profiles[0] if profiles else None)))
-    best_precision = sorted(profiles, key=lambda p: (p["precision_pct"] or 0, p["decided"]), reverse=True)[0] if profiles else None
+    near = [
+        p
+        for p in profiles
+        if p["status"] in {"BELOW_TARGET", "TOO_RARE"} and p["decided"] >= min_decided
+    ]
+    low_sample = [
+        p
+        for p in profiles
+        if p["precision_pct"] is not None
+        and p["precision_pct"] >= target
+        and p["status"] == "LOW_SAMPLE"
+    ]
+    recommended = (
+        stable[0]
+        if stable
+        else (
+            near[0]
+            if near
+            else (low_sample[0] if low_sample else (profiles[0] if profiles else None))
+        )
+    )
+    best_precision = (
+        sorted(profiles, key=lambda p: (p["precision_pct"] or 0, p["decided"]), reverse=True)[0]
+        if profiles
+        else None
+    )
 
     note = "Target profile found. Use paper-forward validation before live parameter change."
     if not stable and low_sample:
@@ -688,27 +793,29 @@ async def backtest_optimize(request):
     elif not stable:
         note = "No stable 80% profile found in archived active regular-session outcomes. Tighten logic and collect more proof."
 
-    return web.json_response({
-        "available": True,
-        "phase": "Phase 5.1",
-        "days": days,
-        "target_precision_pct": target,
-        "min_decided": min_decided,
-        "universe": "active archived signals, regular sessions only",
-        "current": {
-            "wins": current_wins,
-            "losses": current_losses,
-            "decided": current_wins + current_losses,
-            "precision_pct": current_precision,
-            "trades_per_day": round((current_wins + current_losses) / days, 2),
-        },
-        "recommended": recommended,
-        "best_precision": best_precision,
-        "target_met": bool(stable),
-        "low_sample_target_hits": len(low_sample),
-        "candidates": profiles[:12],
-        "note": note,
-    })
+    return web.json_response(
+        {
+            "available": True,
+            "phase": "Phase 5.1",
+            "days": days,
+            "target_precision_pct": target,
+            "min_decided": min_decided,
+            "universe": "active archived signals, regular sessions only",
+            "current": {
+                "wins": current_wins,
+                "losses": current_losses,
+                "decided": current_wins + current_losses,
+                "precision_pct": current_precision,
+                "trades_per_day": round((current_wins + current_losses) / days, 2),
+            },
+            "recommended": recommended,
+            "best_precision": best_precision,
+            "target_met": bool(stable),
+            "low_sample_target_hits": len(low_sample),
+            "candidates": profiles[:12],
+            "note": note,
+        }
+    )
 
 
 @routes.get("/api/backtest/forward")
@@ -720,18 +827,21 @@ async def backtest_forward(request):
     """
     pool = request.app.get("pg_pool")
     if not pool:
-        return web.json_response({
-            "available": False,
-            "reason": "Postgres analytics pool is not available.",
-            "phase": "Phase 5.2",
-        })
+        return web.json_response(
+            {
+                "available": False,
+                "reason": "Postgres analytics pool is not available.",
+                "phase": "Phase 5.2",
+            }
+        )
 
     min_decided = max(10, min(1000, int(request.query.get("min_decided", "30") or 30)))
     target = max(50.0, min(95.0, float(request.query.get("target", "80") or 80)))
 
     async with pool.acquire() as conn:
         try:
-            overview = await conn.fetchrow("""
+            overview = await conn.fetchrow(
+                """
                 SELECT
                     COUNT(*)::int AS total,
                     COUNT(*) FILTER (WHERE outcome_label = 'TARGET_HIT')::int AS wins,
@@ -755,7 +865,8 @@ async def backtest_forward(request):
                 _LIVE_GUARD_PROFILE["sessions"],
             )
 
-            by_direction = await conn.fetch("""
+            by_direction = await conn.fetch(
+                """
                 SELECT
                     COALESCE(signal_type, '-') AS label,
                     COUNT(*)::int AS total,
@@ -777,11 +888,14 @@ async def backtest_forward(request):
                 _LIVE_GUARD_PROFILE["sessions"],
             )
         except Exception as exc:
-            return web.json_response({
-                "available": False,
-                "phase": "Phase 5.2",
-                "reason": f"Forward validation could not read corrected guard outcomes: {exc}",
-            }, status=200)
+            return web.json_response(
+                {
+                    "available": False,
+                    "phase": "Phase 5.2",
+                    "reason": f"Forward validation could not read corrected guard outcomes: {exc}",
+                },
+                status=200,
+            )
 
     o = dict(overview or {})
     wins = int(o.get("wins") or 0)
@@ -796,7 +910,9 @@ async def backtest_forward(request):
     elif decided < min_decided:
         note = "Forward proof is still building. Do not treat historical optimization as live proof yet."
     else:
-        note = "Forward proof is below target. Re-optimize only after enough corrected live outcomes."
+        note = (
+            "Forward proof is below target. Re-optimize only after enough corrected live outcomes."
+        )
 
     def rows(records):
         out = []
@@ -804,41 +920,53 @@ async def backtest_forward(request):
             d = dict(r)
             rw = int(d.get("wins") or 0)
             rl = int(d.get("losses") or 0)
-            out.append({
-                "label": d.get("label") or "-",
-                "total": int(d.get("total") or 0),
-                "wins": rw,
-                "losses": rl,
-                "expired": int(d.get("expired") or 0),
-                "precision_pct": _precision(rw, rl),
-            })
+            out.append(
+                {
+                    "label": d.get("label") or "-",
+                    "total": int(d.get("total") or 0),
+                    "wins": rw,
+                    "losses": rl,
+                    "expired": int(d.get("expired") or 0),
+                    "precision_pct": _precision(rw, rl),
+                }
+            )
         return out
 
-    return web.json_response({
-        "available": True,
-        "phase": "Phase 5.2",
-        "target_precision_pct": target,
-        "min_decided": min_decided,
-        "deployed_at_utc": _LIVE_GUARD_DEPLOYED_AT_UTC.isoformat(),
-        "profile": {
-            **_LIVE_GUARD_PROFILE,
-            "label": _describe_profile(_LIVE_GUARD_PROFILE),
-        },
-        "total": int(o.get("total") or 0),
-        "wins": wins,
-        "losses": losses,
-        "expired": int(o.get("expired") or 0),
-        "open": int(o.get("open") or 0),
-        "decided": decided,
-        "precision_pct": precision,
-        "avg_score": round(float(o.get("avg_score") or 0), 1) if o.get("avg_score") is not None else None,
-        "avg_rr": round(float(o.get("avg_rr") or 0), 2) if o.get("avg_rr") is not None else None,
-        "first_signal_at": o.get("first_signal_at").isoformat() if o.get("first_signal_at") else None,
-        "last_signal_at": o.get("last_signal_at").isoformat() if o.get("last_signal_at") else None,
-        "status": status,
-        "note": note,
-        "by_direction": rows(by_direction),
-    })
+    return web.json_response(
+        {
+            "available": True,
+            "phase": "Phase 5.2",
+            "target_precision_pct": target,
+            "min_decided": min_decided,
+            "deployed_at_utc": _LIVE_GUARD_DEPLOYED_AT_UTC.isoformat(),
+            "profile": {
+                **_LIVE_GUARD_PROFILE,
+                "label": _describe_profile(_LIVE_GUARD_PROFILE),
+            },
+            "total": int(o.get("total") or 0),
+            "wins": wins,
+            "losses": losses,
+            "expired": int(o.get("expired") or 0),
+            "open": int(o.get("open") or 0),
+            "decided": decided,
+            "precision_pct": precision,
+            "avg_score": round(float(o.get("avg_score") or 0), 1)
+            if o.get("avg_score") is not None
+            else None,
+            "avg_rr": round(float(o.get("avg_rr") or 0), 2)
+            if o.get("avg_rr") is not None
+            else None,
+            "first_signal_at": o.get("first_signal_at").isoformat()
+            if o.get("first_signal_at")
+            else None,
+            "last_signal_at": o.get("last_signal_at").isoformat()
+            if o.get("last_signal_at")
+            else None,
+            "status": status,
+            "note": note,
+            "by_direction": rows(by_direction),
+        }
+    )
 
 
 async def compute_walkforward(
@@ -885,7 +1013,8 @@ async def compute_walkforward(
 
     async with pool.acquire() as conn:
         try:
-            records = await conn.fetch("""
+            records = await conn.fetch(
+                """
                 SELECT
                     created_at,
                     symbol,
@@ -907,7 +1036,9 @@ async def compute_walkforward(
                   AND outcome_label IN ('TARGET_HIT', 'STOP_HIT')
                   AND NOT COALESCE(suppressed, false)
                 ORDER BY created_at ASC
-            """, days)
+            """,
+                days,
+            )
         except Exception as exc:
             return {
                 "available": False,
@@ -915,7 +1046,9 @@ async def compute_walkforward(
                 "reason": f"Walk-forward validation could not read archived outcomes: {exc}",
             }
 
-    rows = [dict(r) for r in records if (dict(r).get("session_hour") or "unknown") in valid_sessions]
+    rows = [
+        dict(r) for r in records if (dict(r).get("session_hour") or "unknown") in valid_sessions
+    ]
     total = len(rows)
     if total < min_train + min_test:
         return {
@@ -935,7 +1068,9 @@ async def compute_walkforward(
         }
 
     split = max(min_train, min(total - min_test, int(total * train_pct)))
-    train_rows, test_rows, purged_count, embargoed_count = _purge_and_embargo(rows, split, embargo_min)
+    train_rows, test_rows, purged_count, embargoed_count = _purge_and_embargo(
+        rows, split, embargo_min
+    )
     train_days = max(1, int(days * train_pct))
     test_days = max(1, days - train_days)
 
@@ -1003,18 +1138,20 @@ async def compute_walkforward(
                         - (0 if status == "FORWARD_TARGET_MET" else 1200)
                         - (400 if status == "FORWARD_BUILDING" else 0)
                     )
-                    profiles.append({
-                        **profile,
-                        "label": _describe_profile(profile),
-                        "train": train,
-                        "test": test,
-                        "test_sharpe": test_sharpe,
-                        "test_net_of_cost": test_net_of_cost,
-                        "status": status,
-                        "status_note": status_note,
-                        "overfit_gap_pct": overfit_gap,
-                        "utility": round(utility, 1),
-                    })
+                    profiles.append(
+                        {
+                            **profile,
+                            "label": _describe_profile(profile),
+                            "train": train,
+                            "test": test,
+                            "test_sharpe": test_sharpe,
+                            "test_net_of_cost": test_net_of_cost,
+                            "status": status,
+                            "status_note": status_note,
+                            "overfit_gap_pct": overfit_gap,
+                            "utility": round(utility, 1),
+                        }
+                    )
 
     profiles.sort(
         key=lambda p: (
@@ -1137,7 +1274,9 @@ def _ablation_group_metrics(rows: list[dict], column: str, field: str, want_pres
     }
 
 
-async def compute_feature_ablation(pool, field: str, column: str = "features_snapshot", days: int = 90) -> dict:
+async def compute_feature_ablation(
+    pool, field: str, column: str = "features_snapshot", days: int = 90
+) -> dict:
     """Split archived decided (TARGET_HIT/STOP_HIT), non-suppressed signals by
     presence/truthiness of one features_snapshot or sub_scores field, and
     compare precision between the "present" and "absent" groups.
@@ -1180,7 +1319,8 @@ async def compute_feature_ablation(pool, field: str, column: str = "features_sna
 
     async with pool.acquire() as conn:
         try:
-            records = await conn.fetch(f"""
+            records = await conn.fetch(
+                f"""
                 SELECT
                     outcome_label,
                     {db_column} AS {column}
@@ -1188,7 +1328,9 @@ async def compute_feature_ablation(pool, field: str, column: str = "features_sna
                 WHERE created_at >= now() - ($1::int * interval '1 day')
                   AND outcome_label IN ('TARGET_HIT', 'STOP_HIT')
                   AND NOT COALESCE(suppressed, false)
-            """, days)
+            """,
+                days,
+            )
         except Exception as exc:
             return {
                 "available": False,
@@ -1212,7 +1354,12 @@ async def compute_feature_ablation(pool, field: str, column: str = "features_sna
             f"At least one group has fewer than {min_group} decided outcomes -- "
             "not enough sample to treat this lift as meaningful evidence yet."
         )
-    if lift is not None and abs(lift) >= 10 and present["decided"] >= min_group and absent["decided"] >= min_group:
+    if (
+        lift is not None
+        and abs(lift) >= 10
+        and present["decided"] >= min_group
+        and absent["decided"] >= min_group
+    ):
         direction = "higher" if lift > 0 else "lower"
         note_parts.append(
             f"'{field}' present shows {abs(lift)} pts {direction} precision than absent, "
@@ -1293,20 +1440,31 @@ async def compute_feature_ic(pool, days: int = 90) -> dict:
     into scanner/scoring.py.
     """
     if not pool:
-        return {"available": False, "reason": "Postgres analytics pool is not available.", "phase": "Phase 13.8"}
+        return {
+            "available": False,
+            "reason": "Postgres analytics pool is not available.",
+            "phase": "Phase 13.8",
+        }
 
     days = max(1, min(365, int(days or 90)))
     async with pool.acquire() as conn:
         try:
-            records = await conn.fetch("""
+            records = await conn.fetch(
+                """
                 SELECT outcome_label, risk_reward_ratio, features, sub_scores
                 FROM signals
                 WHERE created_at >= now() - ($1::int * interval '1 day')
                   AND outcome_label IN ('TARGET_HIT', 'STOP_HIT')
                   AND NOT COALESCE(suppressed, false)
-            """, days)
+            """,
+                days,
+            )
         except Exception as exc:
-            return {"available": False, "phase": "Phase 13.8", "reason": f"Feature-IC query failed: {exc}"}
+            return {
+                "available": False,
+                "phase": "Phase 13.8",
+                "reason": f"Feature-IC query failed: {exc}",
+            }
 
     rows = []
     for r in records:
@@ -1314,11 +1472,13 @@ async def compute_feature_ic(pool, days: int = 90) -> dict:
         rm = r_multiple(d.get("outcome_label"), d.get("risk_reward_ratio"))
         if rm is None:
             continue
-        rows.append({
-            "r_multiple": rm,
-            "features": _decode_json_column(d.get("features")),
-            "sub_scores": _decode_json_column(d.get("sub_scores")),
-        })
+        rows.append(
+            {
+                "r_multiple": rm,
+                "features": _decode_json_column(d.get("features")),
+                "sub_scores": _decode_json_column(d.get("sub_scores")),
+            }
+        )
 
     total = len(rows)
     field_specs = (
@@ -1341,26 +1501,30 @@ async def compute_feature_ic(pool, days: int = 90) -> dict:
             # No presence/absence axis for a continuous score -- every row
             # in xs already has a real computed value (encoded is None was
             # skipped above), so "present" just means "used".
-            results.append({
+            results.append(
+                {
+                    "field": field,
+                    "column": "features_snapshot" if column == "features" else column,
+                    "ic": round(ic, 4) if ic is not None else None,
+                    "n_used": len(xs),
+                    "n_present": len(xs),
+                    "n_absent": None,
+                    "continuous": True,
+                }
+            )
+            continue
+        n_present = sum(1 for x in xs if x == 1.0)
+        results.append(
+            {
                 "field": field,
                 "column": "features_snapshot" if column == "features" else column,
                 "ic": round(ic, 4) if ic is not None else None,
                 "n_used": len(xs),
-                "n_present": len(xs),
-                "n_absent": None,
-                "continuous": True,
-            })
-            continue
-        n_present = sum(1 for x in xs if x == 1.0)
-        results.append({
-            "field": field,
-            "column": "features_snapshot" if column == "features" else column,
-            "ic": round(ic, 4) if ic is not None else None,
-            "n_used": len(xs),
-            "n_present": n_present,
-            "n_absent": len(xs) - n_present,
-            "continuous": False,
-        })
+                "n_present": n_present,
+                "n_absent": len(xs) - n_present,
+                "continuous": False,
+            }
+        )
 
     # A field's total n_used is nearly always huge (most archived signals
     # simply predate the field existing at all, and absence-because-never-
@@ -1381,7 +1545,9 @@ async def compute_feature_ic(pool, days: int = 90) -> dict:
         if r.get("continuous"):
             r["reliable"] = r["ic"] is not None and r["n_used"] >= min_continuous_n
         else:
-            r["reliable"] = r["ic"] is not None and r["n_present"] >= min_side and r["n_absent"] >= min_side
+            r["reliable"] = (
+                r["ic"] is not None and r["n_present"] >= min_side and r["n_absent"] >= min_side
+            )
     reliable = [r for r in results if r["reliable"]]
     return {
         "available": True,
@@ -1475,22 +1641,33 @@ async def compute_kelly_sizing(pool, redis, days: int = 180) -> dict:
     existing ATR-scaled Turtle sizing in engine.py's _recommended_lots().
     """
     if not pool:
-        return {"available": False, "reason": "Postgres analytics pool is not available.", "phase": "Phase 13.10"}
+        return {
+            "available": False,
+            "reason": "Postgres analytics pool is not available.",
+            "phase": "Phase 13.10",
+        }
 
     days = max(1, min(365, int(days or 180)))
     min_sample = 30
 
     async with pool.acquire() as conn:
         try:
-            records = await conn.fetch("""
+            records = await conn.fetch(
+                """
                 SELECT COALESCE(strategy, '-') AS strategy, outcome_label, risk_reward_ratio
                 FROM signals
                 WHERE created_at >= now() - ($1::int * interval '1 day')
                   AND outcome_label IN ('TARGET_HIT', 'STOP_HIT')
                   AND NOT COALESCE(suppressed, false)
-            """, days)
+            """,
+                days,
+            )
         except Exception as exc:
-            return {"available": False, "phase": "Phase 13.10", "reason": f"Kelly-sizing query failed: {exc}"}
+            return {
+                "available": False,
+                "phase": "Phase 13.10",
+                "reason": f"Kelly-sizing query failed: {exc}",
+            }
 
     by_strategy: dict[str, list[dict]] = {}
     for r in records:
@@ -1505,9 +1682,12 @@ async def compute_kelly_sizing(pool, redis, days: int = 180) -> dict:
         win_rate = (len(wins) / decided) if decided else None
         avg_win_r = (
             sum((float(r.get("risk_reward_ratio") or 0) or 1.0) for r in wins) / len(wins)
-            if wins else None
+            if wins
+            else None
         )
-        reliable = decided >= min_sample and win_rate is not None and bool(avg_win_r) and avg_win_r > 0
+        reliable = (
+            decided >= min_sample and win_rate is not None and bool(avg_win_r) and avg_win_r > 0
+        )
         kelly_pct = half_kelly_pct = None
         if reliable:
             kelly_pct = win_rate - (1 - win_rate) / avg_win_r
@@ -1519,7 +1699,9 @@ async def compute_kelly_sizing(pool, redis, days: int = 180) -> dict:
             "win_rate_pct": round(win_rate * 100, 1) if win_rate is not None else None,
             "avg_win_r": round(avg_win_r, 3) if avg_win_r is not None else None,
             "kelly_pct": round(kelly_pct * 100, 2) if kelly_pct is not None else None,
-            "half_kelly_pct": round(half_kelly_pct * 100, 2) if half_kelly_pct is not None else None,
+            "half_kelly_pct": round(half_kelly_pct * 100, 2)
+            if half_kelly_pct is not None
+            else None,
             "reliable": bool(reliable),
         }
 
@@ -1634,7 +1816,11 @@ async def compute_optimizer_proposal(pool, redis, days: int = 120, target: float
     session.
     """
     if not pool:
-        return {"available": False, "phase": "Phase 11", "reason": "Postgres analytics pool is not available."}
+        return {
+            "available": False,
+            "phase": "Phase 11",
+            "reason": "Postgres analytics pool is not available.",
+        }
 
     live = await _read_live_config(redis)
     if live is None:
@@ -1654,7 +1840,11 @@ async def compute_optimizer_proposal(pool, redis, days: int = 120, target: float
 
     proposed_at_us = int(time.time() * 1_000_000)
 
-    if not walkforward.get("available") or not recommended or walkforward.get("status") != "FORWARD_TARGET_MET":
+    if (
+        not walkforward.get("available")
+        or not recommended
+        or walkforward.get("status") != "FORWARD_TARGET_MET"
+    ):
         result = {
             "available": True,
             "phase": "Phase 11",
@@ -1693,7 +1883,10 @@ async def compute_optimizer_proposal(pool, redis, days: int = 120, target: float
             f"not in live's current allow-list ({sorted(live_sessions)})."
         )
 
-    diverged = abs(score_diff) >= _PROPOSAL_MIN_SCORE_DIVERGENCE or abs(rr_diff) >= _PROPOSAL_MIN_RR_DIVERGENCE
+    diverged = (
+        abs(score_diff) >= _PROPOSAL_MIN_SCORE_DIVERGENCE
+        or abs(rr_diff) >= _PROPOSAL_MIN_RR_DIVERGENCE
+    )
 
     result = {
         "available": True,
@@ -1760,15 +1953,19 @@ async def backtest_optimizer_proposal_latest(request):
         return web.json_response({"available": False, "reason": "Redis not available."})
     raw = await redis.get(OPTIMIZER_PROPOSAL_KEY)
     if not raw:
-        return web.json_response({
-            "available": False,
-            "reason": "No proposal has been computed yet. Call /api/backtest/optimizer-proposal or wait for the scheduler's daily run.",
-        })
+        return web.json_response(
+            {
+                "available": False,
+                "reason": "No proposal has been computed yet. Call /api/backtest/optimizer-proposal or wait for the scheduler's daily run.",
+            }
+        )
     text = raw.decode() if isinstance(raw, bytes) else raw
     try:
         return web.json_response(json.loads(text))
     except (json.JSONDecodeError, TypeError):
-        return web.json_response({"available": False, "reason": "Stored proposal record is corrupt."})
+        return web.json_response(
+            {"available": False, "reason": "Stored proposal record is corrupt."}
+        )
 
 
 # Phase 13.4 (capture infra only -- see the plan's "Net-of-Cost Walk-Forward
@@ -1827,7 +2024,8 @@ async def capture_missing_premiums(pool, redis) -> dict:
             ORDER BY created_at DESC
             LIMIT $2
             """,
-            _PREMIUM_LOOKBACK_MIN, _PREMIUM_BATCH_LIMIT,
+            _PREMIUM_LOOKBACK_MIN,
+            _PREMIUM_BATCH_LIMIT,
         )
         for row in entry_rows:
             entry_attempted += 1
@@ -1841,7 +2039,10 @@ async def capture_missing_premiums(pool, redis) -> dict:
                 SET entry_premium_ask = $1, entry_premium_bid = $2, option_instrument_key = $3
                 WHERE signal_id = $4
                 """,
-                premium["ask"], premium["bid"], premium["instrument_key"], row["signal_id"],
+                premium["ask"],
+                premium["bid"],
+                premium["instrument_key"],
+                row["signal_id"],
             )
             entry_captured += 1
 
@@ -1855,7 +2056,8 @@ async def capture_missing_premiums(pool, redis) -> dict:
             ORDER BY COALESCE(target_hit_at, stop_hit_at) DESC
             LIMIT $2
             """,
-            _PREMIUM_LOOKBACK_MIN, _PREMIUM_BATCH_LIMIT,
+            _PREMIUM_LOOKBACK_MIN,
+            _PREMIUM_BATCH_LIMIT,
         )
         for row in exit_rows:
             exit_attempted += 1
@@ -1865,7 +2067,8 @@ async def capture_missing_premiums(pool, redis) -> dict:
                 continue
             await conn.execute(
                 "UPDATE signals SET exit_premium_bid = $1 WHERE signal_id = $2",
-                premium["bid"], row["signal_id"],
+                premium["bid"],
+                row["signal_id"],
             )
             exit_captured += 1
 

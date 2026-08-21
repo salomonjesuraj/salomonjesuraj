@@ -75,7 +75,9 @@ def breakeven_gate(
         breakeven = 0.0
         target_clears = False
 
-    required_move_pct = abs(breakeven - spot) / max(spot, 0.01) * 100 if spot and breakeven else 999.0
+    required_move_pct = (
+        abs(breakeven - spot) / max(spot, 0.01) * 100 if spot and breakeven else 999.0
+    )
     expected_move_pct = daily_atr_pct * max(expected_holding_days, 1.0)
     blockers: list[str] = []
     hard_blockers: list[str] = []

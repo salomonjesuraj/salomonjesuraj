@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 
 import msgpack
 import structlog
-
 from infusion_streams.constants import KEY_HEALTH_PREFIX
 
 logger = structlog.get_logger()
@@ -43,10 +43,8 @@ class HealthReporter:
     async def stop(self):
         if self._task:
             self._task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._task
-            except asyncio.CancelledError:
-                pass
             logger.info("health_reporter_stopped", service=self.service_name)
 
     async def _loop(self):

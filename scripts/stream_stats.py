@@ -10,7 +10,6 @@ import time
 
 from redis.asyncio import Redis
 
-
 STREAMS = [
     "infusion:stream:tick:raw",
     "infusion:stream:tick:normalized",
@@ -58,7 +57,7 @@ async def main():
                     name = g.get("name") or g.get(b"name", b"").decode()
                     pending = g.get("pending") or g.get(b"pending", 0)
                     consumers = g.get("consumers") or g.get(b"consumers", 0)
-                    lag_str = f"  LAGGING!" if pending > 100 else ""
+                    lag_str = "  LAGGING!" if pending > 100 else ""
                     print(f"    group={name} pending={pending} consumers={consumers}{lag_str}")
             except Exception:
                 pass
@@ -99,6 +98,7 @@ async def main():
     print("\n--- Service Health ---")
     services = ["ingestion", "normalizer", "feature-engine", "ws-gateway", "api"]
     import msgpack
+
     for svc in services:
         raw = await redis.get(f"infusion:health:{svc}")
         if raw:

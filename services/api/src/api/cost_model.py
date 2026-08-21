@@ -77,7 +77,9 @@ def compute(trade: OptionTradeCostInput) -> dict:
     }
 
 
-def estimate_entry_costs_per_unit(entry_ask: float, bid_at_entry: float, quantity: int = 1) -> float:
+def estimate_entry_costs_per_unit(
+    entry_ask: float, bid_at_entry: float, quantity: int = 1
+) -> float:
     """Return per-unit estimated cost for breakeven checks at entry time."""
     q = max(int(quantity or 1), 1)
     flat = compute(

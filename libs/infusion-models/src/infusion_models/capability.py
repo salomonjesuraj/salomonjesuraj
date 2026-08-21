@@ -32,5 +32,5 @@ class ProviderCapabilityV1(BaseModel, frozen=True):
     supports_full_d30: bool = False
     supports_option_greeks: bool = True
     supports_news: bool = True
-    source: str = "static_config"      # "static_config" | "verified_probe"
+    source: str = "static_config"  # "static_config" | "verified_probe"
     checked_at_us: int = 0

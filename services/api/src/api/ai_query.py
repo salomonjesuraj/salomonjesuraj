@@ -45,24 +45,26 @@ for _f in KNOWN_ABLATION_FIELDS:
 for _f in KNOWN_ABLATION_FIELDS_SUB_SCORES:
     _ABLATION_ALIASES[_f] = (_f, "sub_scores")
     _ABLATION_ALIASES[_f.replace("_", " ")] = (_f, "sub_scores")
-_ABLATION_ALIASES.update({
-    "fib": ("fib_targets", "features_snapshot"),
-    "fibonacci": ("fib_targets", "features_snapshot"),
-    "golden cross": ("ma_regime", "features_snapshot"),
-    "death cross": ("ma_regime", "features_snapshot"),
-    "moving average regime": ("ma_regime", "features_snapshot"),
-    "chart pattern": ("chart_patterns", "features_snapshot"),
-    "fair value gap": ("fvg_bullish_ce", "features_snapshot"),
-    "fvg": ("fvg_bullish_ce", "features_snapshot"),
-    "liquidity sweep": ("last_liquidity_sweep", "features_snapshot"),
-    "order block": ("order_block_bullish_validated", "features_snapshot"),
-    "donchian": ("donchian_fresh_high_breakout", "features_snapshot"),
-    "wyckoff": ("wyckoff_structural_failure", "features_snapshot"),
-    "volman": ("volman_entry_triggered", "features_snapshot"),
-    "entry timing": ("volman_entry_triggered", "features_snapshot"),
-    "cross confirmation": ("cross_confirmation", "sub_scores"),
-    "cross-index": ("cross_confirmation", "sub_scores"),
-})
+_ABLATION_ALIASES.update(
+    {
+        "fib": ("fib_targets", "features_snapshot"),
+        "fibonacci": ("fib_targets", "features_snapshot"),
+        "golden cross": ("ma_regime", "features_snapshot"),
+        "death cross": ("ma_regime", "features_snapshot"),
+        "moving average regime": ("ma_regime", "features_snapshot"),
+        "chart pattern": ("chart_patterns", "features_snapshot"),
+        "fair value gap": ("fvg_bullish_ce", "features_snapshot"),
+        "fvg": ("fvg_bullish_ce", "features_snapshot"),
+        "liquidity sweep": ("last_liquidity_sweep", "features_snapshot"),
+        "order block": ("order_block_bullish_validated", "features_snapshot"),
+        "donchian": ("donchian_fresh_high_breakout", "features_snapshot"),
+        "wyckoff": ("wyckoff_structural_failure", "features_snapshot"),
+        "volman": ("volman_entry_triggered", "features_snapshot"),
+        "entry timing": ("volman_entry_triggered", "features_snapshot"),
+        "cross confirmation": ("cross_confirmation", "sub_scores"),
+        "cross-index": ("cross_confirmation", "sub_scores"),
+    }
+)
 del _f
 
 
@@ -128,19 +130,25 @@ def classify_intents(question: str, known_symbols: set[str]) -> list[dict]:
             direction = "BUY PE"
         intents.append({"type": "signals", "direction": direction})
 
-    if re.search(r"\bwalk.?forward\b|\bout.?of.?sample\b|\bprecision\b.*\btarget\b|\bbacktest\b", q):
+    if re.search(
+        r"\bwalk.?forward\b|\bout.?of.?sample\b|\bprecision\b.*\btarget\b|\bbacktest\b", q
+    ):
         intents.append({"type": "walkforward"})
 
     if re.search(r"\boptimizer\b|\bproposal\b|\bdrift(ed)?\b|\bshould\s+i\s+change\b|\btune\b", q):
         intents.append({"type": "optimizer_proposal"})
 
     ablation = find_mentioned_ablation_field(question)
-    if ablation and re.search(r"\bhelp\b|\bworth\b|\bmatter\b|\blift\b|\bevidence\b|\bshould\s+i\s+use\b|\bworking\b", q):
+    if ablation and re.search(
+        r"\bhelp\b|\bworth\b|\bmatter\b|\blift\b|\bevidence\b|\bshould\s+i\s+use\b|\bworking\b", q
+    ):
         field, column = ablation
         intents.append({"type": "feature_ablation", "field": field, "column": column})
 
     symbols = find_mentioned_symbols(question, known_symbols)
-    wants_options = bool(re.search(r"\bpcr\b|\bput.?call\b|\bmax\s*pain\b|\boi\b|\bopen\s+interest\b", q))
+    wants_options = bool(
+        re.search(r"\bpcr\b|\bput.?call\b|\bmax\s*pain\b|\boi\b|\bopen\s+interest\b", q)
+    )
     for sym in symbols:
         if wants_options:
             intents.append({"type": "options_analytics", "symbol": sym})
@@ -181,7 +189,9 @@ async def gather_facts(intent: dict, *, redis, pool, options_chain_fn) -> dict:
         for member, score in members:
             m = member.decode() if isinstance(member, bytes) else member
             symbol = m.split(":")[0] if ":" in m else m
-            data = await redis.hgetall(f"{SIGNAL_PREFIX}{m}" if ":" in m else f"{SIGNAL_PREFIX}{symbol}")
+            data = await redis.hgetall(
+                f"{SIGNAL_PREFIX}{m}" if ":" in m else f"{SIGNAL_PREFIX}{symbol}"
+            )
             if not data and ":" in m:
                 data = await redis.hgetall(f"{SIGNAL_PREFIX}{symbol}")
             if not data:
@@ -193,7 +203,12 @@ async def gather_facts(intent: dict, *, redis, pool, options_chain_fn) -> dict:
             if direction and entry.get("option_bias") != direction:
                 continue
             signals.append(entry)
-        return {"type": "signals", "direction": intent.get("direction"), "signals": signals[:15], "total": len(signals)}
+        return {
+            "type": "signals",
+            "direction": intent.get("direction"),
+            "signals": signals[:15],
+            "total": len(signals),
+        }
 
     if itype == "symbol":
         snapshot = await build_symbol_snapshot(redis, intent["symbol"])
@@ -212,7 +227,9 @@ async def gather_facts(intent: dict, *, redis, pool, options_chain_fn) -> dict:
         return {"type": "optimizer_proposal", "result": result}
 
     if itype == "feature_ablation":
-        result = await compute_feature_ablation(pool, field=intent["field"], column=intent["column"])
+        result = await compute_feature_ablation(
+            pool, field=intent["field"], column=intent["column"]
+        )
         return {"type": "feature_ablation", "field": intent["field"], "result": result}
 
     return {"type": "unknown"}
@@ -249,14 +266,19 @@ def format_facts_as_text(question: str, intents: list[dict], facts: list[dict]) 
 
         if t == "regime":
             r = fact["regime"]
-            lines.append(f"Market regime: {r.get('regime', 'neutral')} (reason: {r.get('reason', r.get('note', '-'))}).")
+            lines.append(
+                f"Market regime: {r.get('regime', 'neutral')} (reason: {r.get('reason', r.get('note', '-'))})."
+            )
 
         elif t == "sectors":
             top = fact["sectors"]
             if not top:
                 lines.append("No sector data available yet.")
             else:
-                ranked = ", ".join(f"{s.get('rank', '?')}. {s.get('sector_id', s.get('label', '?'))} ({_fmt_pct(s.get('strength_score'))})" for s in top)
+                ranked = ", ".join(
+                    f"{s.get('rank', '?')}. {s.get('sector_id', s.get('label', '?'))} ({_fmt_pct(s.get('strength_score'))})"
+                    for s in top
+                )
                 lines.append(f"Sector rankings (strongest first): {ranked}.")
 
         elif t == "signals":
@@ -266,7 +288,10 @@ def format_facts_as_text(question: str, intents: list[dict], facts: list[dict]) 
             if n == 0:
                 lines.append(f"No active{label} signals right now.")
             else:
-                names = ", ".join(f"{s.get('symbol')} ({s.get('conviction_grade', '-')}, {s.get('conviction_score', 0)})" for s in fact["signals"][:8])
+                names = ", ".join(
+                    f"{s.get('symbol')} ({s.get('conviction_grade', '-')}, {s.get('conviction_score', 0)})"
+                    for s in fact["signals"][:8]
+                )
                 lines.append(f"{n} active{label} signal(s): {names}{' ...' if n > 8 else ''}.")
 
         elif t == "symbol":
@@ -277,7 +302,11 @@ def format_facts_as_text(question: str, intents: list[dict], facts: list[dict]) 
             if not mkt.get("ltp"):
                 lines.append(f"{fact['symbol']}: no live data available right now.")
                 continue
-            grade_note = f", grade {sc.get('conviction_grade')} ({sc.get('conviction_score')})" if sc.get("conviction_grade") else ""
+            grade_note = (
+                f", grade {sc.get('conviction_grade')} ({sc.get('conviction_score')})"
+                if sc.get("conviction_grade")
+                else ""
+            )
             piece = (
                 f"{fact['symbol']}: LTP {mkt.get('ltp')} ({_fmt_pct(mkt.get('change_pct'))}), "
                 f"scanner decision {sc.get('decision', 'HOLD')}{grade_note}. "
@@ -293,7 +322,9 @@ def format_facts_as_text(question: str, intents: list[dict], facts: list[dict]) 
         elif t == "options_analytics":
             r = fact["result"]
             if not r.get("ready"):
-                lines.append(f"{fact['symbol']} options analytics: unavailable ({r.get('reason', 'unknown reason')}).")
+                lines.append(
+                    f"{fact['symbol']} options analytics: unavailable ({r.get('reason', 'unknown reason')})."
+                )
             else:
                 pcr = r.get("pcr") or {}
                 sr = r.get("oi_support_resistance") or {}
@@ -305,7 +336,11 @@ def format_facts_as_text(question: str, intents: list[dict], facts: list[dict]) 
                     parts.append(f"resistance {sr.get('resistance')}, support {sr.get('support')}")
                 if mp:
                     parts.append(f"max pain {mp.get('max_pain_strike')}")
-                lines.append(f"{fact['symbol']} options: " + (", ".join(parts) if parts else "no data yet") + ".")
+                lines.append(
+                    f"{fact['symbol']} options: "
+                    + (", ".join(parts) if parts else "no data yet")
+                    + "."
+                )
 
         elif t == "walkforward":
             r = fact["result"]
@@ -325,12 +360,16 @@ def format_facts_as_text(question: str, intents: list[dict], facts: list[dict]) 
             if not r.get("available"):
                 lines.append(f"Optimizer proposal: unavailable ({r.get('reason', 'unknown')}).")
             else:
-                lines.append(f"Optimizer proposal status: {r.get('status')}. {r.get('note', r.get('reason', ''))}")
+                lines.append(
+                    f"Optimizer proposal status: {r.get('status')}. {r.get('note', r.get('reason', ''))}"
+                )
 
         elif t == "feature_ablation":
             r = fact["result"]
             if not r.get("available"):
-                lines.append(f"'{fact['field']}' evidence: unavailable ({r.get('reason', 'unknown')}).")
+                lines.append(
+                    f"'{fact['field']}' evidence: unavailable ({r.get('reason', 'unknown')})."
+                )
             else:
                 lines.append(
                     f"'{fact['field']}' evidence: present group {_fmt_pct(r['present']['precision_pct'])} precision "

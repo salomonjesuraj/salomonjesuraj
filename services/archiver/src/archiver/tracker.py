@@ -18,14 +18,15 @@ Design:
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone, timedelta
+import contextlib
+from datetime import UTC, datetime, timedelta, timezone
 
 import asyncpg
 import structlog
+from infusion_streams.constants import KEY_TICK_PREFIX
 from redis.asyncio import Redis
 
 from archiver.config import ArchiverSettings
-from infusion_streams.constants import KEY_TICK_PREFIX
 
 logger = structlog.get_logger()
 
@@ -117,7 +118,7 @@ class OutcomeTracker:
 
     async def _track_cycle(self) -> None:
         """One tracking cycle: fetch untracked signals, sample LTP, update outcomes."""
-        now_utc = datetime.now(timezone.utc)
+        now_utc = datetime.now(UTC)
         lookback = now_utc - timedelta(minutes=self._lookback_min)
 
         async with self._pool.acquire() as conn:
@@ -210,21 +211,23 @@ class OutcomeTracker:
             if outcome_tracked:
                 self._tracked_total += 1
 
-            updates.append((
-                row["id"],              # $1
-                outcome_tracked,        # $2
-                outcome_label,          # $3
-                target_hit_at,          # $4
-                stop_hit_at,            # $5
-                expired_at,             # $6
-                current_high,           # $7
-                current_low,            # $8
-                mfe_pct,                # $9
-                mae_pct,                # $10
-                time_to_target,         # $11
-                time_to_stop,           # $12
-                target_level_hit,       # $13
-            ))
+            updates.append(
+                (
+                    row["id"],  # $1
+                    outcome_tracked,  # $2
+                    outcome_label,  # $3
+                    target_hit_at,  # $4
+                    stop_hit_at,  # $5
+                    expired_at,  # $6
+                    current_high,  # $7
+                    current_low,  # $8
+                    mfe_pct,  # $9
+                    mae_pct,  # $10
+                    time_to_target,  # $11
+                    time_to_stop,  # $12
+                    target_level_hit,  # $13
+                )
+            )
 
         if updates:
             async with self._pool.acquire() as conn:
@@ -264,10 +267,8 @@ class OutcomeTracker:
         self._running = False
         if self._task:
             self._task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._task
-            except asyncio.CancelledError:
-                pass
         logger.info("outcome_tracker_stopped")
 
     @property

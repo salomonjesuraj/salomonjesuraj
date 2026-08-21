@@ -6,8 +6,14 @@ requires-python = ">=3.12"
 [tool.ruff]
 target-version = "py312"
 line-length = 100
+
+[tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
 ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/test_*_integration.py" = ["E402"]
+"scripts/validate_3e.py" = ["E402"]
 
 [tool.ruff.format]
 quote-style = "double"

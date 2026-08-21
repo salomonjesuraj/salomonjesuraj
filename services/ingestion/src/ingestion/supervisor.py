@@ -11,12 +11,13 @@ State machine:
 """
 
 import asyncio
+import contextlib
 import random
 
 import structlog
+from infusion_common.errors import ErrorCategory, classify_error
 
 from ingestion.adapters.base import BrokerAdapter, ConnectionState
-from infusion_common.errors import classify_error, ErrorCategory
 
 logger = structlog.get_logger()
 
@@ -87,10 +88,8 @@ class ConnectionSupervisor:
                 )
 
             finally:
-                try:
+                with contextlib.suppress(Exception):
                     await self.adapter.disconnect()
-                except Exception:
-                    pass
 
             if not self._running:
                 break

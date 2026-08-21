@@ -12,12 +12,13 @@ Designed for 500-symbol production load:
 """
 
 import json
-from datetime import date, datetime, time as dt_time
+from datetime import date, datetime
+from datetime import time as dt_time
 from zoneinfo import ZoneInfo
 
 import msgpack
-from aiohttp import web
 import structlog
+from aiohttp import web
 
 from api.event_calendar import EVENT_KEY_PREFIX
 from api.intelligence import build_intelligence_layer
@@ -54,6 +55,8 @@ def _trade_horizon_label(trade_horizon: str) -> str:
     matches the vocabulary of a broker research-call card without
     introducing a second, parallel holding-period classifier."""
     return TRADE_HORIZON_LABELS.get(trade_horizon, trade_horizon.title())
+
+
 NEWS_EDGE_KEY_PREFIX = "infusion:news-edge:"
 
 
@@ -99,12 +102,14 @@ def _index_snapshot_from_hash(symbol: str, label: str, data: dict) -> dict:
     if not data:
         return snap
     decoded = _decode_hash(data)
-    snap.update({
-        "available": True,
-        "ltp": decoded.get("ltp"),
-        "change_pct": decoded.get("change_pct"),
-        "updated_at": decoded.get("updated_at"),
-    })
+    snap.update(
+        {
+            "available": True,
+            "ltp": decoded.get("ltp"),
+            "change_pct": decoded.get("change_pct"),
+            "updated_at": decoded.get("updated_at"),
+        }
+    )
     return snap
 
 
@@ -172,7 +177,7 @@ async def _fo_ban_context(redis) -> dict:
     pipe.get("infusion:nse:fo_ban:trade_date")
     symbols_raw, trade_date_raw = await pipe.execute()
     symbols = set()
-    for s in (symbols_raw or []):
+    for s in symbols_raw or []:
         symbols.add(s.decode() if isinstance(s, bytes) else s)
     trade_date = trade_date_raw.decode() if isinstance(trade_date_raw, bytes) else trade_date_raw
     return {"symbols": symbols, "trade_date": trade_date}
@@ -195,7 +200,7 @@ async def _vwap_state_context(redis, symbols: list[str]) -> dict:
     keys = [f"infusion:vwap-state:{s}" for s in symbols]
     values = await redis.mget(keys)
     result = {}
-    for symbol, raw in zip(symbols, values):
+    for symbol, raw in zip(symbols, values, strict=False):
         if raw:
             result[symbol] = raw.decode() if isinstance(raw, bytes) else raw
     return result
@@ -221,7 +226,9 @@ async def _write_vwap_state_context(redis, updates: dict) -> None:
 
 _IST = ZoneInfo("Asia/Kolkata")
 _OR_WINDOW_END = dt_time(9, 30)
-OR_RANGE_TTL_SEC = 20 * 3600  # spans a full session + slack, ages out before the next day -- same TTL-bound principle as R2's vwap-state, not a permanent growing surface.
+OR_RANGE_TTL_SEC = (
+    20 * 3600
+)  # spans a full session + slack, ages out before the next day -- same TTL-bound principle as R2's vwap-state, not a permanent growing surface.
 
 
 def _today_or_window_bounds() -> tuple[int, int, str] | None:
@@ -245,11 +252,11 @@ def _decode_or_bars(members: list) -> tuple[list[float], list[float]]:
             val = member.decode() if isinstance(member, bytes) else member
             bar = json.loads(val)
             h = float(bar.get("h", bar.get("high", 0)) or 0)
-            l = float(bar.get("l", bar.get("low", 0)) or 0)
+            low = float(bar.get("l", bar.get("low", 0)) or 0)
             if h > 0:
                 highs.append(h)
-            if l > 0:
-                lows.append(l)
+            if low > 0:
+                lows.append(low)
         except (json.JSONDecodeError, TypeError, ValueError, AttributeError):
             continue
     return highs, lows
@@ -272,7 +279,7 @@ async def _opening_range_context(redis, symbols: list[str]) -> dict:
     cached_raw = await redis.mget(keys)
     result: dict[str, dict] = {}
     missing: list[str] = []
-    for symbol, raw in zip(symbols, cached_raw):
+    for symbol, raw in zip(symbols, cached_raw, strict=False):
         if raw:
             try:
                 payload = json.loads(raw.decode() if isinstance(raw, bytes) else raw)
@@ -309,7 +316,11 @@ async def _opening_range_context(redis, symbols: list[str]) -> dict:
             continue
         payload = {"or_high": round(max(highs), 2), "or_low": round(min(lows), 2), "date": date_str}
         result[symbol] = payload
-        write_pipe.set(f"infusion:or-range:{symbol}", json.dumps(payload, separators=(",", ":")), ex=OR_RANGE_TTL_SEC)
+        write_pipe.set(
+            f"infusion:or-range:{symbol}",
+            json.dumps(payload, separators=(",", ":")),
+            ex=OR_RANGE_TTL_SEC,
+        )
     await write_pipe.execute()
     return result
 
@@ -461,13 +472,27 @@ def _options_level_plan(
     t3_dist = max(stop_dist * 4.5, atr_floor * 3.20, entry * 0.0160, 2.00)
 
     if bullish:
-        structure_t1 = max(x for x in [entry + t1_dist, fibo_r2 if fibo_r2 > entry else 0.0, day_high if day_high > entry else 0.0])
+        structure_t1 = max(
+            x
+            for x in [
+                entry + t1_dist,
+                fibo_r2 if fibo_r2 > entry else 0.0,
+                day_high if day_high > entry else 0.0,
+            ]
+        )
         target1 = structure_t1
         target2 = max(entry + t2_dist, target1 + max(stop_dist, atr_floor * 0.75))
         target3 = max(entry + t3_dist, target2 + max(stop_dist, atr_floor * 0.75))
         stop = entry - stop_dist
     else:
-        structure_t1 = min(x for x in [entry - t1_dist, fibo_s2 if 0 < fibo_s2 < entry else entry - t1_dist, day_low if 0 < day_low < entry else entry - t1_dist])
+        structure_t1 = min(
+            x
+            for x in [
+                entry - t1_dist,
+                fibo_s2 if 0 < fibo_s2 < entry else entry - t1_dist,
+                day_low if 0 < day_low < entry else entry - t1_dist,
+            ]
+        )
         target1 = structure_t1
         target2 = min(entry - t2_dist, target1 - max(stop_dist, atr_floor * 0.75))
         target3 = min(entry - t3_dist, target2 - max(stop_dist, atr_floor * 0.75))
@@ -542,7 +567,9 @@ def _side_trade_map(
     }
 
 
-def _scanner_intel(entry: dict, features: dict, prebreak: dict | None = None, sector_strength: float = 50.0) -> dict:
+def _scanner_intel(
+    entry: dict, features: dict, prebreak: dict | None = None, sector_strength: float = 50.0
+) -> dict:
     """Compute compact scanner intelligence from currently available intraday features.
 
     This is intentionally deterministic and lightweight. Deeper 1D/1H trend can be
@@ -577,7 +604,9 @@ def _scanner_intel(entry: dict, features: dict, prebreak: dict | None = None, se
     # _decode_hash's float() coercion already handles it) -- just never
     # read out here before. None (not 0.0) when genuinely absent.
     data_quality_score = features.get("data_quality_score")
-    data_quality_score = float(data_quality_score) if isinstance(data_quality_score, (int, float)) else None
+    data_quality_score = (
+        float(data_quality_score) if isinstance(data_quality_score, (int, float)) else None
+    )
 
     above_vwap = ltp > vwap > 0
     below_vwap = vwap > ltp > 0
@@ -662,12 +691,30 @@ def _scanner_intel(entry: dict, features: dict, prebreak: dict | None = None, se
         decision = "AVOID"
 
     mtf_scores = {
-        "1M": 50 + (12 if above_vwap else -12 if below_vwap else 0) + (12 if macd_bull else -12 if macd_bear else 0) + (rsi - 50) * 0.7,
-        "5M": 50 + (16 if ema_bull else -16 if ema_bear else 0) + (10 if macd_bull else -10 if macd_bear else 0),
-        "15M": 50 + (18 if ema_stack_bull else -18 if ema_stack_bear else 0) + (8 if atr_bull else -8 if atr_bear else 0),
-        "1H": 50 + (18 if ltp > ema50 > 0 else -18 if ltp < ema50 and ema50 > 0 else 0) + (8 if change_pct > 0 else -8 if change_pct < 0 else 0),
-        "4H": 50 + (15 if ltp > ema50 > 0 and ema20 > ema50 > 0 else -15 if ltp < ema50 and ema20 < ema50 and ema50 > 0 else 0),
-        "1D": 50 + (14 if change_pct > 0 else -14 if change_pct < 0 else 0) + (8 if above_vwap else -8 if below_vwap else 0),
+        "1M": 50
+        + (12 if above_vwap else -12 if below_vwap else 0)
+        + (12 if macd_bull else -12 if macd_bear else 0)
+        + (rsi - 50) * 0.7,
+        "5M": 50
+        + (16 if ema_bull else -16 if ema_bear else 0)
+        + (10 if macd_bull else -10 if macd_bear else 0),
+        "15M": 50
+        + (18 if ema_stack_bull else -18 if ema_stack_bear else 0)
+        + (8 if atr_bull else -8 if atr_bear else 0),
+        "1H": 50
+        + (18 if ltp > ema50 > 0 else -18 if ltp < ema50 and ema50 > 0 else 0)
+        + (8 if change_pct > 0 else -8 if change_pct < 0 else 0),
+        "4H": 50
+        + (
+            15
+            if ltp > ema50 > 0 and ema20 > ema50 > 0
+            else -15
+            if ltp < ema50 and ema20 < ema50 and ema50 > 0
+            else 0
+        ),
+        "1D": 50
+        + (14 if change_pct > 0 else -14 if change_pct < 0 else 0)
+        + (8 if above_vwap else -8 if below_vwap else 0),
     }
     mtf = {tf: _mtf_state(score) for tf, score in mtf_scores.items()}
     mtf_dots = {tf: _mtf_dot(state) for tf, state in mtf.items()}
@@ -698,11 +745,17 @@ def _scanner_intel(entry: dict, features: dict, prebreak: dict | None = None, se
 
     pivot_base = prev_close if prev_close > 0 else ltp
     hl_range = max(day_high - day_low, atr_safe * 2, ltp * 0.003)
-    fibo_pivot = (day_high + day_low + pivot_base) / 3 if day_high > 0 and day_low > 0 else pivot_base
+    fibo_pivot = (
+        (day_high + day_low + pivot_base) / 3 if day_high > 0 and day_low > 0 else pivot_base
+    )
     fibo_s2 = fibo_pivot - 0.618 * hl_range
     fibo_r2 = fibo_pivot + 0.618 * hl_range
-    ce_trigger_candidates = [x for x in [vwap, ema20, atr_trail_stop, fibo_pivot, ltp + atr_safe * 0.18] if x and x > 0]
-    pe_trigger_candidates = [x for x in [vwap, ema20, atr_trail_stop, fibo_pivot, ltp - atr_safe * 0.18] if x and x > 0]
+    ce_trigger_candidates = [
+        x for x in [vwap, ema20, atr_trail_stop, fibo_pivot, ltp + atr_safe * 0.18] if x and x > 0
+    ]
+    pe_trigger_candidates = [
+        x for x in [vwap, ema20, atr_trail_stop, fibo_pivot, ltp - atr_safe * 0.18] if x and x > 0
+    ]
     positive_above = max(ce_trigger_candidates) if ce_trigger_candidates else ltp + atr_safe * 0.25
     negative_below = min(pe_trigger_candidates) if pe_trigger_candidates else ltp - atr_safe * 0.25
     anti_chase_for_levels = bool(anti_chase_reasons)
@@ -865,19 +918,83 @@ def _scanner_intel(entry: dict, features: dict, prebreak: dict | None = None, se
     else:
         strength_reasons.append("Anti-chase clean")
 
-    conviction_label = "A+" if option_score >= 85 else "A" if option_score >= 75 else "B" if option_score >= 60 else "C" if option_score >= 45 else "D"
-    conviction_zone = "STRONG" if option_score >= 75 else "WATCH" if option_score >= 60 else "WAIT" if option_score >= 45 else "AVOID"
+    conviction_label = (
+        "A+"
+        if option_score >= 85
+        else "A"
+        if option_score >= 75
+        else "B"
+        if option_score >= 60
+        else "C"
+        if option_score >= 45
+        else "D"
+    )
+    conviction_zone = (
+        "STRONG"
+        if option_score >= 75
+        else "WATCH"
+        if option_score >= 60
+        else "WAIT"
+        if option_score >= 45
+        else "AVOID"
+    )
     bull_confidence = round(min(100.0, max(0.0, 20.0 + bull_points * 0.85)), 1)
     bear_confidence = round(min(100.0, max(0.0, 20.0 + bear_points * 0.85)), 1)
-    fast_mtf_aligned = (bull_mtf >= 4 and trend_bias == "BUY") or (bear_mtf >= 4 and trend_bias == "SELL")
+    fast_mtf_aligned = (bull_mtf >= 4 and trend_bias == "BUY") or (
+        bear_mtf >= 4 and trend_bias == "SELL"
+    )
     higher_mtf_bias = 0
     higher_mtf_bias += 1 if mtf.get("1H") == "BULL" else -1 if mtf.get("1H") == "BEAR" else 0
     higher_mtf_bias += 1 if mtf.get("4H") == "BULL" else -1 if mtf.get("4H") == "BEAR" else 0
     higher_mtf_bias += 1 if mtf.get("1D") == "BULL" else -1 if mtf.get("1D") == "BEAR" else 0
-    directional_higher = higher_mtf_bias >= 2 if trend_bias == "BUY" else higher_mtf_bias <= -2 if trend_bias == "SELL" else False
-    intraday_score = round(min(100.0, max(0.0, option_score * 0.42 + trend_score * 0.24 + setup_score * 0.20 + min(rel_vol / 3.0, 1.0) * 14)), 1)
-    swing_score = round(min(100.0, max(0.0, option_score * 0.24 + trend_score * 0.18 + setup_score * 0.18 + (sector_strength or 0) * 0.14 + (18 if directional_higher else 0) + (8 if compression >= 45 else 0))), 1)
-    btst_score = round(min(100.0, max(0.0, swing_score * 0.52 + intraday_score * 0.28 + (12 if fast_mtf_aligned else 0) + (8 if rel_vol >= 1.5 else 0))), 1)
+    directional_higher = (
+        higher_mtf_bias >= 2
+        if trend_bias == "BUY"
+        else higher_mtf_bias <= -2
+        if trend_bias == "SELL"
+        else False
+    )
+    intraday_score = round(
+        min(
+            100.0,
+            max(
+                0.0,
+                option_score * 0.42
+                + trend_score * 0.24
+                + setup_score * 0.20
+                + min(rel_vol / 3.0, 1.0) * 14,
+            ),
+        ),
+        1,
+    )
+    swing_score = round(
+        min(
+            100.0,
+            max(
+                0.0,
+                option_score * 0.24
+                + trend_score * 0.18
+                + setup_score * 0.18
+                + (sector_strength or 0) * 0.14
+                + (18 if directional_higher else 0)
+                + (8 if compression >= 45 else 0),
+            ),
+        ),
+        1,
+    )
+    btst_score = round(
+        min(
+            100.0,
+            max(
+                0.0,
+                swing_score * 0.52
+                + intraday_score * 0.28
+                + (12 if fast_mtf_aligned else 0)
+                + (8 if rel_vol >= 1.5 else 0),
+            ),
+        ),
+        1,
+    )
     carry_risk = "HIGH"
     if swing_score >= 78 and directional_higher and not anti_chase_reasons:
         carry_risk = "LOW"
@@ -951,8 +1068,12 @@ def _scanner_intel(entry: dict, features: dict, prebreak: dict | None = None, se
     mtf_alignment_component = (max(bull_mtf, bear_mtf) / 6.0) * 10.0
     no_chase_component = 5.0 if not anti_chase_reasons else 0.0
     stock_breakout_score = round(
-        rvol_component + price_location_component + fresh_extreme_component
-        + vwap_ema_component + mtf_alignment_component + no_chase_component,
+        rvol_component
+        + price_location_component
+        + fresh_extreme_component
+        + vwap_ema_component
+        + mtf_alignment_component
+        + no_chase_component,
         1,
     )
     STOCK_BREAKOUT_SCORE_MAX = 100.0
@@ -1053,7 +1174,9 @@ def _scanner_intel(entry: dict, features: dict, prebreak: dict | None = None, se
         "target_1_hint": round(target_1, 2),
         "target_2_hint": round(target_2, 2),
         "target_3_hint": round(target_3, 2),
-        "underlying_risk_points": round(float(level_plan.get("risk") or abs(entry_hint - stop_hint)), 2),
+        "underlying_risk_points": round(
+            float(level_plan.get("risk") or abs(entry_hint - stop_hint)), 2
+        ),
         "risk_reward_ratio_hint": round(float(level_plan.get("rr1") or 0), 2),
         "target_method": str(level_plan.get("method") or ""),
         "intraday_score": intraday_score,
@@ -1149,7 +1272,9 @@ def _decode_mtf_cache(raw) -> dict:
         return {
             "mtf": payload.get("mtf") or {},
             "mtf_dots": payload.get("mtf_dots") or payload.get("dots") or {},
-            "mtf_text": payload.get("mtf_text") or payload.get("alignment") or "Historical MTF ready",
+            "mtf_text": payload.get("mtf_text")
+            or payload.get("alignment")
+            or "Historical MTF ready",
             "mtf_score": payload.get("score"),
             "mtf_source": payload.get("source") or "historical",
             "mtf_timeframes": payload.get("timeframes") or {},
@@ -1214,7 +1339,9 @@ def _apply_historical_mtf_overlay(entry: dict) -> dict:
     fast TFs decide intraday chaseability; 1H/4H/1D decide swing/carry quality.
     """
     mtf = entry.get("mtf") if isinstance(entry.get("mtf"), dict) else {}
-    timeframes = entry.get("mtf_timeframes") if isinstance(entry.get("mtf_timeframes"), dict) else {}
+    timeframes = (
+        entry.get("mtf_timeframes") if isinstance(entry.get("mtf_timeframes"), dict) else {}
+    )
     if not mtf and not timeframes:
         return entry
     source = str(entry.get("mtf_source") or "").lower()
@@ -1227,7 +1354,9 @@ def _apply_historical_mtf_overlay(entry: dict) -> dict:
         entry["historical_mtf_trade_bias"] = bias
 
     fast_score = _avg_tf_score(timeframes, ("1M", "5M", "15M"), float(entry.get("mtf_score") or 50))
-    higher_score = _avg_tf_score(timeframes, ("1H", "4H", "1D"), float(entry.get("mtf_score") or 50))
+    higher_score = _avg_tf_score(
+        timeframes, ("1H", "4H", "1D"), float(entry.get("mtf_score") or 50)
+    )
     fast_bull = sum(1 for tf in ("1M", "5M", "15M") if mtf.get(tf) == "BULL")
     fast_bear = sum(1 for tf in ("1M", "5M", "15M") if mtf.get(tf) == "BEAR")
     higher_bull = sum(1 for tf in ("1H", "4H", "1D") if mtf.get(tf) == "BULL")
@@ -1242,8 +1371,28 @@ def _apply_historical_mtf_overlay(entry: dict) -> dict:
     setup_score = float(entry.get("setup_strength") or entry.get("readiness") or 0)
     rel_vol = float(entry.get("rel_vol") or 0)
     sector = float(entry.get("sector_strength") or 50)
-    intraday = min(100.0, max(0.0, option_score * 0.30 + setup_score * 0.20 + fast_score * 0.32 + min(rel_vol / 3.0, 1.0) * 18))
-    swing = min(100.0, max(0.0, option_score * 0.18 + setup_score * 0.18 + higher_score * 0.34 + sector * 0.15 + (10 if higher_aligned else 0) + (6 if fast_aligned else 0)))
+    intraday = min(
+        100.0,
+        max(
+            0.0,
+            option_score * 0.30
+            + setup_score * 0.20
+            + fast_score * 0.32
+            + min(rel_vol / 3.0, 1.0) * 18,
+        ),
+    )
+    swing = min(
+        100.0,
+        max(
+            0.0,
+            option_score * 0.18
+            + setup_score * 0.18
+            + higher_score * 0.34
+            + sector * 0.15
+            + (10 if higher_aligned else 0)
+            + (6 if fast_aligned else 0),
+        ),
+    )
     if higher_opposes:
         swing = min(swing, 58.0)
     entry["intraday_score"] = round(max(float(entry.get("intraday_score") or 0), intraday), 1)
@@ -1251,10 +1400,14 @@ def _apply_historical_mtf_overlay(entry: dict) -> dict:
     entry["historical_fast_score"] = round(fast_score, 1)
     entry["historical_higher_score"] = round(higher_score, 1)
     entry["historical_mtf_alignment"] = (
-        "FAST_AND_HIGHER_ALIGNED" if fast_aligned and higher_aligned
-        else "FAST_ONLY" if fast_aligned
-        else "HIGHER_ONLY" if higher_aligned
-        else "HIGHER_OPPOSES" if higher_opposes
+        "FAST_AND_HIGHER_ALIGNED"
+        if fast_aligned and higher_aligned
+        else "FAST_ONLY"
+        if fast_aligned
+        else "HIGHER_ONLY"
+        if higher_aligned
+        else "HIGHER_OPPOSES"
+        if higher_opposes
         else "MIXED"
     )
 
@@ -1262,15 +1415,21 @@ def _apply_historical_mtf_overlay(entry: dict) -> dict:
         if higher_aligned and entry["swing_score"] >= 72:
             entry["trade_horizon"] = "SWING"
             entry["sustain_rule"] = "15M close + 1H hold"
-            entry["horizon_reason"] = "Historical 1H/4H/1D support this move; eligible for swing/BTST watch if option contract remains clean."
+            entry["horizon_reason"] = (
+                "Historical 1H/4H/1D support this move; eligible for swing/BTST watch if option contract remains clean."
+            )
         elif fast_aligned and entry["intraday_score"] >= 64:
             entry["trade_horizon"] = "INTRADAY"
             entry["sustain_rule"] = "5M or 15M close"
-            entry["horizon_reason"] = "Historical fast timeframes support intraday only; book/exit if 15M fails."
+            entry["horizon_reason"] = (
+                "Historical fast timeframes support intraday only; book/exit if 15M fails."
+            )
         elif higher_opposes:
             entry["trade_horizon"] = "INTRADAY"
             entry["sustain_rule"] = "5M close only; no carry"
-            entry["horizon_reason"] = "Fast setup exists but higher timeframe opposes; no swing carry."
+            entry["horizon_reason"] = (
+                "Fast setup exists but higher timeframe opposes; no swing carry."
+            )
 
     side_text = (
         "bullish"
@@ -1370,7 +1529,9 @@ def _event_risk_from_raw(symbol: str, raw) -> dict:
         "event_type": event_type,
         "next_event_date": next_date,
         "days_to_event": days,
-        "block_reason": f"hard block from T-2 to T+1 around {event_type.lower()}" if blocked else "",
+        "block_reason": f"hard block from T-2 to T+1 around {event_type.lower()}"
+        if blocked
+        else "",
         "source": str(payload.get("source") or "manual_calendar"),
         "note": str(payload.get("note") or ""),
     }
@@ -1396,9 +1557,7 @@ async def get_tick(request):
 
     data = await redis.hgetall(f"infusion:tick:{symbol}")
     if not data:
-        return web.json_response(
-            {"error": f"No tick data for {symbol}"}, status=404
-        )
+        return web.json_response({"error": f"No tick data for {symbol}"}, status=404)
 
     result = {"symbol": symbol}
     for k, v in data.items():
@@ -1433,12 +1592,9 @@ async def _build_ticks(redis, sector_filter: str = "", tier_filter: str = "") ->
     symbols_to_fetch = []
     symbol_meta = {}
 
-    for inst_key, meta_raw in all_symbols.items():
+    for _inst_key, meta_raw in all_symbols.items():
         try:
-            if isinstance(meta_raw, bytes):
-                meta = msgpack.unpackb(meta_raw, raw=False)
-            else:
-                meta = meta_raw
+            meta = msgpack.unpackb(meta_raw, raw=False) if isinstance(meta_raw, bytes) else meta_raw
             symbol = meta.get("symbol", "")
             if not symbol:
                 continue
@@ -1532,10 +1688,20 @@ async def _build_ticks(redis, sector_filter: str = "", tier_filter: str = "") ->
             # HOT_STATE_ML_WHITELIST for what actually lands in `features`.
             _BOOL_PASSTHROUGH_KEYS = {"vwap_sd_ready", "ha_doji", "ha_color_flip"}
             for key in (
-                "delivery_pct", "vwap_stdev", "vwap_sd1_upper", "vwap_sd1_lower",
-                "vwap_sd2_upper", "vwap_sd2_lower", "vwap_sd_ready",
-                "ha_trend", "ha_trend_streak", "ha_doji", "ha_color_flip",
-                "delivery_pct_avg_20d", "delivery_avg_days", "delivery_trade_date",
+                "delivery_pct",
+                "vwap_stdev",
+                "vwap_sd1_upper",
+                "vwap_sd1_lower",
+                "vwap_sd2_upper",
+                "vwap_sd2_lower",
+                "vwap_sd_ready",
+                "ha_trend",
+                "ha_trend_streak",
+                "ha_doji",
+                "ha_color_flip",
+                "delivery_pct_avg_20d",
+                "delivery_avg_days",
+                "delivery_trade_date",
             ):
                 if key not in features:
                     continue
@@ -1559,41 +1725,61 @@ async def _build_ticks(redis, sector_filter: str = "", tier_filter: str = "") ->
                     value = value == "True"
                 entry[key] = value
             if option_summary:
-                chain_score = float(option_summary.get("execution_score") or option_summary.get("option_score") or 0)
+                chain_score = float(
+                    option_summary.get("execution_score") or option_summary.get("option_score") or 0
+                )
                 previous_proxy = entry.get("option_readiness")
-                entry.update({
-                    "underlying_option_proxy": previous_proxy,
-                    "option_readiness": chain_score,
-                    "chain_option_score": chain_score,
-                    "chain_raw_option_score": option_summary.get("raw_option_score"),
-                    "chain_execution_status": option_summary.get("execution_status"),
-                    "chain_trade_ready": bool(option_summary.get("trade_ready")),
-                    "chain_quality_grade": option_summary.get("quality_grade"),
-                    "chain_suggested_contract": option_summary.get("contract"),
-                    "chain_score_cap_reason": option_summary.get("score_cap_reason") or "",
-                    "chain_score_cap_detail": option_summary.get("score_cap_detail") or "",
-                    "option_chain_ready": True,
-                    "option_chain_source": "upstox_chain_cached",
-                })
+                entry.update(
+                    {
+                        "underlying_option_proxy": previous_proxy,
+                        "option_readiness": chain_score,
+                        "chain_option_score": chain_score,
+                        "chain_raw_option_score": option_summary.get("raw_option_score"),
+                        "chain_execution_status": option_summary.get("execution_status"),
+                        "chain_trade_ready": bool(option_summary.get("trade_ready")),
+                        "chain_quality_grade": option_summary.get("quality_grade"),
+                        "chain_suggested_contract": option_summary.get("contract"),
+                        "chain_score_cap_reason": option_summary.get("score_cap_reason") or "",
+                        "chain_score_cap_detail": option_summary.get("score_cap_detail") or "",
+                        "option_chain_ready": True,
+                        "option_chain_source": "upstox_chain_cached",
+                    }
+                )
                 # OPTION_READY tier upgrade moved to list_ticks()'s Phase R8
                 # second pass (below) -- it needs the FINAL, complete-100
                 # tier to decide whether a row qualifies, which doesn't
                 # exist yet at this point in the per-row loop.
-                metrics = option_summary.get("metrics") if isinstance(option_summary.get("metrics"), dict) else {}
+                metrics = (
+                    option_summary.get("metrics")
+                    if isinstance(option_summary.get("metrics"), dict)
+                    else {}
+                )
                 if metrics:
-                    entry.update({
-                        "chain_spread_pct": metrics.get("spread_pct"),
-                        "chain_oi": metrics.get("oi"),
-                        "chain_oi_change_pct": metrics.get("oi_change_pct"),
-                        "chain_iv": metrics.get("iv"),
-                        "chain_iv_rank": metrics.get("iv_rank"),
-                        "chain_delta": metrics.get("delta"),
-                        "chain_expiry_days": metrics.get("expiry_days"),
-                    })
-                    oi_buildup = _classify_oi_buildup(metrics.get("oi_change_pct"), features.get("change_pct"))
+                    entry.update(
+                        {
+                            "chain_spread_pct": metrics.get("spread_pct"),
+                            "chain_oi": metrics.get("oi"),
+                            "chain_oi_change_pct": metrics.get("oi_change_pct"),
+                            "chain_iv": metrics.get("iv"),
+                            "chain_iv_rank": metrics.get("iv_rank"),
+                            "chain_delta": metrics.get("delta"),
+                            "chain_expiry_days": metrics.get("expiry_days"),
+                        }
+                    )
+                    oi_buildup = _classify_oi_buildup(
+                        metrics.get("oi_change_pct"), features.get("change_pct")
+                    )
                     entry["chain_oi_signal"] = oi_buildup["label"]
                     entry["chain_oi_bias"] = oi_buildup["bias"]
-            entry.update(build_intelligence_layer(entry, features, option_summary=option_summary, news_edge=news_edge, event_risk=event_risk))
+            entry.update(
+                build_intelligence_layer(
+                    entry,
+                    features,
+                    option_summary=option_summary,
+                    news_edge=news_edge,
+                    event_risk=event_risk,
+                )
+            )
             mtf_cache = _decode_mtf_cache(mtf_raw)
             if mtf_cache:
                 existing_rejections = _as_list(entry.get("rejection_reasons"))
@@ -1604,7 +1790,15 @@ async def _build_ticks(redis, sector_filter: str = "", tier_filter: str = "") ->
                 combined_rejections = list(dict.fromkeys(existing_rejections + mtf_rejections))
                 entry["rejection_reasons"] = combined_rejections[:6]
                 entry = _apply_historical_mtf_overlay(entry)
-                entry.update(build_intelligence_layer(entry, features, option_summary=option_summary, news_edge=news_edge, event_risk=event_risk))
+                entry.update(
+                    build_intelligence_layer(
+                        entry,
+                        features,
+                        option_summary=option_summary,
+                        news_edge=news_edge,
+                        event_risk=event_risk,
+                    )
+                )
         except Exception as exc:
             logger.warning(
                 "tick_scanner_enrichment_failed",
@@ -1714,7 +1908,9 @@ async def _build_ticks(redis, sector_filter: str = "", tier_filter: str = "") ->
             rs_points += 5.0
         if index_rs is not None and index_rs >= 0.5:
             rs_points += 5.0
-        entry["stock_breakout_score"] = round(float(entry.get("stock_breakout_score") or 0) + rs_points, 1)
+        entry["stock_breakout_score"] = round(
+            float(entry.get("stock_breakout_score") or 0) + rs_points, 1
+        )
 
         # Tier is finalized here, against the complete post-RS score and
         # the reference plan's own literal thresholds (70/55) -- R1's
@@ -1777,7 +1973,7 @@ async def snapshot(request):
         return web.json_response({"count": 0, "snapshot": []})
 
     symbols = []
-    for inst_key, meta_raw in all_symbols.items():
+    for _inst_key, meta_raw in all_symbols.items():
         try:
             meta = msgpack.unpackb(meta_raw, raw=False) if isinstance(meta_raw, bytes) else meta_raw
             sym = meta.get("symbol", "")
@@ -1846,7 +2042,7 @@ async def list_symbols(request):
     all_symbols = await redis.hgetall("infusion:symbols")
     symbols = []
 
-    for inst_key, meta_raw in all_symbols.items():
+    for _inst_key, meta_raw in all_symbols.items():
         try:
             meta = msgpack.unpackb(meta_raw, raw=False) if isinstance(meta_raw, bytes) else meta_raw
 
@@ -1855,13 +2051,15 @@ async def list_symbols(request):
             if tier_filter and tier_filter not in meta.get("index_membership", []):
                 continue
 
-            symbols.append({
-                "symbol": meta.get("symbol", ""),
-                "sector_id": meta.get("sector_id", ""),
-                "exchange": meta.get("exchange", "NSE"),
-                "market_cap_tier": meta.get("market_cap_tier", ""),
-                "index_membership": meta.get("index_membership", []),
-            })
+            symbols.append(
+                {
+                    "symbol": meta.get("symbol", ""),
+                    "sector_id": meta.get("sector_id", ""),
+                    "exchange": meta.get("exchange", "NSE"),
+                    "market_cap_tier": meta.get("market_cap_tier", ""),
+                    "index_membership": meta.get("index_membership", []),
+                }
+            )
         except Exception:
             continue
 

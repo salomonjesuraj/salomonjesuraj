@@ -14,16 +14,16 @@ Design:
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone, timedelta
+from datetime import date, timedelta, timezone
 
 import structlog
+from infusion_common.timing import now_us
+from infusion_models.events import EventType
+from infusion_streams.codec import encode_event
+from infusion_streams.constants import MAXLEN_SIGNALS, STREAM_SCAN_SIGNALS
 from redis.asyncio import Redis
 
 from archiver.analytics import SignalAnalytics
-from infusion_streams.codec import encode_event
-from infusion_streams.constants import STREAM_SCAN_SIGNALS, MAXLEN_SIGNALS
-from infusion_models.events import EventType
-from infusion_common.timing import now_us
 
 logger = structlog.get_logger()
 
@@ -86,7 +86,7 @@ def format_recap(data: dict) -> str:
     Uses Telegram MarkdownV2 escaping for delivery via alerter.
     """
     td = data["trade_date"]
-    total = data["total_signals"]
+    data["total_signals"]
     active = data["active_signals"]
     suppressed = data["suppressed_signals"]
     p = data["precision"]
@@ -109,16 +109,10 @@ def format_recap(data: dict) -> str:
     lines.append("WHAT HAPPENED:")
     lines.append(f"SIGNALS: {active} active | {suppressed} suppressed")
     if p["total"] > 0:
-        lines.append(
-            f"PRECISION: {hits}/{decided} target hits ({_fmt_pct(p['precision_pct'])})"
-        )
-        lines.append(
-            f"AVG SCORE: {p['avg_score'] or 0:.1f} | AVG R:R: {p['avg_rr'] or 0:.1f}:1"
-        )
+        lines.append(f"PRECISION: {hits}/{decided} target hits ({_fmt_pct(p['precision_pct'])})")
+        lines.append(f"AVG SCORE: {p['avg_score'] or 0:.1f} | AVG R:R: {p['avg_rr'] or 0:.1f}:1")
         if p.get("avg_mfe_pct") is not None:
-            lines.append(
-                f"MFE: {p['avg_mfe_pct']:.2f}% | MAE: {p['avg_mae_pct']:.2f}%"
-            )
+            lines.append(f"MFE: {p['avg_mfe_pct']:.2f}% | MAE: {p['avg_mae_pct']:.2f}%")
         if decided < 5:
             lines.append(
                 f"READ CAREFULLY: only {decided} completed trade(s), so today's precision is not statistically reliable."
@@ -138,10 +132,7 @@ def format_recap(data: dict) -> str:
             hits = g["target_hits"]
             decided = hits + g["stop_hits"]
             p_pct = _fmt_pct(g["precision_pct"])
-            lines.append(
-                f"  {g['grade']:3s}: {g['total']} signals, "
-                f"{hits} wins ({p_pct})"
-            )
+            lines.append(f"  {g['grade']:3s}: {g['total']} signals, {hits} wins ({p_pct})")
 
     # ── By Session
     if data["by_session"]:
@@ -155,9 +146,7 @@ def format_recap(data: dict) -> str:
         }
         for s in data["by_session"]:
             label = _session_labels.get(s["session"], s["session"])
-            lines.append(
-                f"  {label}: {s['total']} sig, {_fmt_pct(s['precision_pct'])}"
-            )
+            lines.append(f"  {label}: {s['total']} sig, {_fmt_pct(s['precision_pct'])}")
 
     # ── By Sector
     if data["by_sector"]:
@@ -165,8 +154,7 @@ def format_recap(data: dict) -> str:
         lines.append("SECTORS:")
         for sec in data["by_sector"][:5]:  # top 5
             lines.append(
-                f"  {sec['sector_id']}: {sec['total']} sig, "
-                f"{_fmt_pct(sec['precision_pct'])}"
+                f"  {sec['sector_id']}: {sec['total']} sig, {_fmt_pct(sec['precision_pct'])}"
             )
 
     # ── By Regime
@@ -174,10 +162,7 @@ def format_recap(data: dict) -> str:
         lines.append("")
         lines.append("REGIME:")
         for reg in data["by_regime"]:
-            lines.append(
-                f"  {reg['regime']}: {reg['total']} sig, "
-                f"{_fmt_pct(reg['precision_pct'])}"
-            )
+            lines.append(f"  {reg['regime']}: {reg['total']} sig, {_fmt_pct(reg['precision_pct'])}")
 
     # ── Suppression
     sup = data["suppression"]
@@ -196,9 +181,13 @@ def format_recap(data: dict) -> str:
         for r in sup["by_reason"]:
             reason = r["reason"]
             if reason == "duplicate_active":
-                lines.append("  duplicate_active = not a missed trade; same symbol/strategy was already live.")
+                lines.append(
+                    "  duplicate_active = not a missed trade; same symbol/strategy was already live."
+                )
             elif reason == "sector_weak":
-                lines.append("  sector_weak = setup existed, but sector participation was below the safety floor.")
+                lines.append(
+                    "  sector_weak = setup existed, but sector participation was below the safety floor."
+                )
             elif reason == "cooldown_active":
                 lines.append("  cooldown_active = avoids repeated alerts after a recent signal.")
             elif reason == "low_conviction":

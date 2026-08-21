@@ -53,6 +53,7 @@ All event types are registered in a single source-of-truth module:
 
 from enum import StrEnum
 
+
 class EventType(StrEnum):
     """All event types that flow through Infusion streams."""
 
@@ -123,6 +124,7 @@ def get_schema(event_type: EventType, version: int) -> type:
 
 class SchemaVersionError(Exception):
     """Raised when a message has an unrecognized schema version."""
+
     pass
 ```
 
@@ -242,6 +244,7 @@ import time
 from infusion_models.events import EventType
 from infusion_models.schema_registry import CURRENT_VERSIONS, get_schema
 
+
 def encode_event(
     event_type: EventType,
     payload: dict,
@@ -358,6 +361,7 @@ RETRY_BACKOFF = [0s, 1s, 5s]  (immediate, then exponential)
 
 ```python
 # libs/infusion-streams/src/infusion_streams/consumer.py (DLQ-aware)
+
 
 class StreamConsumer:
     """Redis Stream consumer with DLQ support."""
@@ -795,6 +799,7 @@ Every error logged by any Infusion service uses this structured format:
 from enum import StrEnum
 from dataclasses import dataclass
 
+
 class ErrorCategory(StrEnum):
     TRANSIENT = "transient"
     RETRYABLE = "retryable"
@@ -891,6 +896,7 @@ CATCH-ALL: Unknown exception             → RETRYABLE           → INTERNAL
 
 ```python
 # libs/infusion-common/src/infusion_common/errors.py (continued)
+
 
 def classify_error(exception: Exception) -> InfusionError:
     """Classify an exception into the Infusion error taxonomy."""

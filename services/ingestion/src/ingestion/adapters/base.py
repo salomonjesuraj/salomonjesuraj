@@ -1,8 +1,8 @@
 """Abstract base for broker-specific WebSocket adapters."""
 
 from abc import ABC, abstractmethod
+from collections.abc import Awaitable, Callable
 from enum import StrEnum
-from typing import Callable, Awaitable
 
 from infusion_models.tick import RawTickV1
 
@@ -59,9 +59,7 @@ class BrokerAdapter(ABC):
         ...
 
     @abstractmethod
-    async def start_streaming(
-        self, on_tick: Callable[[RawTickV1], Awaitable[None]]
-    ) -> None:
+    async def start_streaming(self, on_tick: Callable[[RawTickV1], Awaitable[None]]) -> None:
         """Begin receiving ticks. Calls on_tick for each decoded tick."""
         ...
 

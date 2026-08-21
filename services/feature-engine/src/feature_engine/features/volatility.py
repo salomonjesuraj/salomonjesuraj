@@ -31,7 +31,9 @@ def update_bollinger(state: SymbolState, close: float):
     state.bb_prices.append(close)
 
 
-def get_bollinger(state: SymbolState, period: int = 20, num_std: float = 2.0) -> tuple[float, float, float]:
+def get_bollinger(
+    state: SymbolState, period: int = 20, num_std: float = 2.0
+) -> tuple[float, float, float]:
     """Returns (upper, lower, width)."""
     if len(state.bb_prices) < 2:
         return state.ltp * 1.02, state.ltp * 0.98, 0.04
@@ -48,8 +50,9 @@ def get_bollinger(state: SymbolState, period: int = 20, num_std: float = 2.0) ->
     return upper, lower, width
 
 
-def update_supertrend(state: SymbolState, high: float, low: float, close: float,
-                       atr: float, factor: float = 3.0):
+def update_supertrend(
+    state: SymbolState, high: float, low: float, close: float, atr: float, factor: float = 3.0
+):
     """ATR-band flip Supertrend — matches Pine's `ta.supertrend(factor, atrLen)`.
 
     Reuses the existing `state.atr` (same ATR the rest of the engine already

@@ -41,10 +41,10 @@ strike out" that means the same thing for every symbol.
 
 from __future__ import annotations
 
-DEFAULT_WING_STEPS = 2          # spreads: how many strike-steps the short/far leg sits from ATM
+DEFAULT_WING_STEPS = 2  # spreads: how many strike-steps the short/far leg sits from ATM
 DEFAULT_CONDOR_SHORT_STEPS = 2  # iron condor: short strikes this many steps from ATM
-DEFAULT_CONDOR_WING_STEPS = 4   # iron condor: protective long strikes this many steps from ATM
-DEFAULT_STRANGLE_STEPS = 2      # long strangle: OTM leg steps from ATM
+DEFAULT_CONDOR_WING_STEPS = 4  # iron condor: protective long strikes this many steps from ATM
+DEFAULT_STRANGLE_STEPS = 2  # long strangle: OTM leg steps from ATM
 
 
 def _leg_market(row: dict, leg_name: str) -> dict:
@@ -77,7 +77,9 @@ def sell_price(row: dict, leg_name: str) -> float:
 
 
 def _sorted_strikes(rows: list[dict]) -> list[float]:
-    strikes = sorted({float(r.get("strike_price") or 0) for r in rows if float(r.get("strike_price") or 0) > 0})
+    strikes = sorted(
+        {float(r.get("strike_price") or 0) for r in rows if float(r.get("strike_price") or 0) > 0}
+    )
     return strikes
 
 
@@ -106,10 +108,16 @@ def _strike_at_offset(strikes: list[float], atm_idx: int, steps: int) -> float |
     return strikes[idx]
 
 
-def _leg(action: str, opt_type: str, strike: float, premium: float, iv: float, delta: float) -> dict:
+def _leg(
+    action: str, opt_type: str, strike: float, premium: float, iv: float, delta: float
+) -> dict:
     return {
-        "action": action, "type": opt_type, "strike": strike,
-        "premium": round(premium, 2), "iv": round(iv, 2), "delta": round(delta, 4),
+        "action": action,
+        "type": opt_type,
+        "strike": strike,
+        "premium": round(premium, 2),
+        "iv": round(iv, 2),
+        "delta": round(delta, 4),
     }
 
 
@@ -148,8 +156,22 @@ def bull_call_spread(rows: list[dict], spot: float, wing_steps: int = DEFAULT_WI
     return _ready_result(
         "bull_call_spread",
         legs=[
-            _leg("BUY", "CE", long_strike, long_premium, float(g_long.get("iv") or 0), float(g_long.get("delta") or 0)),
-            _leg("SELL", "CE", short_strike, short_premium, float(g_short.get("iv") or 0), float(g_short.get("delta") or 0)),
+            _leg(
+                "BUY",
+                "CE",
+                long_strike,
+                long_premium,
+                float(g_long.get("iv") or 0),
+                float(g_long.get("delta") or 0),
+            ),
+            _leg(
+                "SELL",
+                "CE",
+                short_strike,
+                short_premium,
+                float(g_short.get("iv") or 0),
+                float(g_short.get("delta") or 0),
+            ),
         ],
         net_debit=round(net_debit, 2),
         max_profit=round(max_profit, 2),
@@ -185,8 +207,22 @@ def bear_put_spread(rows: list[dict], spot: float, wing_steps: int = DEFAULT_WIN
     return _ready_result(
         "bear_put_spread",
         legs=[
-            _leg("BUY", "PE", long_strike, long_premium, float(g_long.get("iv") or 0), float(g_long.get("delta") or 0)),
-            _leg("SELL", "PE", short_strike, short_premium, float(g_short.get("iv") or 0), float(g_short.get("delta") or 0)),
+            _leg(
+                "BUY",
+                "PE",
+                long_strike,
+                long_premium,
+                float(g_long.get("iv") or 0),
+                float(g_long.get("delta") or 0),
+            ),
+            _leg(
+                "SELL",
+                "PE",
+                short_strike,
+                short_premium,
+                float(g_short.get("iv") or 0),
+                float(g_short.get("delta") or 0),
+            ),
         ],
         net_debit=round(net_debit, 2),
         max_profit=round(max_profit, 2),
@@ -196,7 +232,8 @@ def bear_put_spread(rows: list[dict], spot: float, wing_steps: int = DEFAULT_WIN
 
 
 def iron_condor(
-    rows: list[dict], spot: float,
+    rows: list[dict],
+    spot: float,
     short_steps: int = DEFAULT_CONDOR_SHORT_STEPS,
     wing_steps: int = DEFAULT_CONDOR_WING_STEPS,
 ) -> dict:
@@ -239,14 +276,45 @@ def iron_condor(
     upper_breakeven = short_call_k + net_credit
 
     gp_s, gp_l = _leg_greeks(short_put_row, "put_options"), _leg_greeks(long_put_row, "put_options")
-    gc_s, gc_l = _leg_greeks(short_call_row, "call_options"), _leg_greeks(long_call_row, "call_options")
+    gc_s, gc_l = (
+        _leg_greeks(short_call_row, "call_options"),
+        _leg_greeks(long_call_row, "call_options"),
+    )
     return _ready_result(
         "iron_condor",
         legs=[
-            _leg("BUY", "PE", long_put_k, long_put_prem, float(gp_l.get("iv") or 0), float(gp_l.get("delta") or 0)),
-            _leg("SELL", "PE", short_put_k, short_put_prem, float(gp_s.get("iv") or 0), float(gp_s.get("delta") or 0)),
-            _leg("SELL", "CE", short_call_k, short_call_prem, float(gc_s.get("iv") or 0), float(gc_s.get("delta") or 0)),
-            _leg("BUY", "CE", long_call_k, long_call_prem, float(gc_l.get("iv") or 0), float(gc_l.get("delta") or 0)),
+            _leg(
+                "BUY",
+                "PE",
+                long_put_k,
+                long_put_prem,
+                float(gp_l.get("iv") or 0),
+                float(gp_l.get("delta") or 0),
+            ),
+            _leg(
+                "SELL",
+                "PE",
+                short_put_k,
+                short_put_prem,
+                float(gp_s.get("iv") or 0),
+                float(gp_s.get("delta") or 0),
+            ),
+            _leg(
+                "SELL",
+                "CE",
+                short_call_k,
+                short_call_prem,
+                float(gc_s.get("iv") or 0),
+                float(gc_s.get("delta") or 0),
+            ),
+            _leg(
+                "BUY",
+                "CE",
+                long_call_k,
+                long_call_prem,
+                float(gc_l.get("iv") or 0),
+                float(gc_l.get("delta") or 0),
+            ),
         ],
         net_credit=round(net_credit, 2),
         max_profit=round(max_profit, 2),
@@ -275,8 +343,22 @@ def long_straddle(rows: list[dict], spot: float) -> dict:
     return _ready_result(
         "long_straddle",
         legs=[
-            _leg("BUY", "CE", strike, call_premium, float(g_c.get("iv") or 0), float(g_c.get("delta") or 0)),
-            _leg("BUY", "PE", strike, put_premium, float(g_p.get("iv") or 0), float(g_p.get("delta") or 0)),
+            _leg(
+                "BUY",
+                "CE",
+                strike,
+                call_premium,
+                float(g_c.get("iv") or 0),
+                float(g_c.get("delta") or 0),
+            ),
+            _leg(
+                "BUY",
+                "PE",
+                strike,
+                put_premium,
+                float(g_p.get("iv") or 0),
+                float(g_p.get("delta") or 0),
+            ),
         ],
         net_debit=round(total_premium, 2),
         max_profit=None,  # theoretically unbounded on the call side
@@ -310,8 +392,22 @@ def long_strangle(rows: list[dict], spot: float, wing_steps: int = DEFAULT_STRAN
     return _ready_result(
         "long_strangle",
         legs=[
-            _leg("BUY", "CE", call_k, call_premium, float(g_c.get("iv") or 0), float(g_c.get("delta") or 0)),
-            _leg("BUY", "PE", put_k, put_premium, float(g_p.get("iv") or 0), float(g_p.get("delta") or 0)),
+            _leg(
+                "BUY",
+                "CE",
+                call_k,
+                call_premium,
+                float(g_c.get("iv") or 0),
+                float(g_c.get("delta") or 0),
+            ),
+            _leg(
+                "BUY",
+                "PE",
+                put_k,
+                put_premium,
+                float(g_p.get("iv") or 0),
+                float(g_p.get("delta") or 0),
+            ),
         ],
         net_debit=round(total_premium, 2),
         max_profit=None,
@@ -347,8 +443,22 @@ def covered_call(rows: list[dict], spot: float, wing_steps: int = DEFAULT_WING_S
     return _ready_result(
         "covered_call",
         legs=[
-            {"action": "HOLD", "type": "EQUITY", "strike": None, "premium": round(spot, 2), "iv": None, "delta": None},
-            _leg("SELL", "CE", call_k, premium, float(g_c.get("iv") or 0), float(g_c.get("delta") or 0)),
+            {
+                "action": "HOLD",
+                "type": "EQUITY",
+                "strike": None,
+                "premium": round(spot, 2),
+                "iv": None,
+                "delta": None,
+            },
+            _leg(
+                "SELL",
+                "CE",
+                call_k,
+                premium,
+                float(g_c.get("iv") or 0),
+                float(g_c.get("delta") or 0),
+            ),
         ],
         assumed_equity_entry=round(spot, 2),
         net_credit=round(premium, 2),
@@ -403,15 +513,27 @@ _BEARISH_PCR = {"strong_bearish", "mild_bearish"}
 def _directional_fit(strategy: str, trade_bias: str) -> tuple[float, str]:
     cls = _STRATEGY_CLASS[strategy]
     table = {
-        "BUY CE": {"bullish": (40, "matches the bullish bias"), "neutral_bullish": (30, "leans the same way as the bullish bias"),
-                   "neutral": (15, "no directional edge against a bullish bias"), "volatility": (20, "direction-agnostic, doesn't fight the bias"),
-                   "bearish": (0, "works against the bullish bias")},
-        "BUY PE": {"bearish": (40, "matches the bearish bias"), "neutral": (15, "no directional edge against a bearish bias"),
-                   "volatility": (20, "direction-agnostic, doesn't fight the bias"), "neutral_bullish": (5, "works against the bearish bias"),
-                   "bullish": (0, "works against the bearish bias")},
-        "HOLD": {"neutral": (35, "range-bound structure fits a no-clear-bias read"), "volatility": (25, "profits from a move either way while bias is unclear"),
-                  "neutral_bullish": (15, "mild directional lean without a confirmed bias"), "bullish": (10, "directional bet without a confirmed bias"),
-                  "bearish": (10, "directional bet without a confirmed bias")},
+        "BUY CE": {
+            "bullish": (40, "matches the bullish bias"),
+            "neutral_bullish": (30, "leans the same way as the bullish bias"),
+            "neutral": (15, "no directional edge against a bullish bias"),
+            "volatility": (20, "direction-agnostic, doesn't fight the bias"),
+            "bearish": (0, "works against the bullish bias"),
+        },
+        "BUY PE": {
+            "bearish": (40, "matches the bearish bias"),
+            "neutral": (15, "no directional edge against a bearish bias"),
+            "volatility": (20, "direction-agnostic, doesn't fight the bias"),
+            "neutral_bullish": (5, "works against the bearish bias"),
+            "bullish": (0, "works against the bearish bias"),
+        },
+        "HOLD": {
+            "neutral": (35, "range-bound structure fits a no-clear-bias read"),
+            "volatility": (25, "profits from a move either way while bias is unclear"),
+            "neutral_bullish": (15, "mild directional lean without a confirmed bias"),
+            "bullish": (10, "directional bet without a confirmed bias"),
+            "bearish": (10, "directional bet without a confirmed bias"),
+        },
     }
     score, reason = table.get(trade_bias, table["HOLD"]).get(cls, (10, "no strong read either way"))
     return float(score), reason
@@ -450,11 +572,20 @@ def _max_pain_fit(strategy: str, spot: float, max_pain_strike: float | None) -> 
         return 5.0, "Max Pain unavailable -- scored neutral"
     distance_pct = abs(spot - max_pain_strike) / spot * 100
     if cls == "neutral" and distance_pct < 1.0:
-        return 10.0, f"Spot is pinned near Max Pain ({max_pain_strike:g}, {distance_pct:.1f}% away) -- favors a range-bound structure"
+        return (
+            10.0,
+            f"Spot is pinned near Max Pain ({max_pain_strike:g}, {distance_pct:.1f}% away) -- favors a range-bound structure",
+        )
     if cls in ("bullish", "neutral_bullish") and max_pain_strike > spot and distance_pct >= 1.0:
-        return 10.0, f"Max Pain ({max_pain_strike:g}) sits above spot -- a theoretical pull in this strategy's direction"
+        return (
+            10.0,
+            f"Max Pain ({max_pain_strike:g}) sits above spot -- a theoretical pull in this strategy's direction",
+        )
     if cls == "bearish" and max_pain_strike < spot and distance_pct >= 1.0:
-        return 10.0, f"Max Pain ({max_pain_strike:g}) sits below spot -- a theoretical pull in this strategy's direction"
+        return (
+            10.0,
+            f"Max Pain ({max_pain_strike:g}) sits below spot -- a theoretical pull in this strategy's direction",
+        )
     if cls == "volatility":
         return 3.0, "Max Pain's pinning tendency is a mild headwind for a big-move thesis"
     return 2.0, f"Max Pain ({max_pain_strike:g}) doesn't support this structure's read"
@@ -484,16 +615,18 @@ def rank_strategies(
         pcr_score, pcr_reason = _pcr_fit(trade_bias, pcr_sentiment)
         mp_score, mp_reason = _max_pain_fit(name, spot, max_pain_strike)
         total = round(d_score + iv_score + pcr_score + mp_score, 1)
-        ranked.append({
-            "strategy": name,
-            "fit_score": total,
-            "components": {
-                "directional": {"score": d_score, "reason": d_reason},
-                "iv_rank": {"score": iv_score, "reason": iv_reason},
-                "pcr": {"score": pcr_score, "reason": pcr_reason},
-                "max_pain": {"score": mp_score, "reason": mp_reason},
-            },
-            **result,
-        })
+        ranked.append(
+            {
+                "strategy": name,
+                "fit_score": total,
+                "components": {
+                    "directional": {"score": d_score, "reason": d_reason},
+                    "iv_rank": {"score": iv_score, "reason": iv_reason},
+                    "pcr": {"score": pcr_score, "reason": pcr_reason},
+                    "max_pain": {"score": mp_score, "reason": mp_reason},
+                },
+                **result,
+            }
+        )
     ranked.sort(key=lambda r: r["fit_score"], reverse=True)
     return ranked

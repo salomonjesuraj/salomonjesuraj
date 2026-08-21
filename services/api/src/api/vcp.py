@@ -22,6 +22,8 @@ feature-ic before it's ever allowed to move a live score.
 
 from __future__ import annotations
 
+import itertools
+
 from api.chart_patterns import fractal_pivots_indexed
 
 TREND_TEMPLATE_WEIGHT = 25.0
@@ -41,8 +43,8 @@ RELATIVE_STRENGTH_WEIGHT = 15.0
 RS_LOOKBACK_DAYS = 63
 RS_MIN_LOOKBACK_DAYS = 20
 
-BASE_LOOKBACK_DAYS = 90     # how far back to look for the current base's contraction legs
-MIN_CONTRACTIONS = 2        # Minervini's own stated minimum for a "VCP" label (2-4 typical)
+BASE_LOOKBACK_DAYS = 90  # how far back to look for the current base's contraction legs
+MIN_CONTRACTIONS = 2  # Minervini's own stated minimum for a "VCP" label (2-4 typical)
 CONTRACTION_TOLERANCE = 0.80  # each leg's depth should be <= this fraction of the prior leg's (Minervini's ~0.75 heuristic, with slack)
 
 
@@ -64,7 +66,10 @@ def _trend_template(daily_bars: list[dict], ltp: float) -> dict:
     closes = [float(b["close"]) for b in daily_bars if b.get("close")]
     if len(closes) < 30 or ltp <= 0:
         return {
-            "available": False, "score": 0.0, "checks_passed": 0, "checks_total": 0,
+            "available": False,
+            "score": 0.0,
+            "checks_passed": 0,
+            "checks_total": 0,
             "reason": "Not enough daily history for any trend-template check (need 30+ days, 200+ for a full read)",
         }
 
@@ -92,7 +97,10 @@ def _trend_template(daily_bars: list[dict], ltp: float) -> dict:
     computable = [c for c in checks if c is not None]
     if not computable:
         return {
-            "available": False, "score": 0.0, "checks_passed": 0, "checks_total": 0,
+            "available": False,
+            "score": 0.0,
+            "checks_passed": 0,
+            "checks_total": 0,
             "reason": "Not enough daily history to compute any trend-template check",
         }
     passed = sum(1 for c in computable if c)
@@ -110,7 +118,7 @@ def _trend_template(daily_bars: list[dict], ltp: float) -> dict:
 
 
 def _avg_volume(daily_bars: list[dict], start_idx: int, end_idx: int) -> float:
-    span = daily_bars[start_idx:end_idx + 1]
+    span = daily_bars[start_idx : end_idx + 1]
     vols = [float(b.get("volume") or 0) for b in span]
     return sum(vols) / len(vols) if vols else 0.0
 
@@ -131,21 +139,26 @@ def _contraction_legs(daily_bars: list[dict], lookback: int = BASE_LOOKBACK_DAYS
         price_b, kind_b, idx_b = pivots[i + 1]
         if kind_a == "high" and kind_b == "low" and price_a > 0:
             depth_pct = (price_a - price_b) / price_a * 100.0
-            legs.append({
-                "high": round(price_a, 2), "low": round(price_b, 2),
-                "depth_pct": round(depth_pct, 2),
-                "volume_avg": _avg_volume(daily_bars, idx_a + offset, idx_b + offset),
-            })
+            legs.append(
+                {
+                    "high": round(price_a, 2),
+                    "low": round(price_b, 2),
+                    "depth_pct": round(depth_pct, 2),
+                    "volume_avg": _avg_volume(daily_bars, idx_a + offset, idx_b + offset),
+                }
+            )
     return legs
 
 
 def _contraction_quality(legs: list[dict]) -> dict:
     if len(legs) < MIN_CONTRACTIONS:
         return {
-            "available": False, "score": 0.0, "contractions_found": len(legs),
+            "available": False,
+            "score": 0.0,
+            "contractions_found": len(legs),
             "reason": f"Need at least {MIN_CONTRACTIONS} successive pullback legs in the recent base, found {len(legs)}",
         }
-    pairs = list(zip(legs, legs[1:]))
+    pairs = list(itertools.pairwise(legs))
     tightening = 0
     for prior, nxt in pairs:
         if prior["depth_pct"] <= 0:
@@ -165,12 +178,17 @@ def _contraction_quality(legs: list[dict]) -> dict:
 
 def _volume_dryup(legs: list[dict]) -> dict:
     if len(legs) < MIN_CONTRACTIONS:
-        return {"available": False, "score": 0.0, "reason": "Not enough contraction legs to compare volume"}
+        return {
+            "available": False,
+            "score": 0.0,
+            "reason": "Not enough contraction legs to compare volume",
+        }
     first_vol = legs[0]["volume_avg"]
     last_vol = legs[-1]["volume_avg"]
     if first_vol <= 0:
         return {
-            "available": False, "score": 0.0,
+            "available": False,
+            "score": 0.0,
             "reason": "No real volume on the earliest leg (thinly-traded symbol, or an index has no per-bar volume)",
         }
     ratio = last_vol / first_vol
@@ -220,7 +238,11 @@ def _relative_strength(daily_bars: list[dict], nifty_bars: list[dict] | None) ->
     nifty_closes = [float(b["close"]) for b in nifty_bars if b.get("close")]
     lookback = min(RS_LOOKBACK_DAYS, len(stock_closes) - 1, len(nifty_closes) - 1)
     if lookback < RS_MIN_LOOKBACK_DAYS:
-        return {"available": False, "score": 0.0, "reason": "Not enough overlapping daily history for stock vs Nifty 50"}
+        return {
+            "available": False,
+            "score": 0.0,
+            "reason": "Not enough overlapping daily history for stock vs Nifty 50",
+        }
     stock_return = (stock_closes[-1] / stock_closes[-1 - lookback] - 1.0) * 100.0
     nifty_return = (nifty_closes[-1] / nifty_closes[-1 - lookback] - 1.0) * 100.0
     rs_diff = stock_return - nifty_return

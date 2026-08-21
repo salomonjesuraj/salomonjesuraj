@@ -1,21 +1,22 @@
 """Per-symbol mutable state for feature computation."""
 
-from dataclasses import dataclass, field
 from collections import deque
+from dataclasses import dataclass, field
 
 
 @dataclass
 class OHLCBar:
     """A single OHLC bar."""
+
     open: float = 0.0
     high: float = 0.0
     low: float = float("inf")
     close: float = 0.0
     volume: int = 0
-    vwap_numerator: float = 0.0          # sum(price * volume)
-    vwap_denominator: int = 0            # sum(volume)
+    vwap_numerator: float = 0.0  # sum(price * volume)
+    vwap_denominator: int = 0  # sum(volume)
     tick_count: int = 0
-    bar_start_ms: int = 0                # exchange timestamp of bar start
+    bar_start_ms: int = 0  # exchange timestamp of bar start
 
 
 @dataclass
@@ -138,8 +139,8 @@ class SymbolState:
     ha_low: float = 0.0
     ha_initialized: bool = False
     ha_trend_streak: int = 0
-    ha_streak_bullish: bool | None = None   # color the current streak is counting
-    ha_last_bullish: bool | None = None     # latest HA candle's color
+    ha_streak_bullish: bool | None = None  # color the current streak is counting
+    ha_last_bullish: bool | None = None  # latest HA candle's color
     ha_prev_bullish_for_flip: bool | None = None  # color one bar before latest, for flip detection
     ha_doji: bool = False
 
@@ -159,11 +160,11 @@ class SymbolState:
     swing_high_2: float | None = None
     swing_low_1: float | None = None
     swing_low_2: float | None = None
-    trend_state: int = 0                 # 1 = uptrend, -1 = downtrend, 0 = range
-    last_event_label: str = "None"       # "Bullish BOS" / "Bullish CHOCH" / etc.
+    trend_state: int = 0  # 1 = uptrend, -1 = downtrend, 0 = range
+    last_event_label: str = "None"  # "Bullish BOS" / "Bullish CHOCH" / etc.
     last_break_high: float | None = None  # swing_high_1 value that last triggered a break (dedup)
     last_break_low: float | None = None
-    structure_event: bool = False        # True only on the bar a break just fired
+    structure_event: bool = False  # True only on the bar a break just fired
 
     # Extended swing-point history for Fibonacci retracement/extension/
     # projection confluence (features/fibonacci.py). BOS/CHOCH above only

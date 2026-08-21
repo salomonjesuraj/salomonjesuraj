@@ -27,7 +27,7 @@ class SignalCandidate:
 
     symbol: str
     strategy_id: str
-    signal_type: str                            # "bullish" | "bearish"
+    signal_type: str  # "bullish" | "bearish"
     conditions_met: dict[str, bool] = field(default_factory=dict)
     explanation: list[str] = field(default_factory=list)
     features_snapshot: dict = field(default_factory=dict)

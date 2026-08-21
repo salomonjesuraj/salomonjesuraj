@@ -95,7 +95,10 @@ def classify_error(exception: Exception) -> InfusionError:
         "Upstox access token" in msg or "Upstox WS auth failed: 401" in msg
     ):
         return InfusionError(
-            ErrorCategory.BROKER, ErrorSource.BROKER_WS, msg, exception,
+            ErrorCategory.BROKER,
+            ErrorSource.BROKER_WS,
+            msg,
+            exception,
             context={"auth_failure": True},
         )
 

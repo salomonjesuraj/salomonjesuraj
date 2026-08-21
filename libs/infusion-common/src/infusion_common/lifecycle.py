@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import signal
-from typing import Callable, Awaitable
+from collections.abc import Awaitable, Callable
 
 import structlog
 
@@ -52,11 +53,9 @@ class ServiceLifecycle:
             self._shutdown_event.set()
 
         for sig in (signal.SIGTERM, signal.SIGINT):
-            try:
+            # Windows does not support add_signal_handler.
+            with contextlib.suppress(NotImplementedError):
                 loop.add_signal_handler(sig, _handle_signal, sig)
-            except NotImplementedError:
-                # Windows doesn't support add_signal_handler
-                pass
 
     async def run_until_shutdown(self, main_task: Callable[[], Awaitable]) -> None:
         """Run the main task until shutdown is requested."""
@@ -72,10 +71,8 @@ class ServiceLifecycle:
 
         # Cancel main task
         task.cancel()
-        try:
+        with contextlib.suppress(asyncio.CancelledError):
             await task
-        except asyncio.CancelledError:
-            pass
 
         # Run cleanup callbacks
         await self.cleanup()

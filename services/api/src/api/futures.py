@@ -42,9 +42,9 @@ once.
 
 from __future__ import annotations
 
+import contextlib
 import gzip
 import json
-import time
 
 import aiohttp
 import structlog
@@ -53,11 +53,11 @@ logger = structlog.get_logger()
 
 INSTRUMENTS_MASTER_URL = "https://assets.upstox.com/market-quote/instruments/exchange/NSE.json.gz"
 UPSTOX_QUOTE_URL = "https://api.upstox.com/v2/market-quote/quotes"
-QUOTE_BATCH_SIZE = 500   # Upstox's own documented cap per Full Market Quote call
+QUOTE_BATCH_SIZE = 500  # Upstox's own documented cap per Full Market Quote call
 
 MASTER_CACHE_KEY = "infusion:futures:master"
-MASTER_CACHE_TTL_SEC = 20 * 3600   # contract listings/rollovers don't change intraday
-FUTURES_STATE_PREFIX = "infusion:futures:"   # + {symbol} -> HASH
+MASTER_CACHE_TTL_SEC = 20 * 3600  # contract listings/rollovers don't change intraday
+FUTURES_STATE_PREFIX = "infusion:futures:"  # + {symbol} -> HASH
 
 
 async def fetch_futures_master(session: aiohttp.ClientSession, redis) -> dict[str, list[dict]]:
@@ -93,19 +93,19 @@ async def fetch_futures_master(session: aiohttp.ClientSession, redis) -> dict[st
         underlying_key = rec.get("underlying_key") or ""
         if not underlying_key:
             continue
-        by_underlying.setdefault(underlying_key, []).append({
-            "instrument_key": rec.get("instrument_key"),
-            "trading_symbol": rec.get("trading_symbol"),
-            "expiry": rec.get("expiry"),
-            "lot_size": rec.get("lot_size"),
-        })
+        by_underlying.setdefault(underlying_key, []).append(
+            {
+                "instrument_key": rec.get("instrument_key"),
+                "trading_symbol": rec.get("trading_symbol"),
+                "expiry": rec.get("expiry"),
+                "lot_size": rec.get("lot_size"),
+            }
+        )
     for contracts in by_underlying.values():
         contracts.sort(key=lambda c: c.get("expiry") or "")
 
-    try:
+    with contextlib.suppress(Exception):
         await redis.setex(MASTER_CACHE_KEY, MASTER_CACHE_TTL_SEC, json.dumps(by_underlying))
-    except Exception:
-        pass
 
     logger.info("futures_master_loaded", underlyings=len(by_underlying), total_records=len(records))
     return by_underlying
@@ -143,14 +143,16 @@ def compute_oi_delta(current_oi: int, prev_oi: int | None) -> dict:
     return {"oi_change": delta, "oi_change_pct": round(pct, 2) if pct is not None else None}
 
 
-async def fetch_quotes(session: aiohttp.ClientSession, headers: dict, instrument_keys: list[str]) -> dict[str, dict]:
+async def fetch_quotes(
+    session: aiohttp.ClientSession, headers: dict, instrument_keys: list[str]
+) -> dict[str, dict]:
     """Batched Full Market Quote fetch, chunked to Upstox's documented
     500-key cap (208 F&O symbols today fits in one call, but this stays
     correct if the universe grows past 500).
     """
     result: dict[str, dict] = {}
     for i in range(0, len(instrument_keys), QUOTE_BATCH_SIZE):
-        batch = instrument_keys[i:i + QUOTE_BATCH_SIZE]
+        batch = instrument_keys[i : i + QUOTE_BATCH_SIZE]
         try:
             async with session.get(
                 UPSTOX_QUOTE_URL,
@@ -160,7 +162,9 @@ async def fetch_quotes(session: aiohttp.ClientSession, headers: dict, instrument
             ) as resp:
                 data = await resp.json()
                 if resp.status != 200 or data.get("status") != "success":
-                    logger.warning("futures_quote_fetch_failed", status=resp.status, batch_size=len(batch))
+                    logger.warning(
+                        "futures_quote_fetch_failed", status=resp.status, batch_size=len(batch)
+                    )
                     continue
                 result.update(data.get("data") or {})
         except Exception as exc:

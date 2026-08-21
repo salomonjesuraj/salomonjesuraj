@@ -11,17 +11,17 @@ import uuid
 
 import structlog
 from aiohttp import web
+from infusion_common.health import HealthReporter
+from infusion_common.logging import setup_logging
+from infusion_streams.constants import (
+    CG_DASHBOARD,
+    STREAM_TICK_NORMALIZED,
+)
+from infusion_streams.consumer import StreamConsumer
 from redis.asyncio import Redis
 
-from ws_gateway.config import WSGatewaySettings
 from ws_gateway.client_manager import ClientManager
-from infusion_common.logging import setup_logging
-from infusion_common.health import HealthReporter
-from infusion_streams.consumer import StreamConsumer
-from infusion_streams.constants import (
-    STREAM_TICK_NORMALIZED,
-    CG_DASHBOARD,
-)
+from ws_gateway.config import WSGatewaySettings
 
 logger = structlog.get_logger()
 
@@ -36,32 +36,44 @@ async def main():
 
     # Health
     health = HealthReporter(redis, config.service_name)
-    health.set_details_fn(lambda: {
-        "clients": clients.client_count,
-        "messages_sent": clients.messages_sent,
-    })
+    health.set_details_fn(
+        lambda: {
+            "clients": clients.client_count,
+            "messages_sent": clients.messages_sent,
+        }
+    )
     await health.start()
 
     # Stream consumer for normalized ticks
     tick_consumer = StreamConsumer(
-        redis, STREAM_TICK_NORMALIZED, CG_DASHBOARD, "ws-gateway-tick",
-        batch_size=config.consumer_batch_size, block_ms=config.consumer_block_ms,
+        redis,
+        STREAM_TICK_NORMALIZED,
+        CG_DASHBOARD,
+        "ws-gateway-tick",
+        batch_size=config.consumer_batch_size,
+        block_ms=config.consumer_block_ms,
     )
     await tick_consumer.ensure_group()
 
     # Background: read ticks and buffer for batch delivery
     async def tick_reader():
-        async for event_type, version, rx_us, payload, ack in tick_consumer.consume():
+        async for _event_type, _version, _rx_us, payload, ack in tick_consumer.consume():
             symbol = payload.get("symbol", "")
-            await clients.buffer_tick(symbol, {
-                "ltp": payload.get("ltp"),
-                "volume": payload.get("volume"),
-                "high": payload.get("high"),
-                "low": payload.get("low"),
-                "change_pct": round(
-                    (payload.get("ltp", 0) - payload.get("close", 1)) / max(payload.get("close", 1), 0.01) * 100, 2
-                ),
-            })
+            await clients.buffer_tick(
+                symbol,
+                {
+                    "ltp": payload.get("ltp"),
+                    "volume": payload.get("volume"),
+                    "high": payload.get("high"),
+                    "low": payload.get("low"),
+                    "change_pct": round(
+                        (payload.get("ltp", 0) - payload.get("close", 1))
+                        / max(payload.get("close", 1), 0.01)
+                        * 100,
+                        2,
+                    ),
+                },
+            )
             await ack()
 
     # Background: flush batched ticks every 100ms
@@ -97,11 +109,13 @@ async def main():
 
     # Health endpoint
     async def health_handler(request):
-        return web.json_response({
-            "status": "healthy",
-            "clients": clients.client_count,
-            "messages_sent": clients.messages_sent,
-        })
+        return web.json_response(
+            {
+                "status": "healthy",
+                "clients": clients.client_count,
+                "messages_sent": clients.messages_sent,
+            }
+        )
 
     # Setup aiohttp app
     app = web.Application()

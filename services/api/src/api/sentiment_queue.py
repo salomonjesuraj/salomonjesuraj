@@ -22,14 +22,14 @@ import time
 
 import structlog
 
-from api.sentiment import summarize_symbol_sentiment, RECENCY_WINDOW_MS
+from api.sentiment import RECENCY_WINDOW_MS, summarize_symbol_sentiment
 
 logger = structlog.get_logger()
 
 SWEEP_INTERVAL_SEC = 60
 STATUS_KEY = "infusion:sentiment-queue:status"
 CACHE_PREFIX = "infusion:sentiment:"
-CACHE_TTL_SEC = 10 * 60   # a few sweep intervals of grace, same order as other queue caches
+CACHE_TTL_SEC = 10 * 60  # a few sweep intervals of grace, same order as other queue caches
 MAX_ARTICLES_PER_SYMBOL = 50
 
 
@@ -60,7 +60,9 @@ async def _symbol_rows(pool, symbol: str, cutoff_ms: int) -> list[dict]:
             ORDER BY ne.published_time_ms DESC NULLS LAST
             LIMIT $3
             """,
-            symbol, cutoff_ms, MAX_ARTICLES_PER_SYMBOL,
+            symbol,
+            cutoff_ms,
+            MAX_ARTICLES_PER_SYMBOL,
         )
     return [dict(r) for r in rows]
 
@@ -79,7 +81,9 @@ async def sweep_once(app) -> dict:
     for symbol in symbols:
         rows = await _symbol_rows(pool, symbol, cutoff_ms)
         summary = summarize_symbol_sentiment(rows, now_ms)
-        await redis.set(f"{CACHE_PREFIX}{symbol}", json.dumps(summary, separators=(",", ":")), ex=CACHE_TTL_SEC)
+        await redis.set(
+            f"{CACHE_PREFIX}{symbol}", json.dumps(summary, separators=(",", ":")), ex=CACHE_TTL_SEC
+        )
         updated += 1
 
     status = {
@@ -101,5 +105,7 @@ async def sentiment_cache_loop(app) -> None:
     while True:
         with contextlib.suppress(Exception):
             status = await sweep_once(app)
-            logger.info("sentiment_cache_sweep", **{k: v for k, v in status.items() if k != "checked_at"})
+            logger.info(
+                "sentiment_cache_sweep", **{k: v for k, v in status.items() if k != "checked_at"}
+            )
         await asyncio.sleep(SWEEP_INTERVAL_SEC)

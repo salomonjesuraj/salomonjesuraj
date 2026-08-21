@@ -11,7 +11,7 @@ import time
 class TierThrottler:
     def __init__(self, tier2_ms: int = 500, tier3_ms: int = 2000):
         self._thresholds = {
-            1: 0,                     # no throttling
+            1: 0,  # no throttling
             2: tier2_ms / 1000.0,
             3: tier3_ms / 1000.0,
         }

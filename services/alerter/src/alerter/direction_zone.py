@@ -67,11 +67,19 @@ class DirectionZone:
 def derive_direction_zone(payload: dict, previous_lock: dict | None = None) -> DirectionZone:
     fs = _dict(payload.get("features_snapshot"))
     primary_map = _dict(fs.get("primary_trade_map") or payload.get("primary_trade_map"))
-    alternate_map = _dict(fs.get("mtf_alternate_trade_map") or payload.get("mtf_alternate_trade_map"))
+    alternate_map = _dict(
+        fs.get("mtf_alternate_trade_map") or payload.get("mtf_alternate_trade_map")
+    )
 
     signal_type = str(payload.get("signal_type") or "").lower()
     option_bias = str(payload.get("option_bias") or fs.get("option_bias") or "").upper()
-    raw_bias = "BUY PE" if signal_type == "bearish" or "PE" in option_bias else "BUY CE" if signal_type == "bullish" or "CE" in option_bias else "WAIT"
+    raw_bias = (
+        "BUY PE"
+        if signal_type == "bearish" or "PE" in option_bias
+        else "BUY CE"
+        if signal_type == "bullish" or "CE" in option_bias
+        else "WAIT"
+    )
 
     ltp = _num(payload.get("price_at_signal") or fs.get("ltp") or payload.get("entry_price"))
     ce_above = _num(
@@ -156,15 +164,35 @@ def derive_direction_zone(payload: dict, previous_lock: dict | None = None) -> D
         prev_bias = str(previous_lock.get("bias") or "").upper()
         prev_ts = _num(previous_lock.get("ts"))
         fresh_ms = (time.time() * 1000.0) - prev_ts if prev_ts else 999999.0
-        flipping = prev_bias in {"BUY CE", "BUY PE"} and bias in {"BUY CE", "BUY PE"} and prev_bias != bias
-        strong_flip = gap >= 18 and ((bias == "BUY CE" and ce_crossed) or (bias == "BUY PE" and pe_crossed))
+        flipping = (
+            prev_bias in {"BUY CE", "BUY PE"} and bias in {"BUY CE", "BUY PE"} and prev_bias != bias
+        )
+        strong_flip = gap >= 18 and (
+            (bias == "BUY CE" and ce_crossed) or (bias == "BUY PE" and pe_crossed)
+        )
         if flipping and fresh_ms < 180000 and not strong_flip:
-            switch_note = f"Anti-flip lock: previous {prev_bias}; new {bias} needs stronger trigger."
+            switch_note = (
+                f"Anti-flip lock: previous {prev_bias}; new {bias} needs stronger trigger."
+            )
             bias = "WAIT"
             state = "CONFLICT_LOCK"
             reason = "Direction changed too quickly. Wait for clean candle close and score gap."
 
-    wait_low = min(x for x in [pe_below, ce_above] if x > 0) if (pe_below > 0 or ce_above > 0) else 0.0
-    wait_high = max(x for x in [pe_below, ce_above] if x > 0) if (pe_below > 0 or ce_above > 0) else 0.0
-    return DirectionZone(bias, state, ce_score, pe_score, ce_above, pe_below, wait_low, wait_high, reason, switch_note)
-
+    wait_low = (
+        min(x for x in [pe_below, ce_above] if x > 0) if (pe_below > 0 or ce_above > 0) else 0.0
+    )
+    wait_high = (
+        max(x for x in [pe_below, ce_above] if x > 0) if (pe_below > 0 or ce_above > 0) else 0.0
+    )
+    return DirectionZone(
+        bias,
+        state,
+        ce_score,
+        pe_score,
+        ce_above,
+        pe_below,
+        wait_low,
+        wait_high,
+        reason,
+        switch_note,
+    )

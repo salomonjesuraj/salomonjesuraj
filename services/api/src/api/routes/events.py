@@ -45,7 +45,9 @@ async def stock_events(request):
                 continue
         if cursor == 0 or len(rows) >= limit:
             break
-    rows.sort(key=lambda x: (str(x.get("next_event_date") or "9999-99-99"), str(x.get("symbol") or "")))
+    rows.sort(
+        key=lambda x: (str(x.get("next_event_date") or "9999-99-99"), str(x.get("symbol") or ""))
+    )
     return web.json_response({"ok": True, "count": len(rows), "events": rows})
 
 
@@ -71,7 +73,9 @@ async def save_stock_event(request):
         "note": str(payload.get("note") or ""),
         "updated_at_ist": datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST"),
     }
-    await redis.set(f"{EVENT_KEY_PREFIX}{symbol}", json.dumps(data, separators=(",", ":")), ex=86400 * 370)
+    await redis.set(
+        f"{EVENT_KEY_PREFIX}{symbol}", json.dumps(data, separators=(",", ":")), ex=86400 * 370
+    )
     return web.json_response({"ok": True, "event": await get_event_risk(redis, symbol)})
 
 

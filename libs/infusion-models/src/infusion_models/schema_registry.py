@@ -10,13 +10,12 @@ Rules:
 
 from __future__ import annotations
 
-from infusion_models.events import EventType
-from infusion_models.tick import RawTickV1, NormalizedTickV1
-from infusion_models.feature import FeatureVectorV1
-from infusion_models.signal import ScanSignalV1, ScanSignalV2
-from infusion_models.sector import SectorStateV1
 from infusion_models.alert import AlertOutboundV1
-
+from infusion_models.events import EventType
+from infusion_models.feature import FeatureVectorV1
+from infusion_models.sector import SectorStateV1
+from infusion_models.signal import ScanSignalV1, ScanSignalV2
+from infusion_models.tick import NormalizedTickV1, RawTickV1
 
 # What version producers currently emit
 CURRENT_VERSIONS: dict[EventType, int] = {
@@ -46,6 +45,7 @@ SCHEMA_REGISTRY: dict[tuple[EventType, int], type] = {
 
 class SchemaVersionError(Exception):
     """Raised when a message has an unrecognized schema version."""
+
     pass
 
 

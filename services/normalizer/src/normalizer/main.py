@@ -8,25 +8,27 @@ Hot state: infusion:tick:{symbol}
 import asyncio
 
 import structlog
+from infusion_common.health import HealthReporter
+from infusion_common.lifecycle import ServiceLifecycle
+from infusion_common.logging import setup_logging
+from infusion_models.events import EventType
+from infusion_streams.constants import (
+    CG_NORMALIZER,
+    KEY_TICK_PREFIX,
+    MAXLEN_TICK_NORMALIZED,
+    STREAM_TICK_NORMALIZED,
+    STREAM_TICK_RAW,
+)
+from infusion_streams.consumer import StreamConsumer
+from infusion_streams.producer import StreamProducer
 from redis.asyncio import Redis
 
 from normalizer.config import NormalizerSettings
-from normalizer.resolver import SymbolResolver
-from normalizer.throttler import TierThrottler
 from normalizer.dedup import TickDedup
 from normalizer.ordering import OutOfOrderDetector
+from normalizer.resolver import SymbolResolver
+from normalizer.throttler import TierThrottler
 from normalizer.transformer import transform
-from infusion_common.logging import setup_logging
-from infusion_common.lifecycle import ServiceLifecycle
-from infusion_common.health import HealthReporter
-from infusion_models.events import EventType
-from infusion_streams.consumer import StreamConsumer
-from infusion_streams.producer import StreamProducer
-from infusion_streams.constants import (
-    STREAM_TICK_RAW, STREAM_TICK_NORMALIZED,
-    CG_NORMALIZER, MAXLEN_TICK_NORMALIZED,
-    KEY_TICK_PREFIX,
-)
 
 logger = structlog.get_logger()
 
@@ -57,8 +59,12 @@ async def main():
 
     # Stream I/O
     consumer = StreamConsumer(
-        redis, STREAM_TICK_RAW, CG_NORMALIZER, "normalizer-1",
-        batch_size=config.batch_size, block_ms=config.block_ms,
+        redis,
+        STREAM_TICK_RAW,
+        CG_NORMALIZER,
+        "normalizer-1",
+        batch_size=config.batch_size,
+        block_ms=config.block_ms,
     )
     await consumer.ensure_group()
 
@@ -66,14 +72,16 @@ async def main():
 
     # Health
     health = HealthReporter(redis, config.service_name)
-    health.set_details_fn(lambda: {
-        "symbols_loaded": resolver.count,
-        "throttled_dropped": throttler.dropped_count,
-        "duplicates_dropped": dedup.duplicate_count,
-        "out_of_order_flagged": ordering.out_of_order_count,
-        "consumed": consumer.stats,
-        "published": producer.published_count,
-    })
+    health.set_details_fn(
+        lambda: {
+            "symbols_loaded": resolver.count,
+            "throttled_dropped": throttler.dropped_count,
+            "duplicates_dropped": dedup.duplicate_count,
+            "out_of_order_flagged": ordering.out_of_order_count,
+            "consumed": consumer.stats,
+            "published": producer.published_count,
+        }
+    )
     await health.start()
     lifecycle.register_cleanup(health.stop)
     lifecycle.register_cleanup(redis.aclose)
@@ -82,7 +90,7 @@ async def main():
     logger.info("normalizer_consuming", stream=STREAM_TICK_RAW)
     resolve_misses = 0
 
-    async for event_type, version, rx_us, payload, ack in consumer.consume():
+    async for _event_type, _version, rx_us, payload, ack in consumer.consume():
         if not lifecycle.should_run:
             break
 
@@ -127,7 +135,8 @@ async def main():
                 "volume": str(normalized.volume),
                 "change_pct": str(
                     round((normalized.ltp - normalized.close) / normalized.close * 100, 2)
-                    if normalized.close > 0 else 0
+                    if normalized.close > 0
+                    else 0
                 ),
                 "exchange_ts": str(normalized.exchange_timestamp_ms),
                 "updated_at": str(normalized.normalized_at_us),

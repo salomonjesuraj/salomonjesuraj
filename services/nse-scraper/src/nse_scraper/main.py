@@ -21,25 +21,23 @@ Runtime switching:
 """
 
 import asyncio
+import contextlib
 
 import redis.asyncio as aioredis
 import structlog
+from infusion_common.health import HealthReporter
+from infusion_common.lifecycle import ServiceLifecycle
+from infusion_common.logging import setup_logging
 
 from nse_scraper.config import NseScraperSettings
 from nse_scraper.delivery import run_delivery_capture
 from nse_scraper.fo_ban import run_fo_ban_capture
 from nse_scraper.loader import (
+    get_sector_summary,
     load_universe,
     populate_redis,
-    get_instrument_keys,
-    get_sector_summary,
 )
 from nse_scraper.oauth import start_oauth_server
-
-from infusion_common.config import InfusionSettings
-from infusion_common.logging import setup_logging
-from infusion_common.health import HealthReporter
-from infusion_common.lifecycle import ServiceLifecycle
 
 logger = structlog.get_logger()
 
@@ -117,11 +115,13 @@ async def run() -> None:
 
     # Health reporter
     health = HealthReporter(r, settings.service_name)
-    health.set_details_fn(lambda: {
-        "tier": settings.symbol_universe,
-        "symbols_loaded": count,
-        "sectors": len(sector_summary),
-    })
+    health.set_details_fn(
+        lambda: {
+            "tier": settings.symbol_universe,
+            "symbols_loaded": count,
+            "sectors": len(sector_summary),
+        }
+    )
     await health.start()
 
     # Lifecycle
@@ -130,17 +130,16 @@ async def run() -> None:
     lifecycle.on_shutdown(r.aclose)
 
     # Start OAuth callback server in background
-    oauth_task = asyncio.create_task(
-        start_oauth_server(r, settings)
-    )
+    oauth_task = asyncio.create_task(start_oauth_server(r, settings))
 
     # Main loop: periodic health heartbeat + symbol refresh + delivery capture
     DELIVERY_CAPTURE_INTERVAL_SEC = 3 * 3600  # NSE publishes once/day; this just
-                                               # bounds how quickly a fresh
-                                               # session's data gets picked up
-    FO_BAN_CAPTURE_INTERVAL_SEC = 30 * 60     # shorter than delivery -- this
-                                               # gates live signal publishing,
-                                               # worth refreshing more often
+    # bounds how quickly a fresh
+    # session's data gets picked up
+    FO_BAN_CAPTURE_INTERVAL_SEC = 30 * 60  # shorter than delivery -- this
+
+    # gates live signal publishing,
+    # worth refreshing more often
     async def main_loop():
         refresh_counter = 0
         delivery_counter = 0
@@ -192,10 +191,8 @@ async def run() -> None:
         await lifecycle.run_until_shutdown(main_loop)
     finally:
         oauth_task.cancel()
-        try:
+        with contextlib.suppress(asyncio.CancelledError):
             await oauth_task
-        except asyncio.CancelledError:
-            pass
 
 
 def main():

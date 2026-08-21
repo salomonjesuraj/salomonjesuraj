@@ -20,17 +20,16 @@ for lib in ("infusion-models", "infusion-streams", "infusion-common"):
 sys.path.insert(0, os.path.join(base, "services", "scanner", "src"))
 
 import redis.asyncio as aioredis
-
+from infusion_common.timing import now_us
+from infusion_streams.constants import (
+    KEY_SECTOR_PREFIX,
+    KEY_SIGNAL_ACTIVE,
+)
 from scanner.config import ScannerSettings
 from scanner.engine import ScannerEngine
-from scanner.strategies import register_strategy, _REGISTRY
-from scanner.strategies.vol_vwap_breakout import VolVwapBreakout
 from scanner.sector import MarketRegime
-
-from infusion_streams.constants import (
-    KEY_SIGNAL_ACTIVE, KEY_SECTOR_PREFIX,
-)
-from infusion_common.timing import now_us
+from scanner.strategies import _REGISTRY, register_strategy
+from scanner.strategies.vol_vwap_breakout import VolVwapBreakout
 
 REDIS_URL = os.environ.get("INFUSION_REDIS_URL", "redis://localhost:6379/0")
 
@@ -85,7 +84,7 @@ def _features(symbol, ltp, vwap, ema_20, change_pct, rsi, rel_vol, bb_width=0.02
 async def run_tests():
     r = aioredis.from_url(REDIS_URL, decode_responses=False)
     await r.ping()
-    print(f"✓ Redis connected\n")
+    print("✓ Redis connected\n")
 
     settings = ScannerSettings()
 
@@ -113,16 +112,12 @@ async def run_tests():
     # Phase 1: Warmup all symbols
     # ═══════════════════════════════════════════════
     print("--- WARMUP ---")
-    for i in range(settings.warmup_ticks):
+    for _i in range(settings.warmup_ticks):
         for sym, sec in SYMBOLS.items():
             if sec == "INDEX":
-                await engine.process_feature(
-                    _features(sym, 22000, 21900, 21800, 0.5, 55, 1.0)
-                )
+                await engine.process_feature(_features(sym, 22000, 21900, 21800, 0.5, 55, 1.0))
             else:
-                await engine.process_feature(
-                    _features(sym, 1500, 1490, 1480, 0.5, 52, 1.0)
-                )
+                await engine.process_feature(_features(sym, 1500, 1490, 1480, 0.5, 52, 1.0))
 
     check("Warmup complete", engine._evaluations >= settings.warmup_ticks * len(SYMBOLS))
 
@@ -147,14 +142,12 @@ async def run_tests():
             _features("SEC_REL", 2500, 2490, 2480, 0.8, 52, 1.2, bb_width=0.02)
         )
         # Index: RISK_ON conditions
-        await engine.process_feature(
-            _features("SEC_NIFTY", 22200, 22100, 21800, 0.8, 60, 1.2)
-        )
+        await engine.process_feature(_features("SEC_NIFTY", 22200, 22100, 21800, 0.8, 60, 1.2))
 
     # Check sector strength
     it_sector = engine.sector.get_sector("NIFTY_IT")
     bank_sector = engine.sector.get_sector("NIFTY_BANK")
-    n50_sector = engine.sector.get_sector("NIFTY_50")
+    engine.sector.get_sector("NIFTY_50")
 
     check("IT sector exists", it_sector is not None)
     check("Bank sector exists", bank_sector is not None)
@@ -188,9 +181,7 @@ async def run_tests():
 
     # Switch to RISK_OFF
     for _ in range(5):
-        await engine.process_feature(
-            _features("SEC_NIFTY", 21000, 21500, 21800, -2.5, 32, 1.5)
-        )
+        await engine.process_feature(_features("SEC_NIFTY", 21000, 21500, 21800, -2.5, 32, 1.5))
 
     check(
         "Regime switched to RISK_OFF",
@@ -200,9 +191,7 @@ async def run_tests():
 
     # Switch back to NEUTRAL
     for _ in range(5):
-        await engine.process_feature(
-            _features("SEC_NIFTY", 21800, 21700, 21600, 0.3, 48, 1.0)
-        )
+        await engine.process_feature(_features("SEC_NIFTY", 21800, 21700, 21600, 0.3, 48, 1.0))
 
     check(
         "Regime switched to NEUTRAL",
@@ -221,7 +210,7 @@ async def run_tests():
     check("IT explanations present", len(exp_it) > 0, f"count={len(exp_it)}")
 
     # Weak sector → negative adjustment
-    adj_bank, exp_bank = engine.sector.compute_sector_adjustment("NIFTY_BANK", "SEC_HDFC")
+    adj_bank, _exp_bank = engine.sector.compute_sector_adjustment("NIFTY_BANK", "SEC_HDFC")
     check("BANK sector adj < 0", adj_bank < 0, f"adj={adj_bank:.1f}")
 
     # ═══════════════════════════════════════════════
@@ -244,9 +233,11 @@ async def run_tests():
     print("\n--- RELATIVE STRENGTH ---")
     rel_infy = engine.sector.get_relative_strength("SEC_INFY", "NIFTY_IT")
     rel_tcs = engine.sector.get_relative_strength("SEC_TCS", "NIFTY_IT")
-    check("INFY outperforming TCS in sector",
-          rel_infy > rel_tcs,
-          f"INFY={rel_infy:+.2f}%, TCS={rel_tcs:+.2f}%")
+    check(
+        "INFY outperforming TCS in sector",
+        rel_infy > rel_tcs,
+        f"INFY={rel_infy:+.2f}%, TCS={rel_tcs:+.2f}%",
+    )
 
     # ═══════════════════════════════════════════════
     # Phase 7: Redis persistence
@@ -267,8 +258,11 @@ async def run_tests():
     check("Regime in Redis", len(regime_data) > 0)
     if regime_data:
         redis_regime = regime_data.get(b"regime", b"").decode()
-        check("Redis regime value", redis_regime in ("risk_on", "neutral", "risk_off"),
-              f"regime={redis_regime}")
+        check(
+            "Redis regime value",
+            redis_regime in ("risk_on", "neutral", "risk_off"),
+            f"regime={redis_regime}",
+        )
 
     # ═══════════════════════════════════════════════
     # Phase 8: Signal with sector context
@@ -277,9 +271,7 @@ async def run_tests():
 
     # Set regime to RISK_ON for signal
     for _ in range(5):
-        await engine.process_feature(
-            _features("SEC_NIFTY", 22200, 22100, 21800, 0.8, 60, 1.2)
-        )
+        await engine.process_feature(_features("SEC_NIFTY", 22200, 22100, 21800, 0.8, 60, 1.2))
 
     # Trigger breakout for INFY in strong IT sector
     state = engine.state_mgr.get_or_create("SEC_INFY")
@@ -290,8 +282,7 @@ async def run_tests():
         _features("SEC_INFY", 1520, 1495, 1480, 2.0, 62, 3.5, bb_width=0.015)
     )
 
-    check("Signal emitted", engine._signals_emitted >= 1,
-          f"emitted={engine._signals_emitted}")
+    check("Signal emitted", engine._signals_emitted >= 1, f"emitted={engine._signals_emitted}")
 
     # Check the signal has sector context
     sig_data = await r.hgetall(b"infusion:signal:SEC_INFY")
@@ -304,12 +295,17 @@ async def run_tests():
     # ═══════════════════════════════════════════════
     print("\n--- ENGINE STATS ---")
     stats = engine.stats
-    check("Stats: sector_updates > 0", stats.get("sector_updates", 0) > 0,
-          f"updates={stats.get('sector_updates')}")
-    check("Stats: sector_count == 3", stats.get("sector_count", 0) == 3,
-          f"count={stats.get('sector_count')}")
-    check("Stats: regime present", "regime" in stats,
-          f"regime={stats.get('regime')}")
+    check(
+        "Stats: sector_updates > 0",
+        stats.get("sector_updates", 0) > 0,
+        f"updates={stats.get('sector_updates')}",
+    )
+    check(
+        "Stats: sector_count == 3",
+        stats.get("sector_count", 0) == 3,
+        f"count={stats.get('sector_count')}",
+    )
+    check("Stats: regime present", "regime" in stats, f"regime={stats.get('regime')}")
 
     # ═══════════════════════════════════════════════
     # Phase 10: Determinism

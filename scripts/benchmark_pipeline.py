@@ -7,13 +7,12 @@ Usage:
 """
 
 import asyncio
+import statistics
 import sys
 import time
-import statistics
 
 import msgpack
 from redis.asyncio import Redis
-
 
 STREAMS = {
     "tick:raw": "infusion:stream:tick:raw",
@@ -54,9 +53,9 @@ async def measure_throughput(redis: Redis, duration_sec: int):
             print(f"  ... {i + 1}/{duration_sec}s sampled")
 
     # Results
-    print(f"\n  Stream Throughput (msgs/sec):")
+    print("\n  Stream Throughput (msgs/sec):")
     print(f"  {'Stream':<25} {'Avg':>10} {'Min':>10} {'Max':>10} {'StdDev':>10}")
-    print(f"  {'-'*65}")
+    print(f"  {'-' * 65}")
 
     for name in STREAMS:
         if samples[name]:
@@ -95,11 +94,9 @@ async def measure_latency(redis: Redis, sample_count: int = 50):
     }
 
     # Read recent normalized ticks
-    norm_msgs = await redis.xrevrange(
-        "infusion:stream:tick:normalized", count=sample_count
-    )
+    norm_msgs = await redis.xrevrange("infusion:stream:tick:normalized", count=sample_count)
 
-    for msg_id, fields in norm_msgs:
+    for _msg_id, fields in norm_msgs:
         raw = fields.get(b"data") or fields.get("data")
         if not raw:
             continue
@@ -114,11 +111,9 @@ async def measure_latency(redis: Redis, sample_count: int = 50):
             pass
 
     # Read recent feature vectors
-    feat_msgs = await redis.xrevrange(
-        "infusion:stream:feature:computed", count=sample_count
-    )
+    feat_msgs = await redis.xrevrange("infusion:stream:feature:computed", count=sample_count)
 
-    for msg_id, fields in feat_msgs:
+    for _msg_id, fields in feat_msgs:
         raw = fields.get(b"data") or fields.get("data")
         if not raw:
             continue
@@ -133,11 +128,9 @@ async def measure_latency(redis: Redis, sample_count: int = 50):
             pass
 
     # E2E: compare tick:raw received_at_us to feature:computed timestamp_us
-    raw_msgs = await redis.xrevrange(
-        "infusion:stream:tick:raw", count=sample_count
-    )
+    raw_msgs = await redis.xrevrange("infusion:stream:tick:raw", count=sample_count)
     raw_times = []
-    for msg_id, fields in raw_msgs:
+    for _msg_id, fields in raw_msgs:
         raw_data = fields.get(b"data") or fields.get("data")
         if not raw_data:
             continue
@@ -149,7 +142,7 @@ async def measure_latency(redis: Redis, sample_count: int = 50):
             pass
 
     feat_times = []
-    for msg_id, fields in feat_msgs:
+    for _msg_id, fields in feat_msgs:
         raw_data = fields.get(b"data") or fields.get("data")
         if not raw_data:
             continue
@@ -169,7 +162,7 @@ async def measure_latency(redis: Redis, sample_count: int = 50):
 
     # Print results
     print(f"  {'Metric':<25} {'P50':>10} {'P95':>10} {'P99':>10} {'Max':>10} {'Samples':>10}")
-    print(f"  {'-'*75}")
+    print(f"  {'-' * 75}")
 
     for name, values in latencies.items():
         if not values:
@@ -184,16 +177,18 @@ async def measure_latency(redis: Redis, sample_count: int = 50):
         print(f"  {name:<25} {p50:>10} {p95:>10} {p99:>10} {mx:>10} {n:>10}")
 
     # Thresholds
-    print(f"\n  Performance Targets:")
+    print("\n  Performance Targets:")
     if latencies["normalization_us"]:
-        p99_norm = sorted(latencies["normalization_us"])[int(len(latencies["normalization_us"]) * 0.99)]
+        p99_norm = sorted(latencies["normalization_us"])[
+            int(len(latencies["normalization_us"]) * 0.99)
+        ]
         status = "PASS" if p99_norm < 1_000_000 else "FAIL"  # < 1 second
-        print(f"  [{status}] Normalization P99 < 1s: {p99_norm}us ({p99_norm/1000:.1f}ms)")
+        print(f"  [{status}] Normalization P99 < 1s: {p99_norm}us ({p99_norm / 1000:.1f}ms)")
 
     if latencies["feature_us"]:
         p99_feat = sorted(latencies["feature_us"])[int(len(latencies["feature_us"]) * 0.99)]
         status = "PASS" if p99_feat < 5_000_000 else "FAIL"  # < 5 seconds
-        print(f"  [{status}] Feature P99 < 5s: {p99_feat}us ({p99_feat/1000:.1f}ms)")
+        print(f"  [{status}] Feature P99 < 5s: {p99_feat}us ({p99_feat / 1000:.1f}ms)")
 
     return latencies
 
@@ -227,7 +222,7 @@ async def measure_redis_latency(redis: Redis, iterations: int = 100):
         hget_times.append(elapsed)
 
     print(f"  {'Operation':<25} {'P50':>10} {'P95':>10} {'P99':>10} {'Max':>10}")
-    print(f"  {'-'*65}")
+    print(f"  {'-' * 65}")
 
     for name, values in [("PING", ping_times), ("XLEN", xlen_times), ("HGETALL", hget_times)]:
         values.sort()
@@ -241,7 +236,7 @@ async def measure_redis_latency(redis: Redis, iterations: int = 100):
 
 async def measure_memory(redis: Redis):
     """Check Redis memory usage."""
-    print(f"\n--- REDIS MEMORY ---\n")
+    print("\n--- REDIS MEMORY ---\n")
 
     info = await redis.info("memory")
     used = info.get("used_memory_human", "?")

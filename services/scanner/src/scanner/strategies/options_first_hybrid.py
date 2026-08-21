@@ -72,14 +72,17 @@ class OptionsFirstHybrid(BaseStrategy):
         above_vwap = ltp > vwap
         below_vwap = ltp < vwap
         ema_bull = ltp > ema5 > ema9 > ema20 > 0 or ltp > ema9 > ema20 > 0
-        ema_bear = ltp < ema5 < ema9 < ema20 and ema20 > 0 or ltp < ema9 < ema20 and ema20 > 0
+        ema_bear = (ltp < ema5 < ema9 < ema20 and ema20 > 0) or (ltp < ema9 < ema20 and ema20 > 0)
         macd_bull = macd > macd_signal and macd_hist > 0
         macd_bear = macd < macd_signal and macd_hist < 0
         rsi_bull = 50 <= rsi <= 72
         rsi_bear = 28 <= rsi <= 50
         volume_ok = rel_vol >= self._s.options_hybrid_min_rel_vol
         compression_ok = bb_width > 0 and bb_width <= 0.018
-        pk_squeeze_ok = squeeze_state in {"EXTREME", "COILED", "BUILDING"} or nr_pattern in {"NR4", "NR7"}
+        pk_squeeze_ok = squeeze_state in {"EXTREME", "COILED", "BUILDING"} or nr_pattern in {
+            "NR4",
+            "NR7",
+        }
         liquid_ok = spread_bps < self._s.options_hybrid_max_spread_bps
         atr_bull = atr_trend == "BULL" and (atr_trail_stop <= 0 or ltp > atr_trail_stop)
         atr_bear = atr_trend == "BEAR" and (atr_trail_stop <= 0 or ltp < atr_trail_stop)
@@ -165,14 +168,19 @@ class OptionsFirstHybrid(BaseStrategy):
             return entry, (entry - stop_buffer if bullish else entry + stop_buffer)
 
         basis = resolve_ladder_basis(
-            episode=episode, now_us=now_us, ttl_us=ttl_us,
-            invalidated=_invalidated, compute_fresh_entry_invalidation=_fresh_entry_invalidation,
+            episode=episode,
+            now_us=now_us,
+            ttl_us=ttl_us,
+            invalidated=_invalidated,
+            compute_fresh_entry_invalidation=_fresh_entry_invalidation,
         )
         entry = basis.entry_price
         invalidation = basis.invalidation_price
-        pine = compute_pine_decision(features, bullish=bullish, entry=entry, invalidation=invalidation)
-        suppress, episode_snapshot, target, target2, target3, effective_risk, target_method = finalize_episode(
-            basis, pine, bool(pine.chaseable)
+        pine = compute_pine_decision(
+            features, bullish=bullish, entry=entry, invalidation=invalidation
+        )
+        suppress, episode_snapshot, target, target2, target3, effective_risk, target_method = (
+            finalize_episode(basis, pine, bool(pine.chaseable))
         )
         if suppress:
             # Same still-open episode, nothing changed since the last
@@ -234,8 +242,13 @@ class OptionsFirstHybrid(BaseStrategy):
         odyn_call_wall = (odyn_wall.get("call_wall") or [{}])[0]
         odyn_put_wall = (odyn_wall.get("put_wall") or [{}])[0]
         alignment = compute_signal_alignment(
-            bullish=bullish, ml=ml, ma_regime=ma_regime, donchian=donchian,
-            wyckoff_sos_sow=wyckoff_sos_sow, atr_trend=atr_trend, candle_pattern=candle_pattern,
+            bullish=bullish,
+            ml=ml,
+            ma_regime=ma_regime,
+            donchian=donchian,
+            wyckoff_sos_sow=wyckoff_sos_sow,
+            atr_trend=atr_trend,
+            candle_pattern=candle_pattern,
         )
         snapshot = {
             "ltp": ltp,
@@ -354,7 +367,9 @@ class OptionsFirstHybrid(BaseStrategy):
             # api/routes/mtf.py's _week52_stats(). Informational only.
             "week52_high": (mtf_cache.get("week52") or {}).get("week52_high"),
             "week52_low": (mtf_cache.get("week52") or {}).get("week52_low"),
-            "week52_high_distance_pct": (mtf_cache.get("week52") or {}).get("week52_high_distance_pct"),
+            "week52_high_distance_pct": (mtf_cache.get("week52") or {}).get(
+                "week52_high_distance_pct"
+            ),
             "week52_near_high": (mtf_cache.get("week52") or {}).get("week52_near_high"),
             # NSE delivery % (Phase 13.5) -- T-1 session's confirmed delivery,
             # captured post-market by nse-scraper (see nse_scraper/delivery.py).
@@ -457,13 +472,27 @@ class OptionsFirstHybrid(BaseStrategy):
             rsi_score = 14 if 34 <= rsi <= 48 else 10 if 28 <= rsi <= 55 else 4
             flow_score = 5 if flow < 0 else 2
             change_score = 5 if change_pct <= 0 else 0
-        volume_score = 14 if rel_vol >= 2.5 else 10 if rel_vol >= 1.5 else 6 if rel_vol >= 1.0 else 0
-        squeeze_score = 10 if pk_squeeze_ok else 8 if 0 < bb_width <= 0.012 else 5 if bb_width <= 0.02 else 2
+        volume_score = (
+            14 if rel_vol >= 2.5 else 10 if rel_vol >= 1.5 else 6 if rel_vol >= 1.0 else 0
+        )
+        squeeze_score = (
+            10 if pk_squeeze_ok else 8 if 0 < bb_width <= 0.012 else 5 if bb_width <= 0.02 else 2
+        )
         atr_score = 8 if atr_ok else 2
         candle_score = 4 if candle_ok else 0
-        spread_score = 4 if spread_bps < 35 else 2 if spread_bps < self._s.options_hybrid_max_spread_bps else 0
+        spread_score = (
+            4 if spread_bps < 35 else 2 if spread_bps < self._s.options_hybrid_max_spread_bps else 0
+        )
         return _clamp(
-            vwap_score + ema_score + macd_score + rsi_score
-            + volume_score + squeeze_score + atr_score + candle_score
-            + spread_score + flow_score + change_score
+            vwap_score
+            + ema_score
+            + macd_score
+            + rsi_score
+            + volume_score
+            + squeeze_score
+            + atr_score
+            + candle_score
+            + spread_score
+            + flow_score
+            + change_score
         )

@@ -20,18 +20,17 @@ import logging
 
 import redis.asyncio as aioredis
 import structlog
-
-from alerter.config import AlerterSettings
-from alerter.gate import DeliveryGate
-from alerter.formatter import format_signal
-from alerter.telegram import TelegramClient
-from alerter.engine import AlerterEngine
-
-from infusion_common.logging import setup_logging
 from infusion_common.health import HealthReporter
 from infusion_common.lifecycle import ServiceLifecycle
+from infusion_common.logging import setup_logging
+from infusion_streams.constants import CG_ALERT, STREAM_SCAN_SIGNALS
 from infusion_streams.consumer import StreamConsumer
-from infusion_streams.constants import STREAM_SCAN_SIGNALS, CG_ALERT
+
+from alerter.config import AlerterSettings
+from alerter.engine import AlerterEngine
+from alerter.formatter import format_signal
+from alerter.gate import DeliveryGate
+from alerter.telegram import TelegramClient
 
 logger = structlog.get_logger()
 
@@ -89,7 +88,7 @@ async def run() -> None:
 
     # Main consume loop
     async def main_loop():
-        async for event_type, version, rx_us, payload, ack in consumer.consume():
+        async for _event_type, _version, _rx_us, payload, ack in consumer.consume():
             if lifecycle.shutdown_event.is_set():
                 break
             try:

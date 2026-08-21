@@ -5,13 +5,10 @@ import sys
 
 import structlog
 
-
 _SECRET_SUBSTRINGS = ("token", "secret", "password", "key", "credential")
 
 
-def _strip_secrets(
-    logger: logging.Logger, method_name: str, event_dict: dict
-) -> dict:
+def _strip_secrets(logger: logging.Logger, method_name: str, event_dict: dict) -> dict:
     """Remove fields that look like secrets."""
     for field_name in list(event_dict.keys()):
         if any(s in field_name.lower() for s in _SECRET_SUBSTRINGS):
@@ -21,11 +18,11 @@ def _strip_secrets(
 
 def _add_service_name(service_name: str):
     """Processor factory that adds service name to every log."""
-    def processor(
-        logger: logging.Logger, method_name: str, event_dict: dict
-    ) -> dict:
+
+    def processor(logger: logging.Logger, method_name: str, event_dict: dict) -> dict:
         event_dict["service"] = service_name
         return event_dict
+
     return processor
 
 

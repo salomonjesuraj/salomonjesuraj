@@ -1,6 +1,6 @@
 """Bar builder — tick -> 1m/5m/15m OHLC bar aggregation."""
 
-from feature_engine.state import SymbolState, OHLCBar
+from feature_engine.state import OHLCBar, SymbolState
 
 
 def update_bars(state: SymbolState, ltp: float, volume_delta: int, exchange_ms: int):
@@ -28,8 +28,12 @@ def update_bars(state: SymbolState, ltp: float, volume_delta: int, exchange_ms: 
 
             # Reset for new bar
             new_bar = OHLCBar(
-                open=ltp, high=ltp, low=ltp, close=ltp,
-                volume=max(volume_delta, 0), tick_count=1,
+                open=ltp,
+                high=ltp,
+                low=ltp,
+                close=ltp,
+                volume=max(volume_delta, 0),
+                tick_count=1,
                 bar_start_ms=bar_start,
             )
             setattr(state, bar_attr, new_bar)

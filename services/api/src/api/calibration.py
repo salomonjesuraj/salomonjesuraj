@@ -35,8 +35,10 @@ from __future__ import annotations
 
 import math
 
-MIN_CALIBRATION_SAMPLE = 60   # needs enough rows on each side of the fit/validate split to be honest
-MIN_RELIABILITY_BUCKET = 5    # a reliability-curve bucket with fewer real rows than this is too noisy to show
+MIN_CALIBRATION_SAMPLE = 60  # needs enough rows on each side of the fit/validate split to be honest
+MIN_RELIABILITY_BUCKET = (
+    5  # a reliability-curve bucket with fewer real rows than this is too noisy to show
+)
 
 
 def _sigmoid(z: float) -> float:
@@ -80,15 +82,21 @@ def fit_isotonic_regression(scores: list[float], labels: list[float]) -> list[di
     # LOWER than an earlier one's (a monotonicity violation), replacing
     # both with their weighted-average mean, and repeats until the whole
     # sequence is non-decreasing.
-    blocks = [{"score": s, "mean": y, "weight": 1.0} for s, y in zip(sorted_scores, sorted_labels)]
+    blocks = [
+        {"score": s, "mean": y, "weight": 1.0}
+        for s, y in zip(sorted_scores, sorted_labels, strict=False)
+    ]
     i = 0
     while i < len(blocks) - 1:
         if blocks[i]["mean"] > blocks[i + 1]["mean"]:
             merged_weight = blocks[i]["weight"] + blocks[i + 1]["weight"]
             merged_mean = (
-                blocks[i]["mean"] * blocks[i]["weight"] + blocks[i + 1]["mean"] * blocks[i + 1]["weight"]
+                blocks[i]["mean"] * blocks[i]["weight"]
+                + blocks[i + 1]["mean"] * blocks[i + 1]["weight"]
             ) / merged_weight
-            blocks[i:i + 2] = [{"score": blocks[i + 1]["score"], "mean": merged_mean, "weight": merged_weight}]
+            blocks[i : i + 2] = [
+                {"score": blocks[i + 1]["score"], "mean": merged_mean, "weight": merged_weight}
+            ]
             i = max(i - 1, 0)
         else:
             i += 1
@@ -119,7 +127,7 @@ def apply_isotonic(score: float, breakpoints: list[dict]) -> float:
 def compute_brier_score(probs: list[float], labels: list[float]) -> float | None:
     if not probs:
         return None
-    return sum((p - y) ** 2 for p, y in zip(probs, labels)) / len(probs)
+    return sum((p - y) ** 2 for p, y in zip(probs, labels, strict=False)) / len(probs)
 
 
 def compute_ece(probs: list[float], labels: list[float], n_bins: int = 10) -> float | None:
@@ -128,7 +136,7 @@ def compute_ece(probs: list[float], labels: list[float], n_bins: int = 10) -> fl
     if not probs:
         return None
     bins: list[list[tuple[float, float]]] = [[] for _ in range(n_bins)]
-    for p, y in zip(probs, labels):
+    for p, y in zip(probs, labels, strict=False):
         idx = min(int(p * n_bins), n_bins - 1)
         bins[idx].append((p, y))
     total = len(probs)
@@ -142,7 +150,9 @@ def compute_ece(probs: list[float], labels: list[float], n_bins: int = 10) -> fl
     return ece
 
 
-def compute_reliability_curve(probs: list[float], labels: list[float], n_bins: int = 10) -> list[dict]:
+def compute_reliability_curve(
+    probs: list[float], labels: list[float], n_bins: int = 10
+) -> list[dict]:
     """The probability-bucket-outcome table Q2.6 explicitly requires:
     for each confidence bucket, how many rows landed there, the average
     predicted probability, and the REAL observed outcome rate. A bucket
@@ -150,25 +160,34 @@ def compute_reliability_curve(probs: list[float], labels: list[float], n_bins: i
     (never silently dropped) but flagged unreliable rather than
     reported as if it were a solid read."""
     bins: list[list[tuple[float, float]]] = [[] for _ in range(n_bins)]
-    for p, y in zip(probs, labels):
+    for p, y in zip(probs, labels, strict=False):
         idx = min(int(p * n_bins), n_bins - 1)
         bins[idx].append((p, y))
     curve = []
     for i, bucket in enumerate(bins):
         lo, hi = i / n_bins, (i + 1) / n_bins
         if not bucket:
-            curve.append({
-                "bucket": f"{lo:.1f}-{hi:.1f}", "n": 0, "avg_predicted": None,
-                "actual_rate": None, "reliable": False,
-            })
+            curve.append(
+                {
+                    "bucket": f"{lo:.1f}-{hi:.1f}",
+                    "n": 0,
+                    "avg_predicted": None,
+                    "actual_rate": None,
+                    "reliable": False,
+                }
+            )
             continue
         avg_pred = sum(p for p, _ in bucket) / len(bucket)
         actual_rate = sum(y for _, y in bucket) / len(bucket)
-        curve.append({
-            "bucket": f"{lo:.1f}-{hi:.1f}", "n": len(bucket),
-            "avg_predicted": round(avg_pred, 4), "actual_rate": round(actual_rate, 4),
-            "reliable": len(bucket) >= MIN_RELIABILITY_BUCKET,
-        })
+        curve.append(
+            {
+                "bucket": f"{lo:.1f}-{hi:.1f}",
+                "n": len(bucket),
+                "avg_predicted": round(avg_pred, 4),
+                "actual_rate": round(actual_rate, 4),
+                "reliable": len(bucket) >= MIN_RELIABILITY_BUCKET,
+            }
+        )
     return curve
 
 
@@ -220,7 +239,8 @@ def calibrate_and_validate(scores: list[float], labels: list[float]) -> dict:
     isotonic_ece = compute_ece(isotonic_val_probs, val_labels)
 
     candidates = [
-        ("platt", platt_brier), ("isotonic", isotonic_brier),
+        ("platt", platt_brier),
+        ("isotonic", isotonic_brier),
     ]
     recommended = min(candidates, key=lambda kv: kv[1] if kv[1] is not None else float("inf"))[0]
     recommended_probs = platt_val_probs if recommended == "platt" else isotonic_val_probs
@@ -237,7 +257,10 @@ def calibrate_and_validate(scores: list[float], labels: list[float]) -> dict:
             "ece": round(platt_ece, 4) if platt_ece is not None else None,
         },
         "isotonic": {
-            "breakpoints": [{"score": round(b["score"], 4), "value": round(b["value"], 4)} for b in isotonic_breakpoints],
+            "breakpoints": [
+                {"score": round(b["score"], 4), "value": round(b["value"], 4)}
+                for b in isotonic_breakpoints
+            ],
             "brier": round(isotonic_brier, 4) if isotonic_brier is not None else None,
             "ece": round(isotonic_ece, 4) if isotonic_ece is not None else None,
         },

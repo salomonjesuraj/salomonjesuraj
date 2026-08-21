@@ -18,30 +18,29 @@ Architecture:
 """
 
 import asyncio
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 
 import asyncpg
 import redis.asyncio as aioredis
 import structlog
-
-from archiver.config import ArchiverSettings
-from archiver.writer import SignalWriter
-from archiver.tracker import OutcomeTracker
-from archiver.analytics import SignalAnalytics
-from archiver.recap import generate_and_publish_recap
-
-from infusion_common.logging import setup_logging
 from infusion_common.health import HealthReporter
 from infusion_common.lifecycle import ServiceLifecycle
-from infusion_streams.consumer import StreamConsumer
+from infusion_common.logging import setup_logging
+from infusion_streams.codec import decode_event
 from infusion_streams.constants import (
-    STREAM_SCAN_SIGNALS,
-    STREAM_SCAN_SUPPRESSED,
     CG_ARCHIVER,
     CG_ARCHIVER_SUP,
     KEY_ARCHIVER_CHECKPOINT,
+    STREAM_SCAN_SIGNALS,
+    STREAM_SCAN_SUPPRESSED,
 )
-from infusion_streams.codec import decode_event
+from infusion_streams.consumer import StreamConsumer
+
+from archiver.analytics import SignalAnalytics
+from archiver.config import ArchiverSettings
+from archiver.recap import generate_and_publish_recap
+from archiver.tracker import OutcomeTracker
+from archiver.writer import SignalWriter
 
 logger = structlog.get_logger()
 
@@ -68,9 +67,7 @@ async def _backfill(
     total = 0
     last_id = start_id
     while True:
-        msgs = await r.xrange(
-            stream, min=f"({last_id}", count=settings.backfill_batch_size
-        )
+        msgs = await r.xrange(stream, min=f"({last_id}", count=settings.backfill_batch_size)
         if not msgs:
             break
 
@@ -108,7 +105,7 @@ async def _consume_stream(
     stream_label: str,
 ) -> None:
     """Consume a single stream and write signals to Postgres."""
-    async for event_type, version, rx_us, payload, ack in consumer.consume():
+    async for _event_type, _version, _rx_us, payload, ack in consumer.consume():
         if lifecycle.shutdown_event.is_set():
             break
         try:
@@ -161,10 +158,7 @@ async def _recap_scheduler(
             hour=_RECAP_HOUR, minute=_RECAP_MINUTE, second=0, microsecond=0
         )
 
-        if (
-            now_ist >= target_time
-            and last_recap_date != today
-        ):
+        if now_ist >= target_time and last_recap_date != today:
             try:
                 text = await generate_and_publish_recap(analytics, redis, today)
                 last_recap_date = today

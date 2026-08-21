@@ -112,13 +112,10 @@ def compute_conviction(features: dict) -> tuple[float, dict[str, float]]:
 
     ltp = features.get("ltp", 0.0)
     vwap = features.get("vwap", 0.0)
-    if vwap > 0:
-        vwap_distance_pct = ((vwap - ltp) if bearish else (ltp - vwap)) / vwap * 100
-    else:
-        vwap_distance_pct = 0.0
+    vwap_distance_pct = (vwap - ltp if bearish else ltp - vwap) / vwap * 100 if vwap > 0 else 0.0
 
     if 0 < vwap_distance_pct <= 0.3:
-        sub_scores["vwap"] = 25.0          # fresh reclaim, tight
+        sub_scores["vwap"] = 25.0  # fresh reclaim, tight
     elif vwap_distance_pct <= 0.8:
         sub_scores["vwap"] = 20.0
     elif vwap_distance_pct <= 1.5:
@@ -129,8 +126,10 @@ def compute_conviction(features: dict) -> tuple[float, dict[str, float]]:
     # ── RSI component (0-15) ──────────────────────
     rsi = features.get("rsi_14", 50.0)
     if (not bearish and 50 <= rsi <= 65) or (bearish and 35 <= rsi <= 50):
-        sub_scores["rsi"] = 15.0           # sweet spot
-    elif (not bearish and (40 < rsi < 50 or 65 < rsi < 75)) or (bearish and (28 < rsi < 35 or 50 < rsi < 60)):
+        sub_scores["rsi"] = 15.0  # sweet spot
+    elif (not bearish and (40 < rsi < 50 or 65 < rsi < 75)) or (
+        bearish and (28 < rsi < 35 or 50 < rsi < 60)
+    ):
         sub_scores["rsi"] = 10.0
     else:
         sub_scores["rsi"] = 3.0
@@ -138,10 +137,12 @@ def compute_conviction(features: dict) -> tuple[float, dict[str, float]]:
     # ── EMA alignment component (0-10) ─────────────
     ema_9 = features.get("ema_9", 0.0)
     ema_20 = features.get("ema_20", 0.0)
-    if (not bearish and ltp > ema_9 > ema_20 > 0) or (bearish and ltp < ema_9 < ema_20 and ema_20 > 0):
+    if (not bearish and ltp > ema_9 > ema_20 > 0) or (
+        bearish and ltp < ema_9 < ema_20 and ema_20 > 0
+    ):
         sub_scores["ema_alignment"] = 10.0  # full directional alignment
     elif (not bearish and ltp > ema_9 > 0) or (bearish and ltp < ema_9 and ema_9 > 0):
-        sub_scores["ema_alignment"] = 5.0   # short EMA aligned
+        sub_scores["ema_alignment"] = 5.0  # short EMA aligned
     else:
         sub_scores["ema_alignment"] = 0.0
 
@@ -163,11 +164,11 @@ def compute_conviction(features: dict) -> tuple[float, dict[str, float]]:
     squeeze_state = str(features.get("squeeze_state", "")).upper()
     nr_pattern = str(features.get("nr_pattern", ""))
     if bb_upper > 0 and ltp > bb_upper:
-        sub_scores["bollinger"] = 10.0      # breaking out
+        sub_scores["bollinger"] = 10.0  # breaking out
     elif squeeze_state in {"EXTREME", "COILED"} or nr_pattern in {"NR4", "NR7"}:
-        sub_scores["bollinger"] = 8.0       # compression/NR setup can expand fast
+        sub_scores["bollinger"] = 8.0  # compression/NR setup can expand fast
     elif bb_width > 0.02:
-        sub_scores["bollinger"] = 5.0       # healthy width
+        sub_scores["bollinger"] = 5.0  # healthy width
     elif bb_width > 0.01:
         sub_scores["bollinger"] = 3.0
     else:
@@ -177,9 +178,8 @@ def compute_conviction(features: dict) -> tuple[float, dict[str, float]]:
     atr_trend = str(features.get("atr_trend", "")).upper()
     candle = str(features.get("candle_pattern", ""))
     atr_ok = (not bearish and atr_trend == "BULL") or (bearish and atr_trend == "BEAR")
-    candle_ok = (
-        (not bearish and candle in {"Bullish Engulfing", "Hammer"})
-        or (bearish and candle in {"Bearish Engulfing", "Shooting Star"})
+    candle_ok = (not bearish and candle in {"Bullish Engulfing", "Hammer"}) or (
+        bearish and candle in {"Bearish Engulfing", "Shooting Star"}
     )
     sub_scores["atr_trail"] = 7.0 if atr_ok else 2.0 if atr_trend in {"BULL", "BEAR"} else 0.0
     sub_scores["candle"] = 3.0 if candle_ok else 0.0
@@ -257,9 +257,7 @@ def grade_conviction(score: float) -> str:
         return "D"
 
 
-def compute_risk_reward(
-    entry: float, invalidation: float, target: float
-) -> float:
+def compute_risk_reward(entry: float, invalidation: float, target: float) -> float:
     """Compute risk/reward ratio. Returns 0.0 if invalid."""
     if target < entry and invalidation > entry:
         risk = invalidation - entry

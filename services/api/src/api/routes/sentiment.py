@@ -37,9 +37,12 @@ async def sentiment_for_symbol(request):
         return web.json_response({"symbol": symbol, "available": False})
     raw = await redis.get(f"infusion:sentiment:{symbol}")
     if not raw:
-        return web.json_response({
-            "symbol": symbol, "available": False,
-            "reason": "No recent news classified for this symbol yet.",
-        })
+        return web.json_response(
+            {
+                "symbol": symbol,
+                "available": False,
+                "reason": "No recent news classified for this symbol yet.",
+            }
+        )
     payload = json.loads(raw.decode() if isinstance(raw, bytes) else raw)
     return web.json_response({"symbol": symbol, **payload})

@@ -16,20 +16,20 @@ Design:
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 import aiohttp
 import msgpack
 import structlog
-from redis.asyncio import Redis
-
 from infusion_streams.constants import KEY_SYMBOLS
+from redis.asyncio import Redis
 
 logger = structlog.get_logger()
 
 VALID_TIERS = {"nifty50", "nifty100", "nifty200", "nifty500", "fno", "custom"}
-UPSTOX_NSE_INSTRUMENTS_URL = "https://assets.upstox.com/market-quote/instruments/exchange/NSE.json.gz"
+UPSTOX_NSE_INSTRUMENTS_URL = (
+    "https://assets.upstox.com/market-quote/instruments/exchange/NSE.json.gz"
+)
 
 
 def load_universe(config_dir: str, tier: str) -> dict[str, dict]:
@@ -43,9 +43,7 @@ def load_universe(config_dir: str, tier: str) -> dict[str, dict]:
         Dict of symbol → metadata (merged with indices)
     """
     if tier not in VALID_TIERS:
-        raise ValueError(
-            f"Invalid symbol_universe '{tier}'. Valid: {VALID_TIERS}"
-        )
+        raise ValueError(f"Invalid symbol_universe '{tier}'. Valid: {VALID_TIERS}")
 
     config_path = Path(config_dir)
 
@@ -56,10 +54,8 @@ def load_universe(config_dir: str, tier: str) -> dict[str, dict]:
     else:
         tier_file = config_path / f"{tier}.json"
         if not tier_file.exists():
-            raise FileNotFoundError(
-                f"Symbol universe file not found: {tier_file}"
-            )
-        with open(tier_file, "r", encoding="utf-8") as f:
+            raise FileNotFoundError(f"Symbol universe file not found: {tier_file}")
+        with open(tier_file, encoding="utf-8") as f:
             symbols = json.load(f)
         logger.info(
             "universe_loaded",
@@ -73,7 +69,7 @@ def load_universe(config_dir: str, tier: str) -> dict[str, dict]:
     # market ticker fetches NIFTY/BANKNIFTY separately.
     indices_file = config_path / "indices.json"
     if tier != "fno" and indices_file.exists():
-        with open(indices_file, "r", encoding="utf-8") as f:
+        with open(indices_file, encoding="utf-8") as f:
             indices = json.load(f)
         symbols.update(indices)
         logger.info("indices_loaded", count=len(indices))
@@ -94,17 +90,12 @@ async def load_custom_watchlist(redis: Redis) -> dict[str, dict]:
     if not members:
         return {}
 
-    symbols = {
-        m.decode() if isinstance(m, bytes) else m
-        for m in members
-    }
+    symbols = {m.decode() if isinstance(m, bytes) else m for m in members}
     logger.info("custom_watchlist_loaded", count=len(symbols))
     return {s: {} for s in symbols}  # metadata resolved later
 
 
-async def populate_redis(
-    redis: Redis, symbols: dict[str, dict]
-) -> tuple[int, dict[str, str]]:
+async def populate_redis(redis: Redis, symbols: dict[str, dict]) -> tuple[int, dict[str, str]]:
     """Write symbol metadata to infusion:symbols hash.
 
     Each entry is stored as:
@@ -165,9 +156,7 @@ async def populate_redis(
         "symbols_populated",
         redis_key=KEY_SYMBOLS,
         count=count,
-        sectors=len({
-            m.get("sector_id", "?") for m in symbols.values()
-        }),
+        sectors=len({m.get("sector_id", "?") for m in symbols.values()}),
     )
 
     return count, reverse_map
@@ -190,16 +179,18 @@ async def fetch_upstox_equity_master() -> dict[str, dict]:
     get the real derivatives lot size rather than the cash-market default of 1.
     """
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
+        async with (
+            aiohttp.ClientSession() as session,
+            session.get(
                 UPSTOX_NSE_INSTRUMENTS_URL,
                 headers={"Accept": "application/gzip, application/json"},
                 timeout=30,
-            ) as resp:
-                if resp.status != 200:
-                    logger.warning("upstox_master_fetch_failed", status=resp.status)
-                    return {}
-                payload = await resp.read()
+            ) as resp,
+        ):
+            if resp.status != 200:
+                logger.warning("upstox_master_fetch_failed", status=resp.status)
+                return {}
+            payload = await resp.read()
     except Exception as exc:
         logger.warning("upstox_master_fetch_error", error=str(exc))
         return {}
@@ -258,7 +249,7 @@ def get_instrument_keys(symbols: dict[str, dict]) -> list[str]:
     subscription mode for indices).
     """
     keys = []
-    for symbol, meta in symbols.items():
+    for _symbol, meta in symbols.items():
         key = meta.get("upstox_key", "")
         if key:
             keys.append(key)

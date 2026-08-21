@@ -26,7 +26,10 @@ import structlog
 
 from api.option_chain_queue import build_candidates
 from api.options_analytics_v2 import (
-    compute_pcr_acceleration, compute_pcr_velocity, compute_wall_dynamics, compute_weighted_pcr,
+    compute_pcr_acceleration,
+    compute_pcr_velocity,
+    compute_wall_dynamics,
+    compute_weighted_pcr,
 )
 from api.routes.market import _fetch_full_option_chain
 
@@ -35,7 +38,7 @@ logger = structlog.get_logger()
 SWEEP_INTERVAL_SEC = 60
 CANDIDATE_LIMIT = 20
 STATUS_KEY = "infusion:options-dynamics-queue:status"
-STATE_PREFIX = "infusion:options-dynamics:"   # + {symbol} -> STRING (JSON)
+STATE_PREFIX = "infusion:options-dynamics:"  # + {symbol} -> STRING (JSON)
 STATE_TTL_SEC = 300
 # EBIE-KNOWN-GAPS.md §1.7 -- same "distinguish never-cached from cached-
 # but-stale" marker as mtf.py's MTF_LAST_SEEN_PREFIX. This sweep only ever
@@ -95,8 +98,12 @@ async def sweep_once(app) -> dict:
                 "wall": wall,
                 "updated_at": int(time.time()),
             }
-            await redis.setex(f"{STATE_PREFIX}{symbol}", STATE_TTL_SEC, json.dumps(state, default=str))
-            await redis.setex(f"{LAST_SEEN_PREFIX}{symbol}", LAST_SEEN_TTL_SEC, str(int(time.time())))
+            await redis.setex(
+                f"{STATE_PREFIX}{symbol}", STATE_TTL_SEC, json.dumps(state, default=str)
+            )
+            await redis.setex(
+                f"{LAST_SEEN_PREFIX}{symbol}", LAST_SEEN_TTL_SEC, str(int(time.time()))
+            )
             swept += 1
         except Exception as exc:
             failed += 1
@@ -118,9 +125,13 @@ async def options_dynamics_loop(app) -> None:
     if not redis:
         logger.info("options_dynamics_queue_skipped", reason="redis_unavailable")
         return
-    logger.info("options_dynamics_queue_started", interval=SWEEP_INTERVAL_SEC, limit=CANDIDATE_LIMIT)
+    logger.info(
+        "options_dynamics_queue_started", interval=SWEEP_INTERVAL_SEC, limit=CANDIDATE_LIMIT
+    )
     while True:
         with contextlib.suppress(Exception):
             status = await sweep_once(app)
-            logger.info("options_dynamics_sweep", **{k: v for k, v in status.items() if k != "checked_at"})
+            logger.info(
+                "options_dynamics_sweep", **{k: v for k, v in status.items() if k != "checked_at"}
+            )
         await asyncio.sleep(SWEEP_INTERVAL_SEC)

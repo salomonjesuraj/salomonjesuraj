@@ -10,25 +10,25 @@ from pydantic import BaseModel
 class RawTickV1(BaseModel, frozen=True):
     """Broker-specific tick. Output of ingestion adapter."""
 
-    broker: str                          # "upstox" | "kite" | "mock"
-    instrument_key: str                  # Broker-specific identifier
-    exchange: str                        # "NSE" | "BSE"
-    segment: str                         # "EQ" | "FO" | "INDEX"
+    broker: str  # "upstox" | "kite" | "mock"
+    instrument_key: str  # Broker-specific identifier
+    exchange: str  # "NSE" | "BSE"
+    segment: str  # "EQ" | "FO" | "INDEX"
     ltp: float
     open: float
     high: float
     low: float
-    close: float                         # Previous day close
+    close: float  # Previous day close
     volume: int
-    oi: int = 0                          # 0 for non-F&O
+    oi: int = 0  # 0 for non-F&O
     total_buy_qty: int = 0
     total_sell_qty: int = 0
     best_bid: float = 0.0
     best_ask: float = 0.0
     best_bid_qty: int = 0
     best_ask_qty: int = 0
-    exchange_timestamp_ms: int           # UTC epoch milliseconds (authoritative)
-    received_at_us: int                  # Local receipt epoch microseconds
+    exchange_timestamp_ms: int  # UTC epoch milliseconds (authoritative)
+    received_at_us: int  # Local receipt epoch microseconds
     # EBIE EB-6: up to 5 {bidP,bidQ,askP,askQ} levels, best-first --
     # real data, not a placeholder: Upstox's "full" subscription mode
     # (the only mode this adapter has ever used) already sends 5 levels
@@ -42,15 +42,15 @@ class RawTickV1(BaseModel, frozen=True):
 class NormalizedTickV1(BaseModel, frozen=True):
     """Universal tick. Output of normalizer."""
 
-    symbol: str                          # "RELIANCE", "INFY"
-    sector_id: str                       # "NIFTY_BANK", "NIFTY_IT", "UNCATEGORIZED"
+    symbol: str  # "RELIANCE", "INFY"
+    sector_id: str  # "NIFTY_BANK", "NIFTY_IT", "UNCATEGORIZED"
     is_fno: bool
-    tier: int                            # 1, 2, or 3
+    tier: int  # 1, 2, or 3
     ltp: float
     open: float
     high: float
     low: float
-    close: float                         # Previous day close
+    close: float  # Previous day close
     volume: int
     oi: int = 0
     best_bid: float = 0.0

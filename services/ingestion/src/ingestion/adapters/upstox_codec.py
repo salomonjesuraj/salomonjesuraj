@@ -67,7 +67,7 @@ def _fields(data: bytes):
         elif wire_type == 1:
             if pos + 8 > size:
                 raise ProtoDecodeError("truncated_fixed64")
-            yield field_no, wire_type, data[pos:pos + 8]
+            yield field_no, wire_type, data[pos : pos + 8]
             pos += 8
         elif wire_type == 2:
             length, pos = _read_varint(data, pos)
@@ -79,7 +79,7 @@ def _fields(data: bytes):
         elif wire_type == 5:
             if pos + 4 > size:
                 raise ProtoDecodeError("truncated_fixed32")
-            yield field_no, wire_type, data[pos:pos + 4]
+            yield field_no, wire_type, data[pos : pos + 4]
             pos += 4
         else:
             raise ProtoDecodeError(f"unsupported_wire_type_{wire_type}")

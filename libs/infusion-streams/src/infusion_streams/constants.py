@@ -49,49 +49,59 @@ MAXLEN_DLQ = 1_000
 # ═══════════════════════════════════════════════════
 # Hot State Keys
 # ═══════════════════════════════════════════════════
-KEY_TICK_PREFIX = "infusion:tick:"         # + {symbol}  → HASH
-KEY_FEATURE_PREFIX = "infusion:feature:"   # + {symbol}  → HASH
-KEY_OHLC_PREFIX = "infusion:ohlc:"        # + {symbol}:{tf} → ZSET
-KEY_HEALTH_PREFIX = "infusion:health:"     # + {service} → STRING
-KEY_SYMBOLS = "infusion:symbols"           # HASH: instrument_key → symbol metadata
-KEY_AUTH_UPSTOX = "infusion:auth:upstox"   # STRING: access_token
+KEY_TICK_PREFIX = "infusion:tick:"  # + {symbol}  → HASH
+KEY_FEATURE_PREFIX = "infusion:feature:"  # + {symbol}  → HASH
+KEY_OHLC_PREFIX = "infusion:ohlc:"  # + {symbol}:{tf} → ZSET
+KEY_HEALTH_PREFIX = "infusion:health:"  # + {service} → STRING
+KEY_SYMBOLS = "infusion:symbols"  # HASH: instrument_key → symbol metadata
+KEY_AUTH_UPSTOX = "infusion:auth:upstox"  # STRING: access_token
 
 # Scanner hot state
-KEY_SIGNAL_PREFIX = "infusion:signal:"              # + {symbol} → HASH (latest signal)
-KEY_SIGNAL_ACTIVE = "infusion:signals:active"       # ZSET: signal_id scored by conviction
-KEY_COOLDOWN_PREFIX = "infusion:cooldown:"          # + {symbol}:{strategy_id} → STRING (TTL)
-KEY_PRE_BREAKOUT_PREFIX = "infusion:prebreak:"      # + {symbol} → HASH (state machine)
-KEY_SECTOR_PREFIX = "infusion:sector:"              # + {sector_id} → HASH
+KEY_SIGNAL_PREFIX = "infusion:signal:"  # + {symbol} → HASH (latest signal)
+KEY_SIGNAL_ACTIVE = "infusion:signals:active"  # ZSET: signal_id scored by conviction
+KEY_COOLDOWN_PREFIX = "infusion:cooldown:"  # + {symbol}:{strategy_id} → STRING (TTL)
+KEY_PRE_BREAKOUT_PREFIX = "infusion:prebreak:"  # + {symbol} → HASH (state machine)
+KEY_SECTOR_PREFIX = "infusion:sector:"  # + {sector_id} → HASH
 
 # Alerter hot state
-KEY_ALERT_COOLDOWN_PREFIX = "infusion:alert:cooldown:"   # + {symbol} → STRING (TTL)
-KEY_ALERT_RATE = "infusion:alert:rate"                   # STRING (counter, TTL=3600)
-KEY_ALERT_BURST = "infusion:alert:burst"                 # STRING (counter, TTL=300)
-KEY_ALERT_LOG = "infusion:alert:log"                     # LIST (capped, last 100 deliveries)
-KEY_ALERT_DELIVERED = "infusion:alert:delivered"          # SET of delivered signal_ids (TTL)
-KEY_ALERT_MUTE_SYMBOLS = "infusion:alert:mute:symbols"   # SET of muted symbols
+KEY_ALERT_COOLDOWN_PREFIX = "infusion:alert:cooldown:"  # + {symbol} → STRING (TTL)
+KEY_ALERT_RATE = "infusion:alert:rate"  # STRING (counter, TTL=3600)
+KEY_ALERT_BURST = "infusion:alert:burst"  # STRING (counter, TTL=300)
+KEY_ALERT_LOG = "infusion:alert:log"  # LIST (capped, last 100 deliveries)
+KEY_ALERT_DELIVERED = "infusion:alert:delivered"  # SET of delivered signal_ids (TTL)
+KEY_ALERT_MUTE_SYMBOLS = "infusion:alert:mute:symbols"  # SET of muted symbols
 KEY_ALERT_MUTE_STRATEGIES = "infusion:alert:mute:strat"  # SET of muted strategies
 
 # Archiver hot state
 KEY_ARCHIVER_CHECKPOINT = "infusion:archiver:checkpoint"  # HASH: stream → last_id
 
 # EBIE EB-0: provider capability registry + dynamic subscription state
-KEY_CAPABILITY_PREFIX = "infusion:capability:"      # + {provider} → STRING (msgpack ProviderCapabilityV1)
-KEY_SUBSCRIPTION_STATUS = "infusion:subscription:status"   # STRING (msgpack: tier counts + reconnect/gap)
-KEY_SUBSCRIPTION_TIER_PREFIX = "infusion:subtier:"  # + {instrument_key} → HASH {tier, mode, updated_at}
+KEY_CAPABILITY_PREFIX = (
+    "infusion:capability:"  # + {provider} → STRING (msgpack ProviderCapabilityV1)
+)
+KEY_SUBSCRIPTION_STATUS = (
+    "infusion:subscription:status"  # STRING (msgpack: tier counts + reconnect/gap)
+)
+KEY_SUBSCRIPTION_TIER_PREFIX = (
+    "infusion:subtier:"  # + {instrument_key} → HASH {tier, mode, updated_at}
+)
 
 # EBIE EB-1: canonical state machine (shadow mode) -- previous-state cache,
 # same "cheap bulk MGET, TTL so it ages out" shape as R2/R8/R9's own
 # transitional caches (infusion:vwap-state:, infusion:opening-range:,
 # infusion:radar-alert-tier:).
-KEY_EBIE_STATE_PREFIX = "infusion:ebie-state:"      # + {symbol}:{direction} → STRING (current EBIE state)
+KEY_EBIE_STATE_PREFIX = (
+    "infusion:ebie-state:"  # + {symbol}:{direction} → STRING (current EBIE state)
+)
 
 # EBIE EB-15 Phase 3: lightweight universe-wide verdict (one per symbol,
 # every sweep) -- same single-key msgpack-blob STRING shape as
 # infusion:mtf:{symbol}/infusion:sentiment:{symbol}, since this carries a
 # small structured dict (verdict/confidence/reasons/invalidation/DQ), not
 # a plain scalar like KEY_EBIE_STATE_PREFIX above.
-KEY_EBIE_VERDICT_LITE_PREFIX = "infusion:ebie-verdict-lite:"  # + {symbol} → STRING (msgpack'd lightweight verdict dict)
+KEY_EBIE_VERDICT_LITE_PREFIX = (
+    "infusion:ebie-verdict-lite:"  # + {symbol} → STRING (msgpack'd lightweight verdict dict)
+)
 
 # EBIE EB-15 Phase 4 item 5: raw market/sector-context inputs, one per
 # symbol, cached by ebie_state_queue.py's own sweep (reuses that sweep's
@@ -105,4 +115,3 @@ KEY_EBIE_VERDICT_LITE_PREFIX = "infusion:ebie-verdict-lite:"  # + {symbol} → S
 # risk a real directional mismatch. scanner/verdict_engine.py computes
 # the direction-aware score itself, fresh, against its own `bullish`.
 KEY_MARKET_CONTEXT_PREFIX = "infusion:market-context:"  # + {symbol} → STRING (msgpack'd raw inputs)
-

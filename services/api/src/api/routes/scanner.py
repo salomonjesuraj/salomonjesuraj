@@ -1,12 +1,14 @@
 """Scanner routes — signals, pre-breakout watchlist, sectors, regime, alerts."""
 
+import json as _json
 import time
 import uuid
-import json as _json
+
 from aiohttp import web
 from infusion_models.events import EventType
 from infusion_streams.codec import decode_event, encode_event
-from infusion_streams.constants import STREAM_SCAN_SIGNALS, STREAM_SCAN_SUPPRESSED, MAXLEN_SIGNALS
+from infusion_streams.constants import MAXLEN_SIGNALS, STREAM_SCAN_SIGNALS, STREAM_SCAN_SUPPRESSED
+
 from api.market_breadth import compute_market_breadth
 
 routes = web.RouteTableDef()
@@ -25,15 +27,36 @@ RISK_KEY = "infusion:risk:settings"
 
 # Fields that are stored as JSON strings and must be parsed
 _JSON_FIELDS = {
-    "conditions_met", "sub_scores", "features_snapshot",
-    "mtf", "mtf_dots", "anti_chase_reasons", "rejection_reasons",
+    "conditions_met",
+    "sub_scores",
+    "features_snapshot",
+    "mtf",
+    "mtf_dots",
+    "anti_chase_reasons",
+    "rejection_reasons",
 }
 # Fields that should stay as strings (not coerced to float)
 _STRING_FIELDS = {
-    "signal_id", "symbol", "strategy_id", "signal_type", "lifecycle",
-    "conviction_grade", "option_bias", "sector_id", "market_regime", "pre_breakout_state",
-    "explanation", "conditions_met", "sub_scores", "state", "prev_state",
-    "transition_reason", "trend", "regime", "reason", "mtf_text",
+    "signal_id",
+    "symbol",
+    "strategy_id",
+    "signal_type",
+    "lifecycle",
+    "conviction_grade",
+    "option_bias",
+    "sector_id",
+    "market_regime",
+    "pre_breakout_state",
+    "explanation",
+    "conditions_met",
+    "sub_scores",
+    "state",
+    "prev_state",
+    "transition_reason",
+    "trend",
+    "regime",
+    "reason",
+    "mtf_text",
 }
 
 
@@ -198,7 +221,9 @@ def _compact_suppressed(payload: dict, stream_id: str = "") -> dict:
     if not isinstance(explanation, list):
         explanation = []
 
-    side = fs.get("option_bias") or ("BUY PE" if payload.get("signal_type") == "bearish" else "BUY CE")
+    side = fs.get("option_bias") or (
+        "BUY PE" if payload.get("signal_type") == "bearish" else "BUY CE"
+    )
     return {
         "id": stream_id,
         "signal_id": payload.get("signal_id", ""),
@@ -268,18 +293,37 @@ def _candidate_action(row: dict, profile: dict) -> dict:
     rejection = row.get("rejection_reasons") or []
     blockers = len(anti_reasons) + len(rejection)
     hard_chase = any(
-        any(term in str(x).lower() for term in ["large signal candle", "vwap stretch", "stop too wide"])
+        any(
+            term in str(x).lower()
+            for term in ["large signal candle", "vwap stretch", "stop too wide"]
+        )
         for x in [*anti_reasons, *rejection]
     )
 
     if reason in {"cooldown_active", "duplicate_active"} and score >= profile["paper_score"]:
-        return {"action": "DUPLICATE_WAIT", "tone": "warn", "why": "Good candidate, but already in cooldown/duplicate gate."}
+        return {
+            "action": "DUPLICATE_WAIT",
+            "tone": "warn",
+            "why": "Good candidate, but already in cooldown/duplicate gate.",
+        }
     if score >= profile["paper_score"] and rr >= profile["min_rr"] and not hard_chase:
-        return {"action": "PAPER_READY", "tone": "good", "why": "Meets paper-ready threshold for selected mode."}
+        return {
+            "action": "PAPER_READY",
+            "tone": "good",
+            "why": "Meets paper-ready threshold for selected mode.",
+        }
     if score >= profile["watch_score"] and rr >= profile["min_rr"]:
-        return {"action": "WATCH_ONLY", "tone": "watch", "why": "Worth watching, but still blocked for live alert discipline."}
+        return {
+            "action": "WATCH_ONLY",
+            "tone": "watch",
+            "why": "Worth watching, but still blocked for live alert discipline.",
+        }
     if hard_chase:
-        return {"action": "NO_CHASE", "tone": "block", "why": "Rejected by anti-chase location/risk rules."}
+        return {
+            "action": "NO_CHASE",
+            "tone": "block",
+            "why": "Rejected by anti-chase location/risk rules.",
+        }
     if blockers >= 4:
         return {"action": "AVOID", "tone": "block", "why": "Too many blockers at current location."}
     return {"action": "AVOID", "tone": "block", "why": "Below selected-mode opportunity threshold."}
@@ -330,14 +374,16 @@ async def get_suppressed_signals(request):
         reason_counts[reason] = reason_counts.get(reason, 0) + 1
         strategy_counts[strategy] = strategy_counts.get(strategy, 0) + 1
 
-    return web.json_response({
-        "mode": mode,
-        "profile": profile,
-        "count": len(rows),
-        "suppressed": rows,
-        "reason_counts": reason_counts,
-        "strategy_counts": strategy_counts,
-    })
+    return web.json_response(
+        {
+            "mode": mode,
+            "profile": profile,
+            "count": len(rows),
+            "suppressed": rows,
+            "reason_counts": reason_counts,
+            "strategy_counts": strategy_counts,
+        }
+    )
 
 
 @routes.get("/api/signals/{symbol}")
@@ -348,9 +394,7 @@ async def get_signal(request):
 
     data = await redis.hgetall(f"{SIGNAL_PREFIX}{symbol}")
     if not data:
-        return web.json_response(
-            {"error": f"No active signal for {symbol}"}, status=404
-        )
+        return web.json_response({"error": f"No active signal for {symbol}"}, status=404)
 
     result = _decode_hash(data)
     result["symbol"] = symbol
@@ -370,9 +414,7 @@ async def get_prebreakout(request):
     cursor = 0
     watchlist = []
     while True:
-        cursor, keys = await redis.scan(
-            cursor=cursor, match=f"{PREBREAK_PREFIX}*", count=100
-        )
+        cursor, keys = await redis.scan(cursor=cursor, match=f"{PREBREAK_PREFIX}*", count=100)
         for key in keys:
             data = await redis.hgetall(key)
             if not data:
@@ -404,10 +446,12 @@ async def get_prebreakout(request):
     # Sort by readiness_score descending
     watchlist.sort(key=lambda x: x.get("readiness_score", 0), reverse=True)
 
-    return web.json_response({
-        "count": len(watchlist),
-        "watchlist": watchlist,
-    })
+    return web.json_response(
+        {
+            "count": len(watchlist),
+            "watchlist": watchlist,
+        }
+    )
 
 
 def _decode_hash(data: dict) -> dict:
@@ -442,9 +486,7 @@ async def get_sectors(request):
     cursor = 0
     sectors = []
     while True:
-        cursor, keys = await redis.scan(
-            cursor=cursor, match=f"{SECTOR_PREFIX}*", count=100
-        )
+        cursor, keys = await redis.scan(cursor=cursor, match=f"{SECTOR_PREFIX}*", count=100)
         for key in keys:
             data = await redis.hgetall(key)
             if not data:
@@ -458,10 +500,12 @@ async def get_sectors(request):
     # Sort by rank ascending (1 = strongest)
     sectors.sort(key=lambda x: x.get("rank", 999))
 
-    return web.json_response({
-        "count": len(sectors),
-        "sectors": sectors,
-    })
+    return web.json_response(
+        {
+            "count": len(sectors),
+            "sectors": sectors,
+        }
+    )
 
 
 @routes.get("/api/regime")
@@ -471,10 +515,12 @@ async def get_regime(request):
 
     data = await redis.hgetall(REGIME_KEY)
     if not data:
-        return web.json_response({
-            "regime": "neutral",
-            "reason": "no_data",
-        })
+        return web.json_response(
+            {
+                "regime": "neutral",
+                "reason": "no_data",
+            }
+        )
 
     return web.json_response(_decode_hash(data))
 
@@ -541,26 +587,30 @@ async def send_test_alert(request):
         maxlen=MAXLEN_SIGNALS,
         approximate=True,
     )
-    return web.json_response({
-        "ok": True,
-        "queued": True,
-        "symbol": payload["symbol"],
-        "signal_id": payload["signal_id"],
-        "preview": _test_alert_preview(payload),
-        "message": "Telegram test alert queued. Check Telegram and Alert Log.",
-    })
+    return web.json_response(
+        {
+            "ok": True,
+            "queued": True,
+            "symbol": payload["symbol"],
+            "signal_id": payload["signal_id"],
+            "preview": _test_alert_preview(payload),
+            "message": "Telegram test alert queued. Check Telegram and Alert Log.",
+        }
+    )
 
 
 @routes.get("/api/alerts/test/preview")
 async def preview_test_alert(request):
     """Preview the safe Telegram test alert without sending anything."""
     payload, _ = _test_alert_payload({})
-    return web.json_response({
-        "ok": True,
-        "send_required": False,
-        "preview": _test_alert_preview(payload),
-        "note": "Preview only. Use POST /api/alerts/test or the dashboard button to send.",
-    })
+    return web.json_response(
+        {
+            "ok": True,
+            "send_required": False,
+            "preview": _test_alert_preview(payload),
+            "note": "Preview only. Use POST /api/alerts/test or the dashboard button to send.",
+        }
+    )
 
 
 @routes.get("/api/alerts/stats")
@@ -577,13 +627,15 @@ async def get_alert_stats(request):
     rate = int(rate_raw) if rate_raw else 0
     burst = int(burst_raw) if burst_raw else 0
 
-    return web.json_response({
-        "hourly_sent": rate,
-        "hourly_ttl_sec": rate_ttl,
-        "burst_5min_sent": burst,
-        "burst_5min_ttl_sec": burst_ttl,
-        "delivery_log_entries": log_len,
-    })
+    return web.json_response(
+        {
+            "hourly_sent": rate,
+            "hourly_ttl_sec": rate_ttl,
+            "burst_5min_sent": burst,
+            "burst_5min_ttl_sec": burst_ttl,
+            "delivery_log_entries": log_len,
+        }
+    )
 
 
 @routes.get("/api/alerts/mute")
@@ -594,11 +646,15 @@ async def get_muted(request):
     symbols = await redis.smembers(ALERT_MUTE_SYMBOLS_KEY)
     strategies = await redis.smembers(ALERT_MUTE_STRATEGIES_KEY)
 
-    decode = lambda s: {(x.decode() if isinstance(x, bytes) else x) for x in s}
-    return web.json_response({
-        "muted_symbols": sorted(decode(symbols)),
-        "muted_strategies": sorted(decode(strategies)),
-    })
+    def decode(s):
+        return {(x.decode() if isinstance(x, bytes) else x) for x in s}
+
+    return web.json_response(
+        {
+            "muted_symbols": sorted(decode(symbols)),
+            "muted_strategies": sorted(decode(strategies)),
+        }
+    )
 
 
 @routes.post("/api/alerts/mute/{symbol}")

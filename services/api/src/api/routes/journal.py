@@ -54,8 +54,12 @@ def _compact_list(value, limit: int = 6) -> list[str]:
 def _normalise_trade(payload: dict) -> dict:
     symbol = _text(payload.get("symbol"), "UNKNOWN").upper()
     decision = _text(payload.get("decision") or payload.get("trade_decision"), "WAIT").upper()
-    option = payload.get("selected_option") if isinstance(payload.get("selected_option"), dict) else {}
-    event_calendar = option.get("event_calendar") if isinstance(option.get("event_calendar"), dict) else {}
+    option = (
+        payload.get("selected_option") if isinstance(payload.get("selected_option"), dict) else {}
+    )
+    event_calendar = (
+        option.get("event_calendar") if isinstance(option.get("event_calendar"), dict) else {}
+    )
     news_edge = payload.get("news_edge") if isinstance(payload.get("news_edge"), dict) else {}
     risk = payload.get("risk") if isinstance(payload.get("risk"), dict) else {}
     ts_ms = int(time.time() * 1000)
@@ -65,7 +69,11 @@ def _normalise_trade(payload: dict) -> dict:
     target1 = _num(payload.get("target1") or payload.get("target_1_hint"))
     target2 = _num(payload.get("target2") or payload.get("target_2_hint"))
     risk_points = abs(entry - stop) if entry and stop else 0.0
-    rr1 = round(abs(target1 - entry) / risk_points, 2) if entry and stop and target1 and risk_points else 0.0
+    rr1 = (
+        round(abs(target1 - entry) / risk_points, 2)
+        if entry and stop and target1 and risk_points
+        else 0.0
+    )
 
     execution_status = _text(option.get("execution_status"), "WAIT_CONTRACT")
     hard_blockers = _compact_list(option.get("hard_blockers"), 8)
@@ -113,7 +121,9 @@ def _normalise_trade(payload: dict) -> dict:
             "premium": _num(option.get("premium")),
             "bid": _num(option.get("bid")),
             "ask": _num(option.get("ask")),
-            "entry_fill": _num(option.get("entry_fill") or option.get("ask") or option.get("premium")),
+            "entry_fill": _num(
+                option.get("entry_fill") or option.get("ask") or option.get("premium")
+            ),
             "exit_fill_reference": _num(option.get("exit_fill_reference") or option.get("bid")),
             "spread_pct": _num(option.get("spread_pct")),
             "spread_per_unit": _num(option.get("spread_per_unit")),
@@ -135,7 +145,9 @@ def _normalise_trade(payload: dict) -> dict:
             "liquidity_whitelist_pass": bool(option.get("liquidity_whitelist_pass")),
             "physical_settlement_block": bool(option.get("physical_settlement_block")),
             "event_calendar": event_calendar,
-            "next_event_date": _text(option.get("next_event_date") or event_calendar.get("next_event_date"), ""),
+            "next_event_date": _text(
+                option.get("next_event_date") or event_calendar.get("next_event_date"), ""
+            ),
             "gross_pnl": _num(option.get("gross_pnl")),
             "total_costs": _num(option.get("total_costs")),
             "net_pnl": _num(option.get("net_pnl")),
@@ -211,7 +223,10 @@ async def auto_log_signal(request):
     payload = payload or {}
     signal_id = _text(payload.get("signal_id"), "")
     symbol = _text(payload.get("symbol"), "UNKNOWN").upper()
-    dedupe_id = signal_id or f"{symbol}:{_text(payload.get('strategy_id'), '')}:{_text(payload.get('created_at_us'), '')}"
+    dedupe_id = (
+        signal_id
+        or f"{symbol}:{_text(payload.get('strategy_id'), '')}:{_text(payload.get('created_at_us'), '')}"
+    )
     if not dedupe_id.strip(":"):
         return web.json_response({"ok": False, "error": "signal_id_required"}, status=400)
     added = await redis.sadd(JOURNAL_SIGNAL_IDS_KEY, dedupe_id)
@@ -303,23 +318,27 @@ async def get_journal_stats(request):
     closed = [r for r in today_rows if r.get("outcome")]
     wins = [r for r in closed if str(r.get("outcome")).upper() in {"WIN", "TARGET", "T1", "T2"}]
     losses = [r for r in closed if str(r.get("outcome")).upper() in {"LOSS", "STOP", "SL"}]
-    risk_planned = round(sum(_num(r.get("risk_amount")) for r in today_rows if r.get("status") != "BLOCKED"), 2)
+    risk_planned = round(
+        sum(_num(r.get("risk_amount")) for r in today_rows if r.get("status") != "BLOCKED"), 2
+    )
     win_rate = round((len(wins) / max(1, len(wins) + len(losses))) * 100, 1) if closed else 0.0
-    return web.json_response({
-        "ok": True,
-        "stats": {
-            "today": today,
-            "total_today": len(today_rows),
-            "watch": len([r for r in today_rows if r.get("status") == "WATCH"]),
-            "planned": len([r for r in today_rows if r.get("status") == "PLANNED"]),
-            "blocked": len([r for r in today_rows if r.get("status") == "BLOCKED"]),
-            "closed": len(closed),
-            "wins": len(wins),
-            "losses": len(losses),
-            "win_rate": win_rate,
-            "risk_planned": risk_planned,
-        },
-    })
+    return web.json_response(
+        {
+            "ok": True,
+            "stats": {
+                "today": today,
+                "total_today": len(today_rows),
+                "watch": len([r for r in today_rows if r.get("status") == "WATCH"]),
+                "planned": len([r for r in today_rows if r.get("status") == "PLANNED"]),
+                "blocked": len([r for r in today_rows if r.get("status") == "BLOCKED"]),
+                "closed": len(closed),
+                "wins": len(wins),
+                "losses": len(losses),
+                "win_rate": win_rate,
+                "risk_planned": risk_planned,
+            },
+        }
+    )
 
 
 @routes.get("/api/journal/expectancy")
@@ -334,7 +353,11 @@ async def get_journal_expectancy(request):
     closed = [r for r in rows if r.get("status") == "CLOSED" and r.get("outcome")]
     taken = [r for r in rows if str(r.get("discretionary_action", "")).upper() == "TAKEN"]
     skipped = [r for r in rows if str(r.get("discretionary_action", "")).upper() == "SKIPPED"]
-    not_reviewed = [r for r in rows if str(r.get("discretionary_action", "NOT_REVIEWED")).upper() == "NOT_REVIEWED"]
+    not_reviewed = [
+        r
+        for r in rows
+        if str(r.get("discretionary_action", "NOT_REVIEWED")).upper() == "NOT_REVIEWED"
+    ]
 
     r_values: list[float] = []
     wins = 0
@@ -370,20 +393,22 @@ async def get_journal_expectancy(request):
         peak = max(peak, equity)
         max_dd = min(max_dd, equity - peak)
 
-    return web.json_response({
-        "ok": True,
-        "sample": {
-            "total": len(rows),
-            "closed": len(closed),
-            "taken": len(taken),
-            "skipped": len(skipped),
-            "not_reviewed": len(not_reviewed),
-        },
-        "expectancy_r": expectancy,
-        "profit_factor": profit_factor,
-        "hit_rate": hit_rate,
-        "cost_drag": round(cost_drag, 2),
-        "max_drawdown_r": round(max_dd, 3),
-        "r_values": r_values[-80:],
-        "note": "Post-v5.2 journal expectancy; precision is secondary.",
-    })
+    return web.json_response(
+        {
+            "ok": True,
+            "sample": {
+                "total": len(rows),
+                "closed": len(closed),
+                "taken": len(taken),
+                "skipped": len(skipped),
+                "not_reviewed": len(not_reviewed),
+            },
+            "expectancy_r": expectancy,
+            "profit_factor": profit_factor,
+            "hit_rate": hit_rate,
+            "cost_drag": round(cost_drag, 2),
+            "max_drawdown_r": round(max_dd, 3),
+            "r_values": r_values[-80:],
+            "note": "Post-v5.2 journal expectancy; precision is secondary.",
+        }
+    )

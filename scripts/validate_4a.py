@@ -7,13 +7,11 @@ Usage:
     python -X utf8 scripts/validate_4a.py
 """
 
-import asyncio
-import json
 import os
 import sys
 import time
 import uuid
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 
 base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 for lib in ("infusion-models", "infusion-streams", "infusion-common"):
@@ -49,13 +47,15 @@ def main():
 
     try:
         from archiver.config import ArchiverSettings
+
         check("ArchiverSettings imports", True)
     except Exception as e:
         check("ArchiverSettings imports", False, str(e))
         return
 
     try:
-        from archiver.writer import SignalWriter, _classify_session, _INSERT_SQL
+        from archiver.writer import _INSERT_SQL, SignalWriter, _classify_session
+
         check("SignalWriter imports", True)
     except Exception as e:
         check("SignalWriter imports", False, str(e))
@@ -63,13 +63,13 @@ def main():
 
     try:
         from archiver.tracker import OutcomeTracker
+
         check("OutcomeTracker imports", True)
     except Exception as e:
         check("OutcomeTracker imports", False, str(e))
         return
 
     try:
-        from archiver.main import _backfill, _consume_stream, run
         check("Archiver main imports", True)
     except Exception as e:
         check("Archiver main imports", False, str(e))
@@ -81,11 +81,23 @@ def main():
     print("\n--- CONFIG ---")
 
     settings = ArchiverSettings()
-    check("database_url set", "postgresql" in settings.database_url, settings.database_url.split("@")[-1])
+    check(
+        "database_url set",
+        "postgresql" in settings.database_url,
+        settings.database_url.split("@")[-1],
+    )
     check("write_batch_size > 0", settings.write_batch_size > 0, str(settings.write_batch_size))
     check("write_flush_sec > 0", settings.write_flush_sec > 0, str(settings.write_flush_sec))
-    check("tracker_interval_sec > 0", settings.tracker_interval_sec > 0, str(settings.tracker_interval_sec))
-    check("tracker_lookback_min > 0", settings.tracker_lookback_min > 0, str(settings.tracker_lookback_min))
+    check(
+        "tracker_interval_sec > 0",
+        settings.tracker_interval_sec > 0,
+        str(settings.tracker_interval_sec),
+    )
+    check(
+        "tracker_lookback_min > 0",
+        settings.tracker_lookback_min > 0,
+        str(settings.tracker_lookback_min),
+    )
     check("signal_ttl_min > 0", settings.signal_ttl_min > 0, str(settings.signal_ttl_min))
     check("market_open_hour = 9", settings.market_open_hour == 9)
     check("market_open_min = 15", settings.market_open_min == 15)
@@ -120,8 +132,7 @@ def main():
 
     # Determinism
     ts1 = _make_us(10, 30)
-    check("Session classification deterministic",
-          _classify_session(ts1) == _classify_session(ts1))
+    check("Session classification deterministic", _classify_session(ts1) == _classify_session(ts1))
 
     # ═══════════════════════════════════════════════
     # INSERT SQL VALIDATION
@@ -132,9 +143,9 @@ def main():
     check("INSERT SQL has ON CONFLICT", "ON CONFLICT" in _INSERT_SQL)
     check("INSERT SQL has DO NOTHING", "DO NOTHING" in _INSERT_SQL)
     check("INSERT SQL has session_hour", "session_hour" in _INSERT_SQL)
-    check("INSERT SQL has 24 params",
-          _INSERT_SQL.count("$") == 24,
-          f"params={_INSERT_SQL.count('$')}")
+    check(
+        "INSERT SQL has 24 params", _INSERT_SQL.count("$") == 24, f"params={_INSERT_SQL.count('$')}"
+    )
 
     # ═══════════════════════════════════════════════
     # WRITER MECHANICS (mock pool)
@@ -198,8 +209,11 @@ def main():
     print("\n--- STREAM CONSTANTS ---")
 
     from infusion_streams.constants import (
-        CG_ARCHIVER, CG_ARCHIVER_SUP, STREAM_RECAP,
-        KEY_ARCHIVER_CHECKPOINT, MAXLEN_RECAP,
+        CG_ARCHIVER,
+        CG_ARCHIVER_SUP,
+        KEY_ARCHIVER_CHECKPOINT,
+        MAXLEN_RECAP,
+        STREAM_RECAP,
     )
 
     check("CG_ARCHIVER defined", CG_ARCHIVER == "archiver-cg")
@@ -234,14 +248,12 @@ def main():
     print("\n--- INFRASTRUCTURE ---")
 
     import pathlib
+
     root = pathlib.Path(base)
 
-    check("Dockerfile exists",
-          (root / "services/archiver/Dockerfile").exists())
-    check("pyproject.toml exists",
-          (root / "services/archiver/pyproject.toml").exists())
-    check("__init__.py exists",
-          (root / "services/archiver/src/archiver/__init__.py").exists())
+    check("Dockerfile exists", (root / "services/archiver/Dockerfile").exists())
+    check("pyproject.toml exists", (root / "services/archiver/pyproject.toml").exists())
+    check("__init__.py exists", (root / "services/archiver/src/archiver/__init__.py").exists())
 
     # pyproject deps
     pyproject = (root / "services/archiver/pyproject.toml").read_text()
@@ -257,8 +269,7 @@ def main():
     check("DATABASE_URL in archiver env", "INFUSION_DATABASE_URL" in dc)
 
     # Migration
-    check("Migration file exists",
-          (root / "migrations/002_phase4_outcome_tracking.sql").exists())
+    check("Migration file exists", (root / "migrations/002_phase4_outcome_tracking.sql").exists())
 
     migration = (root / "migrations/002_phase4_outcome_tracking.sql").read_text()
     check("Migration has signal_id column", "signal_id" in migration)

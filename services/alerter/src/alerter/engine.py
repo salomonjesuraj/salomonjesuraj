@@ -23,14 +23,13 @@ import json
 import time
 
 import structlog
+from infusion_streams.constants import KEY_ALERT_LOG
 from redis.asyncio import Redis
 
 from alerter.config import AlerterSettings
 from alerter.direction_zone import derive_direction_zone
 from alerter.gate import DeliveryGate, DeliveryResult
-from alerter.formatter import format_signal
-from alerter.telegram import TelegramClient, DeliveryOutcome
-from infusion_streams.constants import KEY_ALERT_LOG
+from alerter.telegram import DeliveryOutcome, TelegramClient
 
 logger = structlog.get_logger()
 
@@ -265,7 +264,9 @@ class AlerterEngine:
             )
         else:
             self._failures_total += 1
-            logger.error("test_alert_failed", signal_id=signal_id, symbol=symbol, error=outcome.error_msg)
+            logger.error(
+                "test_alert_failed", signal_id=signal_id, symbol=symbol, error=outcome.error_msg
+            )
             await self._log_delivery(
                 signal_id=signal_id,
                 symbol=symbol,
@@ -330,7 +331,9 @@ class AlerterEngine:
             "ce_score": dz.get("ce_score", fs.get("bull_confidence", 0)),
             "pe_score": dz.get("pe_score", fs.get("bear_confidence", 0)),
             "ce_above": dz.get("ce_above", fs.get("positive_above", payload.get("entry_price", 0))),
-            "pe_below": dz.get("pe_below", fs.get("negative_below", payload.get("invalidation_price", 0))),
+            "pe_below": dz.get(
+                "pe_below", fs.get("negative_below", payload.get("invalidation_price", 0))
+            ),
             "score": payload.get("conviction_score", 0),
             "entry": payload.get("entry_price", 0),
             "stop": payload.get("invalidation_price", 0),

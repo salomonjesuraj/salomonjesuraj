@@ -40,8 +40,14 @@ ADVISORY_SCHEMA = {
         "risk_note": {"type": "string"},
     },
     "required": [
-        "verdict", "summary", "why_trade", "blockers", "trigger",
-        "invalidation", "option_view", "risk_note",
+        "verdict",
+        "summary",
+        "why_trade",
+        "blockers",
+        "trigger",
+        "invalidation",
+        "option_view",
+        "risk_note",
     ],
     "additionalProperties": False,
 }
@@ -203,7 +209,9 @@ class OpenAIAdvisor:
             logger.warning("openai_advisory_unavailable", error=str(exc)[:200])
             raise
 
-    async def answer_query(self, question: str, facts: list[dict], deterministic_answer: str) -> dict:
+    async def answer_query(
+        self, question: str, facts: list[dict], deterministic_answer: str
+    ) -> dict:
         """Phase 12: rephrase a pre-fetched `facts` bundle into a
         conversational answer. `deterministic_answer` (from
         api.ai_query.format_facts_as_text) is included in the prompt as a
@@ -254,7 +262,9 @@ class OpenAIAdvisor:
                 body = await response.json(content_type=None)
                 if response.status != 200:
                     message = str((body.get("error") or {}).get("message") or "request_failed")
-                    logger.warning("openai_query_failed", status=response.status, error=message[:180])
+                    logger.warning(
+                        "openai_query_failed", status=response.status, error=message[:180]
+                    )
                     raise RuntimeError(f"OpenAI {response.status}: {message}")
 
             text = _output_text(body)

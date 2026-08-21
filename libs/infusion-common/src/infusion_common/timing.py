@@ -15,6 +15,7 @@ def now_us() -> int:
 
 def measure_latency(operation: str):
     """Decorator that logs async operation latency in microseconds."""
+
     def decorator(func):
         @wraps(func)
         async def wrapper(*args, **kwargs):
@@ -27,5 +28,7 @@ def measure_latency(operation: str):
                 latency_us=round(elapsed_us, 1),
             )
             return result
+
         return wrapper
+
     return decorator

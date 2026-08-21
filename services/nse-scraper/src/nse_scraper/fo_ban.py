@@ -84,10 +84,17 @@ async def run_fo_ban_capture(redis) -> dict:
     pipe.delete(key)
     if symbols:
         pipe.sadd(key, *symbols)
-    pipe.expire(key, 20 * 3600)  # spans one trading session with margin, never carries into a stale next day
+    pipe.expire(
+        key, 20 * 3600
+    )  # spans one trading session with margin, never carries into a stale next day
     if trade_date:
         pipe.set("infusion:nse:fo_ban:trade_date", trade_date, ex=20 * 3600)
     await pipe.execute()
 
-    logger.info("fo_ban_capture_complete", trade_date=trade_date, banned_count=len(symbols), symbols=sorted(symbols))
+    logger.info(
+        "fo_ban_capture_complete",
+        trade_date=trade_date,
+        banned_count=len(symbols),
+        symbols=sorted(symbols),
+    )
     return {"status": "complete", "trade_date": trade_date, "banned_count": len(symbols)}

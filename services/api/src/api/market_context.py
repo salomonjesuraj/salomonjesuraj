@@ -30,7 +30,7 @@ NIFTY_WEIGHT = 20.0
 NIFTY_PCT_SCALE = 8.0
 SECTOR_WEIGHT = 15.0
 SECTOR_PCT_SCALE = 6.0
-BREADTH_WEIGHT = 0.3   # applied to (health_component - 50), so max +/-15
+BREADTH_WEIGHT = 0.3  # applied to (health_component - 50), so max +/-15
 
 
 def compute_directional_context(
@@ -65,7 +65,9 @@ def compute_directional_context(
             reasons.append("NIFTY moving against this direction")
 
     if sector_avg_change_pct is not None:
-        supportive = (sector_avg_change_pct >= 0) if not is_sell_bias else (sector_avg_change_pct <= 0)
+        supportive = (
+            (sector_avg_change_pct >= 0) if not is_sell_bias else (sector_avg_change_pct <= 0)
+        )
         delta = min(abs(sector_avg_change_pct) * SECTOR_PCT_SCALE, SECTOR_WEIGHT)
         if supportive:
             score += delta
@@ -79,7 +81,9 @@ def compute_directional_context(
         # read (see market_breadth.py's own header) -- for a sell-biased
         # row, a HIGH health score is actually a headwind, so it's
         # mirrored around 50 first.
-        health_component = market_health_score if not is_sell_bias else (100.0 - market_health_score)
+        health_component = (
+            market_health_score if not is_sell_bias else (100.0 - market_health_score)
+        )
         score += (health_component - 50.0) * BREADTH_WEIGHT
         reasons.append(
             f"Market breadth {'supportive' if health_component >= 50 else 'weak'} for this direction"

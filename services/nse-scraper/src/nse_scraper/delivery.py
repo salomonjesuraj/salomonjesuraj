@@ -37,8 +37,8 @@ logger = structlog.get_logger()
 
 NSE_HOME = "https://www.nseindia.com/"
 NSE_ARCHIVES_BASE = "https://nsearchives.nseindia.com"
-DELIVERY_MAX_LOOKBACK_DAYS = 7   # walk back over weekends/holidays until a real file is found
-DELIVERY_HISTORY_MAX_DAYS = 20   # rolling window for the informational 20d average
+DELIVERY_MAX_LOOKBACK_DAYS = 7  # walk back over weekends/holidays until a real file is found
+DELIVERY_HISTORY_MAX_DAYS = 20  # rolling window for the informational 20d average
 
 # NSE 403s any request that doesn't look like a real browser -- no bearer
 # token or API key exists for this public data, headers are the only gate.
@@ -85,7 +85,9 @@ async def _fetch_bhavdata_csv(session: aiohttp.ClientSession, trade_date: date) 
                 return None
             return text
     except Exception as exc:
-        logger.warning("nse_bhavdata_fetch_error", trade_date=trade_date.isoformat(), error=str(exc))
+        logger.warning(
+            "nse_bhavdata_fetch_error", trade_date=trade_date.isoformat(), error=str(exc)
+        )
         return None
 
 
@@ -148,7 +150,9 @@ async def fetch_latest_delivery(
     return None
 
 
-async def _rolling_avg(redis, symbol: str, trade_date: date, pct: float) -> tuple[float | None, int]:
+async def _rolling_avg(
+    redis, symbol: str, trade_date: date, pct: float
+) -> tuple[float | None, int]:
     """Append today's delivery_pct to the symbol's rolling history (capped
     at DELIVERY_HISTORY_MAX_DAYS entries) and return (average, sample_count).
     Average is None until there's at least one real sample -- never
@@ -163,7 +167,9 @@ async def _rolling_avg(redis, symbol: str, trade_date: date, pct: float) -> tupl
                 # Already recorded today's session -- avoid double-counting
                 # if this job runs more than once before the date rolls over.
                 all_raw = await redis.lrange(key, 0, DELIVERY_HISTORY_MAX_DAYS - 1)
-                values = [json.loads(r.decode() if isinstance(r, bytes) else r)["pct"] for r in all_raw]
+                values = [
+                    json.loads(r.decode() if isinstance(r, bytes) else r)["pct"] for r in all_raw
+                ]
                 return (round(sum(values) / len(values), 2) if values else None), len(values)
         except (json.JSONDecodeError, KeyError, TypeError):
             pass

@@ -27,9 +27,11 @@ and how well-justified is it), not target sizing.
 
 from __future__ import annotations
 
-BUILDUP_TIGHT_RANGE_ATR_FRAC = 0.5    # a bar counts as "tight" if its range < this fraction of ATR -- Infusion's own calibration, source gives no exact number
-BUILDUP_MIN_BARS = 3                   # minimum consecutive tight bars to call it a genuine buildup
-BUILDUP_AT_BOUNDARY_ATR_FRAC = 0.3     # how close the buildup cluster must sit to the boundary to count as "proper" vs "tease"
+BUILDUP_TIGHT_RANGE_ATR_FRAC = 0.5  # a bar counts as "tight" if its range < this fraction of ATR -- Infusion's own calibration, source gives no exact number
+BUILDUP_MIN_BARS = 3  # minimum consecutive tight bars to call it a genuine buildup
+BUILDUP_AT_BOUNDARY_ATR_FRAC = (
+    0.3  # how close the buildup cluster must sit to the boundary to count as "proper" vs "tease"
+)
 
 
 def _bar_range(bar: dict) -> float:
@@ -53,7 +55,9 @@ def detect_buildup(bars: list[dict], boundary: float, atr: float, bullish: bool)
     if atr <= 0 or len(bars) < BUILDUP_MIN_BARS + 1:
         return None
 
-    cluster = bars[-(BUILDUP_MIN_BARS + 1):-1]  # excludes the newest bar, which is the potential trigger
+    cluster = bars[
+        -(BUILDUP_MIN_BARS + 1) : -1
+    ]  # excludes the newest bar, which is the potential trigger
     if not all(_is_tight(b, atr) for b in cluster):
         return None
 

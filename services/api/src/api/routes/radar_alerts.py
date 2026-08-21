@@ -45,7 +45,8 @@ async def radar_alerts_recent(request):
     limit = min(max(int(request.query.get("limit", "30") or 30), 1), 100)
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            "SELECT * FROM radar_alerts ORDER BY fired_at DESC LIMIT $1", limit,
+            "SELECT * FROM radar_alerts ORDER BY fired_at DESC LIMIT $1",
+            limit,
         )
     return web.json_response({"available": True, "alerts": [_row_to_dict(r) for r in rows]})
 
@@ -105,17 +106,19 @@ async def radar_alerts_stats(request):
     for r in by_tier:
         tier_breakdown.setdefault(r["tier_at_fire"], {})[r["outcome_label"]] = int(r["n"])
 
-    return web.json_response({
-        "available": True,
-        "days": days,
-        "total": total,
-        "resolved": resolved,
-        "graduation_rate_pct": graduation_rate_pct,
-        "counts": {
-            "pending": overall_counts.get("PENDING", 0),
-            "graduated": graduated,
-            "faded": overall_counts.get("FADED", 0),
-            "expired": overall_counts.get("EXPIRED", 0),
-        },
-        "by_tier_at_fire": tier_breakdown,
-    })
+    return web.json_response(
+        {
+            "available": True,
+            "days": days,
+            "total": total,
+            "resolved": resolved,
+            "graduation_rate_pct": graduation_rate_pct,
+            "counts": {
+                "pending": overall_counts.get("PENDING", 0),
+                "graduated": graduated,
+                "faded": overall_counts.get("FADED", 0),
+                "expired": overall_counts.get("EXPIRED", 0),
+            },
+            "by_tier_at_fire": tier_breakdown,
+        }
+    )

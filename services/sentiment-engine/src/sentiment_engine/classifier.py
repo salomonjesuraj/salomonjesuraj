@@ -50,7 +50,7 @@ class FinbertClassifier:
     def load(self) -> None:
         try:
             import torch  # noqa: F401  -- import check happens together with transformers below
-            from transformers import AutoTokenizer, AutoModelForSequenceClassification
+            from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
             self._tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
             self._model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME)
@@ -77,7 +77,11 @@ class FinbertClassifier:
 
             with torch.no_grad():
                 encoded = self._tokenizer(
-                    texts, padding=True, truncation=True, max_length=256, return_tensors="pt",
+                    texts,
+                    padding=True,
+                    truncation=True,
+                    max_length=256,
+                    return_tensors="pt",
                 )
                 logits = self._model(**encoded).logits
                 probs = torch.softmax(logits, dim=-1)
@@ -85,7 +89,7 @@ class FinbertClassifier:
             results: list[dict | None] = []
             for row in probs:
                 values = row.tolist()
-                pairs = sorted(zip(_LABELS, values), key=lambda p: p[1], reverse=True)
+                pairs = sorted(zip(_LABELS, values, strict=False), key=lambda p: p[1], reverse=True)
                 top_label, top_prob = pairs[0]
                 second_prob = pairs[1][1]
                 if top_label != "neutral" and (top_prob - second_prob) < AMBIGUOUS_MARGIN:

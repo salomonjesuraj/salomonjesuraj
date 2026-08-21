@@ -13,7 +13,7 @@ import json
 
 import structlog
 
-from api.portfolio_risk_daily import compute_daily_loss_budget, compute_consecutive_losses
+from api.portfolio_risk_daily import compute_consecutive_losses, compute_daily_loss_budget
 
 logger = structlog.get_logger()
 
@@ -34,7 +34,9 @@ async def sweep_once(app) -> dict:
     consecutive = await compute_consecutive_losses(pool)
 
     await redis.set(DAILY_LOSS_KEY, json.dumps(daily_loss, separators=(",", ":")), ex=CACHE_TTL_SEC)
-    await redis.set(CONSECUTIVE_LOSSES_KEY, json.dumps(consecutive, separators=(",", ":")), ex=CACHE_TTL_SEC)
+    await redis.set(
+        CONSECUTIVE_LOSSES_KEY, json.dumps(consecutive, separators=(",", ":")), ex=CACHE_TTL_SEC
+    )
 
     status = {
         "available": True,

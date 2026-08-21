@@ -25,14 +25,16 @@ def _decode_ohlc(members: list) -> list[dict]:
         val = member.decode() if isinstance(member, bytes) else member
         try:
             bar = json.loads(val)
-            bars.append({
-                "time": int(bar.get("t", 0)),  # Unix timestamp
-                "open": float(bar.get("o", 0)),
-                "high": float(bar.get("h", 0)),
-                "low": float(bar.get("l", 0)),
-                "close": float(bar.get("c", 0)),
-                "volume": int(bar.get("v", 0)),
-            })
+            bars.append(
+                {
+                    "time": int(bar.get("t", 0)),  # Unix timestamp
+                    "open": float(bar.get("o", 0)),
+                    "high": float(bar.get("h", 0)),
+                    "low": float(bar.get("l", 0)),
+                    "close": float(bar.get("c", 0)),
+                    "volume": int(bar.get("v", 0)),
+                }
+            )
         except (json.JSONDecodeError, TypeError, ValueError):
             continue
     return bars
@@ -101,12 +103,14 @@ async def get_intraday_chart(request):
     )
     bars = _aggregate(_merge_bars(_decode_ohlc(history), _decode_ohlc(live)), interval_minutes)
 
-    return web.json_response({
-        "symbol": symbol,
-        "interval": interval,
-        "count": len(bars),
-        "bars": bars,
-    })
+    return web.json_response(
+        {
+            "symbol": symbol,
+            "interval": interval,
+            "count": len(bars),
+            "bars": bars,
+        }
+    )
 
 
 @routes.get("/api/chart/{symbol}/daily")
@@ -132,17 +136,21 @@ async def get_daily_chart(request):
     bars = _decode_ohlc(members)
 
     if not bars:
-        return web.json_response({
+        return web.json_response(
+            {
+                "symbol": symbol,
+                "interval": "1D",
+                "count": 0,
+                "bars": [],
+                "hint": "Daily data not yet cached. Will be populated by scheduler.",
+            }
+        )
+
+    return web.json_response(
+        {
             "symbol": symbol,
             "interval": "1D",
-            "count": 0,
-            "bars": [],
-            "hint": "Daily data not yet cached. Will be populated by scheduler.",
-        })
-
-    return web.json_response({
-        "symbol": symbol,
-        "interval": "1D",
-        "count": len(bars),
-        "bars": bars,
-    })
+            "count": len(bars),
+            "bars": bars,
+        }
+    )

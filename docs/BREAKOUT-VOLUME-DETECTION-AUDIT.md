@@ -232,7 +232,7 @@ and the bootstrap loop that calls it (`historical.py:132-179`) fetches per-symbo
 
 `services/feature-engine/src/feature_engine/engine.py:407`:
 ```python
-indicator_ready=state.completed_1m_bars >= max(self.config.bb_period, self.config.macd_slow),
+indicator_ready = (state.completed_1m_bars >= max(self.config.bb_period, self.config.macd_slow),)
 ```
 `services/feature-engine/src/feature_engine/config.py:19-24`:
 ```python
@@ -248,56 +248,58 @@ macd_slow: int = 26
 ### Step 4 — Scanner: the hot path (`services/scanner/src/scanner/engine.py:93-154`)
 
 ```python
-    async def process_feature(self, payload: dict) -> None:
-        """Process a single feature vector from the stream.
+async def process_feature(self, payload: dict) -> None:
+    """Process a single feature vector from the stream.
 
-        This is the core hot path — called for every feature tick.
-        """
-        symbol = payload.get("symbol", "")
-        if not symbol:
-            return
+    This is the core hot path — called for every feature tick.
+    """
+    symbol = payload.get("symbol", "")
+    if not symbol:
+        return
 
-        self._evaluations += 1
-        state = self.state_mgr.get_or_create(symbol)
+    self._evaluations += 1
+    state = self.state_mgr.get_or_create(symbol)
 
-        # Populate sector_id from symbol map (once)
-        if not state.sector_id:
-            state.sector_id = self._symbol_sectors.get(symbol, "UNCATEGORIZED")
+    # Populate sector_id from symbol map (once)
+    if not state.sector_id:
+        state.sector_id = self._symbol_sectors.get(symbol, "UNCATEGORIZED")
 
-        # Update sector engine (incremental, every tick)
-        await self.sector.update_symbol(symbol, payload)
+    # Update sector engine (incremental, every tick)
+    await self.sector.update_symbol(symbol, payload)
 
-        # Signal and pre-breakout logic is candle based. Live feature vectors
-        # still update LTP/VWAP between closes, but must not advance indicators
-        # or state-machine counters.
-        if not payload.get("bar_closed_1m", False):
-            return
+    # Signal and pre-breakout logic is candle based. Live feature vectors
+    # still update LTP/VWAP between closes, but must not advance indicators
+    # or state-machine counters.
+    if not payload.get("bar_closed_1m", False):
+        return
 
-        # Do not evaluate partially warmed indicators.
-        if not payload.get("indicator_ready", False):
-            state.update_from_features(payload)
-            return
-
-        # Update pre-breakout state machine (event-driven, every tick)
-        await self.pre_breakout.update(symbol, payload, state)
-
-        # Attach the real historical-MTF cache ...
-        mtf_cache = await self._fetch_mtf_cache(symbol)
-        if mtf_cache is not None:
-            payload = {**payload, "mtf_cache": mtf_cache}
-
-        # Run all registered strategies
-        strategies = get_strategies()
-        for strategy in strategies:
-            candidate = strategy.evaluate(payload, state)
-            await self._persist_diagnostics(symbol, strategy.strategy_id, payload, state, candidate is not None)
-            if candidate is not None:
-                if candidate.episode_key and candidate.episode_snapshot is not None:
-                    state.watch_episodes[candidate.episode_key] = candidate.episode_snapshot
-                await self._process_candidate(candidate, payload, state)
-
-        # Update state AFTER evaluation (so prev_* reflects pre-evaluation)
+    # Do not evaluate partially warmed indicators.
+    if not payload.get("indicator_ready", False):
         state.update_from_features(payload)
+        return
+
+    # Update pre-breakout state machine (event-driven, every tick)
+    await self.pre_breakout.update(symbol, payload, state)
+
+    # Attach the real historical-MTF cache ...
+    mtf_cache = await self._fetch_mtf_cache(symbol)
+    if mtf_cache is not None:
+        payload = {**payload, "mtf_cache": mtf_cache}
+
+    # Run all registered strategies
+    strategies = get_strategies()
+    for strategy in strategies:
+        candidate = strategy.evaluate(payload, state)
+        await self._persist_diagnostics(
+            symbol, strategy.strategy_id, payload, state, candidate is not None
+        )
+        if candidate is not None:
+            if candidate.episode_key and candidate.episode_snapshot is not None:
+                state.watch_episodes[candidate.episode_key] = candidate.episode_snapshot
+            await self._process_candidate(candidate, payload, state)
+
+    # Update state AFTER evaluation (so prev_* reflects pre-evaluation)
+    state.update_from_features(payload)
 ```
 
 Confirms: event-driven per closed-candle tick (not a slow poll loop — the *scanner's own* latency is minimal once a feature vector arrives), gated on `bar_closed_1m` and `indicator_ready`, then updates the **Pre-Breakout Watcher** before running the two registered strategies.
@@ -329,6 +331,7 @@ State definitions:
   EXPIRED:       Setup degraded or timed out. Aggressive cleanup.
 """
 
+
 class PBState(StrEnum):
     IDLE = "idle"
     COMPRESSING = "compressing"
@@ -342,9 +345,11 @@ class PreBreakoutTracker:
     def _evaluate(self, current, state, bb_width, rel_vol, rsi) -> PBState:
         if current == PBState.IDLE:
             # IDLE → COMPRESSING: bb_width declining for N ticks AND width < threshold
-            if (state.bb_width_declining_count >= self._s.pb_compress_ticks
-                    and bb_width < self._s.pb_compress_bb_max
-                    and bb_width > 0):
+            if (
+                state.bb_width_declining_count >= self._s.pb_compress_ticks
+                and bb_width < self._s.pb_compress_bb_max
+                and bb_width > 0
+            ):
                 return PBState.COMPRESSING
             return PBState.IDLE
 
@@ -359,9 +364,11 @@ class PreBreakoutTracker:
 
         elif current == PBState.ACCUMULATING:
             # ACCUMULATING → COILED: extreme compression + volume + RSI sweet spot
-            if (bb_width < self._s.pb_coiled_bb_max
-                    and rel_vol >= self._s.pb_coiled_rel_vol
-                    and self._s.pb_coiled_rsi_min <= rsi <= self._s.pb_coiled_rsi_max):
+            if (
+                bb_width < self._s.pb_coiled_bb_max
+                and rel_vol >= self._s.pb_coiled_rel_vol
+                and self._s.pb_coiled_rsi_min <= rsi <= self._s.pb_coiled_rsi_max
+            ):
                 return PBState.COILED
             # ACCUMULATING → EXPIRED: volume dropped or bb expanding
             if rel_vol < 1.0 or bb_width > self._s.pb_compress_bb_max:
@@ -382,15 +389,15 @@ class PreBreakoutTracker:
 
 **Config thresholds** (`services/scanner/src/scanner/config.py:65-75`):
 ```python
-pb_compress_ticks: int = 5              # ticks of declining bb_width
-pb_compress_bb_max: float = 0.03        # max bb_width to enter COMPRESSING
-pb_accumulate_rel_vol: float = 1.3      # min rel_vol for ACCUMULATING
-pb_coiled_bb_max: float = 0.015         # max bb_width for COILED
-pb_coiled_rel_vol: float = 1.5          # min rel_vol for COILED
-pb_coiled_rsi_min: float = 45.0         # RSI lower for COILED
-pb_coiled_rsi_max: float = 60.0         # RSI upper for COILED
-pb_reversal_ticks: int = 10             # ticks to reverse back to IDLE
-pb_max_state_sec: int = 1800            # 30 min max in any pre-breakout state
+pb_compress_ticks: int = 5  # ticks of declining bb_width
+pb_compress_bb_max: float = 0.03  # max bb_width to enter COMPRESSING
+pb_accumulate_rel_vol: float = 1.3  # min rel_vol for ACCUMULATING
+pb_coiled_bb_max: float = 0.015  # max bb_width for COILED
+pb_coiled_rel_vol: float = 1.5  # min rel_vol for COILED
+pb_coiled_rsi_min: float = 45.0  # RSI lower for COILED
+pb_coiled_rsi_max: float = 60.0  # RSI upper for COILED
+pb_reversal_ticks: int = 10  # ticks to reverse back to IDLE
+pb_max_state_sec: int = 1800  # 30 min max in any pre-breakout state
 ```
 
 **The API endpoint that feeds the dashboard's "Pre-Breakout Watch" panel** (`services/api/src/api/routes/scanner.py:360-365`):
@@ -427,6 +434,7 @@ Sub-conditions (ALL must be true for signal):
   7. Spread filter (liquid, not manipulated)
 """
 
+
 class VolVwapBreakout(BaseStrategy):
     def evaluate(self, features: dict, state: ScannerSymbolState) -> SignalCandidate | None:
         ltp = features.get("ltp", 0.0)
@@ -440,15 +448,19 @@ class VolVwapBreakout(BaseStrategy):
 
         # Guard: need valid prices, warmed candle state and a historical
         # time-of-day volume profile. Missing history is not neutral volume.
-        if (ltp <= 0 or vwap <= 0 or state.prev_ltp <= 0
-                or not features.get("indicator_ready", False)
-                or not features.get("volume_profile_ready", False)):
+        if (
+            ltp <= 0
+            or vwap <= 0
+            or state.prev_ltp <= 0
+            or not features.get("indicator_ready", False)
+            or not features.get("volume_profile_ready", False)
+        ):
             return None
 
         conditions: dict[str, bool] = {}
 
         # ── Condition 1: Volume expansion ──────────────────
-        vol_ok = rel_vol >= self._s.vvb_min_rel_vol   # 2.0x
+        vol_ok = rel_vol >= self._s.vvb_min_rel_vol  # 2.0x
 
         # ── Condition 2: VWAP reclaim (crossover) ──────────
         # Current: ltp > vwap  AND  Previous: prev_ltp <= prev_vwap
@@ -461,16 +473,16 @@ class VolVwapBreakout(BaseStrategy):
         ema9_ok = ltp > ema_9 > 0
 
         # ── Condition 4: RSI in range ──────────────────────
-        rsi_ok = self._s.vvb_min_rsi < rsi < self._s.vvb_max_rsi   # 40 < rsi < 75
+        rsi_ok = self._s.vvb_min_rsi < rsi < self._s.vvb_max_rsi  # 40 < rsi < 75
 
         # ── Condition 5: Bollinger context ─────────────────
-        bb_ok = bb_width > self._s.vvb_min_bb_width   # > 0.01
+        bb_ok = bb_width > self._s.vvb_min_bb_width  # > 0.01
 
         # ── Condition 6: Order flow ────────────────────────
-        flow_ok = order_imbalance > self._s.vvb_min_order_imbalance   # > 0
+        flow_ok = order_imbalance > self._s.vvb_min_order_imbalance  # > 0
 
         # ── Condition 7: Spread filter ─────────────────────
-        spread_ok = spread_bps < self._s.vvb_max_spread_bps   # < 50bps
+        spread_ok = spread_bps < self._s.vvb_max_spread_bps  # < 50bps
 
         # ── All conditions must pass ───────────────────────
         if not all(conditions.values()):
@@ -497,6 +509,7 @@ This strategy is intentionally broader than vol_vwap_breakout:
     can qualify as a watch/trade candidate.
 """
 
+
 class OptionsFirstHybrid(BaseStrategy):
     def evaluate(self, features: dict, state: ScannerSymbolState) -> SignalCandidate | None:
         ltp = float(features.get("ltp") or 0.0)
@@ -519,9 +532,14 @@ class OptionsFirstHybrid(BaseStrategy):
         ema_bull = ltp > ema5 > ema9 > ema20 > 0 or ltp > ema9 > ema20 > 0
         macd_bull = macd > macd_signal and macd_hist > 0
         rsi_bull = 50 <= rsi <= 72
-        volume_ok = rel_vol >= self._s.options_hybrid_min_rel_vol   # 1.1x — softer than vol_vwap_breakout
+        volume_ok = (
+            rel_vol >= self._s.options_hybrid_min_rel_vol
+        )  # 1.1x — softer than vol_vwap_breakout
         compression_ok = bb_width > 0 and bb_width <= 0.018
-        pk_squeeze_ok = squeeze_state in {"EXTREME", "COILED", "BUILDING"} or nr_pattern in {"NR4", "NR7"}
+        pk_squeeze_ok = squeeze_state in {"EXTREME", "COILED", "BUILDING"} or nr_pattern in {
+            "NR4",
+            "NR7",
+        }
         liquid_ok = spread_bps < self._s.options_hybrid_max_spread_bps
         atr_bull = atr_trend == "BULL" and (atr_trail_stop <= 0 or ltp > atr_trail_stop)
 
@@ -532,7 +550,9 @@ class OptionsFirstHybrid(BaseStrategy):
             "rsi_bull_zone": rsi_bull,
             "atr_trail_bull": atr_bull,
             "positive_change": change_pct >= 0,
-            "volume_or_squeeze": volume_ok or compression_ok or pk_squeeze_ok,   # volume is ONE of 8, OR'd with two others
+            "volume_or_squeeze": volume_ok
+            or compression_ok
+            or pk_squeeze_ok,  # volume is ONE of 8, OR'd with two others
             "liquid_underlying": liquid_ok,
         }
         # bear_gates mirrors this for the short side
@@ -545,41 +565,69 @@ class OptionsFirstHybrid(BaseStrategy):
         bullish = bull_count > bear_count
         gates = bull_gates if bullish else bear_gates
         core_count = bull_count if bullish else bear_count
-        if core_count < self._s.options_hybrid_min_core_gates:   # 4 of 8
+        if core_count < self._s.options_hybrid_min_core_gates:  # 4 of 8
             return None
 
         score = self._score(...)
-        if score < self._s.options_hybrid_min_score:   # 62.0
+        if score < self._s.options_hybrid_min_score:  # 62.0
             return None
         ...
 ```
 
 **`_score()`, the raw candidate-quality scorer (full):**
 ```python
-    def _score(self, *, bullish, ltp, vwap, ema_ok, macd_ok, rsi, rel_vol, bb_width,
-               atr_ok, pk_squeeze_ok, candle_ok, spread_bps, flow, change_pct) -> float:
-        directional_vwap = (ltp - vwap) / vwap * 100 if bullish else (vwap - ltp) / vwap * 100
-        vwap_score = 18 if 0 < directional_vwap <= 0.8 else 14 if directional_vwap <= 1.6 else 8
-        ema_score = 18 if ema_ok else 6
-        macd_score = 14 if macd_ok else 4
-        if bullish:
-            rsi_score = 14 if 52 <= rsi <= 66 else 10 if 45 <= rsi <= 72 else 4
-            flow_score = 5 if flow > 0 else 2
-            change_score = 5 if change_pct >= 0 else 0
-        else:
-            rsi_score = 14 if 34 <= rsi <= 48 else 10 if 28 <= rsi <= 55 else 4
-            flow_score = 5 if flow < 0 else 2
-            change_score = 5 if change_pct <= 0 else 0
-        volume_score = 14 if rel_vol >= 2.5 else 10 if rel_vol >= 1.5 else 6 if rel_vol >= 1.0 else 0
-        squeeze_score = 10 if pk_squeeze_ok else 8 if 0 < bb_width <= 0.012 else 5 if bb_width <= 0.02 else 2
-        atr_score = 8 if atr_ok else 2
-        candle_score = 4 if candle_ok else 0
-        spread_score = 4 if spread_bps < 35 else 2 if spread_bps < self._s.options_hybrid_max_spread_bps else 0
-        return _clamp(
-            vwap_score + ema_score + macd_score + rsi_score
-            + volume_score + squeeze_score + atr_score + candle_score
-            + spread_score + flow_score + change_score
-        )
+def _score(
+    self,
+    *,
+    bullish,
+    ltp,
+    vwap,
+    ema_ok,
+    macd_ok,
+    rsi,
+    rel_vol,
+    bb_width,
+    atr_ok,
+    pk_squeeze_ok,
+    candle_ok,
+    spread_bps,
+    flow,
+    change_pct,
+) -> float:
+    directional_vwap = (ltp - vwap) / vwap * 100 if bullish else (vwap - ltp) / vwap * 100
+    vwap_score = 18 if 0 < directional_vwap <= 0.8 else 14 if directional_vwap <= 1.6 else 8
+    ema_score = 18 if ema_ok else 6
+    macd_score = 14 if macd_ok else 4
+    if bullish:
+        rsi_score = 14 if 52 <= rsi <= 66 else 10 if 45 <= rsi <= 72 else 4
+        flow_score = 5 if flow > 0 else 2
+        change_score = 5 if change_pct >= 0 else 0
+    else:
+        rsi_score = 14 if 34 <= rsi <= 48 else 10 if 28 <= rsi <= 55 else 4
+        flow_score = 5 if flow < 0 else 2
+        change_score = 5 if change_pct <= 0 else 0
+    volume_score = 14 if rel_vol >= 2.5 else 10 if rel_vol >= 1.5 else 6 if rel_vol >= 1.0 else 0
+    squeeze_score = (
+        10 if pk_squeeze_ok else 8 if 0 < bb_width <= 0.012 else 5 if bb_width <= 0.02 else 2
+    )
+    atr_score = 8 if atr_ok else 2
+    candle_score = 4 if candle_ok else 0
+    spread_score = (
+        4 if spread_bps < 35 else 2 if spread_bps < self._s.options_hybrid_max_spread_bps else 0
+    )
+    return _clamp(
+        vwap_score
+        + ema_score
+        + macd_score
+        + rsi_score
+        + volume_score
+        + squeeze_score
+        + atr_score
+        + candle_score
+        + spread_score
+        + flow_score
+        + change_score
+    )
 ```
 
 **Note what `volume_score` actually contributes: at most 14 out of ~100 possible points**, and only if `rel_vol >= 2.5`. `ema_score` (18) and `macd_score`+`rsi_score` (28) together weigh double what volume does — and both EMA-stack and MACD are lagging indicators that need several closed candles to "catch up" to a fresh volume-driven move. A stock 2-3 minutes into a real breakout, with `rel_vol=4.0` but an EMA stack that hasn't crossed yet, scores well on volume and poorly everywhere else — very plausibly under the 62-point floor.
@@ -603,6 +651,7 @@ Evaluation order is strict and deterministic:
   given strategy — see evaluate() below)
 """
 
+
 def _current_session(now=None) -> str:
     if now is None:
         now = datetime.now(tz=_IST).time()
@@ -622,8 +671,16 @@ def _current_session(now=None) -> str:
 
 
 class SuppressionGate:
-    async def evaluate(self, symbol, strategy_id, conviction_score, sector_id="",
-                        market_regime="", signal_type="bullish", risk_reward_ratio=0.0) -> SuppressionResult:
+    async def evaluate(
+        self,
+        symbol,
+        strategy_id,
+        conviction_score,
+        sector_id="",
+        market_regime="",
+        signal_type="bullish",
+        risk_reward_ratio=0.0,
+    ) -> SuppressionResult:
 
         # ── Gate 1: F&O ban ──────────────
         is_banned = await self._check_fo_ban(symbol)
@@ -647,26 +704,38 @@ class SuppressionGate:
             if strength is not None and not bearish and strength < self._min_sector_strength:
                 return SuppressionResult(passed=False, reason="sector_weak", gate="sector")
             if strength is not None and bearish and strength > 75:
-                return SuppressionResult(passed=False, reason="sector_too_strong_for_pe", gate="sector")
+                return SuppressionResult(
+                    passed=False, reason="sector_too_strong_for_pe", gate="sector"
+                )
 
         # ── Gate 5: Market regime ──────────────────────
         if market_regime == "volatile":
             return SuppressionResult(passed=False, reason="regime_unfavorable", gate="regime")
 
         # ── Gate 6: Conviction floor ───────────────────
-        if conviction_score < self._min_conviction:   # 80.0
+        if conviction_score < self._min_conviction:  # 80.0
             return SuppressionResult(passed=False, reason="low_conviction", gate="conviction")
 
         # ── Gate 7: Precision guard from optimizer ─────────────────
         if self._precision_guard_enabled and strategy_id in self._precision_guard_strategy_ids:
-            if conviction_score < self._precision_guard_min_score:   # 80.0
-                return SuppressionResult(passed=False, reason="precision_guard_score", gate="precision_guard")
-            if risk_reward_ratio < self._precision_guard_min_rr:   # 1.2
-                return SuppressionResult(passed=False, reason="precision_guard_rr", gate="precision_guard")
+            if conviction_score < self._precision_guard_min_score:  # 80.0
+                return SuppressionResult(
+                    passed=False, reason="precision_guard_score", gate="precision_guard"
+                )
+            if risk_reward_ratio < self._precision_guard_min_rr:  # 1.2
+                return SuppressionResult(
+                    passed=False, reason="precision_guard_rr", gate="precision_guard"
+                )
             if self._precision_guard_sessions:
                 current_session = _current_session()
-                if current_session not in self._precision_guard_sessions:   # {mid_morning, midday, closing}
-                    return SuppressionResult(passed=False, reason=f"precision_guard_session_{current_session}", gate="precision_guard")
+                if (
+                    current_session not in self._precision_guard_sessions
+                ):  # {mid_morning, midday, closing}
+                    return SuppressionResult(
+                        passed=False,
+                        reason=f"precision_guard_session_{current_session}",
+                        gate="precision_guard",
+                    )
 
         return SuppressionResult(passed=True)
 ```
@@ -674,8 +743,8 @@ class SuppressionGate:
 **Config, with the backtest note that justifies the opening-session exclusion** (`services/scanner/src/scanner/config.py:26-41`):
 ```python
 class ScannerSettings(InfusionSettings):
-    min_conviction_score: float = 80.0      # optimizer v4.4.1: below this → suppressed
-    min_sector_strength: float = 30.0       # below this → sector_weak
+    min_conviction_score: float = 80.0  # optimizer v4.4.1: below this → suppressed
+    min_sector_strength: float = 30.0  # below this → sector_weak
 
     # ─── Phase 5.1 precision guard ───────────────────
     # Re-backtested 2026-08-07 against 90 days of live outcomes at score >= 80, R:R >= 1.2:

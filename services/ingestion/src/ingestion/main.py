@@ -11,19 +11,19 @@ Usage:
 import asyncio
 
 import structlog
+from infusion_common.health import HealthReporter
+from infusion_common.lifecycle import ServiceLifecycle
+from infusion_common.logging import setup_logging
+from infusion_models.capability import ProviderCapabilityV1
 from redis.asyncio import Redis
 
-from ingestion.config import IngestionSettings
-from ingestion.supervisor import ConnectionSupervisor
-from ingestion.publisher import TickPublisher
 from ingestion.adapters.mock import MockAdapter
 from ingestion.adapters.upstox import UpstoxAdapter
-from ingestion.subscription_registry import SubscriptionRegistry
 from ingestion.capability_registry import CapabilityRegistry
-from infusion_common.logging import setup_logging
-from infusion_common.lifecycle import ServiceLifecycle
-from infusion_common.health import HealthReporter
-from infusion_models.capability import ProviderCapabilityV1
+from ingestion.config import IngestionSettings
+from ingestion.publisher import TickPublisher
+from ingestion.subscription_registry import SubscriptionRegistry
+from ingestion.supervisor import ConnectionSupervisor
 
 logger = structlog.get_logger()
 
@@ -73,12 +73,13 @@ async def main():
     instruments = []
     if config.broker_primary == "mock":
         from ingestion.adapters.mock import MOCK_SYMBOLS
+
         instruments = [s[0] for s in MOCK_SYMBOLS]
     else:
         # Read instrument keys from infusion:symbols hash
         # (populated by nse-scraper service on startup)
         symbol_data = await redis.hgetall("infusion:symbols")
-        instruments = [k.decode() for k in symbol_data.keys()] if symbol_data else []
+        instruments = [k.decode() for k in symbol_data] if symbol_data else []
 
         if not instruments:
             logger.warning(
@@ -89,9 +90,11 @@ async def main():
             for attempt in range(5):
                 await asyncio.sleep(3)
                 symbol_data = await redis.hgetall("infusion:symbols")
-                instruments = [k.decode() for k in symbol_data.keys()] if symbol_data else []
+                instruments = [k.decode() for k in symbol_data] if symbol_data else []
                 if instruments:
-                    logger.info("instruments_found_on_retry", attempt=attempt + 1, count=len(instruments))
+                    logger.info(
+                        "instruments_found_on_retry", attempt=attempt + 1, count=len(instruments)
+                    )
                     break
 
     logger.info(
@@ -112,10 +115,12 @@ async def main():
     )
 
     # Set health details
-    health.set_details_fn(lambda: {
-        **adapter.health(),
-        **publisher.stats,
-    })
+    health.set_details_fn(
+        lambda: {
+            **adapter.health(),
+            **publisher.stats,
+        }
+    )
 
     # EBIE EB-0: provider capability registry + dynamic subscription
     # registry. The registry starts every symbol at Tier 1 (the only

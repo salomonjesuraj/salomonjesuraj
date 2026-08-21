@@ -52,8 +52,13 @@ def compute_age_decay(published_time_ms: int | None, now_ms: int) -> float:
 
 
 def compute_sentiment_impact(
-    direction: str, confidence: float, severity: float,
-    relevance: float, novelty: float, source_quality: float, age_decay: float,
+    direction: str,
+    confidence: float,
+    severity: float,
+    relevance: float,
+    novelty: float,
+    source_quality: float,
+    age_decay: float,
 ) -> float:
     """docs/EBIE-BLUEPRINT.md Section 4.10's own formula: direction *
     confidence * event_severity * stock_relevance * novelty *
@@ -79,17 +84,22 @@ def summarize_symbol_sentiment(rows: list[dict], now_ms: int) -> dict:
     for r in rows:
         decay = compute_age_decay(r.get("published_time_ms"), now_ms)
         impact = compute_sentiment_impact(
-            r.get("direction", "unknown"), float(r.get("confidence") or 0.0),
-            float(r.get("severity") or 0.0), float(r.get("relevance") or 0.0),
-            float(r.get("novelty") or 0.0), float(r.get("source_quality") or 0.0), decay,
+            r.get("direction", "unknown"),
+            float(r.get("confidence") or 0.0),
+            float(r.get("severity") or 0.0),
+            float(r.get("relevance") or 0.0),
+            float(r.get("novelty") or 0.0),
+            float(r.get("source_quality") or 0.0),
+            decay,
         )
         scored.append({**r, "age_decay": round(decay, 4), "impact": round(impact, 4)})
 
     weights = [abs(s["impact"]) for s in scored]
     total_weight = sum(weights)
     weighted_impact = (
-        sum(s["impact"] * w for s, w in zip(scored, weights)) / total_weight
-        if total_weight > 0 else 0.0
+        sum(s["impact"] * w for s, w in zip(scored, weights, strict=False)) / total_weight
+        if total_weight > 0
+        else 0.0
     )
 
     if weighted_impact >= LABEL_THRESHOLD:

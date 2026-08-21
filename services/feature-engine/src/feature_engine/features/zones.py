@@ -11,7 +11,7 @@ back through it.
 
 from __future__ import annotations
 
-ZONE_SIZE_MULTIPLIER = 1.8   # Pine's zoneSizeMultiplier default
+ZONE_SIZE_MULTIPLIER = 1.8  # Pine's zoneSizeMultiplier default
 
 
 def update_zones(state, bar_start_ms: int, multiplier: float = ZONE_SIZE_MULTIPLIER) -> None:

@@ -34,8 +34,10 @@ logger = structlog.get_logger()
 SWEEP_INTERVAL_SEC = 60
 STATUS_KEY = "infusion:news-queue:status"
 HEADLINES_CACHE_PREFIX = "infusion:news:"
-HEADLINES_CACHE_TTL_SEC = 3 * 3600   # a few sweep intervals of grace, same order as other queue caches
-HEADLINES_CACHE_MAX = 10             # most recent N headlines per symbol, dashboard-read-speed only
+HEADLINES_CACHE_TTL_SEC = (
+    3 * 3600
+)  # a few sweep intervals of grace, same order as other queue caches
+HEADLINES_CACHE_MAX = 10  # most recent N headlines per symbol, dashboard-read-speed only
 
 
 async def _load_universe(redis) -> dict[str, str]:
@@ -62,26 +64,30 @@ async def _persist_events(pool, events: list[dict]) -> int:
     if not events:
         return 0
     inserted = 0
-    async with pool.acquire() as conn:
-        async with conn.transaction():
-            for ev in events:
-                result = await conn.execute(
-                    """
+    async with pool.acquire() as conn, conn.transaction():
+        for ev in events:
+            result = await conn.execute(
+                """
                     INSERT INTO news_events
                         (symbol, instrument_key, article_fingerprint, heading,
                          summary, article_link, thumbnail, published_time_ms)
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                     ON CONFLICT (symbol, article_fingerprint) DO NOTHING
                     """,
-                    ev["symbol"], ev["instrument_key"], ev["article_fingerprint"],
-                    ev["heading"], ev["summary"], ev["article_link"], ev["thumbnail"],
-                    ev["published_time_ms"],
-                )
-                # asyncpg execute() returns e.g. "INSERT 0 1" (inserted) or
-                # "INSERT 0 0" (conflict, skipped) -- the trailing count is
-                # the real signal, not "did the statement run".
-                if result.endswith(" 1"):
-                    inserted += 1
+                ev["symbol"],
+                ev["instrument_key"],
+                ev["article_fingerprint"],
+                ev["heading"],
+                ev["summary"],
+                ev["article_link"],
+                ev["thumbnail"],
+                ev["published_time_ms"],
+            )
+            # asyncpg execute() returns e.g. "INSERT 0 1" (inserted) or
+            # "INSERT 0 0" (conflict, skipped) -- the trailing count is
+            # the real signal, not "did the statement run".
+            if result.endswith(" 1"):
+                inserted += 1
     return inserted
 
 
@@ -112,7 +118,11 @@ async def _update_headline_cache(redis, events: list[dict]) -> None:
                 continue
             seen.add(fp)
             deduped.append(a)
-        pipe.set(key, json.dumps(deduped[:HEADLINES_CACHE_MAX], separators=(",", ":")), ex=HEADLINES_CACHE_TTL_SEC)
+        pipe.set(
+            key,
+            json.dumps(deduped[:HEADLINES_CACHE_MAX], separators=(",", ":")),
+            ex=HEADLINES_CACHE_TTL_SEC,
+        )
     await pipe.execute()
 
 

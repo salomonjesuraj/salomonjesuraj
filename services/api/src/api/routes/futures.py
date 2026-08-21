@@ -39,7 +39,9 @@ async def futures_for_symbol(request):
             result[key] = None
             continue
         try:
-            result[key] = float(val) if "." in val or key in ("basis_pct", "oi_change_pct") else int(val)
+            result[key] = (
+                float(val) if "." in val or key in ("basis_pct", "oi_change_pct") else int(val)
+            )
         except (ValueError, TypeError):
             result[key] = val
     return web.json_response(result)

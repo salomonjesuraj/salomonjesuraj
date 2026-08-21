@@ -18,10 +18,10 @@ silently stale record -- the same reasoning HealthReporter already uses.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 
 import msgpack
 import structlog
-
 from infusion_common.timing import now_us
 from infusion_models.capability import ProviderCapabilityV1
 from infusion_streams.constants import KEY_CAPABILITY_PREFIX, KEY_SUBSCRIPTION_STATUS
@@ -56,10 +56,8 @@ class CapabilityRegistry:
     async def stop(self) -> None:
         if self._task:
             self._task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._task
-            except asyncio.CancelledError:
-                pass
             logger.info("capability_registry_stopped", provider=self.capability.provider)
 
     async def _loop(self) -> None:

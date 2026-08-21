@@ -35,7 +35,6 @@ from datetime import datetime
 
 import msgpack
 from aiohttp import web
-
 from infusion_streams.constants import KEY_EBIE_VERDICT_LITE_PREFIX
 
 routes = web.RouteTableDef()
@@ -53,8 +52,16 @@ routes = web.RouteTableDef()
 # for why each marker exists).
 _FRESHNESS_SOURCES = {
     "relative_strength": ("infusion:mtf:", "infusion:mtf-last-seen:", "epoch"),
-    "options_positioning": ("infusion:options-dynamics:", "infusion:options-dynamics-last-seen:", "epoch"),
-    "option_tradeability": ("infusion:option-chain:", "infusion:option-chain-last-refresh:", "refreshed_at_iso"),
+    "options_positioning": (
+        "infusion:options-dynamics:",
+        "infusion:options-dynamics-last-seen:",
+        "epoch",
+    ),
+    "option_tradeability": (
+        "infusion:option-chain:",
+        "infusion:option-chain-last-refresh:",
+        "refreshed_at_iso",
+    ),
 }
 
 
@@ -153,8 +160,13 @@ def _direction_agreement(full_direction, lite_direction) -> str:
     return "agree" if full == lite else "disagree"
 
 
-def _row_to_candidate(r, market_ctx: dict | None = None, opt_ctx: dict | None = None,
-                       cache_freshness: dict | None = None, lite_verdict: dict | None = None) -> dict:
+def _row_to_candidate(
+    r,
+    market_ctx: dict | None = None,
+    opt_ctx: dict | None = None,
+    cache_freshness: dict | None = None,
+    lite_verdict: dict | None = None,
+) -> dict:
     d = dict(r)
     sub_scores = _decode_json(d.get("sub_scores"))
     features = _decode_json(d.get("features"))
@@ -176,7 +188,6 @@ def _row_to_candidate(r, market_ctx: dict | None = None, opt_ctx: dict | None = 
         "created_at": d["created_at"].isoformat() if d.get("created_at") else None,
         "suppressed": bool(d.get("suppressed")),
         "outcome_label": d.get("outcome_label"),
-
         # Main-table columns (Section 32) -- everything already computed,
         # this route only selects/renames, never invents a new number.
         "verdict": verdict.get("verdict"),
@@ -191,7 +202,6 @@ def _row_to_candidate(r, market_ctx: dict | None = None, opt_ctx: dict | None = 
         "data_quality_score": features.get("data_quality_score"),
         "sector_id": d.get("sector_id"),
         "risk_reward_ratio": _num(d.get("risk_reward_ratio")),
-
         # EBIE EB-15 Phase 1 item 3: the dashboard must show data-quality
         # status "without hiding the setup" (the directive's own wording)
         # -- so this is additive detail on the existing row/expand-row,
@@ -212,7 +222,6 @@ def _row_to_candidate(r, market_ctx: dict | None = None, opt_ctx: dict | None = 
             # (e.g. Redis unavailable) -- never a guessed status.
             "cache_freshness": cache_freshness,
         },
-
         # Expand-row sections
         "why_now": verdict.get("top_reasons") or [],
         "why_not": why_not,
@@ -226,7 +235,9 @@ def _row_to_candidate(r, market_ctx: dict | None = None, opt_ctx: dict | None = 
             "vcp_score": features.get("vcp_score"),
             "vcp_grade": features.get("vcp_grade"),
             "rel_vol_20d": features.get("rel_vol_20d"),
-            "microstructure_book_imbalance": (features.get("microstructure_depth") or {}).get("book_imbalance_ema"),
+            "microstructure_book_imbalance": (features.get("microstructure_depth") or {}).get(
+                "book_imbalance_ema"
+            ),
         },
         "derivatives": {
             "futures_basis_pct": features.get("futures_basis_pct"),
@@ -247,7 +258,6 @@ def _row_to_candidate(r, market_ctx: dict | None = None, opt_ctx: dict | None = 
             "portfolio_fit_reasons": portfolio.get("portfolio_fit_reasons") or [],
             "correlated_symbols": portfolio.get("correlated_symbols") or [],
         },
-
         # EBIE EB-15 Phase 7 -- Phase 4's market-context family and Phase
         # 5's option-tradeability gate already SCORE against this data
         # (verdict.bullish_families/risks/hard_gates carry it as generic
@@ -269,9 +279,9 @@ def _row_to_candidate(r, market_ctx: dict | None = None, opt_ctx: dict | None = 
                 "blockers": opt_ctx.get("blockers") or [],
                 "hard_blockers": opt_ctx.get("hard_blockers") or [],
             }
-            if opt_ctx else None
+            if opt_ctx
+            else None
         ),
-
         # EBIE-KNOWN-GAPS.md §7.1 -- the SAME symbol's current lightweight
         # verdict (EB-15 Phase 3), shown alongside this full verdict so a
         # reader can see when the two disagree rather than trusting
@@ -289,9 +299,12 @@ def _row_to_candidate(r, market_ctx: dict | None = None, opt_ctx: dict | None = 
                 "confidence_band": lite_verdict.get("confidence_band"),
                 "checked_at": lite_verdict.get("checked_at"),
             }
-            if lite_verdict else None
+            if lite_verdict
+            else None
         ),
-        "direction_agreement": _direction_agreement(d.get("signal_type"), (lite_verdict or {}).get("direction")),
+        "direction_agreement": _direction_agreement(
+            d.get("signal_type"), (lite_verdict or {}).get("direction")
+        ),
     }
 
 
@@ -303,7 +316,13 @@ async def ebie_candidates(request):
     matching Section 34's own "explain why it refused a trade" ask)."""
     pool = request.app.get("pg_pool")
     if not pool:
-        return web.json_response({"available": False, "reason": "Postgres analytics pool is not available.", "candidates": []})
+        return web.json_response(
+            {
+                "available": False,
+                "reason": "Postgres analytics pool is not available.",
+                "candidates": [],
+            }
+        )
 
     limit = min(max(int(request.query.get("limit", "30") or 30), 1), 100)
     suppressed_filter = str(request.query.get("suppressed", "all")).lower()
@@ -331,7 +350,9 @@ async def ebie_candidates(request):
                 *params,
             )
         except Exception as exc:
-            return web.json_response({"available": False, "reason": f"candidate query failed: {exc}", "candidates": []})
+            return web.json_response(
+                {"available": False, "reason": f"candidate query failed: {exc}", "candidates": []}
+            )
 
     # EBIE EB-15 Phase 7 -- live market-context (Phase 4) and option-chain
     # (Phase 5) reads, batched with one mget per cache rather than N round
@@ -343,6 +364,7 @@ async def ebie_candidates(request):
     market_ctx_map: dict[str, dict] = {}
     opt_ctx_map: dict[str, dict] = {}
     symbols = sorted({r["symbol"] for r in rows if r.get("symbol")})
+
     def _decode_cache_json(raw) -> dict:
         # Redis client here is decode_responses=False (main.py), so `raw`
         # is bytes, not str -- _decode_json() above only special-cases
@@ -361,7 +383,7 @@ async def ebie_candidates(request):
     if redis and symbols:
         try:
             market_raw = await redis.mget([f"infusion:market-context:{s}" for s in symbols])
-            for s, raw in zip(symbols, market_raw):
+            for s, raw in zip(symbols, market_raw, strict=False):
                 parsed = _decode_cache_json(raw)
                 if parsed:
                     market_ctx_map[s] = parsed
@@ -369,7 +391,7 @@ async def ebie_candidates(request):
             pass
         try:
             opt_raw = await redis.mget([f"infusion:option-chain:{s}" for s in symbols])
-            for s, raw in zip(symbols, opt_raw):
+            for s, raw in zip(symbols, opt_raw, strict=False):
                 parsed = _decode_cache_json(raw)
                 if parsed:
                     opt_ctx_map[s] = parsed
@@ -385,7 +407,7 @@ async def ebie_candidates(request):
     if redis and symbols:
         try:
             lite_raw = await redis.mget([f"{KEY_EBIE_VERDICT_LITE_PREFIX}{s}" for s in symbols])
-            for s, raw in zip(symbols, lite_raw):
+            for s, raw in zip(symbols, lite_raw, strict=False):
                 if not raw:
                     continue
                 try:
@@ -417,32 +439,36 @@ async def ebie_candidates(request):
             else:
                 try:
                     live_raw = await redis.mget([f"{live_prefix}{s}" for s in symbols])
-                    for s, raw in zip(symbols, live_raw):
+                    for s, raw in zip(symbols, live_raw, strict=False):
                         live_present[s] = bool(raw)
                 except Exception:
                     for s in symbols:
                         live_present[s] = False
             try:
                 seen_raw = await redis.mget([f"{last_seen_prefix}{s}" for s in symbols])
-                for s, raw in zip(symbols, seen_raw):
+                for s, raw in zip(symbols, seen_raw, strict=False):
                     last_seen_age[s] = _parse_last_seen_age_sec(raw, kind, now)
             except Exception:
                 for s in symbols:
                     last_seen_age[s] = None
             for s in symbols:
-                freshness_map[s][family] = _freshness_status(live_present.get(s, False), last_seen_age.get(s))
+                freshness_map[s][family] = _freshness_status(
+                    live_present.get(s, False), last_seen_age.get(s)
+                )
 
-    return web.json_response({
-        "available": True,
-        "count": len(rows),
-        "candidates": [
-            _row_to_candidate(
-                r,
-                market_ctx_map.get(r.get("symbol")),
-                opt_ctx_map.get(r.get("symbol")),
-                freshness_map.get(r.get("symbol")) if redis else None,
-                lite_verdict_map.get(r.get("symbol")),
-            )
-            for r in rows
-        ],
-    })
+    return web.json_response(
+        {
+            "available": True,
+            "count": len(rows),
+            "candidates": [
+                _row_to_candidate(
+                    r,
+                    market_ctx_map.get(r.get("symbol")),
+                    opt_ctx_map.get(r.get("symbol")),
+                    freshness_map.get(r.get("symbol")) if redis else None,
+                    lite_verdict_map.get(r.get("symbol")),
+                )
+                for r in rows
+            ],
+        }
+    )

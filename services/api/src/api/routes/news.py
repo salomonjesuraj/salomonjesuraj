@@ -7,8 +7,9 @@ as confirmation by itself.
 
 from __future__ import annotations
 
-import xml.etree.ElementTree as ET
+import contextlib
 import json
+import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote_plus
 
@@ -19,22 +20,83 @@ NEWS_EDGE_KEY_PREFIX = "infusion:news-edge:"
 IST = timezone(timedelta(hours=5, minutes=30))
 
 POSITIVE_WORDS = {
-    "profit", "profits", "beats", "beat", "record", "upgrade", "upgraded",
-    "order win", "wins order", "approval", "approved", "launch", "expansion",
-    "rally", "surge", "gains", "growth", "strong", "bullish", "buy",
-    "outperform", "raises", "hike", "dividend", "bonus", "split",
+    "profit",
+    "profits",
+    "beats",
+    "beat",
+    "record",
+    "upgrade",
+    "upgraded",
+    "order win",
+    "wins order",
+    "approval",
+    "approved",
+    "launch",
+    "expansion",
+    "rally",
+    "surge",
+    "gains",
+    "growth",
+    "strong",
+    "bullish",
+    "buy",
+    "outperform",
+    "raises",
+    "hike",
+    "dividend",
+    "bonus",
+    "split",
 }
 NEGATIVE_WORDS = {
-    "loss", "losses", "misses", "downgrade", "downgraded", "probe", "fraud",
-    "penalty", "fine", "raid", "fire", "accident", "recall", "fall", "falls",
-    "slump", "weak", "bearish", "sell", "cuts", "cut", "lawsuit", "debt",
-    "default", "resigns", "resignation",
+    "loss",
+    "losses",
+    "misses",
+    "downgrade",
+    "downgraded",
+    "probe",
+    "fraud",
+    "penalty",
+    "fine",
+    "raid",
+    "fire",
+    "accident",
+    "recall",
+    "fall",
+    "falls",
+    "slump",
+    "weak",
+    "bearish",
+    "sell",
+    "cuts",
+    "cut",
+    "lawsuit",
+    "debt",
+    "default",
+    "resigns",
+    "resignation",
 }
 EVENT_RISK_WORDS = {
-    "results", "earnings", "board meeting", "merger", "acquisition", "stake sale",
-    "block deal", "bulk deal", "pledge", "pledged", "rights issue", "qip",
-    "f&o ban", "ban", "supreme court", "rbi", "sebi", "government", "tariff",
-    "strike", "shutdown",
+    "results",
+    "earnings",
+    "board meeting",
+    "merger",
+    "acquisition",
+    "stake sale",
+    "block deal",
+    "bulk deal",
+    "pledge",
+    "pledged",
+    "rights issue",
+    "qip",
+    "f&o ban",
+    "ban",
+    "supreme court",
+    "rbi",
+    "sebi",
+    "government",
+    "tariff",
+    "strike",
+    "shutdown",
 }
 
 
@@ -108,7 +170,9 @@ def _news_edge(items: list[dict]) -> dict:
         stance = "BEARISH"
     else:
         stance = "NEUTRAL"
-    confidence = "HIGH" if len(items) >= 5 and abs(avg) >= 1.0 else "MEDIUM" if len(items) >= 3 else "LOW"
+    confidence = (
+        "HIGH" if len(items) >= 5 and abs(avg) >= 1.0 else "MEDIUM" if len(items) >= 3 else "LOW"
+    )
     if stance == "BULLISH":
         action = "News supports CE bias only if scanner and option contract also agree."
     elif stance == "BEARISH":
@@ -133,14 +197,19 @@ def _compact_article(item: dict) -> dict:
     return {
         "title": item.get("title") or "",
         "url": item.get("url") or "",
-        "source": item.get("domain") or item.get("sourcecountry") or item.get("sourceCountry") or "",
+        "source": item.get("domain")
+        or item.get("sourcecountry")
+        or item.get("sourceCountry")
+        or "",
         "published": item.get("seendate") or "",
         "tone": item.get("tone"),
         "language": item.get("language") or "",
     }
 
 
-async def _cache_news_edge(request, symbol: str, sector: str, source: str, edge: dict, items: list[dict]) -> None:
+async def _cache_news_edge(
+    request, symbol: str, sector: str, source: str, edge: dict, items: list[dict]
+) -> None:
     if not symbol:
         return
     redis = request.app.get("redis")
@@ -154,14 +223,12 @@ async def _cache_news_edge(request, symbol: str, sector: str, source: str, edge:
         "items": items[:5],
         "cached_at_ist": datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST"),
     }
-    try:
+    with contextlib.suppress(Exception):
         await redis.set(
             f"{NEWS_EDGE_KEY_PREFIX}{symbol}",
             json.dumps(payload, separators=(",", ":")),
             ex=60 * 45,
         )
-    except Exception:
-        pass
 
 
 def _rss_items(xml_text: str) -> list[dict]:
@@ -190,11 +257,7 @@ def _rss_items(xml_text: str) -> list[dict]:
 
 
 async def _google_news_fallback(session, query: str) -> list[dict]:
-    url = (
-        "https://news.google.com/rss/search?"
-        f"q={quote_plus(query)}"
-        "&hl=en-IN&gl=IN&ceid=IN:en"
-    )
+    url = f"https://news.google.com/rss/search?q={quote_plus(query)}&hl=en-IN&gl=IN&ceid=IN:en"
     try:
         async with session.get(url, timeout=12, headers={"User-Agent": "Mozilla/5.0"}) as resp:
             if resp.status != 200:
@@ -234,7 +297,9 @@ async def market_news(request):
                 fallback = await _google_news_fallback(session, query)
                 if fallback:
                     edge = _news_edge(fallback)
-                    await _cache_news_edge(request, symbol, sector, "Google News RSS fallback", edge, fallback)
+                    await _cache_news_edge(
+                        request, symbol, sector, "Google News RSS fallback", edge, fallback
+                    )
                     return web.json_response(
                         {
                             "ok": True,
@@ -254,7 +319,9 @@ async def market_news(request):
         fallback = await _google_news_fallback(session, query)
         if fallback:
             edge = _news_edge(fallback)
-            await _cache_news_edge(request, symbol, sector, "Google News RSS fallback", edge, fallback)
+            await _cache_news_edge(
+                request, symbol, sector, "Google News RSS fallback", edge, fallback
+            )
             return web.json_response(
                 {
                     "ok": True,
@@ -266,7 +333,13 @@ async def market_news(request):
                     "note": f"GDELT failed ({type(exc).__name__}); showing free RSS fallback context.",
                 }
             )
-        return web.json_response({"ok": False, "items": [], "note": f"Free news fetch failed: {type(exc).__name__}: {exc}"})
+        return web.json_response(
+            {
+                "ok": False,
+                "items": [],
+                "note": f"Free news fetch failed: {type(exc).__name__}: {exc}",
+            }
+        )
 
     articles = data.get("articles") if isinstance(data, dict) else []
     items = [_compact_article(x) for x in (articles or []) if x.get("title") and x.get("url")]

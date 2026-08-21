@@ -46,7 +46,7 @@ from __future__ import annotations
 import json
 import math
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 # api.routes.backtest imports train_classifier/read_cached_model FROM this
 # module (to expose them as routes), so importing it back here at module
@@ -58,7 +58,7 @@ from datetime import datetime, timezone
 
 MODEL_KEY = "infusion:ml-classifier:model"
 
-MIN_CATEGORY_COUNT = 30          # a categorical value needs this many training rows to get its own dummy; below it, folds into the baseline (most-frequent) category
+MIN_CATEGORY_COUNT = 30  # a categorical value needs this many training rows to get its own dummy; below it, folds into the baseline (most-frequent) category
 MIN_INFORMATIONAL_COVERAGE = 30  # a Phase 1-13 informational field needs this many non-absent training rows before the model trusts it at all
 MIN_TRAIN = 200
 MIN_TEST = 60
@@ -68,13 +68,20 @@ LEARNING_RATE = 0.35
 MOMENTUM = 0.9
 N_ITERS = 400
 
-CORE_CATEGORICAL_COLUMNS = ["session_hour", "strategy", "sector_id", "market_regime", "pre_breakout_state"]
+CORE_CATEGORICAL_COLUMNS = [
+    "session_hour",
+    "strategy",
+    "sector_id",
+    "market_regime",
+    "pre_breakout_state",
+]
 GRADE_ORDER = {"D": 0.0, "C": 1.0, "B": 2.0, "A": 3.0, "A+": 4.0}
 
 
 # ---------------------------------------------------------------------------
 # Data fetch
 # ---------------------------------------------------------------------------
+
 
 async def _fetch_rows(pool, days: int) -> list[dict]:
     from api.routes.backtest import _decode_json_column
@@ -116,6 +123,7 @@ async def _fetch_rows(pool, days: int) -> list[dict]:
 # leak into the encoding itself)
 # ---------------------------------------------------------------------------
 
+
 def _category_counts(rows: list[dict], column: str) -> dict[str, int]:
     counts: dict[str, int] = {}
     for r in rows:
@@ -140,7 +148,10 @@ def build_feature_spec(train_rows: list[dict]) -> list[dict]:
     train_rows only.
     """
     from api.routes.backtest import (
-        _ic_encode, KNOWN_ABLATION_FIELDS, KNOWN_ABLATION_FIELDS_SUB_SCORES, CONTINUOUS_IC_FIELDS,
+        CONTINUOUS_IC_FIELDS,
+        KNOWN_ABLATION_FIELDS,
+        KNOWN_ABLATION_FIELDS_SUB_SCORES,
+        _ic_encode,
     )
 
     spec: list[dict] = []
@@ -149,12 +160,16 @@ def build_feature_spec(train_rows: list[dict]) -> list[dict]:
     for col in ("conviction_score", "risk_reward_ratio"):
         vals = [float(r.get(col) or 0.0) for r in train_rows]
         mean, std = _mean_std(vals)
-        spec.append({"name": col, "kind": "core_continuous", "column": col, "mean": mean, "std": std})
+        spec.append(
+            {"name": col, "kind": "core_continuous", "column": col, "mean": mean, "std": std}
+        )
 
     # Conviction grade -- ordinal, not one-hot (it's a real order: D<C<B<A<A+).
     grade_vals = [GRADE_ORDER.get(str(r.get("conviction_grade") or ""), 1.0) for r in train_rows]
     mean, std = _mean_std(grade_vals)
-    spec.append({"name": "conviction_grade_ordinal", "kind": "core_grade_ordinal", "mean": mean, "std": std})
+    spec.append(
+        {"name": "conviction_grade_ordinal", "kind": "core_grade_ordinal", "mean": mean, "std": std}
+    )
 
     # Core categorical -- one-hot, dropping the most-frequent value as the
     # implicit baseline (avoids perfect collinearity with the intercept),
@@ -169,11 +184,16 @@ def build_feature_spec(train_rows: list[dict]) -> list[dict]:
         for value in sorted(counts):
             if value == baseline or counts[value] < MIN_CATEGORY_COUNT:
                 continue
-            spec.append({
-                "name": f"{col}={value}", "kind": "core_category",
-                "column": col, "value": value, "baseline": baseline,
-                "train_count": counts[value],
-            })
+            spec.append(
+                {
+                    "name": f"{col}={value}",
+                    "kind": "core_category",
+                    "column": col,
+                    "value": value,
+                    "baseline": baseline,
+                    "train_count": counts[value],
+                }
+            )
 
     # Informational fields (Phase 1-13) -- coverage-gated. Boolean/presence
     # fields from features_snapshot and sub_scores, continuous fields
@@ -181,10 +201,9 @@ def build_feature_spec(train_rows: list[dict]) -> list[dict]:
     # features above. A field that doesn't clear MIN_INFORMATIONAL_COVERAGE
     # this run is simply left out -- it can join a later retrain once real
     # trading days accumulate under it, no code change needed.
-    field_specs = (
-        [(f, "features") for f in KNOWN_ABLATION_FIELDS if f not in CONTINUOUS_IC_FIELDS]
-        + [(f, "sub_scores") for f in KNOWN_ABLATION_FIELDS_SUB_SCORES]
-    )
+    field_specs = [
+        (f, "features") for f in KNOWN_ABLATION_FIELDS if f not in CONTINUOUS_IC_FIELDS
+    ] + [(f, "sub_scores") for f in KNOWN_ABLATION_FIELDS_SUB_SCORES]
     for field, column in field_specs:
         encoded = [_ic_encode(field, r.get(column, {}).get(field)) for r in train_rows]
         present = [e for e in encoded if e is not None]
@@ -192,20 +211,37 @@ def build_feature_spec(train_rows: list[dict]) -> list[dict]:
         n_absent = len(present) - n_present
         if min(n_present, n_absent) < MIN_INFORMATIONAL_COVERAGE:
             continue
-        spec.append({
-            "name": field, "kind": "informational_boolean", "column": column, "field": field,
-            "n_present": n_present, "n_absent": n_absent,
-        })
+        spec.append(
+            {
+                "name": field,
+                "kind": "informational_boolean",
+                "column": column,
+                "field": field,
+                "n_present": n_present,
+                "n_absent": n_absent,
+            }
+        )
 
     for field in CONTINUOUS_IC_FIELDS:
-        vals = [float(r.get("features", {}).get(field)) for r in train_rows if r.get("features", {}).get(field) is not None]
+        vals = [
+            float(r.get("features", {}).get(field))
+            for r in train_rows
+            if r.get("features", {}).get(field) is not None
+        ]
         if len(vals) < MIN_INFORMATIONAL_COVERAGE:
             continue
         mean, std = _mean_std(vals)
-        spec.append({
-            "name": field, "kind": "informational_continuous", "column": "features", "field": field,
-            "mean": mean, "std": std, "n_present": len(vals),
-        })
+        spec.append(
+            {
+                "name": field,
+                "kind": "informational_continuous",
+                "column": "features",
+                "field": field,
+                "mean": mean,
+                "std": std,
+                "n_present": len(vals),
+            }
+        )
 
     return spec
 
@@ -256,6 +292,7 @@ def encode_row(row: dict, spec: list[dict]) -> list[float]:
 # helper below against a known-correlation synthetic pair.
 # ---------------------------------------------------------------------------
 
+
 def _sigmoid(z: float) -> float:
     if z >= 0:
         ez = math.exp(-z)
@@ -265,8 +302,12 @@ def _sigmoid(z: float) -> float:
 
 
 def train_logistic_regression(
-    X: list[list[float]], y: list[float],
-    l2: float = L2_LAMBDA, lr: float = LEARNING_RATE, momentum: float = MOMENTUM, n_iters: int = N_ITERS,
+    X: list[list[float]],
+    y: list[float],
+    l2: float = L2_LAMBDA,
+    lr: float = LEARNING_RATE,
+    momentum: float = MOMENTUM,
+    n_iters: int = N_ITERS,
 ) -> tuple[list[float], float, list[float]]:
     n = len(X)
     d = len(X[0]) if X else 0
@@ -316,6 +357,7 @@ def predict_proba(X: list[list[float]], weights: list[float], bias: float) -> li
 # Evaluation
 # ---------------------------------------------------------------------------
 
+
 def compute_auc(y_true: list[float], y_score: list[float]) -> float | None:
     """Mann-Whitney U / rank-sum AUC -- no external stats library needed.
     Verified against a hand-built perfectly-separable case (AUC=1.0) and a
@@ -336,7 +378,7 @@ def compute_auc(y_true: list[float], y_score: list[float]) -> float | None:
         avg_rank = (rank + (rank + (j - i))) / 2.0
         for k in range(i, j + 1):
             ranks[order[k]] = avg_rank
-        rank += (j - i + 1)
+        rank += j - i + 1
         i = j + 1
     sum_ranks_pos = sum(ranks[i] for i in range(len(y_true)) if y_true[i] == 1.0)
     u = sum_ranks_pos - n_pos * (n_pos + 1) / 2.0
@@ -356,7 +398,13 @@ def compute_metrics(y_true: list[float], y_score: list[float], threshold: float 
     brier = None
     if n:
         clamped = [min(max(p, 1e-12), 1 - 1e-12) for p in y_score]
-        log_loss = -sum(y_true[i] * math.log(clamped[i]) + (1 - y_true[i]) * math.log(1 - clamped[i]) for i in range(n)) / n
+        log_loss = (
+            -sum(
+                y_true[i] * math.log(clamped[i]) + (1 - y_true[i]) * math.log(1 - clamped[i])
+                for i in range(n)
+            )
+            / n
+        )
         brier = sum((y_score[i] - y_true[i]) ** 2 for i in range(n)) / n
     return {
         "accuracy": round(accuracy, 4) if accuracy is not None else None,
@@ -364,7 +412,9 @@ def compute_metrics(y_true: list[float], y_score: list[float], threshold: float 
         "recall": round(recall, 4) if recall is not None else None,
         "log_loss": round(log_loss, 4) if log_loss is not None else None,
         "brier_score": round(brier, 4) if brier is not None else None,
-        "auc": round(compute_auc(y_true, y_score), 4) if compute_auc(y_true, y_score) is not None else None,
+        "auc": round(compute_auc(y_true, y_score), 4)
+        if compute_auc(y_true, y_score) is not None
+        else None,
         "confusion_matrix": {"tp": tp, "fp": fp, "tn": tn, "fn": fn},
     }
 
@@ -372,6 +422,7 @@ def compute_metrics(y_true: list[float], y_score: list[float], threshold: float 
 # ---------------------------------------------------------------------------
 # Orchestration
 # ---------------------------------------------------------------------------
+
 
 def _label(row: dict) -> float:
     return 1.0 if row.get("outcome_label") == "TARGET_HIT" else 0.0
@@ -398,10 +449,13 @@ def _train_sync(train_rows: list[dict], test_rows: list[dict]) -> dict:
     baseline_auc = compute_auc(y_test, baseline_scores)
 
     majority_class = 1.0 if sum(y_train) / len(y_train) >= 0.5 else 0.0
-    majority_accuracy = sum(1 for v in y_test if v == majority_class) / len(y_test) if y_test else None
+    majority_accuracy = (
+        sum(1 for v in y_test if v == majority_class) / len(y_test) if y_test else None
+    )
 
     reliable = (
-        len(train_rows) >= MIN_TRAIN and len(test_rows) >= MIN_TEST
+        len(train_rows) >= MIN_TRAIN
+        and len(test_rows) >= MIN_TEST
         and test_metrics["auc"] is not None
     )
 
@@ -420,12 +474,17 @@ def _train_sync(train_rows: list[dict], test_rows: list[dict]) -> dict:
     # beyond what conviction_score/risk_reward_ratio/grade already encode.
     lift = (
         test_metrics["auc"] - baseline_auc
-        if test_metrics["auc"] is not None and baseline_auc is not None else None
+        if test_metrics["auc"] is not None and baseline_auc is not None
+        else None
     )
     if lift is None:
-        interpretation = "Baseline AUC unavailable on this test set -- can't compare against the existing score."
+        interpretation = (
+            "Baseline AUC unavailable on this test set -- can't compare against the existing score."
+        )
     elif lift >= 0.05:
-        interpretation = "Meaningfully more predictive than the existing conviction score on held-out data."
+        interpretation = (
+            "Meaningfully more predictive than the existing conviction score on held-out data."
+        )
     elif lift >= 0.0:
         interpretation = "Roughly matches the existing conviction score -- no clear edge yet."
     else:
@@ -449,7 +508,7 @@ def _train_sync(train_rows: list[dict], test_rows: list[dict]) -> dict:
 
     return {
         "available": True,
-        "trained_at": datetime.now(timezone.utc).isoformat(),
+        "trained_at": datetime.now(UTC).isoformat(),
         "n_train": len(train_rows),
         "n_test": len(test_rows),
         "n_active_features": len(spec),
@@ -461,20 +520,25 @@ def _train_sync(train_rows: list[dict], test_rows: list[dict]) -> dict:
         "baseline_score_auc": round(baseline_auc, 4) if baseline_auc is not None else None,
         "lift_over_score_auc": round(lift, 4) if lift is not None else None,
         "interpretation": interpretation,
-        "majority_class_accuracy": round(majority_accuracy, 4) if majority_accuracy is not None else None,
+        "majority_class_accuracy": round(majority_accuracy, 4)
+        if majority_accuracy is not None
+        else None,
         "train_win_rate": round(sum(y_train) / len(y_train), 4) if y_train else None,
         "reliable": reliable,
         "calibration": calibration,
     }
 
 
-async def train_classifier(pool, redis, days: int = 400, train_pct: float = 0.70, embargo_min: float = 5.0) -> dict:
+async def train_classifier(
+    pool, redis, days: int = 400, train_pct: float = 0.70, embargo_min: float = 5.0
+) -> dict:
     """Fetch archived outcomes, apply the same purge/embargo split
     Phase 13.3's walk-forward optimizer uses, train in a worker thread,
     evaluate against the held-out embargoed test set, and cache the
     result. Diagnostic evidence only -- see module docstring.
     """
     import asyncio
+
     from api.routes.backtest import _purge_and_embargo
 
     if not pool:
@@ -495,7 +559,9 @@ async def train_classifier(pool, redis, days: int = 400, train_pct: float = 0.70
         return result
 
     split = max(MIN_TRAIN, min(total - MIN_TEST, int(total * train_pct)))
-    train_rows, test_rows, purged_count, embargoed_count = _purge_and_embargo(rows, split, embargo_min)
+    train_rows, test_rows, purged_count, embargoed_count = _purge_and_embargo(
+        rows, split, embargo_min
+    )
     if len(train_rows) < MIN_TRAIN or len(test_rows) < MIN_TEST:
         result = {
             "available": True,
@@ -530,7 +596,10 @@ async def read_cached_model(redis) -> dict:
         return {"available": False, "reason": "Redis is not available."}
     raw = await redis.get(MODEL_KEY)
     if not raw:
-        return {"available": False, "reason": "No trained model yet -- the daily retrain loop hasn't completed a run."}
+        return {
+            "available": False,
+            "reason": "No trained model yet -- the daily retrain loop hasn't completed a run.",
+        }
     try:
         text = raw.decode() if isinstance(raw, bytes) else raw
         return json.loads(text)

@@ -3,7 +3,6 @@
 import time
 
 import msgpack
-
 from infusion_models.events import EventType
 from infusion_models.schema_registry import CURRENT_VERSIONS
 

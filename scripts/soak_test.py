@@ -21,7 +21,6 @@ import time
 import msgpack
 from redis.asyncio import Redis
 
-
 STREAMS = [
     "infusion:stream:tick:raw",
     "infusion:stream:tick:normalized",
@@ -146,7 +145,7 @@ def analyze_results(samples, duration_min):
     # Consumer lag
     print("\n--- CONSUMER LAG ---")
     max_lags = {}
-    for stream, group in CONSUMER_GROUPS:
+    for _stream, group in CONSUMER_GROUPS:
         key = f"lag:{group}"
         lags = [s.get(key, 0) for s in samples if s.get(key, 0) >= 0]
         if lags:
@@ -160,7 +159,6 @@ def analyze_results(samples, duration_min):
 
     # DLQ growth
     print("\n--- DLQ GROWTH ---")
-    dlq_growth = False
     for dlq in DLQS:
         key = f"dlq:{dlq}"
         first = samples[0].get(key, 0)
@@ -169,7 +167,6 @@ def analyze_results(samples, duration_min):
         name = dlq.replace("infusion:dlq:", "")
         print(f"  {name:<30} start={first} end={last} delta={delta}")
         if delta > 0:
-            dlq_growth = True
             issues.append(f"DLQ growth in {dlq}: +{delta}")
 
     # Memory
@@ -266,7 +263,9 @@ async def main():
         mem = sample.get("memory_human", "?")
         ticks = sample.get(f"len:{STREAMS[0]}", 0)
         lag = sample.get("lag:normalizer-cg", 0)
-        print(f"  [{i+1}/{total_samples}] {elapsed_min:.1f}min | mem={mem} | ticks={ticks} | lag={lag}")
+        print(
+            f"  [{i + 1}/{total_samples}] {elapsed_min:.1f}min | mem={mem} | ticks={ticks} | lag={lag}"
+        )
 
         if i < total_samples - 1:
             await asyncio.sleep(interval_sec)

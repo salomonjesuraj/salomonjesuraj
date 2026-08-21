@@ -85,7 +85,7 @@ async def analytics_suppression(request):
 async def analytics_outcomes(request):
     analytics = request.app["analytics"]
     limit = int(request.query.get("limit", "20"))
-    limit = min(max(limit, 1), 100)  # bounded 1–100
+    limit = min(max(limit, 1), 100)  # bounded 1-100
     # Phase N7: optional date=YYYY-MM-DD, same param this file's other
     # routes already accept via _parse_date() -- None keeps existing
     # callers (Diagnostics tab) getting "most recent N overall", unchanged.

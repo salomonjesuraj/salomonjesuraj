@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from urllib.parse import quote
 
 import aiohttp
@@ -77,15 +77,18 @@ async def _upstox_credentials(request: web.Request) -> tuple[str, str, str]:
     settings = request.app["settings"]
     redis: Redis = request.app["redis"]
 
-    api_key = getattr(settings, "upstox_api_key", "") or (
-        await redis.get("infusion:config:upstox_api_key") or b""
-    ).decode()
-    api_secret = getattr(settings, "upstox_api_secret", "") or (
-        await redis.get("infusion:config:upstox_api_secret") or b""
-    ).decode()
-    redirect_uri = getattr(settings, "upstox_redirect_uri", "") or (
-        await redis.get("infusion:config:upstox_redirect_uri") or b""
-    ).decode()
+    api_key = (
+        getattr(settings, "upstox_api_key", "")
+        or (await redis.get("infusion:config:upstox_api_key") or b"").decode()
+    )
+    api_secret = (
+        getattr(settings, "upstox_api_secret", "")
+        or (await redis.get("infusion:config:upstox_api_secret") or b"").decode()
+    )
+    redirect_uri = (
+        getattr(settings, "upstox_redirect_uri", "")
+        or (await redis.get("infusion:config:upstox_redirect_uri") or b"").decode()
+    )
     return api_key, api_secret, redirect_uri
 
 
@@ -121,8 +124,9 @@ async def handle_upstox_callback(request: web.Request) -> web.Response:
         )
 
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
+        async with (
+            aiohttp.ClientSession() as session,
+            session.post(
                 "https://api.upstox.com/v2/login/authorization/token",
                 headers={
                     "Accept": "application/json",
@@ -135,16 +139,17 @@ async def handle_upstox_callback(request: web.Request) -> web.Response:
                     "redirect_uri": redirect_uri,
                     "grant_type": "authorization_code",
                 },
-            ) as resp:
-                body = await resp.text()
-                if resp.status != 200:
-                    logger.error("upstox_token_exchange_failed", status=resp.status, body=body[:200])
-                    return web.Response(
-                        text=f"Upstox token exchange failed. HTTP {resp.status}: {body[:300]}",
-                        content_type="text/html",
-                        status=500,
-                    )
-                data = json.loads(body)
+            ) as resp,
+        ):
+            body = await resp.text()
+            if resp.status != 200:
+                logger.error("upstox_token_exchange_failed", status=resp.status, body=body[:200])
+                return web.Response(
+                    text=f"Upstox token exchange failed. HTTP {resp.status}: {body[:300]}",
+                    content_type="text/html",
+                    status=500,
+                )
+            data = json.loads(body)
 
         access_token = data.get("access_token", "")
         if not access_token:
@@ -155,22 +160,33 @@ async def handle_upstox_callback(request: web.Request) -> web.Response:
             )
 
         expiry_ts = _jwt_expiry(access_token)
-        ttl = max(expiry_ts - int(datetime.now(timezone.utc).timestamp()) - 60, 300) if expiry_ts else 20 * 3600
-        auth_data = json.dumps({
-            "access_token": access_token,
-            "login_time": datetime.utcnow().isoformat(),
-            "broker": "upstox",
-            "expiry_ts": expiry_ts,
-            "expiry_utc": datetime.fromtimestamp(expiry_ts, tz=timezone.utc).isoformat() if expiry_ts else "",
-        })
+        ttl = (
+            max(expiry_ts - int(datetime.now(UTC).timestamp()) - 60, 300)
+            if expiry_ts
+            else 20 * 3600
+        )
+        auth_data = json.dumps(
+            {
+                "access_token": access_token,
+                "login_time": datetime.utcnow().isoformat(),
+                "broker": "upstox",
+                "expiry_ts": expiry_ts,
+                "expiry_utc": datetime.fromtimestamp(expiry_ts, tz=UTC).isoformat()
+                if expiry_ts
+                else "",
+            }
+        )
         await redis.set(KEY_AUTH_UPSTOX, auth_data)
         await redis.expire(KEY_AUTH_UPSTOX, ttl)
-        await redis.hset("infusion:auth:upstox:status", mapping={
-            "state": "authenticated",
-            "token_source": "redis",
-            "token_expiry_ts": str(expiry_ts),
-            "updated_at": str(int(datetime.now(timezone.utc).timestamp())),
-        })
+        await redis.hset(
+            "infusion:auth:upstox:status",
+            mapping={
+                "state": "authenticated",
+                "token_source": "redis",
+                "token_expiry_ts": str(expiry_ts),
+                "updated_at": str(int(datetime.now(UTC).timestamp())),
+            },
+        )
         logger.info("upstox_token_stored", expiry_ts=expiry_ts, ttl=ttl)
 
         return web.HTTPFound("/auth/success")
@@ -186,16 +202,18 @@ async def handle_auth_status(request: web.Request) -> web.Response:
     raw = await redis.get(KEY_AUTH_UPSTOX)
     ttl = await redis.ttl(KEY_AUTH_UPSTOX)
     payload = json.loads(raw.decode() if isinstance(raw, bytes) else raw) if raw else {}
-    return web.json_response({
-        "broker": "upstox",
-        "upstox": {
-            "authenticated": raw is not None,
-            "ttl_seconds": max(ttl, 0),
-            "login_time": payload.get("login_time"),
-            "expiry_ts": payload.get("expiry_ts"),
-            "expiry_utc": payload.get("expiry_utc"),
-        },
-    })
+    return web.json_response(
+        {
+            "broker": "upstox",
+            "upstox": {
+                "authenticated": raw is not None,
+                "ttl_seconds": max(ttl, 0),
+                "login_time": payload.get("login_time"),
+                "expiry_ts": payload.get("expiry_ts"),
+                "expiry_utc": payload.get("expiry_utc"),
+            },
+        }
+    )
 
 
 async def handle_login_urls(request: web.Request) -> web.Response:

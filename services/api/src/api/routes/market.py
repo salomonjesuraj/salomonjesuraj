@@ -6,10 +6,11 @@ dashboard can show option-trading context without slowing the scanner.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import time
-from datetime import date, datetime
+from datetime import date
 from urllib.parse import urlencode
 
 import aiohttp
@@ -84,12 +85,12 @@ def _liquidity_thresholds() -> dict:
 def _decode_hash(data: dict) -> dict:
     result = {}
     for k, v in data.items():
-      key = k.decode() if isinstance(k, bytes) else k
-      val = v.decode() if isinstance(v, bytes) else v
-      try:
-          result[key] = float(val)
-      except (ValueError, TypeError):
-          result[key] = val
+        key = k.decode() if isinstance(k, bytes) else k
+        val = v.decode() if isinstance(v, bytes) else v
+        try:
+            result[key] = float(val)
+        except (ValueError, TypeError):
+            result[key] = val
     return result
 
 
@@ -138,6 +139,7 @@ async def _upstox_access_token(redis) -> str:
     # Fallback for the local Docker setup where ingestion gets the token via
     # .env and the OAuth service may not have refreshed Redis yet.
     import os
+
     return os.getenv("INFUSION_UPSTOX_ACCESS_TOKEN", "")
 
 
@@ -154,7 +156,7 @@ async def _upstox_index_quotes(request, symbols: list[str]) -> dict[str, dict]:
     if not access_token:
         return {}
 
-    instruments = [UPSTOX_INDEX_MAP[s] for s in symbols if s in UPSTOX_INDEX_MAP and UPSTOX_INDEX_MAP[s]]
+    instruments = [UPSTOX_INDEX_MAP[s] for s in symbols if UPSTOX_INDEX_MAP.get(s)]
     if not instruments:
         return {}
 
@@ -165,11 +167,15 @@ async def _upstox_index_quotes(request, symbols: list[str]) -> dict[str, dict]:
     }
 
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{UPSTOX_API_BASE}/market-quote/ltp?{query}", headers=headers, timeout=5) as resp:
-                if resp.status != 200:
-                    return {}
-                payload = await resp.json()
+        async with (
+            aiohttp.ClientSession() as session,
+            session.get(
+                f"{UPSTOX_API_BASE}/market-quote/ltp?{query}", headers=headers, timeout=5
+            ) as resp,
+        ):
+            if resp.status != 200:
+                return {}
+            payload = await resp.json()
     except Exception:
         return {}
 
@@ -225,8 +231,13 @@ async def compute_vix_multiplier(request) -> dict:
 def _underlying_score(features: dict) -> tuple[float | None, dict]:
     if not features:
         return None, {
-            "trend": None, "volume": None, "vwap": None,
-            "oi": None, "iv": None, "spread": None, "strike": None,
+            "trend": None,
+            "volume": None,
+            "vwap": None,
+            "oi": None,
+            "iv": None,
+            "spread": None,
+            "strike": None,
         }
 
     ltp = float(features.get("ltp", 0) or 0)
@@ -303,7 +314,11 @@ def _execution_score_cap(
     if hard_blockers:
         return min(score, 49.0), "hard_blocker_cap", "; ".join(hard_blockers[:3])
     if has_pending_history:
-        return min(score, 64.0), "iv_history_pending_cap", "Need 60-session IV history before full option conviction"
+        return (
+            min(score, 64.0),
+            "iv_history_pending_cap",
+            "Need 60-session IV history before full option conviction",
+        )
     if blockers:
         return min(score, 74.0), "soft_blocker_cap", "; ".join(blockers[:3])
     return score, "", ""
@@ -407,7 +422,7 @@ def _score_option_leg(
 
     spread_pct = ((ask - bid) / ltp * 100) if ask > 0 and bid > 0 and ltp > 0 else 999.0
     oi_change = ((oi - prev_oi) / prev_oi * 100) if prev_oi > 0 else 0.0
-    abs_delta = abs(delta)
+    abs(delta)
     strike = float(row.get("strike_price") or 0)
     moneyness_pct = abs(strike - spot) / spot * 100 if spot > 0 and strike > 0 else 999.0
     is_ce = bias == "CE"
@@ -503,9 +518,7 @@ def _score_option_leg(
         blockers.append("IV missing")
     if iv_rank_model["status"] == "PASS":
         reasons.append(f"IV rank {iv_rank:.1f}")
-    elif iv_rank_model["status"] == "CHAIN_PENDING":
-        blockers.append(iv_rank_model["reason"])
-    elif iv_rank_model["status"] == "WAIT_CONTRACT":
+    elif iv_rank_model["status"] == "CHAIN_PENDING" or iv_rank_model["status"] == "WAIT_CONTRACT":
         blockers.append(iv_rank_model["reason"])
     elif iv_rank_model["status"] == "AVOID_CONTRACT":
         blockers.append(iv_rank_model["reason"])
@@ -520,14 +533,18 @@ def _score_option_leg(
         blockers.append(reason)
         hard_blockers.append(reason)
     if not sl_model["hard_blockers"]:
-        reasons.append(f"Delta SL {sl_model['option_sl_price']:.2f} ({sl_model['premium_risk_pct']:.1f}% risk)")
+        reasons.append(
+            f"Delta SL {sl_model['option_sl_price']:.2f} ({sl_model['premium_risk_pct']:.1f}% risk)"
+        )
     for reason in be_model["blockers"]:
         blockers.append(reason)
     for reason in be_model["hard_blockers"]:
         blockers.append(reason)
         hard_blockers.append(reason)
     if not be_model["hard_blockers"] and not be_model["blockers"]:
-        reasons.append(f"Breakeven clears: req {be_model['required_move_pct']:.2f}% vs exp {be_model['expected_move_pct']:.2f}%")
+        reasons.append(
+            f"Breakeven clears: req {be_model['required_move_pct']:.2f}% vs exp {be_model['expected_move_pct']:.2f}%"
+        )
     if expiry_days is not None:
         if gates["expiry"]:
             reasons.append(f"Expiry runway {expiry_days}d")
@@ -618,7 +635,13 @@ async def _resolve_upstox_expiry(session, headers: dict, instrument_key: str) ->
             continue
 
         rows = payload.get("data") or []
-        expiries = sorted({str(r.get("expiry") or r.get("expiry_date") or "") for r in rows if r.get("expiry") or r.get("expiry_date")})
+        expiries = sorted(
+            {
+                str(r.get("expiry") or r.get("expiry_date") or "")
+                for r in rows
+                if r.get("expiry") or r.get("expiry_date")
+            }
+        )
         if expiries:
             return expiries[0], ""
         last_error = f"Upstox option contract returned no {relative} expiry."
@@ -635,7 +658,10 @@ async def _fetch_full_option_chain(redis, symbol: str) -> dict:
     """
     access_token = await _upstox_access_token(redis)
     if not access_token:
-        return {"ready": False, "reason": "Upstox auth token missing; login at http://localhost:5100/auth/login."}
+        return {
+            "ready": False,
+            "reason": "Upstox auth token missing; login at http://localhost:5100/auth/login.",
+        }
 
     instrument_key = await _instrument_key_for_symbol(redis, symbol)
     if not instrument_key:
@@ -660,7 +686,10 @@ async def _fetch_full_option_chain(redis, symbol: str) -> dict:
         async with aiohttp.ClientSession() as session:
             expiry, expiry_error = await _resolve_upstox_expiry(session, headers, instrument_key)
             if not expiry:
-                return {"ready": False, "reason": expiry_error or "Unable to resolve Upstox option expiry."}
+                return {
+                    "ready": False,
+                    "reason": expiry_error or "Unable to resolve Upstox option expiry.",
+                }
             async with session.get(
                 f"{UPSTOX_API_V2_BASE}/option/chain",
                 headers=headers,
@@ -682,10 +711,8 @@ async def _fetch_full_option_chain(redis, symbol: str) -> dict:
 
     spot = float(rows[0].get("underlying_spot_price") or 0)
     result = {"ready": True, "symbol": symbol, "expiry": expiry, "spot": spot, "rows": rows}
-    try:
+    with contextlib.suppress(Exception):
         await redis.setex(cache_key, 30, json.dumps(result, default=str))
-    except Exception:
-        pass
     return result
 
 
@@ -715,13 +742,18 @@ async def compute_options_chain_analytics(redis, symbol: str) -> dict:
     }
 
 
-async def _upstox_option_context(redis, symbol: str, bias: str, features: dict | None = None, signal: dict | None = None) -> dict:
+async def _upstox_option_context(
+    redis, symbol: str, bias: str, features: dict | None = None, signal: dict | None = None
+) -> dict:
     if bias not in {"CE", "PE"}:
         return {"ready": False, "reason": "Option chain waits until scanner has CE/PE bias."}
 
     access_token = await _upstox_access_token(redis)
     if not access_token:
-        return {"ready": False, "reason": "Upstox auth token missing; login at http://localhost:5100/auth/login."}
+        return {
+            "ready": False,
+            "reason": "Upstox auth token missing; login at http://localhost:5100/auth/login.",
+        }
 
     instrument_key = await _instrument_key_for_symbol(redis, symbol)
     if not instrument_key:
@@ -746,7 +778,10 @@ async def _upstox_option_context(redis, symbol: str, bias: str, features: dict |
         async with aiohttp.ClientSession() as session:
             expiry, expiry_error = await _resolve_upstox_expiry(session, headers, instrument_key)
             if not expiry:
-                return {"ready": False, "reason": expiry_error or "Unable to resolve Upstox option expiry."}
+                return {
+                    "ready": False,
+                    "reason": expiry_error or "Unable to resolve Upstox option expiry.",
+                }
             expiry_days = _days_to_expiry(expiry)
             async with session.get(
                 f"{UPSTOX_API_V2_BASE}/option/chain",
@@ -782,7 +817,7 @@ async def _upstox_option_context(redis, symbol: str, bias: str, features: dict |
         row_expiry = str(row.get("expiry") or row.get("expiry_date") or expiry)
         leg = row.get(leg_name) or {}
         greeks = leg.get("option_greeks") or {}
-        market = leg.get("market_data") or {}
+        leg.get("market_data") or {}
         contract_key = str(leg.get("instrument_key") or "")
         current_iv = float(greeks.get("iv") or 0)
         iv_rank, iv_history_count = await _iv_rank(redis, contract_key, current_iv)
@@ -798,31 +833,48 @@ async def _upstox_option_context(redis, symbol: str, bias: str, features: dict |
             symbol,
             event_risk,
         )
-        scored_rows.append((score or 0, row, gates, contract, metrics, reasons, blockers, hard_blockers))
+        scored_rows.append(
+            (score or 0, row, gates, contract, metrics, reasons, blockers, hard_blockers)
+        )
     if not scored_rows:
-        return {"ready": False, "reason": "No near-ATM option strikes were scoreable from Upstox chain."}
-    scored_rows.sort(key=lambda x: (x[0], -abs(float(x[1].get("strike_price") or 0) - spot)), reverse=True)
-    raw_option_score, row, gates, contract, metrics, reasons, blockers, hard_blockers = scored_rows[0]
-    has_pending_history = metrics.get("iv_rank") is None and int(metrics.get("iv_history_count") or 0) < 60
+        return {
+            "ready": False,
+            "reason": "No near-ATM option strikes were scoreable from Upstox chain.",
+        }
+    scored_rows.sort(
+        key=lambda x: (x[0], -abs(float(x[1].get("strike_price") or 0) - spot)), reverse=True
+    )
+    raw_option_score, row, gates, contract, metrics, reasons, blockers, hard_blockers = scored_rows[
+        0
+    ]
+    has_pending_history = (
+        metrics.get("iv_rank") is None and int(metrics.get("iv_history_count") or 0) < 60
+    )
     option_score, cap_reason, cap_detail = _execution_score_cap(
         raw_option_score,
         blockers,
         hard_blockers,
         has_pending_history=has_pending_history,
     )
-    metrics.update({
-        "raw_option_score": round(float(raw_option_score or 0.0), 1),
-        "execution_score": round(float(option_score or 0.0), 1),
-        "score_cap_reason": cap_reason,
-        "score_cap_detail": cap_detail,
-        "quality_grade": _quality_grade(option_score, hard_blockers),
-    })
+    metrics.update(
+        {
+            "raw_option_score": round(float(raw_option_score or 0.0), 1),
+            "execution_score": round(float(option_score or 0.0), 1),
+            "score_cap_reason": cap_reason,
+            "score_cap_detail": cap_detail,
+            "quality_grade": _quality_grade(option_score, hard_blockers),
+        }
+    )
     trade_ready = option_score >= 75 and not hard_blockers and not has_pending_history
     execution_status = (
-        "TRADE_READY" if trade_ready
-        else "CHAIN_PENDING" if has_pending_history and not hard_blockers
-        else "AVOID_CONTRACT" if hard_blockers
-        else "WAIT_CONTRACT" if option_score >= 60
+        "TRADE_READY"
+        if trade_ready
+        else "CHAIN_PENDING"
+        if has_pending_history and not hard_blockers
+        else "AVOID_CONTRACT"
+        if hard_blockers
+        else "WAIT_CONTRACT"
+        if option_score >= 60
         else "AVOID_CONTRACT"
     )
     result = {
@@ -852,7 +904,9 @@ async def _upstox_option_context(redis, symbol: str, bias: str, features: dict |
         "pcr": row.get("pcr"),
     }
     await redis.set(cache_key, json.dumps(result, separators=(",", ":")), ex=30)
-    await redis.set(f"infusion:option-chain:{symbol}", json.dumps(result, separators=(",", ":")), ex=30)
+    await redis.set(
+        f"infusion:option-chain:{symbol}", json.dumps(result, separators=(",", ":")), ex=30
+    )
     return result
 
 
@@ -975,7 +1029,9 @@ async def options_chain_analytics(request):
     if not symbol:
         symbol = await _default_symbol(redis)
     if not symbol:
-        return web.json_response({"ready": False, "reason": "No symbol provided and no default symbol available."})
+        return web.json_response(
+            {"ready": False, "reason": "No symbol provided and no default symbol available."}
+        )
 
     result = await compute_options_chain_analytics(redis, symbol)
     return web.json_response(result)
@@ -995,28 +1051,39 @@ async def options_summary(request):
         symbol = await _default_symbol(redis)
 
     if not symbol:
-        return web.json_response({
-            "symbol": "",
-            "bias": "WAIT",
-            "underlying_score": None,
-            "option_score": None,
-            "final_score": None,
-            "option_chain_ready": False,
-            "trade_ready": False,
-            "execution_status": "NO_SYMBOL",
-            "quality_grade": None,
-            "blockers": [],
-            "hard_blockers": [],
-            "suggested_contract": "",
-            "gates": {
-                "trend": None, "volume": None, "vwap": None,
-                "oi": None, "iv": None, "iv_rank": None, "spread": None,
-                "delta": None, "premium_sl": None, "breakeven": None,
-                "liquidity_whitelist": None, "physical_settlement": None,
-                "event_calendar": None, "strike": None,
-            },
-            "reason": "No active signal or pre-breakout symbol is available yet.",
-        })
+        return web.json_response(
+            {
+                "symbol": "",
+                "bias": "WAIT",
+                "underlying_score": None,
+                "option_score": None,
+                "final_score": None,
+                "option_chain_ready": False,
+                "trade_ready": False,
+                "execution_status": "NO_SYMBOL",
+                "quality_grade": None,
+                "blockers": [],
+                "hard_blockers": [],
+                "suggested_contract": "",
+                "gates": {
+                    "trend": None,
+                    "volume": None,
+                    "vwap": None,
+                    "oi": None,
+                    "iv": None,
+                    "iv_rank": None,
+                    "spread": None,
+                    "delta": None,
+                    "premium_sl": None,
+                    "breakeven": None,
+                    "liquidity_whitelist": None,
+                    "physical_settlement": None,
+                    "event_calendar": None,
+                    "strike": None,
+                },
+                "reason": "No active signal or pre-breakout symbol is available yet.",
+            }
+        )
 
     features = await _feature(redis, symbol)
     signal = await _signal(redis, symbol)
@@ -1028,7 +1095,13 @@ async def options_summary(request):
     elif "PE" in signal_bias:
         bias = "PE"
     else:
-        bias = "CE" if change_pct > 0.15 and gates.get("trend") else "PE" if change_pct < -0.15 else "WAIT"
+        bias = (
+            "CE"
+            if change_pct > 0.15 and gates.get("trend")
+            else "PE"
+            if change_pct < -0.15
+            else "WAIT"
+        )
 
     # Future option-chain keys can be written here by an option-chain service.
     option_ctx = await _upstox_option_context(redis, symbol, bias, features, signal)
@@ -1064,27 +1137,29 @@ async def options_summary(request):
             f"{option_ctx.get('reason', 'waiting for Upstox chain')}"
         )
 
-    return web.json_response({
-        "symbol": symbol,
-        "bias": bias,
-        "underlying_score": score,
-        "option_score": option_score,
-        "raw_option_score": option_ctx.get("raw_option_score") if chain_ready else None,
-        "execution_score": option_ctx.get("execution_score") if chain_ready else None,
-        "score_cap_reason": option_ctx.get("score_cap_reason") if chain_ready else "",
-        "score_cap_detail": option_ctx.get("score_cap_detail") if chain_ready else "",
-        "final_score": final_score,
-        "option_chain_ready": chain_ready,
-        "trade_ready": trade_ready,
-        "execution_status": execution_status,
-        "quality_grade": option_ctx.get("quality_grade") if chain_ready else None,
-        "blockers": option_ctx.get("blockers") if chain_ready else [],
-        "hard_blockers": option_ctx.get("hard_blockers") if chain_ready else [],
-        "suggested_contract": suggested,
-        "gates": gates,
-        "upstox_option": option_ctx,
-        "reason": reason,
-    })
+    return web.json_response(
+        {
+            "symbol": symbol,
+            "bias": bias,
+            "underlying_score": score,
+            "option_score": option_score,
+            "raw_option_score": option_ctx.get("raw_option_score") if chain_ready else None,
+            "execution_score": option_ctx.get("execution_score") if chain_ready else None,
+            "score_cap_reason": option_ctx.get("score_cap_reason") if chain_ready else "",
+            "score_cap_detail": option_ctx.get("score_cap_detail") if chain_ready else "",
+            "final_score": final_score,
+            "option_chain_ready": chain_ready,
+            "trade_ready": trade_ready,
+            "execution_status": execution_status,
+            "quality_grade": option_ctx.get("quality_grade") if chain_ready else None,
+            "blockers": option_ctx.get("blockers") if chain_ready else [],
+            "hard_blockers": option_ctx.get("hard_blockers") if chain_ready else [],
+            "suggested_contract": suggested,
+            "gates": gates,
+            "upstox_option": option_ctx,
+            "reason": reason,
+        }
+    )
 
 
 @routes.get("/api/options/queue/status")
@@ -1104,7 +1179,9 @@ async def options_queue_status(request):
     cursor = 0
     recent = []
     while True:
-        cursor, keys = await redis.scan(cursor=cursor, match="infusion:option-chain-last-refresh:*", count=100)
+        cursor, keys = await redis.scan(
+            cursor=cursor, match="infusion:option-chain-last-refresh:*", count=100
+        )
         if keys:
             pipe = redis.pipeline(transaction=False)
             for key in keys:

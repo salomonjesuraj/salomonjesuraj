@@ -31,8 +31,8 @@ just Phase W's watch-tier ladders.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 
 @dataclass
@@ -49,9 +49,9 @@ class LadderBasis:
 
     entry_price: float
     invalidation_price: float
-    reused: bool                    # True if resolved from a still-open, valid episode
-    first_seen_us: int              # preserved from the reused episode, or "now" if fresh
-    frozen_episode: dict | None     # the reused episode dict, or None if fresh
+    reused: bool  # True if resolved from a still-open, valid episode
+    first_seen_us: int  # preserved from the reused episode, or "now" if fresh
+    frozen_episode: dict | None  # the reused episode dict, or None if fresh
 
 
 def resolve_ladder_basis(

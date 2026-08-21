@@ -50,11 +50,13 @@ class ClientManager:
         if not self._clients:
             return
 
-        message = json.dumps({
-            "type": "tick_batch",
-            "data": buffer,
-            "ts": int(time.time() * 1000),
-        })
+        message = json.dumps(
+            {
+                "type": "tick_batch",
+                "data": buffer,
+                "ts": int(time.time() * 1000),
+            }
+        )
 
         dead_clients = []
         for client_id, ws in self._clients.items():
@@ -73,11 +75,13 @@ class ClientManager:
         if not self._clients:
             return
 
-        message = json.dumps({
-            "type": "signal",
-            "data": signal_data,
-            "ts": int(time.time() * 1000),
-        })
+        message = json.dumps(
+            {
+                "type": "signal",
+                "data": signal_data,
+                "ts": int(time.time() * 1000),
+            }
+        )
 
         dead_clients = []
         for client_id, ws in self._clients.items():

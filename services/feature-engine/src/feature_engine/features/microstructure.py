@@ -22,8 +22,8 @@ orders across the whole book, not just the visible top-5 levels).
 
 from feature_engine.state import SymbolState
 
-BOOK_IMBALANCE_EMA_PERIOD = 5   # short -- this is meant to track FAST book pressure shifts
-DEPTH_LEVEL_WEIGHTS = [1.0, 0.5, 0.333, 0.25, 0.2]   # harmonic decay, level 1 counts most
+BOOK_IMBALANCE_EMA_PERIOD = 5  # short -- this is meant to track FAST book pressure shifts
+DEPTH_LEVEL_WEIGHTS = [1.0, 0.5, 0.333, 0.25, 0.2]  # harmonic decay, level 1 counts most
 
 # EBIE EB-15 Phase 1 item 4 -- depth feed policy (D5 required baseline,
 # D30 optional Tier-3, never block core EBIE on D30 -- see
@@ -85,7 +85,8 @@ def compute_depth_concentration(depth_levels: list[dict]) -> float | None:
     if not depth_levels:
         return None
     total_qty = sum(
-        float(lv.get("bidQ") or 0) + float(lv.get("askQ") or 0) for lv in depth_levels[:D5_MAX_LEVELS]
+        float(lv.get("bidQ") or 0) + float(lv.get("askQ") or 0)
+        for lv in depth_levels[:D5_MAX_LEVELS]
     )
     if total_qty <= 0:
         return None

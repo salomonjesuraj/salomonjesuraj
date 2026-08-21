@@ -40,10 +40,12 @@ MAX_INSTRUMENT_KEYS_PER_REQUEST = 30
 DEFAULT_PAGE_SIZE = 100
 
 
-def chunk_instrument_keys(instrument_keys: list[str], size: int = MAX_INSTRUMENT_KEYS_PER_REQUEST) -> list[list[str]]:
+def chunk_instrument_keys(
+    instrument_keys: list[str], size: int = MAX_INSTRUMENT_KEYS_PER_REQUEST
+) -> list[list[str]]:
     """Split a full-universe instrument-key list into <=30-key batches,
     per the News API's documented per-request cap."""
-    return [instrument_keys[i:i + size] for i in range(0, len(instrument_keys), size)]
+    return [instrument_keys[i : i + size] for i in range(0, len(instrument_keys), size)]
 
 
 def fingerprint_article(article: dict) -> str:
@@ -90,7 +92,9 @@ async def fetch_news_batch(
         "Authorization": f"Bearer {access_token}",
     }
     try:
-        async with session.get(NEWS_API_BASE, params=params, headers=headers, timeout=timeout_sec) as resp:
+        async with session.get(
+            NEWS_API_BASE, params=params, headers=headers, timeout=timeout_sec
+        ) as resp:
             if resp.status != 200:
                 return {}
             payload = await resp.json()
@@ -121,16 +125,18 @@ def map_articles_to_events(raw_data: dict, inst_to_symbol: dict[str, str]) -> li
             heading = str(article.get("heading") or "").strip()
             if not heading:
                 continue
-            events.append({
-                "symbol": symbol,
-                "instrument_key": inst_key,
-                "article_fingerprint": fingerprint_article(article),
-                "heading": heading,
-                "summary": article.get("summary") or None,
-                "article_link": article.get("article_link") or None,
-                "thumbnail": article.get("thumbnail") or None,
-                "published_time_ms": _safe_int(article.get("published_time")),
-            })
+            events.append(
+                {
+                    "symbol": symbol,
+                    "instrument_key": inst_key,
+                    "article_fingerprint": fingerprint_article(article),
+                    "heading": heading,
+                    "summary": article.get("summary") or None,
+                    "article_link": article.get("article_link") or None,
+                    "thumbnail": article.get("thumbnail") or None,
+                    "published_time_ms": _safe_int(article.get("published_time")),
+                }
+            )
     return events
 
 

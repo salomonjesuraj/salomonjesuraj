@@ -15,27 +15,27 @@ Startup sequence:
 """
 
 import asyncio
+import contextlib
 import time
 
 import msgpack
 import redis.asyncio as aioredis
 import structlog
+from infusion_common.health import HealthReporter
+from infusion_common.lifecycle import ServiceLifecycle
+from infusion_common.logging import setup_logging
+from infusion_streams.constants import (
+    CG_SCANNER,
+    KEY_SYMBOLS,
+    STREAM_FEATURE_COMPUTED,
+)
+from infusion_streams.consumer import StreamConsumer
 
 from scanner.config import ScannerSettings
 from scanner.engine import ScannerEngine
 from scanner.strategies import register_strategy
 from scanner.strategies.options_first_hybrid import OptionsFirstHybrid
 from scanner.strategies.vol_vwap_breakout import VolVwapBreakout
-
-from infusion_common.logging import setup_logging
-from infusion_common.health import HealthReporter
-from infusion_common.lifecycle import ServiceLifecycle
-from infusion_streams.consumer import StreamConsumer
-from infusion_streams.constants import (
-    STREAM_FEATURE_COMPUTED,
-    CG_SCANNER,
-    KEY_SYMBOLS,
-)
 
 logger = structlog.get_logger()
 
@@ -48,14 +48,17 @@ KEY_LIVE_CONFIG = "infusion:scanner:live_config"
 
 
 async def publish_live_config(redis: aioredis.Redis, settings: ScannerSettings) -> None:
-    await redis.hset(KEY_LIVE_CONFIG, mapping={
-        "precision_guard_enabled": str(settings.precision_guard_enabled),
-        "precision_guard_min_score": str(settings.precision_guard_min_score),
-        "precision_guard_min_rr": str(settings.precision_guard_min_rr),
-        "precision_guard_sessions": settings.precision_guard_sessions,
-        "precision_guard_strategy_ids": settings.precision_guard_strategy_ids,
-        "published_at_us": str(int(time.time() * 1_000_000)),
-    })
+    await redis.hset(
+        KEY_LIVE_CONFIG,
+        mapping={
+            "precision_guard_enabled": str(settings.precision_guard_enabled),
+            "precision_guard_min_score": str(settings.precision_guard_min_score),
+            "precision_guard_min_rr": str(settings.precision_guard_min_rr),
+            "precision_guard_sessions": settings.precision_guard_sessions,
+            "precision_guard_strategy_ids": settings.precision_guard_strategy_ids,
+            "published_at_us": str(int(time.time() * 1_000_000)),
+        },
+    )
 
 
 async def load_symbol_sectors(redis: aioredis.Redis) -> dict[str, str]:
@@ -64,10 +67,7 @@ async def load_symbol_sectors(redis: aioredis.Redis) -> dict[str, str]:
     raw = await redis.hgetall(KEY_SYMBOLS)
     for _instrument_key, meta_raw in raw.items():
         try:
-            if isinstance(meta_raw, bytes):
-                meta = msgpack.unpackb(meta_raw, raw=False)
-            else:
-                meta = meta_raw
+            meta = msgpack.unpackb(meta_raw, raw=False) if isinstance(meta_raw, bytes) else meta_raw
             symbol = meta.get("symbol", "")
             sector = meta.get("sector_id", meta.get("sector", "UNCATEGORIZED"))
             if symbol:
@@ -86,10 +86,7 @@ async def load_symbol_lot_sizes(redis: aioredis.Redis) -> dict[str, int]:
     raw = await redis.hgetall(KEY_SYMBOLS)
     for _instrument_key, meta_raw in raw.items():
         try:
-            if isinstance(meta_raw, bytes):
-                meta = msgpack.unpackb(meta_raw, raw=False)
-            else:
-                meta = meta_raw
+            meta = msgpack.unpackb(meta_raw, raw=False) if isinstance(meta_raw, bytes) else meta_raw
             symbol = meta.get("symbol", "")
             lot_size = int(meta.get("lot_size") or 1)
             if symbol and lot_size > 0:
@@ -116,7 +113,9 @@ async def run() -> None:
 
     # Load symbol→sector mapping
     symbol_sectors = await load_symbol_sectors(r)
-    logger.info("symbols_loaded", count=len(symbol_sectors), sectors=list(set(symbol_sectors.values())))
+    logger.info(
+        "symbols_loaded", count=len(symbol_sectors), sectors=list(set(symbol_sectors.values()))
+    )
 
     # Load symbol→lot_size mapping (for signal-time position-size estimate)
     symbol_lot_sizes = await load_symbol_lot_sizes(r)
@@ -195,7 +194,7 @@ async def run() -> None:
         sector_task = asyncio.create_task(sector_persist_loop())
         live_config_task = asyncio.create_task(live_config_publish_loop())
         try:
-            async for event_type, version, rx_us, payload, ack in consumer.consume():
+            async for _event_type, _version, _rx_us, payload, ack in consumer.consume():
                 if lifecycle.shutdown_event.is_set():
                     break
                 try:
@@ -216,10 +215,8 @@ async def run() -> None:
             sector_task.cancel()
             live_config_task.cancel()
             for t in [cleanup_task, sector_task]:
-                try:
+                with contextlib.suppress(asyncio.CancelledError):
                     await t
-                except asyncio.CancelledError:
-                    pass
 
     await lifecycle.run_until_shutdown(main_loop)
 

@@ -137,8 +137,12 @@ def update_adx(state: SymbolState, high: float, low: float, close: float, period
         return
 
     state.adx_tr_smooth = state.adx_tr_smooth - (state.adx_tr_smooth / period) + tr
-    state.adx_plus_dm_smooth = state.adx_plus_dm_smooth - (state.adx_plus_dm_smooth / period) + plus_dm
-    state.adx_minus_dm_smooth = state.adx_minus_dm_smooth - (state.adx_minus_dm_smooth / period) + minus_dm
+    state.adx_plus_dm_smooth = (
+        state.adx_plus_dm_smooth - (state.adx_plus_dm_smooth / period) + plus_dm
+    )
+    state.adx_minus_dm_smooth = (
+        state.adx_minus_dm_smooth - (state.adx_minus_dm_smooth / period) + minus_dm
+    )
 
     if state.adx_tr_smooth <= 0:
         return

@@ -7,15 +7,15 @@ import base64
 import gzip
 import json
 import time
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 
 import aiohttp
 import structlog
+from infusion_common.timing import now_us
+from infusion_models.tick import RawTickV1
 
 from ingestion.adapters.base import BrokerAdapter, ConnectionState
 from ingestion.adapters.upstox_codec import ProtoDecodeError, decode_feed_response
-from infusion_common.timing import now_us
-from infusion_models.tick import RawTickV1
 
 logger = structlog.get_logger()
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -103,15 +103,18 @@ class UpstoxAdapter(BrokerAdapter):
         self._token_expiry_ts = self._jwt_expiry(self._access_token)
         if self._token_expiry_ts and self._token_expiry_ts <= int(time.time()):
             self._last_auth_error = "expired_token"
-            raise RuntimeError("Upstox access token expired; login at http://localhost:5100/auth/login.")
+            raise RuntimeError(
+                "Upstox access token expired; login at http://localhost:5100/auth/login."
+            )
 
         self._last_auth_error = ""
         logger.info(
             "upstox_authenticated",
             token_source=self._token_source,
             token_expiry_utc=(
-                datetime.fromtimestamp(self._token_expiry_ts, tz=timezone.utc).isoformat()
-                if self._token_expiry_ts else ""
+                datetime.fromtimestamp(self._token_expiry_ts, tz=UTC).isoformat()
+                if self._token_expiry_ts
+                else ""
             ),
         )
         return self._access_token
@@ -151,18 +154,23 @@ class UpstoxAdapter(BrokerAdapter):
                 if resp.status == 401:
                     self._last_auth_error = "invalid_token"
                     if self._redis:
-                        await self._redis.hset("infusion:auth:upstox:status", mapping={
-                            "state": "invalid_token",
-                            "reason": body[:300],
-                            "token_source": self._token_source,
-                            "token_expiry_ts": str(self._token_expiry_ts),
-                            "updated_at": str(int(time.time())),
-                        })
+                        await self._redis.hset(
+                            "infusion:auth:upstox:status",
+                            mapping={
+                                "state": "invalid_token",
+                                "reason": body[:300],
+                                "token_source": self._token_source,
+                                "token_expiry_ts": str(self._token_expiry_ts),
+                                "updated_at": str(int(time.time())),
+                            },
+                        )
                 raise RuntimeError(f"Upstox WS auth failed: {resp.status} {body[:200]}")
             data = await resp.json()
 
         payload = data.get("data", {}) if isinstance(data, dict) else {}
-        ws_uri = payload.get("authorized_redirect_uri") or payload.get("authorizedRedirectUri") or ""
+        ws_uri = (
+            payload.get("authorized_redirect_uri") or payload.get("authorizedRedirectUri") or ""
+        )
         if not ws_uri:
             raise RuntimeError("Upstox WS auth response did not include authorized_redirect_uri")
 
@@ -184,7 +192,7 @@ class UpstoxAdapter(BrokerAdapter):
         batch_size = self.config.subscribe_batch_size
 
         for i in range(0, len(instrument_keys), batch_size):
-            batch = instrument_keys[i:i + batch_size]
+            batch = instrument_keys[i : i + batch_size]
             msg = {
                 "guid": f"infusion-sub-{int(time.time() * 1000)}-{i}",
                 "method": "sub",
@@ -214,7 +222,7 @@ class UpstoxAdapter(BrokerAdapter):
 
         batch_size = self.config.subscribe_batch_size
         for i in range(0, len(instrument_keys), batch_size):
-            batch = instrument_keys[i:i + batch_size]
+            batch = instrument_keys[i : i + batch_size]
             msg = {
                 "guid": f"infusion-unsub-{int(time.time() * 1000)}-{i}",
                 "method": "unsub",
@@ -243,7 +251,7 @@ class UpstoxAdapter(BrokerAdapter):
 
         batch_size = self.config.subscribe_batch_size
         for i in range(0, len(instrument_keys), batch_size):
-            batch = instrument_keys[i:i + batch_size]
+            batch = instrument_keys[i : i + batch_size]
             msg = {
                 "guid": f"infusion-mode-{int(time.time() * 1000)}-{i}",
                 "method": "change_mode",
@@ -346,10 +354,9 @@ class UpstoxAdapter(BrokerAdapter):
             "token_source": self._token_source,
             "token_expiry_ts": self._token_expiry_ts,
             "token_expiry_ist": (
-                datetime.fromtimestamp(self._token_expiry_ts, tz=timezone.utc)
-                .astimezone(IST)
-                .isoformat()
-                if self._token_expiry_ts else ""
+                datetime.fromtimestamp(self._token_expiry_ts, tz=UTC).astimezone(IST).isoformat()
+                if self._token_expiry_ts
+                else ""
             ),
             "tick_count": self._tick_count,
             "last_tick_age_ms": round((time.time() - self._last_tick_time) * 1000)

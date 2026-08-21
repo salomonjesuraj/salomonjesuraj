@@ -13,7 +13,6 @@ import sys
 import msgpack
 from redis.asyncio import Redis
 
-
 SYMBOLS = [
     {
         "instrument_key": "NSE_EQ|INE002A01018",
@@ -93,7 +92,9 @@ async def main():
 
     print(f"Seeded {len(SYMBOLS)} symbols to infusion:symbols")
     for s in SYMBOLS:
-        print(f"  {s['instrument_key']} -> {s['symbol']} (tier={s['tier']}, sector={s['sector_id']})")
+        print(
+            f"  {s['instrument_key']} -> {s['symbol']} (tier={s['tier']}, sector={s['sector_id']})"
+        )
 
 
 if __name__ == "__main__":

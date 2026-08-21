@@ -29,22 +29,23 @@ Design principles:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import StrEnum
 
 import structlog
+from infusion_common.timing import now_us
+from infusion_streams.constants import KEY_PRE_BREAKOUT_PREFIX
 from redis.asyncio import Redis
 
 from scanner.config import ScannerSettings
 from scanner.state import ScannerSymbolState
-from infusion_streams.constants import KEY_PRE_BREAKOUT_PREFIX
-from infusion_common.timing import now_us
 
 logger = structlog.get_logger()
 
 
 class PBState(StrEnum):
     """Pre-breakout states."""
+
     IDLE = "idle"
     COMPRESSING = "compressing"
     ACCUMULATING = "accumulating"
@@ -56,6 +57,7 @@ class PBState(StrEnum):
 @dataclass
 class PreBreakoutSnapshot:
     """Immutable snapshot of a pre-breakout state for observability."""
+
     symbol: str
     state: str
     prev_state: str
@@ -127,9 +129,13 @@ class PreBreakoutTracker:
             elapsed_sec = (ts - state.pre_breakout_entered_us) / 1_000_000
             if elapsed_sec > self._s.pb_max_state_sec:
                 return await self._transition(
-                    state, PBState.EXPIRED, ts,
+                    state,
+                    PBState.EXPIRED,
+                    ts,
                     f"timeout_{elapsed_sec:.0f}s_in_{current.value}",
-                    bb_width, rel_vol, rsi,
+                    bb_width,
+                    rel_vol,
+                    rsi,
                 )
 
         # Evaluate transitions based on current state
@@ -153,9 +159,11 @@ class PreBreakoutTracker:
 
         if current == PBState.IDLE:
             # IDLE → COMPRESSING: bb_width declining for N ticks AND width < threshold
-            if (state.bb_width_declining_count >= self._s.pb_compress_ticks
-                    and bb_width < self._s.pb_compress_bb_max
-                    and bb_width > 0):
+            if (
+                state.bb_width_declining_count >= self._s.pb_compress_ticks
+                and bb_width < self._s.pb_compress_bb_max
+                and bb_width > 0
+            ):
                 return PBState.COMPRESSING
             return PBState.IDLE
 
@@ -164,16 +172,20 @@ class PreBreakoutTracker:
             if rel_vol >= self._s.pb_accumulate_rel_vol:
                 return PBState.ACCUMULATING
             # COMPRESSING → IDLE: conditions reversed for N ticks
-            if state.bb_width_declining_count == 0:
-                if state.ticks_in_pre_breakout >= self._s.pb_reversal_ticks:
-                    return PBState.EXPIRED
+            if (
+                state.bb_width_declining_count == 0
+                and state.ticks_in_pre_breakout >= self._s.pb_reversal_ticks
+            ):
+                return PBState.EXPIRED
             return PBState.COMPRESSING
 
         elif current == PBState.ACCUMULATING:
             # ACCUMULATING → COILED: extreme compression + volume + RSI sweet spot
-            if (bb_width < self._s.pb_coiled_bb_max
-                    and rel_vol >= self._s.pb_coiled_rel_vol
-                    and self._s.pb_coiled_rsi_min <= rsi <= self._s.pb_coiled_rsi_max):
+            if (
+                bb_width < self._s.pb_coiled_bb_max
+                and rel_vol >= self._s.pb_coiled_rel_vol
+                and self._s.pb_coiled_rsi_min <= rsi <= self._s.pb_coiled_rsi_max
+            ):
                 return PBState.COILED
             # ACCUMULATING → EXPIRED: volume dropped or bb expanding
             if rel_vol < 1.0 or bb_width > self._s.pb_compress_bb_max:
@@ -207,8 +219,11 @@ class PreBreakoutTracker:
 
     def _transition_reason(
         self,
-        old: PBState, new: PBState,
-        bb_width: float, rel_vol: float, rsi: float,
+        old: PBState,
+        new: PBState,
+        bb_width: float,
+        rel_vol: float,
+        rsi: float,
         state: ScannerSymbolState,
     ) -> str:
         """Generate structured transition reason."""
@@ -316,7 +331,7 @@ class PreBreakoutTracker:
         # ── Compression quality (0-30) ─────────────
         if bb_width > 0:
             if bb_width < 0.008:
-                score += 30.0      # extreme compression
+                score += 30.0  # extreme compression
             elif bb_width < 0.012:
                 score += 25.0
             elif bb_width < 0.015:
@@ -340,7 +355,7 @@ class PreBreakoutTracker:
 
         # ── RSI positioning (0-15) ─────────────────
         if 48 <= rsi <= 58:
-            score += 15.0          # perfect coil RSI
+            score += 15.0  # perfect coil RSI
         elif 45 <= rsi <= 62:
             score += 12.0
         elif 40 <= rsi <= 65:

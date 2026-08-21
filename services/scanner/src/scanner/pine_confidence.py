@@ -60,8 +60,7 @@ def compute_strength_meter(features: dict, bullish: bool) -> float:
     above_vwap = ltp > vwap > 0
     below_vwap = 0 < ltp < vwap
     st_vwap_agree = (
-        (supertrend_bullish and above_vwap) if bullish
-        else (not supertrend_bullish and below_vwap)
+        (supertrend_bullish and above_vwap) if bullish else (not supertrend_bullish and below_vwap)
     )
     st_vwap_part = 25.0 if st_vwap_agree else 12.0
 
@@ -116,7 +115,9 @@ def practical_option_targets(
         t2 = entry - t2_dist
         t3 = entry - t3_dist
     rr1 = round(t1_dist / effective_risk, 2) if effective_risk > 0 else 0.0
-    method = f"Practical option target floor: T1 {t1_dist:.2f}, risk {effective_risk:.2f}, R:R {rr1:.2f}"
+    method = (
+        f"Practical option target floor: T1 {t1_dist:.2f}, risk {effective_risk:.2f}, R:R {rr1:.2f}"
+    )
     return t1, t2, t3, effective_risk, method
 
 
@@ -168,8 +169,8 @@ def compute_fib_targets(ml_features: dict, *, bullish: bool, entry: float) -> di
     }
 
 
-ROCKET_ADX_THRESHOLD = 32.0     # Pine's rocketAdxThreshold default
-ROCKET_BODY_PCT = 0.65          # Pine's rocketBodyPct default
+ROCKET_ADX_THRESHOLD = 32.0  # Pine's rocketAdxThreshold default
+ROCKET_BODY_PCT = 0.65  # Pine's rocketBodyPct default
 
 
 def compute_chaseable(features: dict, *, bullish: bool) -> bool:
@@ -205,9 +206,9 @@ class PineDecision:
     mtf: dict[str, str]
     mtf_dots: dict[str, str]
     mtf_text: str
-    mtf_source: str            # "historical_cache" | "live_proxy"
-    strength_score: float      # 0-100, Pine v6 Strength Meter equivalent
-    chaseable: bool            # Pine v6 "Rocket" marker equivalent
+    mtf_source: str  # "historical_cache" | "live_proxy"
+    strength_score: float  # 0-100, Pine v6 Strength Meter equivalent
+    chaseable: bool  # Pine v6 "Rocket" marker equivalent
     anti_chase_ok: bool
     anti_chase_reasons: list[str]
     rejection_reasons: list[str]
@@ -219,7 +220,9 @@ class PineDecision:
     signal_candle_atr: float
     vwap_distance_atr: float
     stop_distance_atr: float
-    fib_targets: dict | None  # alternate target mode, see compute_fib_targets(); None if no cluster yet
+    fib_targets: (
+        dict | None
+    )  # alternate target mode, see compute_fib_targets(); None if no cluster yet
 
     def as_snapshot(self) -> dict:
         return {
@@ -269,7 +272,7 @@ def compute_pine_decision(
     atr = _f(features, "atr_14")
     spread = _f(features, "spread_bps", 999.0)
     change_pct = _f(features, "change_pct")
-    bb_width = _f(features, "bb_width")
+    _f(features, "bb_width")
     atr_trend = str(features.get("atr_trend") or "NEUTRAL").upper()
     candle = str(features.get("candle_pattern") or "")
     squeeze = str(features.get("squeeze_state") or "").upper()
@@ -297,7 +300,12 @@ def compute_pine_decision(
     atr_bear = atr_trend == "BEAR"
     bull_pattern = candle in {"Bullish Engulfing", "Hammer"}
     bear_pattern = candle in {"Bearish Engulfing", "Shooting Star"}
-    trigger = bull_pattern or bear_pattern or squeeze in {"EXTREME", "COILED", "BUILDING"} or nr in {"NR4", "NR7"}
+    trigger = (
+        bull_pattern
+        or bear_pattern
+        or squeeze in {"EXTREME", "COILED", "BUILDING"}
+        or nr in {"NR4", "NR7"}
+    )
 
     bull = 0.0
     bull += 12.5 if ema_stack_bull else 8.0 if ema_bull else 0.0
@@ -332,7 +340,12 @@ def compute_pine_decision(
     # or the cached entry is stale.
     mtf_cache = features.get("mtf_cache")
     cache_age = time.time() - float(mtf_cache.get("updated_at") or 0) if mtf_cache else None
-    use_cache = bool(mtf_cache and mtf_cache.get("dots") and cache_age is not None and cache_age < MTF_CACHE_STALE_SEC)
+    use_cache = bool(
+        mtf_cache
+        and mtf_cache.get("dots")
+        and cache_age is not None
+        and cache_age < MTF_CACHE_STALE_SEC
+    )
 
     if use_cache:
         mtf = dict(mtf_cache.get("mtf") or {})
@@ -342,12 +355,30 @@ def compute_pine_decision(
         # Synthetic proxy from live tick-derived features. We separate fast
         # momentum from slower trend so the display still catches conflict.
         mtf_scores = {
-            "1M": 50 + (12 if above_vwap else -12 if below_vwap else 0) + (12 if macd_bull else -12 if macd_bear else 0) + (rsi - 50) * 0.7,
-            "5M": 50 + (16 if ema_bull else -16 if ema_bear else 0) + (10 if macd_bull else -10 if macd_bear else 0),
-            "15M": 50 + (18 if ema_stack_bull else -18 if ema_stack_bear else 0) + (8 if atr_bull else -8 if atr_bear else 0),
-            "1H": 50 + (18 if ltp > ema50 > 0 else -18 if ltp < ema50 and ema50 > 0 else 0) + (8 if change_pct > 0 else -8 if change_pct < 0 else 0),
-            "4H": 50 + (15 if ltp > ema50 > 0 and ema20 > ema50 > 0 else -15 if ltp < ema50 and ema20 < ema50 and ema50 > 0 else 0),
-            "1D": 50 + (14 if change_pct > 0 else -14 if change_pct < 0 else 0) + (8 if above_vwap else -8 if below_vwap else 0),
+            "1M": 50
+            + (12 if above_vwap else -12 if below_vwap else 0)
+            + (12 if macd_bull else -12 if macd_bear else 0)
+            + (rsi - 50) * 0.7,
+            "5M": 50
+            + (16 if ema_bull else -16 if ema_bear else 0)
+            + (10 if macd_bull else -10 if macd_bear else 0),
+            "15M": 50
+            + (18 if ema_stack_bull else -18 if ema_stack_bear else 0)
+            + (8 if atr_bull else -8 if atr_bear else 0),
+            "1H": 50
+            + (18 if ltp > ema50 > 0 else -18 if ltp < ema50 and ema50 > 0 else 0)
+            + (8 if change_pct > 0 else -8 if change_pct < 0 else 0),
+            "4H": 50
+            + (
+                15
+                if ltp > ema50 > 0 and ema20 > ema50 > 0
+                else -15
+                if ltp < ema50 and ema20 < ema50 and ema50 > 0
+                else 0
+            ),
+            "1D": 50
+            + (14 if change_pct > 0 else -14 if change_pct < 0 else 0)
+            + (8 if above_vwap else -8 if below_vwap else 0),
         }
         mtf = {tf: _state_from_score(score) for tf, score in mtf_scores.items()}
         dots = {tf: _dot(state) for tf, state in mtf.items()}

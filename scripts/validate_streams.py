@@ -4,10 +4,8 @@ Run on every deployment. Safe to run multiple times.
 
 import asyncio
 import os
-import sys
 
 import redis.asyncio as aioredis
-
 
 STREAM_CONFIG = {
     "infusion:stream:tick:raw": {
@@ -65,9 +63,7 @@ async def bootstrap_streams(redis_url: str) -> None:
         for stream, config in STREAM_CONFIG.items():
             for group in config["groups"]:
                 try:
-                    await r.xgroup_create(
-                        stream, group, id="0", mkstream=True
-                    )
+                    await r.xgroup_create(stream, group, id="0", mkstream=True)
                     print(f"  ✓ Created group '{group}' on '{stream}'")
                 except aioredis.ResponseError as e:
                     if "BUSYGROUP" in str(e):
@@ -97,7 +93,7 @@ async def bootstrap_streams(redis_url: str) -> None:
 
 def main() -> None:
     redis_url = os.environ.get("INFUSION_REDIS_URL", "redis://localhost:6379/0")
-    print(f"═══ INFUSION STREAM BOOTSTRAP ═══")
+    print("═══ INFUSION STREAM BOOTSTRAP ═══")
     print(f"Redis: {redis_url}")
     asyncio.run(bootstrap_streams(redis_url))
 

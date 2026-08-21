@@ -5,20 +5,20 @@ import random
 import time
 
 import structlog
+from infusion_common.timing import now_us
+from infusion_models.tick import RawTickV1
 
 from ingestion.adapters.base import BrokerAdapter, ConnectionState
-from infusion_models.tick import RawTickV1
-from infusion_common.timing import now_us
 
 logger = structlog.get_logger()
 
 # 5 representative instruments for initial testing
 MOCK_SYMBOLS = [
-    ("NSE_EQ|INE002A01018", "NSE", "EQ", "RELIANCE",  2500.0),
-    ("NSE_EQ|INE009A01021", "NSE", "EQ", "INFY",      1500.0),
-    ("NSE_EQ|INE040A01034", "NSE", "EQ", "HDFCBANK",  1600.0),
-    ("NSE_EQ|INE467B01029", "NSE", "EQ", "TCS",       3500.0),
-    ("NSE_INDEX|Nifty 50",  "NSE", "INDEX", "NIFTY50", 22000.0),
+    ("NSE_EQ|INE002A01018", "NSE", "EQ", "RELIANCE", 2500.0),
+    ("NSE_EQ|INE009A01021", "NSE", "EQ", "INFY", 1500.0),
+    ("NSE_EQ|INE040A01034", "NSE", "EQ", "HDFCBANK", 1600.0),
+    ("NSE_EQ|INE467B01029", "NSE", "EQ", "TCS", 3500.0),
+    ("NSE_INDEX|Nifty 50", "NSE", "INDEX", "NIFTY50", 22000.0),
 ]
 
 
@@ -44,7 +44,7 @@ class MockAdapter(BrokerAdapter):
         self.state = ConnectionState.CONNECTING
         self._start_time = time.time()
         # Initialize mock prices and volumes
-        for key, _, _, name, base_price in MOCK_SYMBOLS:
+        for key, _, _, _name, base_price in MOCK_SYMBOLS:
             self._prices[key] = base_price
             self._volumes[key] = random.randint(100_000, 5_000_000)
         logger.info("mock_connected", symbols=len(MOCK_SYMBOLS))
@@ -65,7 +65,7 @@ class MockAdapter(BrokerAdapter):
         interval = 1.0 / max(self.config.mock_tick_rate_hz, 1)
 
         while self.state == ConnectionState.STREAMING:
-            for key, exchange, segment, name, _ in MOCK_SYMBOLS:
+            for key, exchange, segment, _name, _ in MOCK_SYMBOLS:
                 price = self._prices[key]
                 # Random walk: ±0.1% per tick
                 change = price * random.uniform(-0.001, 0.001)

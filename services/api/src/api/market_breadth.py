@@ -62,7 +62,10 @@ import json
 
 import msgpack
 
-MIN_MTF_COVERAGE = 20  # a daily-bar-cache component needs at least this many covered symbols to count
+MIN_MTF_COVERAGE = (
+    20  # a daily-bar-cache component needs at least this many covered symbols to count
+)
+
 
 # health_score -> regime label. Infusion's own calibration.
 def _grade(score: float) -> str:
@@ -111,11 +114,20 @@ def _decode_mtf(raw) -> dict | None:
 
 
 def build_breadth_result(
-    *, n_total: int, n_live: int,
-    advancing: int, declining: int, adv_vol: float, dec_vol: float,
-    rsi_bullish: int, rsi_covered: int,
-    ma_covered: int, ma_above_both: int,
-    week52_covered: int, week52_near_high: int, week52_near_low: int,
+    *,
+    n_total: int,
+    n_live: int,
+    advancing: int,
+    declining: int,
+    adv_vol: float,
+    dec_vol: float,
+    rsi_bullish: int,
+    rsi_covered: int,
+    ma_covered: int,
+    ma_above_both: int,
+    week52_covered: int,
+    week52_near_high: int,
+    week52_near_low: int,
 ) -> dict:
     """Pure aggregation -> result dict. Split out from compute_market_breadth()
     (which does the actual Redis pipeline read) specifically so the scoring
@@ -135,31 +147,49 @@ def build_breadth_result(
 
     week52_breadth = None
     if week52_covered >= MIN_MTF_COVERAGE:
-        week52_breadth = round(50.0 + (week52_near_high - week52_near_low) / week52_covered * 50.0, 1)
+        week52_breadth = round(
+            50.0 + (week52_near_high - week52_near_low) / week52_covered * 50.0, 1
+        )
 
     components = {
         "advance_decline": {
-            "available": advance_decline_pct is not None, "score": advance_decline_pct,
-            "advancing": advancing, "declining": declining, "n_covered": decided_ad,
+            "available": advance_decline_pct is not None,
+            "score": advance_decline_pct,
+            "advancing": advancing,
+            "declining": declining,
+            "n_covered": decided_ad,
         },
         "momentum": {
-            "available": momentum_pct is not None, "score": momentum_pct,
-            "rsi_bullish": rsi_bullish, "n_covered": rsi_covered,
+            "available": momentum_pct is not None,
+            "score": momentum_pct,
+            "rsi_bullish": rsi_bullish,
+            "n_covered": rsi_covered,
         },
         "volume_weighted": {
-            "available": volume_breadth_pct is not None, "score": volume_breadth_pct,
-            "advancing_rel_vol": round(adv_vol, 2), "declining_rel_vol": round(dec_vol, 2),
+            "available": volume_breadth_pct is not None,
+            "score": volume_breadth_pct,
+            "advancing_rel_vol": round(adv_vol, 2),
+            "declining_rel_vol": round(dec_vol, 2),
         },
         "moving_average": {
-            "available": ma_breadth is not None, "score": ma_breadth,
-            "n_covered": ma_covered, "min_required": MIN_MTF_COVERAGE,
-            "reason": None if ma_breadth is not None else f"Only {ma_covered} symbols have a warm daily-bar cache (need {MIN_MTF_COVERAGE}).",
+            "available": ma_breadth is not None,
+            "score": ma_breadth,
+            "n_covered": ma_covered,
+            "min_required": MIN_MTF_COVERAGE,
+            "reason": None
+            if ma_breadth is not None
+            else f"Only {ma_covered} symbols have a warm daily-bar cache (need {MIN_MTF_COVERAGE}).",
         },
         "week52_range": {
-            "available": week52_breadth is not None, "score": week52_breadth,
-            "near_high": week52_near_high, "near_low": week52_near_low, "n_covered": week52_covered,
+            "available": week52_breadth is not None,
+            "score": week52_breadth,
+            "near_high": week52_near_high,
+            "near_low": week52_near_low,
+            "n_covered": week52_covered,
             "min_required": MIN_MTF_COVERAGE,
-            "reason": None if week52_breadth is not None else f"Only {week52_covered} symbols have a warm daily-bar cache (need {MIN_MTF_COVERAGE}).",
+            "reason": None
+            if week52_breadth is not None
+            else f"Only {week52_covered} symbols have a warm daily-bar cache (need {MIN_MTF_COVERAGE}).",
         },
     }
 
@@ -206,7 +236,7 @@ async def compute_market_breadth(redis) -> dict:
     week52_near_high = 0
     week52_near_low = 0
 
-    for i, sym in enumerate(symbols):
+    for i, _sym in enumerate(symbols):
         feat = _decode_feature_hash(results[i * 2])
         mtf = _decode_mtf(results[i * 2 + 1])
 
@@ -249,9 +279,17 @@ async def compute_market_breadth(redis) -> dict:
                     week52_near_low += 1
 
     return build_breadth_result(
-        n_total=len(symbols), n_live=n_live,
-        advancing=advancing, declining=declining, adv_vol=adv_vol, dec_vol=dec_vol,
-        rsi_bullish=rsi_bullish, rsi_covered=rsi_covered,
-        ma_covered=ma_covered, ma_above_both=ma_above_both,
-        week52_covered=week52_covered, week52_near_high=week52_near_high, week52_near_low=week52_near_low,
+        n_total=len(symbols),
+        n_live=n_live,
+        advancing=advancing,
+        declining=declining,
+        adv_vol=adv_vol,
+        dec_vol=dec_vol,
+        rsi_bullish=rsi_bullish,
+        rsi_covered=rsi_covered,
+        ma_covered=ma_covered,
+        ma_above_both=ma_above_both,
+        week52_covered=week52_covered,
+        week52_near_high=week52_near_high,
+        week52_near_low=week52_near_low,
     )

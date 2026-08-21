@@ -27,8 +27,8 @@ discipline as options_analytics.py itself).
 
 from __future__ import annotations
 
-WALL_CHANGE_THRESHOLD = 0.05   # +/-5% OI change to call a strike strengthening/weakening
-TOP_N_STRIKES = 3              # track this many strikes per side for wall dynamics
+WALL_CHANGE_THRESHOLD = 0.05  # +/-5% OI change to call a strike strengthening/weakening
+TOP_N_STRIKES = 3  # track this many strikes per side for wall dynamics
 
 
 def _leg_oi(row: dict, leg_name: str) -> float:
@@ -57,7 +57,9 @@ def compute_weighted_pcr(rows: list[dict], spot: float) -> dict | None:
         if strike <= 0:
             continue
         distance_pct = abs(strike - spot) / spot
-        weight = 1.0 / (1.0 + distance_pct * 20.0)   # ~50% weight at 5% OTM, tuned for typical NSE strike spacing
+        weight = 1.0 / (
+            1.0 + distance_pct * 20.0
+        )  # ~50% weight at 5% OTM, tuned for typical NSE strike spacing
         weighted_call += _leg_oi(row, "call_options") * weight
         weighted_put += _leg_oi(row, "put_options") * weight
 
@@ -78,7 +80,9 @@ def compute_pcr_velocity(current_pcr: float | None, prev_pcr: float | None) -> f
     return round(current_pcr - prev_pcr, 3)
 
 
-def compute_pcr_acceleration(current_velocity: float | None, prev_velocity: float | None) -> float | None:
+def compute_pcr_acceleration(
+    current_velocity: float | None, prev_velocity: float | None
+) -> float | None:
     """EBIE EB-15 Phase 5 item 8's own "OI velocity, OI ACCELERATION"
     requirement -- the second derivative, same shape as
     compute_pcr_velocity() one level up (a delta-of-the-delta, not a
@@ -147,11 +151,13 @@ def compute_wall_dynamics(rows: list[dict], prev_snapshot: dict | None) -> dict:
             if legs[leg] <= 0:
                 continue
             prev_oi = (prev_strikes.get(str(strike)) or prev_strikes.get(strike) or {}).get(leg)
-            out.append({
-                "strike": strike,
-                "oi": round(legs[leg], 1),
-                "state": _classify_strike_state(legs[leg], prev_oi),
-            })
+            out.append(
+                {
+                    "strike": strike,
+                    "oi": round(legs[leg], 1),
+                    "state": _classify_strike_state(legs[leg], prev_oi),
+                }
+            )
         return out
 
     call_wall = _top_n("call_oi")

@@ -11,7 +11,7 @@ class NormalizerSettings(InfusionSettings):
     tier3_min_interval_ms: int = 2000
 
     # Dedup
-    dedup_ring_size: int = 20             # per-symbol ring buffer size
+    dedup_ring_size: int = 20  # per-symbol ring buffer size
 
     # Consumer
     batch_size: int = 200

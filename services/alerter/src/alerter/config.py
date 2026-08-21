@@ -31,16 +31,16 @@ class AlerterSettings(InfusionSettings):
     alert_cooldown_sec: int = 1800  # 30 min
 
     # ─── Rate limiting ─────────────────────────────
-    global_rate_limit: int = 10     # max alerts per hour
-    burst_limit: int = 3            # max alerts per 5-min window
+    global_rate_limit: int = 10  # max alerts per hour
+    burst_limit: int = 3  # max alerts per 5-min window
 
     # ─── Retry ─────────────────────────────────────
     retry_max: int = 3
-    retry_base_sec: float = 2.0     # exponential backoff: 2, 4, 8
+    retry_base_sec: float = 2.0  # exponential backoff: 2, 4, 8
 
     # ─── Modes ─────────────────────────────────────
-    dry_run: bool = False           # log messages but don't send
-    watchlist_only: bool = False    # only send pre-breakout summaries
+    dry_run: bool = False  # log messages but don't send
+    watchlist_only: bool = False  # only send pre-breakout summaries
 
     # ─── Delivery log ──────────────────────────────
-    delivery_log_max: int = 100     # max entries in delivery log list
+    delivery_log_max: int = 100  # max entries in delivery log list

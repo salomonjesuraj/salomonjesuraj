@@ -23,17 +23,16 @@ from __future__ import annotations
 import time
 
 import structlog
-
 from infusion_streams.constants import KEY_SUBSCRIPTION_TIER_PREFIX
 
 logger = structlog.get_logger()
 
-TIER_1 = "tier1"    # universe scan, cheapest mode
-TIER_2 = "tier2"    # candidate promotion, richer analysis
-TIER_3 = "tier3"    # armed setups, deepest available depth
+TIER_1 = "tier1"  # universe scan, cheapest mode
+TIER_2 = "tier2"  # candidate promotion, richer analysis
+TIER_3 = "tier3"  # armed setups, deepest available depth
 
-DEFAULT_MODE = "full"       # Upstox V3: 5-level depth, the EB-0 baseline
-DEEP_MODE = "full_d30"      # Upstox Plus only -- see ProviderCapabilityV1.supports_full_d30
+DEFAULT_MODE = "full"  # Upstox V3: 5-level depth, the EB-0 baseline
+DEEP_MODE = "full_d30"  # Upstox Plus only -- see ProviderCapabilityV1.supports_full_d30
 
 
 class SubscriptionRegistry:

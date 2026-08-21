@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import structlog
+from infusion_models.events import EventType
 from redis.asyncio import Redis
 
-from infusion_models.events import EventType
 from infusion_streams.codec import encode_event
 
 logger = structlog.get_logger()

@@ -36,19 +36,35 @@ from __future__ import annotations
 # current level -- reused from scanner/alignment.py's own vocabulary
 # (feature-engine/features/candles.py), not re-invented.
 REJECTION_CANDLES_BEARISH = {
-    "Bearish Engulfing", "Shooting Star", "Bearish Marubozu", "Bearish Harami",
-    "Bearish Pin Bar", "Three Black Crows", "Dark Cloud Cover",
-    "Evening Star", "Gravestone Doji", "Tweezer Top",
+    "Bearish Engulfing",
+    "Shooting Star",
+    "Bearish Marubozu",
+    "Bearish Harami",
+    "Bearish Pin Bar",
+    "Three Black Crows",
+    "Dark Cloud Cover",
+    "Evening Star",
+    "Gravestone Doji",
+    "Tweezer Top",
 }
 REJECTION_CANDLES_BULLISH = {
-    "Bullish Engulfing", "Hammer", "Bullish Marubozu", "Bullish Harami",
-    "Bullish Pin Bar", "Three White Soldiers", "Piercing Line",
-    "Morning Star", "Dragonfly Doji", "Tweezer Bottom",
+    "Bullish Engulfing",
+    "Hammer",
+    "Bullish Marubozu",
+    "Bullish Harami",
+    "Bullish Pin Bar",
+    "Three White Soldiers",
+    "Piercing Line",
+    "Morning Star",
+    "Dragonfly Doji",
+    "Tweezer Bottom",
 }
 
-WEAK_VOLUME_THRESHOLD = 1.2      # rel_vol_20d below this on the trigger itself is weak participation
+WEAK_VOLUME_THRESHOLD = 1.2  # rel_vol_20d below this on the trigger itself is weak participation
 WIDE_SPREAD_BPS = 15.0
-EXTENDED_MOVE_PCT = 3.0          # |change_pct| beyond this, in the SAME direction as the candidate, reads as chasing
+EXTENDED_MOVE_PCT = (
+    3.0  # |change_pct| beyond this, in the SAME direction as the candidate, reads as chasing
+)
 SECTOR_SUPPORTIVE = 55.0
 SECTOR_CONTRARY = 45.0
 
@@ -84,21 +100,27 @@ def compute_trap_risk(
 
     # 1. Already-chasing an extended move (Phase R's own no-chase gate).
     votes["chase_risk"] = _check(
-        "chase_risk", None if anti_chase_ok is None else (anti_chase_ok is False),
-        reasons, "anti-chase gate already flagged this as a chase",
+        "chase_risk",
+        None if anti_chase_ok is None else (anti_chase_ok is False),
+        reasons,
+        "anti-chase gate already flagged this as a chase",
     )
 
     # 2. Weak first-cross participation.
     votes["weak_volume"] = _check(
-        "weak_volume", None if rel_vol_20d is None else (rel_vol_20d < WEAK_VOLUME_THRESHOLD),
-        reasons, f"relative volume {rel_vol_20d} below {WEAK_VOLUME_THRESHOLD}x on the trigger",
+        "weak_volume",
+        None if rel_vol_20d is None else (rel_vol_20d < WEAK_VOLUME_THRESHOLD),
+        reasons,
+        f"relative volume {rel_vol_20d} below {WEAK_VOLUME_THRESHOLD}x on the trigger",
     )
 
     # 3. A rejection-wick candle against the candidate's own direction.
     rejection_set = REJECTION_CANDLES_BEARISH if bullish else REJECTION_CANDLES_BULLISH
     votes["wick_rejection"] = _check(
-        "wick_rejection", candle_pattern in rejection_set if candle_pattern else None,
-        reasons, f"{candle_pattern} rejection candle against the setup's own direction",
+        "wick_rejection",
+        candle_pattern in rejection_set if candle_pattern else None,
+        reasons,
+        f"{candle_pattern} rejection candle against the setup's own direction",
     )
 
     # 4. OI wall rebuilding against direction (EB-5) -- resistance
@@ -111,7 +133,10 @@ def compute_trap_risk(
         support_state = put_wall_state if bullish else call_wall_state
         wall_signal = (resistance_state == "strengthening") or (support_state == "weakening")
     votes["wall_against_direction"] = _check(
-        "wall_against_direction", wall_signal, reasons, "option-chain wall rebuilding against direction"
+        "wall_against_direction",
+        wall_signal,
+        reasons,
+        "option-chain wall rebuilding against direction",
     )
 
     # 5. Negative RS divergence -- price breaking out but relative
@@ -127,18 +152,28 @@ def compute_trap_risk(
     sector_divergent = None
     if sector_strength is not None:
         sector_divergent = (
-            (sector_strength < SECTOR_CONTRARY) if bullish else (sector_strength > SECTOR_SUPPORTIVE)
+            (sector_strength < SECTOR_CONTRARY)
+            if bullish
+            else (sector_strength > SECTOR_SUPPORTIVE)
         )
     votes["sector_divergence"] = _check(
-        "sector_divergence", sector_divergent, reasons, "sector context contradicting the setup's direction"
+        "sector_divergence",
+        sector_divergent,
+        reasons,
+        "sector context contradicting the setup's direction",
     )
 
     # 7. Chasing an already-extended move in the same direction.
     extended = None
     if change_pct is not None:
-        extended = (change_pct > EXTENDED_MOVE_PCT) if bullish else (change_pct < -EXTENDED_MOVE_PCT)
+        extended = (
+            (change_pct > EXTENDED_MOVE_PCT) if bullish else (change_pct < -EXTENDED_MOVE_PCT)
+        )
     votes["extended_move"] = _check(
-        "extended_move", extended, reasons, f"already moved {change_pct}% today in the same direction"
+        "extended_move",
+        extended,
+        reasons,
+        f"already moved {change_pct}% today in the same direction",
     )
 
     # 8. Wide spread -- a real, if coarse, liquidity-deterioration proxy
@@ -146,8 +181,10 @@ def compute_trap_risk(
     # so this checks the absolute level only, disclosed as a
     # simplification vs the blueprint's own "spread widening" language).
     votes["wide_spread"] = _check(
-        "wide_spread", None if spread_bps is None else (spread_bps > WIDE_SPREAD_BPS),
-        reasons, f"spread {spread_bps}bps wider than {WIDE_SPREAD_BPS}bps",
+        "wide_spread",
+        None if spread_bps is None else (spread_bps > WIDE_SPREAD_BPS),
+        reasons,
+        f"spread {spread_bps}bps wider than {WIDE_SPREAD_BPS}bps",
     )
 
     checked = {k: v for k, v in votes.items() if v is not None}

@@ -16,7 +16,6 @@ from typing import Any
 
 import msgpack
 import structlog
-
 from infusion_streams.constants import KEY_EBIE_VERDICT_LITE_PREFIX
 
 from api.routes.market import _feature, _signal, _upstox_option_context
@@ -143,7 +142,11 @@ async def build_candidates(redis, limit: int) -> list[dict]:
         text = member.decode() if isinstance(member, bytes) else str(member)
         symbol = text.split(":")[0].upper().strip()
         if symbol:
-            ranked[symbol] = {"symbol": symbol, "source": "active_signal", "signal_score": float(score or 0)}
+            ranked[symbol] = {
+                "symbol": symbol,
+                "source": "active_signal",
+                "signal_score": float(score or 0),
+            }
 
     cursor = 0
     while True:
@@ -154,14 +157,19 @@ async def build_candidates(redis, limit: int) -> list[dict]:
         for key in keys:
             pipe.hgetall(key)
         rows = await pipe.execute() if keys else []
-        for key, data in zip(keys, rows):
-            name = (key.decode() if isinstance(key, bytes) else str(key)).replace("infusion:prebreak:", "")
+        for key, data in zip(keys, rows, strict=False):
+            name = (key.decode() if isinstance(key, bytes) else str(key)).replace(
+                "infusion:prebreak:", ""
+            )
             pre = _decode_hash(data)
             score = _num(pre.get("readiness_score") or pre.get("ready"))
             if score >= 55:
-                row = ranked.setdefault(name.upper(), {"symbol": name.upper(), "source": "prebreak", "signal_score": 0.0})
+                row = ranked.setdefault(
+                    name.upper(),
+                    {"symbol": name.upper(), "source": "prebreak", "signal_score": 0.0},
+                )
                 row["prebreak_score"] = max(_num(row.get("prebreak_score")), score)
-                row["source"] = f"{row.get('source','')},prebreak".strip(",")
+                row["source"] = f"{row.get('source', '')},prebreak".strip(",")
         if cursor == 0:
             break
 
@@ -173,17 +181,24 @@ async def build_candidates(redis, limit: int) -> list[dict]:
     if symbols:
         try:
             lite_raw = await redis.mget([f"{KEY_EBIE_VERDICT_LITE_PREFIX}{s}" for s in symbols])
-            for symbol, raw in zip(symbols, lite_raw):
+            for symbol, raw in zip(symbols, lite_raw, strict=False):
                 if not raw:
                     continue
                 try:
                     verdict = msgpack.unpackb(raw, raw=False)
                 except Exception:
                     continue
-                if not isinstance(verdict, dict) or verdict.get("verdict") not in _PRE_FIRE_VERDICTS:
+                if (
+                    not isinstance(verdict, dict)
+                    or verdict.get("verdict") not in _PRE_FIRE_VERDICTS
+                ):
                     continue
-                row = ranked.setdefault(symbol, {"symbol": symbol, "source": "pre_fire_verdict", "signal_score": 0.0})
-                row["prebreak_score"] = max(_num(row.get("prebreak_score")), _PRE_FIRE_PREBREAK_SCORE)
+                row = ranked.setdefault(
+                    symbol, {"symbol": symbol, "source": "pre_fire_verdict", "signal_score": 0.0}
+                )
+                row["prebreak_score"] = max(
+                    _num(row.get("prebreak_score")), _PRE_FIRE_PREBREAK_SCORE
+                )
                 if "pre_fire_verdict" not in row["source"]:
                     row["source"] = f"{row['source']},pre_fire_verdict".strip(",")
         except Exception:
@@ -202,17 +217,26 @@ async def build_candidates(redis, limit: int) -> list[dict]:
             feature_rows.append((symbol, features, prebreak))
 
     for symbol, features, prebreak in feature_rows:
-        existing = ranked.setdefault(symbol, {"symbol": symbol, "source": "feature_momentum", "signal_score": 0.0})
+        existing = ranked.setdefault(
+            symbol, {"symbol": symbol, "source": "feature_momentum", "signal_score": 0.0}
+        )
         score = _candidate_score(features, prebreak, _num(existing.get("signal_score")))
         if score >= 48 or existing.get("source") != "feature_momentum":
             existing["rank_score"] = max(_num(existing.get("rank_score")), score)
-            existing["source"] = existing["source"] if existing["source"] != "feature_momentum" else "feature_momentum"
+            existing["source"] = (
+                existing["source"]
+                if existing["source"] != "feature_momentum"
+                else "feature_momentum"
+            )
         elif existing.get("source") == "feature_momentum":
             ranked.pop(symbol, None)
 
     candidates = sorted(
         ranked.values(),
-        key=lambda x: (_num(x.get("signal_score")) > 0, _num(x.get("rank_score")) + _num(x.get("prebreak_score"))),
+        key=lambda x: (
+            _num(x.get("signal_score")) > 0,
+            _num(x.get("rank_score")) + _num(x.get("prebreak_score")),
+        ),
         reverse=True,
     )
     return candidates[: max(0, limit)]
@@ -244,17 +268,20 @@ async def refresh_candidates_once(redis, *, limit: int = 28, delay_ms: int = 350
             result = await _upstox_option_context(redis, symbol, bias, features, signal)
             await redis.set(
                 f"{LAST_REFRESH_PREFIX}{symbol}",
-                json.dumps({
-                    "symbol": symbol,
-                    "bias": bias,
-                    "ready": bool(result.get("ready")),
-                    "execution_status": result.get("execution_status") or "CHAIN_PENDING",
-                    "score": result.get("execution_score") or result.get("option_score"),
-                    "raw_score": result.get("raw_option_score"),
-                    "reason": result.get("reason") or result.get("score_cap_detail") or "",
-                    "refreshed_at": datetime.now().isoformat(timespec="seconds"),
-                    "source": row.get("source"),
-                }, separators=(",", ":")),
+                json.dumps(
+                    {
+                        "symbol": symbol,
+                        "bias": bias,
+                        "ready": bool(result.get("ready")),
+                        "execution_status": result.get("execution_status") or "CHAIN_PENDING",
+                        "score": result.get("execution_score") or result.get("option_score"),
+                        "raw_score": result.get("raw_option_score"),
+                        "reason": result.get("reason") or result.get("score_cap_detail") or "",
+                        "refreshed_at": datetime.now().isoformat(timespec="seconds"),
+                        "source": row.get("source"),
+                    },
+                    separators=(",", ":"),
+                ),
                 ex=LAST_REFRESH_TTL_SEC,
             )
             refreshed.append(symbol)
@@ -290,11 +317,16 @@ async def option_chain_queue_loop(app) -> None:
     limit = max(0, int(getattr(config, "option_chain_candidate_limit", 28) or 28))
     delay_ms = max(0, int(getattr(config, "option_chain_request_delay_ms", 350) or 350))
     if not enabled or limit <= 0:
-        await redis.set(STATUS_KEY, json.dumps({"enabled": False, "reason": "disabled_by_config"}), ex=600)
+        await redis.set(
+            STATUS_KEY, json.dumps({"enabled": False, "reason": "disabled_by_config"}), ex=600
+        )
         return
     logger.info("option_chain_queue_started", interval=interval, limit=limit, delay_ms=delay_ms)
     while True:
         with contextlib.suppress(Exception):
             status = await refresh_candidates_once(redis, limit=limit, delay_ms=delay_ms)
-            logger.info("option_chain_queue_cycle", **{k: v for k, v in status.items() if not isinstance(v, list)})
+            logger.info(
+                "option_chain_queue_cycle",
+                **{k: v for k, v in status.items() if not isinstance(v, list)},
+            )
         await asyncio.sleep(interval)

@@ -29,15 +29,15 @@ it, same governance as every other Phase 1-13.x field.
 from __future__ import annotations
 
 MINTICK = 0.01
-DOJI_BODY_PCT = 0.08       # same threshold candles.py uses for its own Doji
+DOJI_BODY_PCT = 0.08  # same threshold candles.py uses for its own Doji
 CLEAN_WICK_TOLERANCE = 0.05  # wick <= 5% of range counts as "no opposite wick"
-TREND_STREAK_MIN = 3        # Phase 13 spec: "3+ consecutive... = continuation"
+TREND_STREAK_MIN = 3  # Phase 13 spec: "3+ consecutive... = continuation"
 
 
-def update_heiken_ashi(state, o: float, h: float, l: float, c: float) -> None:
+def update_heiken_ashi(state, o: float, h: float, low: float, c: float) -> None:
     """Advance HA state by one completed bar. Call once per completed 1m
     bar, same contract as update_body_ema/update_structure."""
-    ha_close = (o + h + l + c) / 4.0
+    ha_close = (o + h + low + c) / 4.0
     if not state.ha_initialized:
         ha_open = (o + c) / 2.0
         state.ha_initialized = True
@@ -45,7 +45,7 @@ def update_heiken_ashi(state, o: float, h: float, l: float, c: float) -> None:
         ha_open = (state.ha_open + state.ha_close) / 2.0
 
     ha_high = max(h, ha_open, ha_close)
-    ha_low = min(l, ha_open, ha_close)
+    ha_low = min(low, ha_open, ha_close)
 
     state.ha_open = ha_open
     state.ha_close = ha_close
@@ -57,7 +57,11 @@ def update_heiken_ashi(state, o: float, h: float, l: float, c: float) -> None:
     bullish = ha_close >= ha_open
     upper_wick = ha_high - max(ha_open, ha_close)
     lower_wick = min(ha_open, ha_close) - ha_low
-    clean = (lower_wick <= rng * CLEAN_WICK_TOLERANCE) if bullish else (upper_wick <= rng * CLEAN_WICK_TOLERANCE)
+    clean = (
+        (lower_wick <= rng * CLEAN_WICK_TOLERANCE)
+        if bullish
+        else (upper_wick <= rng * CLEAN_WICK_TOLERANCE)
+    )
 
     if state.ha_streak_bullish is not None and bullish == state.ha_streak_bullish and clean:
         state.ha_trend_streak += 1
@@ -72,9 +76,15 @@ def update_heiken_ashi(state, o: float, h: float, l: float, c: float) -> None:
 def heiken_ashi_snapshot(state) -> dict:
     if not state.ha_initialized:
         return {
-            "ha_open": None, "ha_close": None, "ha_high": None, "ha_low": None,
-            "ha_bullish": None, "ha_trend_streak": 0, "ha_trend": "NA",
-            "ha_doji": False, "ha_color_flip": False,
+            "ha_open": None,
+            "ha_close": None,
+            "ha_high": None,
+            "ha_low": None,
+            "ha_bullish": None,
+            "ha_trend_streak": 0,
+            "ha_trend": "NA",
+            "ha_doji": False,
+            "ha_color_flip": False,
         }
     trend = "NA"
     if state.ha_trend_streak >= TREND_STREAK_MIN:

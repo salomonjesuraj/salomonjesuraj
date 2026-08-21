@@ -29,17 +29,17 @@ Design principles:
 
 from __future__ import annotations
 
-from datetime import datetime, time as dt_time
+from datetime import datetime
+from datetime import time as dt_time
 from zoneinfo import ZoneInfo
 
 import structlog
-from redis.asyncio import Redis
-
 from infusion_streams.constants import (
-    KEY_SIGNAL_ACTIVE,
     KEY_COOLDOWN_PREFIX,
     KEY_SECTOR_PREFIX,
+    KEY_SIGNAL_ACTIVE,
 )
+from redis.asyncio import Redis
 
 logger = structlog.get_logger()
 _IST = ZoneInfo("Asia/Kolkata")
@@ -84,7 +84,7 @@ def _current_session(now: dt_time | None = None) -> str:
 class SuppressionResult:
     """Result of suppression gate evaluation."""
 
-    __slots__ = ("passed", "reason", "gate")
+    __slots__ = ("gate", "passed", "reason")
 
     def __init__(self, passed: bool, reason: str = "", gate: str = ""):
         self.passed = passed

@@ -34,7 +34,7 @@ logger = structlog.get_logger()
 
 SWEEP_INTERVAL_SEC = 60
 STATUS_KEY = "infusion:futures-queue:status"
-STATE_TTL_SEC = 300   # a few sweep intervals of grace, same order as other queues' caches
+STATE_TTL_SEC = 300  # a few sweep intervals of grace, same order as other queues' caches
 
 
 async def _load_underlyings(redis) -> dict[str, str]:
@@ -107,7 +107,10 @@ async def sweep_once(app) -> dict:
         quote = quotes.get(instrument_key)
         if quote is None:
             for k, v in quotes.items():
-                if instrument_key in str(v.get("instrument_token", "")) or contract.get("trading_symbol", "") in k:
+                if (
+                    instrument_key in str(v.get("instrument_token", ""))
+                    or contract.get("trading_symbol", "") in k
+                ):
                     quote = v
                     break
         if quote is None:

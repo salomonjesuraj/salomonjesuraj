@@ -12,17 +12,18 @@ import json
 import math
 import time
 from dataclasses import dataclass
-from datetime import datetime, time as dt_time
+from datetime import datetime
+from datetime import time as dt_time
 from zoneinfo import ZoneInfo
 
 from aiohttp import web
 
-from api.chart_patterns import fractal_pivots_indexed, detect_chart_patterns
-from api.wyckoff import detect_structural_failure, detect_shortening_of_thrust, detect_sos_sow_bar
-from api.vcp import compute_vcp
-from api.daily_trend_filter import compute_daily_trend_filter
 from api.anchored_vwap import compute_anchored_vwaps
+from api.chart_patterns import detect_chart_patterns, fractal_pivots_indexed
+from api.daily_trend_filter import compute_daily_trend_filter
 from api.relative_strength import compute_multi_timeframe_rs
+from api.vcp import compute_vcp
+from api.wyckoff import detect_shortening_of_thrust, detect_sos_sow_bar, detect_structural_failure
 
 routes = web.RouteTableDef()
 
@@ -138,7 +139,7 @@ def _rsi(values: list[float], period: int = 14) -> float | None:
         return None
     gains: list[float] = []
     losses: list[float] = []
-    for prev, cur in zip(values[-period - 1 : -1], values[-period:]):
+    for prev, cur in zip(values[-period - 1 : -1], values[-period:], strict=False):
         change = cur - prev
         gains.append(max(change, 0))
         losses.append(abs(min(change, 0)))
@@ -155,7 +156,7 @@ def _macd(values: list[float]) -> tuple[float | None, float | None, float | None
         return None, None, None
     ema12 = _ema_series(values, 12)
     ema26 = _ema_series(values, 26)
-    line = [a - b for a, b in zip(ema12, ema26)]
+    line = [a - b for a, b in zip(ema12, ema26, strict=False)]
     if len(line) < 9:
         return line[-1], None, None
     signal = _ema_series(line, 9)
@@ -190,11 +191,11 @@ def _candle_pattern(bars: list[dict]) -> str:
     if not bars:
         return "NA"
     cur = bars[-1]
-    o, h, l, c = cur["open"], cur["high"], cur["low"], cur["close"]
+    o, h, low, c = cur["open"], cur["high"], cur["low"], cur["close"]
     body = abs(c - o)
-    rng = max(h - l, 0.01)
+    rng = max(h - low, 0.01)
     upper = h - max(o, c)
-    lower = min(o, c) - l
+    lower = min(o, c) - low
     if len(bars) >= 2:
         prev = bars[-2]
         po, pc = prev["open"], prev["close"]
@@ -202,7 +203,7 @@ def _candle_pattern(bars: list[dict]) -> str:
             return "Bullish Engulfing"
         if c < o and pc > po and c <= po and o >= pc:
             return "Bearish Engulfing"
-        if h <= prev["high"] and l >= prev["low"]:
+        if h <= prev["high"] and low >= prev["low"]:
             return "Inside Bar"
     if body <= rng * 0.12:
         return "Doji"
@@ -264,7 +265,9 @@ def _indicators(bars: list[dict], include_vwap: bool) -> IndicatorPack | None:
     )
 
 
-def _fractal_pivots(bars: list[dict], left: int = 2, right: int = 2) -> tuple[list[float], list[float]]:
+def _fractal_pivots(
+    bars: list[dict], left: int = 2, right: int = 2
+) -> tuple[list[float], list[float]]:
     """Confirmed swing pivot highs/lows over a bar series — the same
     left/right=2 fractal rule as
     simple_structure_pivot_ma_plan_v6.pine's ta.pivothigh/pivotlow and
@@ -277,7 +280,7 @@ def _fractal_pivots(bars: list[dict], left: int = 2, right: int = 2) -> tuple[li
     if len(bars) < window:
         return highs, lows
     for i in range(left, len(bars) - right):
-        segment = bars[i - left: i + right + 1]
+        segment = bars[i - left : i + right + 1]
         cand_high = bars[i]["high"]
         cand_low = bars[i]["low"]
         seg_highs = [b["high"] for b in segment]
@@ -329,8 +332,12 @@ def _classic_pivots(prev_high: float, prev_low: float, prev_close: float) -> dic
 
     return {
         "pivot": round(pivot, 2),
-        "r1": round(r1, 2), "r2": round(r2, 2), "r3": round(r3, 2),
-        "s1": round(s1, 2), "s2": round(s2, 2), "s3": round(s3, 2),
+        "r1": round(r1, 2),
+        "r2": round(r2, 2),
+        "r3": round(r3, 2),
+        "s1": round(s1, 2),
+        "s2": round(s2, 2),
+        "s3": round(s3, 2),
         "cpr_top": round(cpr_top, 2),
         "cpr_bottom": round(cpr_bottom, 2),
         "cpr_width_pct": round(cpr_width_pct, 3),
@@ -369,8 +376,8 @@ def _session_time_factor() -> float:
     return round(1.0 - 0.5 * max(0.0, min(1.0, frac)), 3)
 
 
-VIRGIN_CPR_MAX_AGE_DAYS = 5    # Prabhu: valid S/R for ~4-5 trading days after formation
-VIRGIN_CPR_LOOKBACK_DAYS = 8   # how many recent days' CPRs are worth checking at all
+VIRGIN_CPR_MAX_AGE_DAYS = 5  # Prabhu: valid S/R for ~4-5 trading days after formation
+VIRGIN_CPR_LOOKBACK_DAYS = 8  # how many recent days' CPRs are worth checking at all
 
 
 def _virgin_cpr_zones(daily_bars: list[dict], current_ltp: float) -> list[dict]:
@@ -418,18 +425,22 @@ def _virgin_cpr_zones(daily_bars: list[dict], current_ltp: float) -> list[dict]:
             continue
 
         strength = max(0.0, 100.0 - (age - 1) * 20.0) * time_factor
-        zones.append({
-            "cpr_top": top,
-            "cpr_bottom": bottom,
-            "formed_days_ago": age,
-            "strength": round(strength, 0),
-        })
+        zones.append(
+            {
+                "cpr_top": top,
+                "cpr_bottom": bottom,
+                "formed_days_ago": age,
+                "strength": round(strength, 0),
+            }
+        )
 
     zones.sort(key=lambda z: -z["strength"])
     return zones[:3]
 
 
-CROSS_LOOKBACK_DAYS = 10  # "recent" cross window -- Infusion's own definition; sources don't specify one
+CROSS_LOOKBACK_DAYS = (
+    10  # "recent" cross window -- Infusion's own definition; sources don't specify one
+)
 
 
 def _sma_series(closes: list[float], period: int) -> list[float | None]:
@@ -472,8 +483,12 @@ def _ma_regime(daily_bars: list[dict]) -> dict:
     closes = [float(b["close"]) for b in daily_bars if b.get("close")]
     if len(closes) < 20:
         return {
-            "regime": "unknown", "sma20": None, "sma50": None, "sma200": None,
-            "stack": "unknown", "cross_recent": False,
+            "regime": "unknown",
+            "sma20": None,
+            "sma50": None,
+            "sma200": None,
+            "stack": "unknown",
+            "cross_recent": False,
             "warning": "Not enough daily history (need 20+ days, 200+ for a real regime read)",
         }
 
@@ -537,7 +552,13 @@ def _donchian_channel(daily_bars: list[dict], period: int = DONCHIAN_PERIOD) -> 
     entry strategy — see the Phase 7 commit for why.
     """
     if len(daily_bars) < period:
-        return {"period": period, "high": None, "low": None, "fresh_high_breakout": False, "fresh_low_breakout": False}
+        return {
+            "period": period,
+            "high": None,
+            "low": None,
+            "fresh_high_breakout": False,
+            "fresh_low_breakout": False,
+        }
 
     window = daily_bars[-period:]
     channel_high = max(b["high"] for b in window)
@@ -557,7 +578,7 @@ def _donchian_channel(daily_bars: list[dict], period: int = DONCHIAN_PERIOD) -> 
 
 
 WEEK52_TRADING_DAYS = 252  # ~52 calendar weeks of NSE trading sessions
-WEEK52_NEAR_PCT = 3.0      # within this % of the 52w extreme counts as "near"
+WEEK52_NEAR_PCT = 3.0  # within this % of the 52w extreme counts as "near"
 
 
 def _week52_stats(daily_bars: list[dict], ltp: float) -> dict:
@@ -570,9 +591,12 @@ def _week52_stats(daily_bars: list[dict], ltp: float) -> dict:
     """
     if not daily_bars or ltp <= 0:
         return {
-            "week52_high": None, "week52_low": None,
-            "week52_high_distance_pct": None, "week52_low_distance_pct": None,
-            "week52_near_high": False, "week52_near_low": False,
+            "week52_high": None,
+            "week52_low": None,
+            "week52_high_distance_pct": None,
+            "week52_low_distance_pct": None,
+            "week52_near_high": False,
+            "week52_near_low": False,
             "week52_bars": 0,
         }
 
@@ -610,7 +634,7 @@ def _major_blocker(blocker_bars: dict[str, list[dict]], ltp: float) -> dict:
     for tf, bars in blocker_bars.items():
         highs, lows = _fractal_pivots(bars)
         candidates_up = [h for h in highs if h > ltp]
-        candidates_down = [l for l in lows if l < ltp]
+        candidates_down = [low for low in lows if low < ltp]
         if candidates_up:
             level = min(candidates_up)  # nearest above price
             if best_up is None or level < best_up[0]:
@@ -759,7 +783,9 @@ def _score_timeframe(tf: str, bars: list[dict], include_vwap: bool) -> dict:
     }
 
 
-NIFTY50_DAILY_KEY = "infusion:ohlc:NIFTY50:daily"  # same bootstrap path as any equity, see scheduler/historical.py
+NIFTY50_DAILY_KEY = (
+    "infusion:ohlc:NIFTY50:daily"  # same bootstrap path as any equity, see scheduler/historical.py
+)
 
 
 async def _load_bars(redis, symbol: str) -> tuple[list[dict], list[dict], list[dict]]:
@@ -836,39 +862,80 @@ async def compute_mtf(redis, symbol: str, store: bool = True) -> dict:
         + timeframes["1D"]["score"] * 0.13
     )
     current_ltp = timeframes["1M"].get("close") or timeframes["1D"].get("close") or 0.0
-    blocker = _major_blocker(blocker_bars, current_ltp) if current_ltp else {
-        "blocker_up_level": None, "blocker_up_source": None,
-        "blocker_down_level": None, "blocker_down_source": None,
-    }
+    blocker = (
+        _major_blocker(blocker_bars, current_ltp)
+        if current_ltp
+        else {
+            "blocker_up_level": None,
+            "blocker_up_source": None,
+            "blocker_down_level": None,
+            "blocker_down_source": None,
+        }
+    )
 
     # Classic floor pivots + CPR, from the prior complete day's H/L/C
     # (daily[-1]) -- and virgin-CPR zones from the last several sessions.
-    pivots = _classic_pivots(daily[-1]["high"], daily[-1]["low"], daily[-1]["close"]) if daily else {}
+    pivots = (
+        _classic_pivots(daily[-1]["high"], daily[-1]["low"], daily[-1]["close"]) if daily else {}
+    )
     pivot_bias = _pivot_bias(current_ltp, pivots) if pivots else "neutral"
     virgin_cpr_zones = _virgin_cpr_zones(daily, current_ltp) if daily else []
     ma_regime = _ma_regime(daily)
     daily_pivots = fractal_pivots_indexed(daily) if daily else []
     chart_patterns = detect_chart_patterns(daily_pivots, current_ltp) if current_ltp else []
-    donchian = _donchian_channel(daily) if daily else {"period": DONCHIAN_PERIOD, "high": None, "low": None, "fresh_high_breakout": False, "fresh_low_breakout": False}
+    donchian = (
+        _donchian_channel(daily)
+        if daily
+        else {
+            "period": DONCHIAN_PERIOD,
+            "high": None,
+            "low": None,
+            "fresh_high_breakout": False,
+            "fresh_low_breakout": False,
+        }
+    )
     wyckoff_structural_failure = detect_structural_failure(daily_pivots)
     wyckoff_sot = detect_shortening_of_thrust(daily_pivots)
     wyckoff_sos_sow = detect_sos_sow_bar(daily) if daily else None
     week52 = _week52_stats(daily, current_ltp)
-    vcp = compute_vcp(daily, nifty_daily, current_ltp) if daily else {"available": False, "score": None, "reason": "No daily bar history"}
+    vcp = (
+        compute_vcp(daily, nifty_daily, current_ltp)
+        if daily
+        else {"available": False, "score": None, "reason": "No daily bar history"}
+    )
     # User asked why a real Chartink daily-trend screener surfaces different
     # names than our live Radar -- answer: different questions (daily trend
     # regime vs. live intraday evidence), see api/daily_trend_filter.py's own
     # header. This gives that comparison a real surface instead of leaving
     # it as two disconnected tools.
-    daily_trend = compute_daily_trend_filter(daily) if daily else {"available": False, "reason": "No daily bar history", "pass": False, "pass_count": 0, "total": 14, "conditions": {}}
+    daily_trend = (
+        compute_daily_trend_filter(daily)
+        if daily
+        else {
+            "available": False,
+            "reason": "No daily bar history",
+            "pass": False,
+            "pass_count": 0,
+            "total": 14,
+            "conditions": {},
+        }
+    )
     # EBIE EB-2: multi-anchor AVWAP -- batch-computed from the same
     # `intraday` 1m bar series already fetched above, no new I/O. See
     # api/anchored_vwap.py's own header for why this is a batch pass over
     # persisted history rather than a new live streaming accumulator.
-    anchored_vwaps = compute_anchored_vwaps(intraday, current_ltp) if current_ltp else {
-        "prev_close": None, "prev_high": None, "prev_low": None,
-        "week_open": None, "swing_high": None, "swing_low": None,
-    }
+    anchored_vwaps = (
+        compute_anchored_vwaps(intraday, current_ltp)
+        if current_ltp
+        else {
+            "prev_close": None,
+            "prev_high": None,
+            "prev_low": None,
+            "week_open": None,
+            "swing_high": None,
+            "swing_low": None,
+        }
+    )
     # EBIE EB-3: multi-timeframe relative strength -- see
     # api/relative_strength.py. Batch-computed from the same daily/
     # nifty_daily bars already fetched above, no new I/O.
@@ -882,9 +949,17 @@ async def compute_mtf(redis, symbol: str, store: bool = True) -> dict:
         rejection_reasons.append("Higher timeframe is resisting CE")
     if trade_bias == "BUY PE" and higher_bull:
         rejection_reasons.append("Higher timeframe is resisting PE")
-    if trade_bias == "BUY CE" and timeframes["5M"].get("rsi14", 50) and timeframes["5M"]["rsi14"] > 74:
+    if (
+        trade_bias == "BUY CE"
+        and timeframes["5M"].get("rsi14", 50)
+        and timeframes["5M"]["rsi14"] > 74
+    ):
         rejection_reasons.append("5M RSI chase risk")
-    if trade_bias == "BUY PE" and timeframes["5M"].get("rsi14", 50) and timeframes["5M"]["rsi14"] < 26:
+    if (
+        trade_bias == "BUY PE"
+        and timeframes["5M"].get("rsi14", 50)
+        and timeframes["5M"]["rsi14"] < 26
+    ):
         rejection_reasons.append("5M RSI oversold chase risk")
 
     payload = {
@@ -927,7 +1002,9 @@ async def compute_mtf(redis, symbol: str, store: bool = True) -> dict:
         # See MTF_LAST_SEEN_PREFIX's own comment above -- a long-lived
         # "was this symbol ever actually computed" marker, independent of
         # the short-TTL cache's own freshness window.
-        await redis.setex(f"{MTF_LAST_SEEN_PREFIX}{symbol}", MTF_LAST_SEEN_TTL_SEC, str(int(time.time())))
+        await redis.setex(
+            f"{MTF_LAST_SEEN_PREFIX}{symbol}", MTF_LAST_SEEN_TTL_SEC, str(int(time.time()))
+        )
     return payload
 
 
@@ -978,7 +1055,9 @@ async def refresh_mtf(request):
             refreshed += 1
         except Exception as exc:
             errors.append({"symbol": symbol, "error": str(exc)[:120]})
-    return web.json_response({"requested": min(limit, len(symbols)), "refreshed": refreshed, "errors": errors[:10]})
+    return web.json_response(
+        {"requested": min(limit, len(symbols)), "refreshed": refreshed, "errors": errors[:10]}
+    )
 
 
 @routes.get("/api/mtf/queue/status")

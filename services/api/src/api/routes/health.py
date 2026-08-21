@@ -26,10 +26,12 @@ async def health(request):
 
     all_healthy = all(s.get("status") == "healthy" for s in result.values())
 
-    return web.json_response({
-        "status": "healthy" if all_healthy else "degraded",
-        "services": result,
-    })
+    return web.json_response(
+        {
+            "status": "healthy" if all_healthy else "degraded",
+            "services": result,
+        }
+    )
 
 
 @routes.get("/api/diagnostics")
@@ -99,19 +101,20 @@ async def diagnostics(request):
         except Exception:
             pass
 
-    return web.json_response({
-        "symbols_loaded": symbols_loaded,
-        "tick_keys": tick_key_count,
-        "sectors_loaded": sector_count,
-        "active_signals": active_signals,
-        "prebreak_count": prebreak_count,
-        "websocket_clients": ws_clients,
-        "streams": {
-            "tick_raw": tick_raw_depth,
-            "tick_normalized": tick_norm_depth,
-            "feature_computed": feature_depth,
-            "scan_signals": signal_stream_depth,
-            "scan_suppressed": suppressed_depth,
-        },
-    })
-
+    return web.json_response(
+        {
+            "symbols_loaded": symbols_loaded,
+            "tick_keys": tick_key_count,
+            "sectors_loaded": sector_count,
+            "active_signals": active_signals,
+            "prebreak_count": prebreak_count,
+            "websocket_clients": ws_clients,
+            "streams": {
+                "tick_raw": tick_raw_depth,
+                "tick_normalized": tick_norm_depth,
+                "feature_computed": feature_depth,
+                "scan_signals": signal_stream_depth,
+                "scan_suppressed": suppressed_depth,
+            },
+        }
+    )

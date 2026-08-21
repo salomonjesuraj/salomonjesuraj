@@ -9,7 +9,6 @@ Usage:
 
 import os
 import sys
-import re
 
 base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 for lib in ("infusion-models", "infusion-streams", "infusion-common"):
@@ -36,7 +35,7 @@ def check(label, condition, detail=""):
 # 1. Priority tier mapping
 # ═══════════════════════════════════════════════════
 print("\n--- PRIORITY TIERS ---")
-from alerter.gate import PRIORITY_TIERS, _GRADE_RANK
+from alerter.gate import _GRADE_RANK, PRIORITY_TIERS
 
 check("A+ → CRITICAL", PRIORITY_TIERS.get("A+") == "CRITICAL")
 check("A → HIGH", PRIORITY_TIERS.get("A") == "HIGH")
@@ -54,7 +53,7 @@ check("B+ > B", _GRADE_RANK["B+"] > _GRADE_RANK["B"])
 # 2. Price formatting
 # ═══════════════════════════════════════════════════
 print("\n--- PRICE FORMATTING ---")
-from alerter.formatter import _format_price, _pct_change, _escape_md
+from alerter.formatter import _escape_md, _format_price, _pct_change
 
 check("Simple price", _format_price(500.0) == "₹500.00", f"got={_format_price(500.0)}")
 check("Thousands", _format_price(2500.50) == "₹2,500.50", f"got={_format_price(2500.50)}")
@@ -141,8 +140,8 @@ check("Same payload → same message", msg1 == msg2)
 # 6. DeliveryOutcome / DeliveryResult structure
 # ═══════════════════════════════════════════════════
 print("\n--- DELIVERY STRUCTURES ---")
-from alerter.telegram import DeliveryOutcome
 from alerter.gate import DeliveryResult
+from alerter.telegram import DeliveryOutcome
 
 outcome_ok = DeliveryOutcome(success=True, status_code=200, retries=0)
 check("DeliveryOutcome success", outcome_ok.success)

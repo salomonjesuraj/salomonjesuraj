@@ -20,8 +20,8 @@ from __future__ import annotations
 
 from aiohttp import web
 
+from api.promotion_review import fetch_promotion_review_history, record_promotion_review
 from api.shadow_validation import compute_shadow_validation_report
-from api.promotion_review import record_promotion_review, fetch_promotion_review_history
 from api.verdict_calibration import compute_verdict_calibration
 
 routes = web.RouteTableDef()
@@ -98,7 +98,9 @@ async def ebie_promotion_review_decision(request):
     a side effect of calling this endpoint."""
     pool = request.app.get("pg_pool")
     if not pool:
-        return web.json_response({"available": False, "reason": "Postgres analytics pool is not available."}, status=503)
+        return web.json_response(
+            {"available": False, "reason": "Postgres analytics pool is not available."}, status=503
+        )
 
     try:
         review_id = int(request.match_info["review_id"])
@@ -110,7 +112,8 @@ async def ebie_promotion_review_decision(request):
     note = body.get("note")
     if decision not in VALID_DECISIONS:
         return web.json_response(
-            {"available": False, "reason": f"decision must be one of {sorted(VALID_DECISIONS)}."}, status=400,
+            {"available": False, "reason": f"decision must be one of {sorted(VALID_DECISIONS)}."},
+            status=400,
         )
 
     async with pool.acquire() as conn:
@@ -121,15 +124,21 @@ async def ebie_promotion_review_decision(request):
             WHERE id = $3
             RETURNING id, human_decision, human_decision_note, human_decision_at
             """,
-            decision, note, review_id,
+            decision,
+            note,
+            review_id,
         )
     if not row:
-        return web.json_response({"available": False, "reason": f"No review with id {review_id}."}, status=404)
+        return web.json_response(
+            {"available": False, "reason": f"No review with id {review_id}."}, status=404
+        )
 
-    return web.json_response({
-        "available": True,
-        "review_id": row["id"],
-        "human_decision": row["human_decision"],
-        "human_decision_note": row["human_decision_note"],
-        "human_decision_at": row["human_decision_at"].isoformat(),
-    })
+    return web.json_response(
+        {
+            "available": True,
+            "review_id": row["id"],
+            "human_decision": row["human_decision"],
+            "human_decision_note": row["human_decision_note"],
+            "human_decision_at": row["human_decision_at"].isoformat(),
+        }
+    )

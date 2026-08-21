@@ -164,6 +164,7 @@ def _confidence_band(score: float) -> str:
             return label
     return "LOW"
 
+
 # Q6.2's authorized DQ policy.
 DQ_HARD_FAIL = 80
 DQ_DEGRADED = 90
@@ -171,7 +172,7 @@ DQ_DEGRADED = 90
 CLV_THRESHOLD = 0.15
 MICROSTRUCTURE_THRESHOLD = 0.15
 VCP_MIN_SCORE = 60
-RVOL_BULL_THRESHOLD = 2.0   # matches trap_model.py's/breakout-radar's own "real volume" bar
+RVOL_BULL_THRESHOLD = 2.0  # matches trap_model.py's/breakout-radar's own "real volume" bar
 MARKET_CONTEXT_NEUTRAL_BAND = 3.0  # +/- around the 50-neutral midpoint that counts as "no read"
 
 # EBIE EB-15 Phase 4 item 6 -- weighted evidence families, replacing
@@ -180,9 +181,18 @@ MARKET_CONTEXT_NEUTRAL_BAND = 3.0  # +/- around the 50-neutral midpoint that cou
 # clustered under one capped weight; every other family gets its own
 # fixed weight. Both tables sum to 100 -- "the weighted score" is a real
 # 0-100 percentage of available, weighted evidence, not an arbitrary unit.
-STRUCTURE_FAMILIES = frozenset({
-    "structure", "candlestick", "zone", "ict", "regime", "ma_regime", "donchian", "wyckoff",
-})
+STRUCTURE_FAMILIES = frozenset(
+    {
+        "structure",
+        "candlestick",
+        "zone",
+        "ict",
+        "regime",
+        "ma_regime",
+        "donchian",
+        "wyckoff",
+    }
+)
 STRUCTURE_CLUSTER_WEIGHT = 25.0
 
 FAMILY_WEIGHTS = {
@@ -362,12 +372,16 @@ def _compute_directional_context(
         score += delta if supportive else -delta
 
     if sector_avg_change_pct is not None:
-        supportive = (sector_avg_change_pct >= 0) if not is_sell_bias else (sector_avg_change_pct <= 0)
+        supportive = (
+            (sector_avg_change_pct >= 0) if not is_sell_bias else (sector_avg_change_pct <= 0)
+        )
         delta = min(abs(sector_avg_change_pct) * sector_scale, sector_weight)
         score += delta if supportive else -delta
 
     if market_health_score is not None:
-        health_component = market_health_score if not is_sell_bias else (100.0 - market_health_score)
+        health_component = (
+            market_health_score if not is_sell_bias else (100.0 - market_health_score)
+        )
         score += (health_component - 50.0) * breadth_weight
 
     return round(max(0.0, min(100.0, score)), 1)
@@ -437,8 +451,14 @@ FAMILY_DESCRIPTIONS = {
 
 
 def _hard_gates(
-    *, fo_banned: bool, data_quality_score, entry_price, invalidation_price,
-    tick_lag_ms, session_gap_ms, option_chain_context,
+    *,
+    fo_banned: bool,
+    data_quality_score,
+    entry_price,
+    invalidation_price,
+    tick_lag_ms,
+    session_gap_ms,
+    option_chain_context,
 ) -> list[str]:
     """Per docs/EBIE-IMPLEMENTATION-ANSWERS.md Q6.1's authorized hard-
     gate list. EB-15 Phase 5 item 9 closes the one gap that list's own
@@ -543,8 +563,11 @@ def compute_verdict(
     reasoning.
     """
     ctx = {
-        "ml": ml, "mtf_cache": mtf_cache, "sentiment_cache": sentiment_cache,
-        "futures_cache": futures_cache, "options_dynamics_cache": options_dynamics_cache,
+        "ml": ml,
+        "mtf_cache": mtf_cache,
+        "sentiment_cache": sentiment_cache,
+        "futures_cache": futures_cache,
+        "options_dynamics_cache": options_dynamics_cache,
         "rel_vol_20d": rel_vol_20d,
     }
 
@@ -552,8 +575,13 @@ def compute_verdict(
     # it with bullish=True yields each family's ABSOLUTE bullish read
     # (agreeing-with-bullish == is-bullish), not a candidate-relative one.
     old_alignment = compute_signal_alignment(
-        bullish=True, ml=ml, ma_regime=ma_regime, donchian=donchian,
-        wyckoff_sos_sow=wyckoff_sos_sow, atr_trend=atr_trend, candle_pattern=candle_pattern,
+        bullish=True,
+        ml=ml,
+        ma_regime=ma_regime,
+        donchian=donchian,
+        wyckoff_sos_sow=wyckoff_sos_sow,
+        atr_trend=atr_trend,
+        candle_pattern=candle_pattern,
     )
     absolute: dict[str, bool | None] = {}
     for name in old_alignment["alignment_agreeing_families"]:
@@ -604,9 +632,12 @@ def compute_verdict(
     contradicting_ranked = sorted(contradicting, key=lambda f: weights.get(f, 0.0), reverse=True)
 
     hard_gate_reasons = _hard_gates(
-        fo_banned=fo_banned, data_quality_score=data_quality_score,
-        entry_price=entry_price, invalidation_price=invalidation_price,
-        tick_lag_ms=tick_lag_ms, session_gap_ms=session_gap_ms,
+        fo_banned=fo_banned,
+        data_quality_score=data_quality_score,
+        entry_price=entry_price,
+        invalidation_price=invalidation_price,
+        tick_lag_ms=tick_lag_ms,
+        session_gap_ms=session_gap_ms,
         option_chain_context=option_chain_context,
     )
 

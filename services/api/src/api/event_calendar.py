@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 from datetime import date
 
-
 EVENT_KEY_PREFIX = "infusion:event-calendar:"
 
 
@@ -50,7 +49,9 @@ async def get_event_risk(redis, symbol: str) -> dict:
         "event_type": event_type,
         "next_event_date": next_date,
         "days_to_event": days,
-        "block_reason": f"hard block from T-2 to T+1 around {event_type.lower()}" if blocked else "",
+        "block_reason": f"hard block from T-2 to T+1 around {event_type.lower()}"
+        if blocked
+        else "",
         "source": str(payload.get("source") or "manual_calendar"),
         "note": str(payload.get("note") or ""),
     }

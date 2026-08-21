@@ -27,7 +27,7 @@ here.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
@@ -38,7 +38,7 @@ SWING_FRACTAL_WIDTH = 5
 
 
 def _session_date_ist(ts: int) -> str:
-    return datetime.fromtimestamp(ts, tz=timezone.utc).astimezone(IST).date().isoformat()
+    return datetime.fromtimestamp(ts, tz=UTC).astimezone(IST).date().isoformat()
 
 
 def _anchored_vwap(bars: list[dict], anchor_ts: int, current_price: float) -> dict | None:
@@ -87,20 +87,24 @@ def _latest_swing_anchors(
     swing_low_ts: int | None = None
     for i in range(n - w - 1, w - 1, -1):
         bar = window[i]
-        h = float(bar.get("high") or 0.0)
-        l = float(bar.get("low") or 0.0)
-        left = window[i - w:i]
-        right = window[i + 1:i + 1 + w]
-        if swing_high_ts is None and h > 0:
-            if all(float(b.get("high") or 0.0) <= h for b in left) and all(
-                float(b.get("high") or 0.0) <= h for b in right
-            ):
-                swing_high_ts = int(bar.get("time") or 0)
-        if swing_low_ts is None and l > 0:
-            if all(float(b.get("low") or float("inf")) >= l for b in left) and all(
-                float(b.get("low") or float("inf")) >= l for b in right
-            ):
-                swing_low_ts = int(bar.get("time") or 0)
+        high = float(bar.get("high") or 0.0)
+        low = float(bar.get("low") or 0.0)
+        left = window[i - w : i]
+        right = window[i + 1 : i + 1 + w]
+        if (
+            swing_high_ts is None
+            and high > 0
+            and all(float(b.get("high") or 0.0) <= high for b in left)
+            and all(float(b.get("high") or 0.0) <= high for b in right)
+        ):
+            swing_high_ts = int(bar.get("time") or 0)
+        if (
+            swing_low_ts is None
+            and low > 0
+            and all(float(b.get("low") or float("inf")) >= low for b in left)
+            and all(float(b.get("low") or float("inf")) >= low for b in right)
+        ):
+            swing_low_ts = int(bar.get("time") or 0)
         if swing_high_ts is not None and swing_low_ts is not None:
             break
 
@@ -118,8 +122,12 @@ def compute_anchored_vwaps(bars: list[dict], current_price: float) -> dict:
     fabricated number standing in for missing history.
     """
     empty = {
-        "prev_close": None, "prev_high": None, "prev_low": None,
-        "week_open": None, "swing_high": None, "swing_low": None,
+        "prev_close": None,
+        "prev_high": None,
+        "prev_low": None,
+        "week_open": None,
+        "swing_high": None,
+        "swing_low": None,
     }
     if not bars or current_price <= 0:
         return empty
@@ -153,7 +161,9 @@ def compute_anchored_vwaps(bars: list[dict], current_price: float) -> dict:
     week_sessions = [d for d in session_dates if d >= week_start_date]
     if week_sessions:
         week_open_bar = sessions[week_sessions[0]][0]
-        result["week_open"] = _anchored_vwap(bars, int(week_open_bar.get("time") or 0), current_price)
+        result["week_open"] = _anchored_vwap(
+            bars, int(week_open_bar.get("time") or 0), current_price
+        )
 
     result["swing_high"], result["swing_low"] = _latest_swing_anchors(bars, current_price)
 

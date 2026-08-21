@@ -29,6 +29,7 @@ def update_price_features(state: SymbolState, ltp: float, volume: int):
         state.vwap_sq_numerator += (ltp * ltp) * delta_vol
         state.vwap_denominator = volume
 
+
 def update_ema_features(state: SymbolState, close: float):
     """Advance EMAs once per completed candle."""
     for period in [5, 9, 20, 50]:
@@ -62,8 +63,12 @@ def get_vwap_sd_bands(state: SymbolState) -> dict:
     ready = denom > 0 and state.completed_1m_bars >= VWAP_SD_MIN_BARS
     if denom <= 0:
         return {
-            "vwap_stdev": None, "vwap_sd1_upper": None, "vwap_sd1_lower": None,
-            "vwap_sd2_upper": None, "vwap_sd2_lower": None, "vwap_sd_ready": False,
+            "vwap_stdev": None,
+            "vwap_sd1_upper": None,
+            "vwap_sd1_lower": None,
+            "vwap_sd2_upper": None,
+            "vwap_sd2_lower": None,
+            "vwap_sd_ready": False,
         }
 
     vwap = state.vwap_numerator / denom

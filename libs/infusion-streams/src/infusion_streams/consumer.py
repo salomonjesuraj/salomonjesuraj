@@ -14,15 +14,15 @@ import asyncio
 import base64
 import time
 import traceback
-from typing import Callable, Awaitable
+from collections.abc import Callable
 
 import msgpack
 import structlog
+from infusion_common.errors import ErrorCategory, classify_error
 from redis.asyncio import Redis
 
 from infusion_streams.codec import decode_event
 from infusion_streams.constants import DLQ_PREFIX, MAXLEN_DLQ
-from infusion_common.errors import classify_error, ErrorCategory
 
 logger = structlog.get_logger()
 
@@ -61,9 +61,7 @@ class StreamConsumer:
     async def ensure_group(self):
         """Create consumer group if it doesn't exist."""
         try:
-            await self.redis.xgroup_create(
-                self.stream, self.group, id="0", mkstream=True
-            )
+            await self.redis.xgroup_create(self.stream, self.group, id="0", mkstream=True)
             logger.info("consumer_group_created", stream=self.stream, group=self.group)
         except Exception as e:
             if "BUSYGROUP" in str(e):
@@ -96,7 +94,7 @@ class StreamConsumer:
             if not messages:
                 continue
 
-            for stream_name, entries in messages:
+            for _stream_name, entries in messages:
                 for msg_id, fields in entries:
                     raw_data = fields.get(b"data") or fields.get("data")
                     if raw_data is None:
@@ -107,11 +105,9 @@ class StreamConsumer:
                         continue
 
                     try:
-                        event_type, version, ts, rx, payload = decode_event(raw_data)
+                        event_type, version, _ts, rx, payload = decode_event(raw_data)
                     except Exception as e:
-                        await self._send_to_dlq(
-                            msg_id, raw_data, "MALFORMED_DATA", str(e)
-                        )
+                        await self._send_to_dlq(msg_id, raw_data, "MALFORMED_DATA", str(e))
                         await self.redis.xack(self.stream, self.group, msg_id)
                         self._errors += 1
                         continue
@@ -152,9 +148,7 @@ class StreamConsumer:
             self._errors += 1
             return False
 
-    async def _send_to_dlq(
-        self, msg_id, raw_data: bytes, category: str, reason: str
-    ):
+    async def _send_to_dlq(self, msg_id, raw_data: bytes, category: str, reason: str):
         """Move poison message to dead letter stream."""
         dlq_entry = {
             "original_stream": self.stream,

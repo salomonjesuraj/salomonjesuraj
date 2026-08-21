@@ -26,6 +26,7 @@ from redis.asyncio import Redis
 # Optional HTTP checks
 try:
     import aiohttp
+
     HAS_AIOHTTP = True
 except ImportError:
     HAS_AIOHTTP = False
@@ -62,7 +63,11 @@ async def check_symbols_seeded(redis):
     elif count > 0:
         log_result("warn", "Symbols seeded", f"count={count}, expected 5")
     else:
-        log_result("fail", "Symbols seeded", "infusion:symbols is empty. Run: python scripts/seed_symbols.py")
+        log_result(
+            "fail",
+            "Symbols seeded",
+            "infusion:symbols is empty. Run: python scripts/seed_symbols.py",
+        )
     return count
 
 
@@ -200,9 +205,9 @@ async def measure_throughput(redis):
         rate = delta / 5.0
 
         if rate > 0:
-            log_result("pass", f"Throughput: tick:raw", f"{rate:.1f} msgs/sec ({delta} in 5s)")
+            log_result("pass", "Throughput: tick:raw", f"{rate:.1f} msgs/sec ({delta} in 5s)")
         else:
-            log_result("warn", f"Throughput: tick:raw", f"0 msgs/sec (pipeline may be stopped)")
+            log_result("warn", "Throughput: tick:raw", "0 msgs/sec (pipeline may be stopped)")
     except Exception as e:
         log_result("fail", "Throughput measurement", str(e))
 
@@ -230,8 +235,11 @@ async def measure_latency(redis):
         norm_latencies.sort()
         p50 = norm_latencies[len(norm_latencies) // 2]
         p99 = norm_latencies[int(len(norm_latencies) * 0.99)]
-        log_result("pass", "Latency: normalization",
-                   f"P50={p50}us ({p50/1000:.1f}ms), P99={p99}us ({p99/1000:.1f}ms), n={len(norm_latencies)}")
+        log_result(
+            "pass",
+            "Latency: normalization",
+            f"P50={p50}us ({p50 / 1000:.1f}ms), P99={p99}us ({p99 / 1000:.1f}ms), n={len(norm_latencies)}",
+        )
     else:
         log_result("skip", "Latency: normalization", "no data")
 
@@ -254,14 +262,18 @@ async def check_api(base_url="http://localhost:8000"):
         async with aiohttp.ClientSession() as session:
             for path, expected in endpoints:
                 try:
-                    async with session.get(f"{base_url}{path}", timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                    async with session.get(
+                        f"{base_url}{path}", timeout=aiohttp.ClientTimeout(total=5)
+                    ) as resp:
                         ok_codes = expected if isinstance(expected, list) else [expected]
                         if resp.status in ok_codes:
                             log_result("pass", f"API: GET {path}", f"status={resp.status}")
                         else:
                             body = await resp.text()
-                            log_result("fail", f"API: GET {path}", f"status={resp.status}: {body[:100]}")
-                except asyncio.TimeoutError:
+                            log_result(
+                                "fail", f"API: GET {path}", f"status={resp.status}: {body[:100]}"
+                            )
+                except TimeoutError:
                     log_result("fail", f"API: GET {path}", "timeout")
                 except aiohttp.ClientConnectorError:
                     log_result("warn", f"API: GET {path}", "connection refused (API not running?)")
@@ -277,13 +289,15 @@ async def check_ws_gateway(base_url="http://localhost:8001"):
         return
 
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{base_url}/health", timeout=aiohttp.ClientTimeout(total=5)) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    log_result("pass", "WS gateway health", f"clients={data.get('clients', '?')}")
-                else:
-                    log_result("fail", "WS gateway health", f"status={resp.status}")
+        async with (
+            aiohttp.ClientSession() as session,
+            session.get(f"{base_url}/health", timeout=aiohttp.ClientTimeout(total=5)) as resp,
+        ):
+            if resp.status == 200:
+                data = await resp.json()
+                log_result("pass", "WS gateway health", f"clients={data.get('clients', '?')}")
+            else:
+                log_result("fail", "WS gateway health", f"status={resp.status}")
     except aiohttp.ClientConnectorError:
         log_result("warn", "WS gateway health", "connection refused (gateway not running?)")
     except Exception as e:
@@ -324,17 +338,20 @@ async def main():
     # 4. Schema validation
     print("\n--- SCHEMA VALIDATION ---")
     await check_stream_schema(
-        redis, "infusion:stream:tick:raw",
+        redis,
+        "infusion:stream:tick:raw",
         ["broker", "instrument_key", "ltp", "exchange_timestamp_ms", "received_at_us"],
         "tick:raw (RawTickV1)",
     )
     await check_stream_schema(
-        redis, "infusion:stream:tick:normalized",
+        redis,
+        "infusion:stream:tick:normalized",
         ["symbol", "sector_id", "tier", "ltp", "normalized_at_us"],
         "tick:normalized (NormalizedTickV1)",
     )
     await check_stream_schema(
-        redis, "infusion:stream:feature:computed",
+        redis,
+        "infusion:stream:feature:computed",
         ["symbol", "timestamp_us", "ltp", "rsi_14", "macd", "ema_5", "vwap", "spread_bps"],
         "feature:computed (FeatureVectorV1)",
     )
@@ -347,7 +364,9 @@ async def main():
 
     # 6. Service health
     print("\n--- SERVICE HEALTH ---")
-    await check_service_health(redis, ["ingestion", "normalizer", "feature-engine", "ws-gateway", "api"])
+    await check_service_health(
+        redis, ["ingestion", "normalizer", "feature-engine", "ws-gateway", "api"]
+    )
 
     # 7. Consumer groups
     print("\n--- CONSUMER GROUPS ---")

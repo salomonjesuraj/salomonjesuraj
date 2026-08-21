@@ -88,7 +88,7 @@ def _wma(values: list[float], period: int) -> float | None:
         return None
     window = values[-period:]
     weights = list(range(1, period + 1))
-    return sum(v * w for v, w in zip(window, weights)) / sum(weights)
+    return sum(v * w for v, w in zip(window, weights, strict=False)) / sum(weights)
 
 
 def _rsi_wilder(values: list[float], period: int = 14) -> float | None:
@@ -119,7 +119,7 @@ def _macd(values: list[float]) -> tuple[float | None, float | None, float | None
         return None, None, None
     ema12 = _ema_series(values, 12)
     ema26 = _ema_series(values, 26)
-    line = [a - b for a, b in zip(ema12, ema26)]
+    line = [a - b for a, b in zip(ema12, ema26, strict=False)]
     if len(line) < 9:
         return line[-1], None, None
     signal = _ema_series(line, 9)
@@ -138,7 +138,11 @@ def _adx_di(bars: list[dict], period: int = 14) -> tuple[float | None, float | N
     minus_dms: list[float] = []
     for i in range(1, len(bars)):
         high, low = bars[i]["high"], bars[i]["low"]
-        prev_high, prev_low, prev_close = bars[i - 1]["high"], bars[i - 1]["low"], bars[i - 1]["close"]
+        prev_high, prev_low, prev_close = (
+            bars[i - 1]["high"],
+            bars[i - 1]["low"],
+            bars[i - 1]["close"],
+        )
         up_move = high - prev_high
         down_move = prev_low - low
         plus_dm = up_move if (up_move > down_move and up_move > 0) else 0.0
@@ -215,9 +219,13 @@ def compute_daily_trend_filter(daily_bars: list[dict]) -> dict:
         "close_above_1d_ago": len(closes) >= 2 and close > closes[-2],
         "close_above_sma50": sma50 is not None and close > sma50,
         "close_above_150": close > CLOSE_FLOOR,
-        "di_plus_above_di_minus": di_plus is not None and di_minus is not None and di_plus > di_minus,
+        "di_plus_above_di_minus": di_plus is not None
+        and di_minus is not None
+        and di_plus > di_minus,
         "rsi_above_50": rsi14 is not None and rsi14 > 50,
-        "macd_line_above_signal": macd_line is not None and macd_signal is not None and macd_line > macd_signal,
+        "macd_line_above_signal": macd_line is not None
+        and macd_signal is not None
+        and macd_line > macd_signal,
         "close_above_2d_ago": len(closes) >= 3 and close > closes[-3],
         "sma20_above_sma40": sma20 is not None and sma40 is not None and sma20 > sma40,
     }

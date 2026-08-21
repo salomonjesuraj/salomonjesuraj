@@ -34,7 +34,9 @@ DEFAULT_RIGHT = 2
 BREAK_BUFFER_ATR = 0.10
 
 
-def update_structure(state, left: int = DEFAULT_LEFT, right: int = DEFAULT_RIGHT, rsi: float = 50.0) -> None:
+def update_structure(
+    state, left: int = DEFAULT_LEFT, right: int = DEFAULT_RIGHT, rsi: float = 50.0
+) -> None:
     """Advance the fractal pivot / BOS-CHOCH state machine by one completed bar.
 
     Reads `state.recent_1m_bars` (already maintained by the engine on every

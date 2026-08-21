@@ -46,14 +46,16 @@ from __future__ import annotations
 SECTOR_CONCENTRATION_WARN_PCT = 40.0
 SECTOR_CONCENTRATION_HIGH_PCT = 60.0
 STRATEGY_CONCENTRATION_WARN_PCT = 70.0
-CORRELATED_COUNT_WARN = 2   # this many already-active same-sector, same-direction signals is worth flagging
+CORRELATED_COUNT_WARN = (
+    2  # this many already-active same-sector, same-direction signals is worth flagging
+)
 
 
 def compute_portfolio_fit(
     *,
     candidate_symbol: str,
     candidate_sector: str,
-    candidate_direction: str,   # "bullish" | "bearish"
+    candidate_direction: str,  # "bullish" | "bearish"
     candidate_strategy_id: str,
     candidate_risk_amount: float,
     active_portfolio: list[dict],
@@ -67,18 +69,27 @@ def compute_portfolio_fit(
     # if it's somehow already present (shouldn't happen -- the
     # duplicate gate blocks this -- but defensive, not assumed).
     others = [
-        p for p in active_portfolio
-        if not (p.get("symbol") == candidate_symbol and p.get("strategy_id") == candidate_strategy_id)
+        p
+        for p in active_portfolio
+        if not (
+            p.get("symbol") == candidate_symbol and p.get("strategy_id") == candidate_strategy_id
+        )
     ]
 
     total_open_risk_before = sum(float(p.get("risk_amount") or 0.0) for p in others)
     total_open_risk_after = total_open_risk_before + candidate_risk_amount
 
     directional_delta_before = sum(
-        (float(p.get("risk_amount") or 0.0) if p.get("direction") == "bullish" else -float(p.get("risk_amount") or 0.0))
+        (
+            float(p.get("risk_amount") or 0.0)
+            if p.get("direction") == "bullish"
+            else -float(p.get("risk_amount") or 0.0)
+        )
         for p in others
     )
-    candidate_signed_risk = candidate_risk_amount if candidate_direction == "bullish" else -candidate_risk_amount
+    candidate_signed_risk = (
+        candidate_risk_amount if candidate_direction == "bullish" else -candidate_risk_amount
+    )
     directional_delta_after = directional_delta_before + candidate_signed_risk
 
     sector_risk_before = sum(
@@ -86,19 +97,28 @@ def compute_portfolio_fit(
     )
     sector_risk_after = sector_risk_before + candidate_risk_amount
     sector_concentration_pct = (
-        round(100 * sector_risk_after / total_open_risk_after, 1) if total_open_risk_after > 0 else None
+        round(100 * sector_risk_after / total_open_risk_after, 1)
+        if total_open_risk_after > 0
+        else None
     )
 
     strategy_risk_after = (
-        sum(float(p.get("risk_amount") or 0.0) for p in others if p.get("strategy_id") == candidate_strategy_id)
+        sum(
+            float(p.get("risk_amount") or 0.0)
+            for p in others
+            if p.get("strategy_id") == candidate_strategy_id
+        )
         + candidate_risk_amount
     )
     strategy_concentration_pct = (
-        round(100 * strategy_risk_after / total_open_risk_after, 1) if total_open_risk_after > 0 else None
+        round(100 * strategy_risk_after / total_open_risk_after, 1)
+        if total_open_risk_after > 0
+        else None
     )
 
     correlated = [
-        p["symbol"] for p in others
+        p["symbol"]
+        for p in others
         if p.get("sector_id") == candidate_sector and p.get("direction") == candidate_direction
     ]
     same_symbol_other_strategy = [
@@ -118,10 +138,18 @@ def compute_portfolio_fit(
     # concentration/correlation penalties on len(others) > 0.
     has_other_active = len(others) > 0
 
-    if has_other_active and sector_concentration_pct is not None and sector_concentration_pct >= SECTOR_CONCENTRATION_HIGH_PCT:
+    if (
+        has_other_active
+        and sector_concentration_pct is not None
+        and sector_concentration_pct >= SECTOR_CONCENTRATION_HIGH_PCT
+    ):
         score -= 35
         reasons.append(f"sector concentration would reach {sector_concentration_pct}% of open risk")
-    elif has_other_active and sector_concentration_pct is not None and sector_concentration_pct >= SECTOR_CONCENTRATION_WARN_PCT:
+    elif (
+        has_other_active
+        and sector_concentration_pct is not None
+        and sector_concentration_pct >= SECTOR_CONCENTRATION_WARN_PCT
+    ):
         score -= 15
         reasons.append(f"sector concentration would reach {sector_concentration_pct}% of open risk")
 
@@ -133,15 +161,25 @@ def compute_portfolio_fit(
         )
     elif len(correlated) == 1:
         score -= 10
-        reasons.append(f"1 already-active {candidate_direction} signal in the same sector ({correlated[0]})")
+        reasons.append(
+            f"1 already-active {candidate_direction} signal in the same sector ({correlated[0]})"
+        )
 
-    if has_other_active and strategy_concentration_pct is not None and strategy_concentration_pct >= STRATEGY_CONCENTRATION_WARN_PCT:
+    if (
+        has_other_active
+        and strategy_concentration_pct is not None
+        and strategy_concentration_pct >= STRATEGY_CONCENTRATION_WARN_PCT
+    ):
         score -= 10
-        reasons.append(f"strategy concentration would reach {strategy_concentration_pct}% of open risk")
+        reasons.append(
+            f"strategy concentration would reach {strategy_concentration_pct}% of open risk"
+        )
 
     if same_symbol_other_strategy:
         score -= 15
-        reasons.append(f"{candidate_symbol} already has an active signal via {same_symbol_other_strategy[0]}")
+        reasons.append(
+            f"{candidate_symbol} already has an active signal via {same_symbol_other_strategy[0]}"
+        )
 
     score = max(0.0, min(100.0, score))
     if score >= 85:

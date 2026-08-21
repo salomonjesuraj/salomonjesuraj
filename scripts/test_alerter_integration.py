@@ -21,20 +21,19 @@ for lib in ("infusion-models", "infusion-streams", "infusion-common"):
 sys.path.insert(0, os.path.join(base, "services", "alerter", "src"))
 
 import redis.asyncio as aioredis
-
 from alerter.config import AlerterSettings
-from alerter.gate import DeliveryGate, DeliveryResult
-from alerter.formatter import format_signal
-from alerter.telegram import TelegramClient, DeliveryOutcome
 from alerter.engine import AlerterEngine
+from alerter.formatter import format_signal
+from alerter.gate import DeliveryGate
+from alerter.telegram import TelegramClient
 from infusion_streams.constants import (
-    KEY_ALERT_COOLDOWN_PREFIX,
-    KEY_ALERT_RATE,
     KEY_ALERT_BURST,
-    KEY_ALERT_LOG,
+    KEY_ALERT_COOLDOWN_PREFIX,
     KEY_ALERT_DELIVERED,
-    KEY_ALERT_MUTE_SYMBOLS,
+    KEY_ALERT_LOG,
     KEY_ALERT_MUTE_STRATEGIES,
+    KEY_ALERT_MUTE_SYMBOLS,
+    KEY_ALERT_RATE,
 )
 
 REDIS_URL = os.environ.get("INFUSION_REDIS_URL", "redis://localhost:6379/0")
@@ -82,9 +81,14 @@ def _signal(symbol="RELIANCE", grade="A", score=85.0, signal_id=None):
 
 async def cleanup(r):
     """Clean all test keys."""
-    for key in (KEY_ALERT_RATE, KEY_ALERT_BURST, KEY_ALERT_LOG,
-                KEY_ALERT_DELIVERED, KEY_ALERT_MUTE_SYMBOLS,
-                KEY_ALERT_MUTE_STRATEGIES):
+    for key in (
+        KEY_ALERT_RATE,
+        KEY_ALERT_BURST,
+        KEY_ALERT_LOG,
+        KEY_ALERT_DELIVERED,
+        KEY_ALERT_MUTE_SYMBOLS,
+        KEY_ALERT_MUTE_STRATEGIES,
+    ):
         await r.delete(key)
     # Clean specific cooldowns
     for sym in ("RELIANCE", "INFY", "TCS", "HDFCBANK", "TEST_MUTED"):
@@ -94,7 +98,7 @@ async def cleanup(r):
 async def run_tests():
     r = aioredis.from_url(REDIS_URL, decode_responses=False)
     await r.ping()
-    print(f"✓ Redis connected\n")
+    print("✓ Redis connected\n")
 
     settings = AlerterSettings()
     await cleanup(r)
@@ -129,19 +133,27 @@ async def run_tests():
     print("\n--- DELIVERY GATE: PRIORITY ---")
     # B grade should be blocked (below B+)
     result_b = await gate.evaluate(
-        signal_id="sig-b", symbol="TEST", grade="B", strategy_id="test",
+        signal_id="sig-b",
+        symbol="TEST",
+        grade="B",
+        strategy_id="test",
     )
     check("B grade blocked", not result_b.passed)
-    check("B grade reason", result_b.reason == "below_min_grade",
-          f"reason={result_b.reason}")
+    check("B grade reason", result_b.reason == "below_min_grade", f"reason={result_b.reason}")
 
     # A+ should pass
     result_ap = await gate.evaluate(
-        signal_id="sig-ap", symbol="TEST", grade="A+", strategy_id="test",
+        signal_id="sig-ap",
+        symbol="TEST",
+        grade="A+",
+        strategy_id="test",
     )
     check("A+ grade passes", result_ap.passed)
-    check("A+ tier = CRITICAL", result_ap.priority_tier == "CRITICAL",
-          f"tier={result_ap.priority_tier}")
+    check(
+        "A+ tier = CRITICAL",
+        result_ap.priority_tier == "CRITICAL",
+        f"tier={result_ap.priority_tier}",
+    )
 
     # ═══════════════════════════════════════════════
     # 3. Full delivery pipeline (dry-run)
@@ -149,16 +161,18 @@ async def run_tests():
     print("\n--- FULL DELIVERY PIPELINE ---")
     sig1 = _signal(symbol="RELIANCE", grade="A", score=85.0)
     await engine.process_signal(sig1)
-    check("Alert sent (dry-run)", engine._alerts_sent == 1,
-          f"sent={engine._alerts_sent}")
+    check("Alert sent (dry-run)", engine._alerts_sent == 1, f"sent={engine._alerts_sent}")
 
     # Check delivery log
     log_raw = await r.lrange(KEY_ALERT_LOG, 0, -1)
     check("Delivery log has entry", len(log_raw) >= 1, f"entries={len(log_raw)}")
     if log_raw:
         entry = json.loads(log_raw[0])
-        check("Log entry has outcome", entry.get("outcome") == "delivered",
-              f"outcome={entry.get('outcome')}")
+        check(
+            "Log entry has outcome",
+            entry.get("outcome") == "delivered",
+            f"outcome={entry.get('outcome')}",
+        )
         check("Log entry has symbol", entry.get("symbol") == "RELIANCE")
 
     # ═══════════════════════════════════════════════
@@ -168,16 +182,18 @@ async def run_tests():
     # Same symbol should be blocked by cooldown
     sig2 = _signal(symbol="RELIANCE", grade="A", score=90.0)
     await engine.process_signal(sig2)
-    check("Cooldown blocks second alert", engine._alerts_blocked >= 1,
-          f"blocked={engine._alerts_blocked}")
+    check(
+        "Cooldown blocks second alert",
+        engine._alerts_blocked >= 1,
+        f"blocked={engine._alerts_blocked}",
+    )
     check("Still only 1 sent", engine._alerts_sent == 1)
 
     # Verify cooldown key exists
     cooldown_exists = await r.exists(f"{KEY_ALERT_COOLDOWN_PREFIX}RELIANCE")
     check("Cooldown key in Redis", bool(cooldown_exists))
     cooldown_ttl = await r.ttl(f"{KEY_ALERT_COOLDOWN_PREFIX}RELIANCE")
-    check("Cooldown TTL reasonable", 0 < cooldown_ttl <= 1800,
-          f"ttl={cooldown_ttl}")
+    check("Cooldown TTL reasonable", 0 < cooldown_ttl <= 1800, f"ttl={cooldown_ttl}")
 
     # ═══════════════════════════════════════════════
     # 5. Different symbol passes cooldown
@@ -185,8 +201,7 @@ async def run_tests():
     print("\n--- DIFFERENT SYMBOL ---")
     sig3 = _signal(symbol="INFY", grade="A+", score=95.0)
     await engine.process_signal(sig3)
-    check("Different symbol delivered", engine._alerts_sent == 2,
-          f"sent={engine._alerts_sent}")
+    check("Different symbol delivered", engine._alerts_sent == 2, f"sent={engine._alerts_sent}")
 
     # ═══════════════════════════════════════════════
     # 6. Duplicate check
@@ -196,8 +211,7 @@ async def run_tests():
     await r.delete(f"{KEY_ALERT_COOLDOWN_PREFIX}INFY")
     sig3_dup = dict(sig3)  # same signal_id
     await engine.process_signal(sig3_dup)
-    check("Duplicate signal_id blocked", engine._alerts_sent == 2,
-          f"sent={engine._alerts_sent}")
+    check("Duplicate signal_id blocked", engine._alerts_sent == 2, f"sent={engine._alerts_sent}")
 
     # ═══════════════════════════════════════════════
     # 7. Rate limiting
@@ -219,21 +233,18 @@ async def run_tests():
     # Send one more to hit burst limit (3 = limit)
     sig4 = _signal(symbol="TCS", grade="A", score=82.0)
     await engine.process_signal(sig4)
-    check("Third alert delivered", engine._alerts_sent == 3,
-          f"sent={engine._alerts_sent}")
+    check("Third alert delivered", engine._alerts_sent == 3, f"sent={engine._alerts_sent}")
 
     # Fourth should be burst-blocked (for non-CRITICAL)
     sig5 = _signal(symbol="HDFCBANK", grade="B+", score=72.0)
     await engine.process_signal(sig5)
-    check("Fourth alert burst-blocked", engine._alerts_sent == 3,
-          f"sent={engine._alerts_sent}")
+    check("Fourth alert burst-blocked", engine._alerts_sent == 3, f"sent={engine._alerts_sent}")
 
     # But A+ (CRITICAL) bypasses burst
     sig6 = _signal(symbol="HDFCBANK", grade="A+", score=96.0)
     await r.delete(f"{KEY_ALERT_COOLDOWN_PREFIX}HDFCBANK")  # clear cooldown
     await engine.process_signal(sig6)
-    check("A+ bypasses burst", engine._alerts_sent == 4,
-          f"sent={engine._alerts_sent}")
+    check("A+ bypasses burst", engine._alerts_sent == 4, f"sent={engine._alerts_sent}")
 
     # ═══════════════════════════════════════════════
     # 9. Mute controls
@@ -242,8 +253,7 @@ async def run_tests():
     await r.sadd(KEY_ALERT_MUTE_SYMBOLS, "TEST_MUTED")
     sig_muted = _signal(symbol="TEST_MUTED", grade="A+", score=99.0)
     await engine.process_signal(sig_muted)
-    check("Muted symbol blocked", engine._alerts_sent == 4,
-          f"sent={engine._alerts_sent}")
+    check("Muted symbol blocked", engine._alerts_sent == 4, f"sent={engine._alerts_sent}")
 
     # Unmute
     await r.srem(KEY_ALERT_MUTE_SYMBOLS, "TEST_MUTED")
@@ -265,14 +275,18 @@ async def run_tests():
     # ═══════════════════════════════════════════════
     print("\n--- ENGINE STATS ---")
     stats = engine.stats
-    check("Stats: processed > 0", stats["processed"] > 0,
-          f"processed={stats['processed']}")
-    check("Stats: alerts_sent = 4", stats["alerts_sent"] == 4,
-          f"sent={stats['alerts_sent']}")
-    check("Stats: alerts_blocked > 0", stats["alerts_blocked"] > 0,
-          f"blocked={stats['alerts_blocked']}")
-    check("Stats: by_reason has data", len(stats["by_reason"]) > 0,
-          f"reasons={list(stats['by_reason'].keys())}")
+    check("Stats: processed > 0", stats["processed"] > 0, f"processed={stats['processed']}")
+    check("Stats: alerts_sent = 4", stats["alerts_sent"] == 4, f"sent={stats['alerts_sent']}")
+    check(
+        "Stats: alerts_blocked > 0",
+        stats["alerts_blocked"] > 0,
+        f"blocked={stats['alerts_blocked']}",
+    )
+    check(
+        "Stats: by_reason has data",
+        len(stats["by_reason"]) > 0,
+        f"reasons={list(stats['by_reason'].keys())}",
+    )
 
     # ═══════════════════════════════════════════════
     # 12. Delivery log capping
@@ -280,8 +294,11 @@ async def run_tests():
     print("\n--- DELIVERY LOG ---")
     log_entries = await r.lrange(KEY_ALERT_LOG, 0, -1)
     check("Log has entries", len(log_entries) > 0, f"count={len(log_entries)}")
-    check("Log capped", len(log_entries) <= settings.delivery_log_max,
-          f"max={settings.delivery_log_max}")
+    check(
+        "Log capped",
+        len(log_entries) <= settings.delivery_log_max,
+        f"max={settings.delivery_log_max}",
+    )
 
     # ═══════════════════════════════════════════════
     # 13. Determinism

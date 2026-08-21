@@ -1,41 +1,58 @@
 """Feature engine orchestrator — micro-batch processing of normalized ticks."""
 
 import asyncio
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 
 import structlog
+from infusion_common.timing import now_us
+from infusion_models.feature import FeatureVectorV1
 
-from feature_engine.state import SymbolState, OHLCBar
 from feature_engine.bar_builder import update_bars
-from feature_engine.features.price import (
-    update_price_features, update_ema_features, get_vwap, get_gap_pct, get_change_pct,
-    get_vwap_sd_bands,
+from feature_engine.features.accumulation import clv_snapshot, update_clv
+from feature_engine.features.candles import body_pct, detect_candle_pattern, update_body_ema
+from feature_engine.features.divergence import detect_rsi_divergence
+from feature_engine.features.fibonacci import fib_snapshot
+from feature_engine.features.heiken_ashi import heiken_ashi_snapshot, update_heiken_ashi
+from feature_engine.features.ict import ict_snapshot, update_ict
+from feature_engine.features.microstructure import (
+    get_order_imbalance,
+    get_spread_bps,
+    microstructure_depth_snapshot,
+    update_book_imbalance_ema,
 )
 from feature_engine.features.momentum import (
-    update_rsi, get_rsi, update_macd, get_macd,
-    update_stochastic, get_stochastic, update_cci, get_cci,
-    update_adx, get_adx,
+    get_adx,
+    get_cci,
+    get_macd,
+    get_rsi,
+    get_stochastic,
+    update_adx,
+    update_cci,
+    update_macd,
+    update_rsi,
+    update_stochastic,
 )
-from feature_engine.features.volatility import (
-    update_atr, update_bollinger, get_bollinger, update_supertrend, get_supertrend,
+from feature_engine.features.price import (
+    get_change_pct,
+    get_gap_pct,
+    get_vwap,
+    get_vwap_sd_bands,
+    update_ema_features,
+    update_price_features,
 )
-from feature_engine.features.volume import update_obv, get_relative_volume, get_volume_sma
-from feature_engine.features.microstructure import (
-    get_spread_bps, get_order_imbalance,
-    update_book_imbalance_ema, microstructure_depth_snapshot,
-)
-from feature_engine.features.structure import update_structure, structure_snapshot
-from feature_engine.features.divergence import detect_rsi_divergence
-from feature_engine.features.candles import update_body_ema, detect_candle_pattern, body_pct
-from feature_engine.features.accumulation import update_clv, clv_snapshot
 from feature_engine.features.pullback import pullback_dryup_snapshot
-from feature_engine.features.zones import update_zones, zone_snapshot
-from feature_engine.features.fibonacci import fib_snapshot
-from feature_engine.features.ict import update_ict, ict_snapshot
+from feature_engine.features.structure import structure_snapshot, update_structure
+from feature_engine.features.volatility import (
+    get_bollinger,
+    get_supertrend,
+    update_atr,
+    update_bollinger,
+    update_supertrend,
+)
 from feature_engine.features.volman import volman_snapshot
-from feature_engine.features.heiken_ashi import update_heiken_ashi, heiken_ashi_snapshot
-from infusion_models.feature import FeatureVectorV1
-from infusion_common.timing import now_us
+from feature_engine.features.volume import get_relative_volume, get_volume_sma, update_obv
+from feature_engine.features.zones import update_zones, zone_snapshot
+from feature_engine.state import OHLCBar, SymbolState
 
 logger = structlog.get_logger()
 
@@ -233,9 +250,12 @@ class FeatureEngine:
                     state.volume_profile_ready = True
             self._states[symbol] = state
         state = self._states[symbol]
-        if (not state.history_seeded and state.completed_1m_bars == 0
-                and self._history_loader
-                and now_us() - state.history_seed_checked_us > 300_000_000):
+        if (
+            not state.history_seeded
+            and state.completed_1m_bars == 0
+            and self._history_loader
+            and now_us() - state.history_seed_checked_us > 300_000_000
+        ):
             state.history_seed_checked_us = now_us()
             bars = await self._history_loader(symbol)
             if bars:
@@ -243,31 +263,45 @@ class FeatureEngine:
                     close = float(bar["c"])
                     update_ema_features(state, close)
                     update_rsi(state, close, self.config.rsi_period)
-                    update_macd(state, close, self.config.macd_fast, self.config.macd_slow, self.config.macd_signal)
-                    update_atr(state, float(bar["h"]), float(bar["l"]), close, self.config.atr_period)
+                    update_macd(
+                        state,
+                        close,
+                        self.config.macd_fast,
+                        self.config.macd_slow,
+                        self.config.macd_signal,
+                    )
+                    update_atr(
+                        state, float(bar["h"]), float(bar["l"]), close, self.config.atr_period
+                    )
                     update_bollinger(state, close)
                     update_stochastic(state, float(bar["h"]), float(bar["l"]), close)
-                    update_cci(state, float(bar["h"]), float(bar["l"]), close, self.config.cci_period)
+                    update_cci(
+                        state, float(bar["h"]), float(bar["l"]), close, self.config.cci_period
+                    )
                     update_obv(state, close, int(bar.get("v", 0)))
                     state.volume_history.append(int(bar.get("v", 0)))
-                    state.recent_1m_bars.append({
-                        "o": float(bar.get("o", close)),
-                        "h": float(bar["h"]),
-                        "l": float(bar["l"]),
-                        "c": close,
-                        "v": int(bar.get("v", 0)),
-                    })
+                    state.recent_1m_bars.append(
+                        {
+                            "o": float(bar.get("o", close)),
+                            "h": float(bar["h"]),
+                            "l": float(bar["l"]),
+                            "c": close,
+                            "v": int(bar.get("v", 0)),
+                        }
+                    )
                     state.completed_1m_bars += 1
                 state.history_seeded = True
-        if (not state.volume_profile_ready and self._profile_loader
-                and now_us() - state.volume_profile_checked_us > 300_000_000):
+        if (
+            not state.volume_profile_ready
+            and self._profile_loader
+            and now_us() - state.volume_profile_checked_us > 300_000_000
+        ):
             state.volume_profile_checked_us = now_us()
             profile = await self._profile_loader(symbol)
             if profile:
                 state.volume_profile = profile
                 state.volume_profile_ready = True
-        if (self._delivery_loader
-                and now_us() - state.delivery_checked_us > 300_000_000):
+        if self._delivery_loader and now_us() - state.delivery_checked_us > 300_000_000:
             state.delivery_checked_us = now_us()
             # A cold multi-service redeploy can start feature-engine and
             # nse-scraper at nearly the same instant -- if this symbol's
@@ -297,8 +331,8 @@ class FeatureEngine:
             return None, []
 
         volume = tick.get("volume", 0)
-        high = tick.get("high", ltp)
-        low = tick.get("low", ltp)
+        tick.get("high", ltp)
+        tick.get("low", ltp)
         close = tick.get("close", ltp)  # prev day close
 
         exchange_ms = int(tick.get("exchange_timestamp_ms", 0) or 0)
@@ -306,7 +340,9 @@ class FeatureEngine:
             exchange_ms = int(now_us() / 1000)
 
         ist = timezone(timedelta(minutes=330))
-        session_date = datetime.fromtimestamp(exchange_ms / 1000, tz=timezone.utc).astimezone(ist).date().isoformat()
+        session_date = (
+            datetime.fromtimestamp(exchange_ms / 1000, tz=UTC).astimezone(ist).date().isoformat()
+        )
         is_new_session = state.session_date != session_date
 
         # EBIE EB-0: event-time lineage + Data Quality inputs. received_at_us
@@ -406,7 +442,13 @@ class FeatureEngine:
             close_1m = completed_1m.close
             update_ema_features(state, close_1m)
             update_rsi(state, close_1m, self.config.rsi_period)
-            update_macd(state, close_1m, self.config.macd_fast, self.config.macd_slow, self.config.macd_signal)
+            update_macd(
+                state,
+                close_1m,
+                self.config.macd_fast,
+                self.config.macd_slow,
+                self.config.macd_signal,
+            )
             update_atr(state, completed_1m.high, completed_1m.low, close_1m, self.config.atr_period)
             update_bollinger(state, close_1m)
             update_stochastic(state, completed_1m.high, completed_1m.low, close_1m)
@@ -415,7 +457,9 @@ class FeatureEngine:
             update_adx(state, completed_1m.high, completed_1m.low, close_1m)
             update_supertrend(state, completed_1m.high, completed_1m.low, close_1m, state.atr)
             update_body_ema(state, completed_1m.open, close_1m)
-            update_heiken_ashi(state, completed_1m.open, completed_1m.high, completed_1m.low, close_1m)
+            update_heiken_ashi(
+                state, completed_1m.open, completed_1m.high, completed_1m.low, close_1m
+            )
             update_clv(state, completed_1m.high, completed_1m.low, close_1m, completed_1m.volume)
             state.volume_history.append(completed_1m.volume)
             state.recent_1m_bars.append(_bar_dict(completed_1m))
@@ -517,7 +561,8 @@ class FeatureEngine:
             volume_sma_20=get_volume_sma(state),
             volume_profile_ready=state.volume_profile_ready,
             bar_closed_1m=completed_1m is not None,
-            indicator_ready=state.completed_1m_bars >= max(self.config.bb_period, self.config.macd_slow),
+            indicator_ready=state.completed_1m_bars
+            >= max(self.config.bb_period, self.config.macd_slow),
             completed_1m_bars=state.completed_1m_bars,
             spread_bps=get_spread_bps(state),
             order_imbalance=get_order_imbalance(state),

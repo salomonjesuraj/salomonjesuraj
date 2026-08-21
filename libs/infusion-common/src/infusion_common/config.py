@@ -13,7 +13,7 @@ class InfusionSettings(BaseSettings):
     # Service identity
     service_name: str = "unknown"
     instance_id: str = ""
-    environment: str = "development"       # development | staging | production
+    environment: str = "development"  # development | staging | production
 
     # Redis
     redis_url: str = "redis://localhost:6379/0"
@@ -23,7 +23,7 @@ class InfusionSettings(BaseSettings):
 
     # Logging
     log_level: str = "INFO"
-    log_format: str = "json"               # json | console
+    log_format: str = "json"  # json | console
 
     # Health
     health_interval_sec: int = 10

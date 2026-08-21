@@ -62,4 +62,3 @@ class PreBreakoutState(StrEnum):
     ACCUMULATING = "accumulating"
     COILED = "coiled"
     TRIGGERED = "triggered"
-

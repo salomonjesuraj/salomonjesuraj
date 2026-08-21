@@ -23,55 +23,55 @@ Endpoints:
 import asyncio
 import contextlib
 
-import asyncpg
 import aiohttp
+import asyncpg
 import structlog
 from aiohttp import web
+from infusion_common.health import HealthReporter
+from infusion_common.logging import setup_logging
 from redis.asyncio import Redis
 
-from api.config import APISettings
-from api.routes.health import routes as health_routes
-from api.routes.ticks import routes as ticks_routes
-from api.routes.features import routes as features_routes
-from api.routes.scanner import routes as scanner_routes
-from api.routes.charts import routes as charts_routes
-from api.routes.analytics import routes as analytics_routes
-from api.routes.verify import routes as verify_routes
-from api.routes.market import routes as market_routes
-from api.routes.ai import routes as ai_routes
-from api.routes.triggers import routes as trigger_routes
-from api.routes.auth import routes as auth_routes
-from api.routes.risk import routes as risk_routes
-from api.routes.news import routes as news_routes
-from api.routes.mtf import routes as mtf_routes
-from api.routes.backtest import routes as backtest_routes
-from api.routes.journal import routes as journal_routes
-from api.routes.execution import routes as execution_routes
-from api.routes.safety import routes as safety_routes
-from api.routes.events import routes as events_routes
-from api.routes.strategy_selector import routes as strategy_selector_routes
-from api.routes.radar_alerts import routes as radar_alerts_routes
-from api.routes.system import routes as system_routes
-from api.routes.futures import routes as futures_routes
-from api.routes.options_dynamics import routes as options_dynamics_routes
-from api.routes.ebie_state import routes as ebie_state_routes
-from api.routes.upstox_news import routes as upstox_news_routes
-from api.routes.sentiment import routes as sentiment_routes
-from api.routes.portfolio_risk import routes as portfolio_risk_routes
-from api.routes.ebie_candidates import routes as ebie_candidates_routes
-from api.routes.shadow_validation import routes as shadow_validation_routes
 from api.ai_advisor import OpenAIAdvisor
-from api.option_chain_queue import option_chain_queue_loop
-from api.mtf_queue import mtf_queue_loop
-from api.radar_alert_queue import radar_alert_loop
-from api.futures_queue import futures_queue_loop
-from api.options_dynamics_queue import options_dynamics_loop
+from api.config import APISettings
 from api.ebie_state_queue import ebie_state_loop
+from api.futures_queue import futures_queue_loop
+from api.mtf_queue import mtf_queue_loop
 from api.news_queue import news_queue_loop
-from api.sentiment_queue import sentiment_cache_loop
+from api.option_chain_queue import option_chain_queue_loop
+from api.options_dynamics_queue import options_dynamics_loop
 from api.portfolio_risk_queue import portfolio_risk_loop
-from infusion_common.logging import setup_logging
-from infusion_common.health import HealthReporter
+from api.radar_alert_queue import radar_alert_loop
+from api.routes.ai import routes as ai_routes
+from api.routes.analytics import routes as analytics_routes
+from api.routes.auth import routes as auth_routes
+from api.routes.backtest import routes as backtest_routes
+from api.routes.charts import routes as charts_routes
+from api.routes.ebie_candidates import routes as ebie_candidates_routes
+from api.routes.ebie_state import routes as ebie_state_routes
+from api.routes.events import routes as events_routes
+from api.routes.execution import routes as execution_routes
+from api.routes.features import routes as features_routes
+from api.routes.futures import routes as futures_routes
+from api.routes.health import routes as health_routes
+from api.routes.journal import routes as journal_routes
+from api.routes.market import routes as market_routes
+from api.routes.mtf import routes as mtf_routes
+from api.routes.news import routes as news_routes
+from api.routes.options_dynamics import routes as options_dynamics_routes
+from api.routes.portfolio_risk import routes as portfolio_risk_routes
+from api.routes.radar_alerts import routes as radar_alerts_routes
+from api.routes.risk import routes as risk_routes
+from api.routes.safety import routes as safety_routes
+from api.routes.scanner import routes as scanner_routes
+from api.routes.sentiment import routes as sentiment_routes
+from api.routes.shadow_validation import routes as shadow_validation_routes
+from api.routes.strategy_selector import routes as strategy_selector_routes
+from api.routes.system import routes as system_routes
+from api.routes.ticks import routes as ticks_routes
+from api.routes.triggers import routes as trigger_routes
+from api.routes.upstox_news import routes as upstox_news_routes
+from api.routes.verify import routes as verify_routes
+from api.sentiment_queue import sentiment_cache_loop
 
 logger = structlog.get_logger()
 
@@ -116,6 +116,7 @@ async def main():
     # Analytics engine (if Postgres available)
     if pg_pool:
         from archiver.analytics import SignalAnalytics
+
         app["analytics"] = SignalAnalytics(pg_pool)
         app["pg_pool"] = pg_pool
 

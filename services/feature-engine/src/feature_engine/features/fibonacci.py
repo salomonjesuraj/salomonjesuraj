@@ -19,7 +19,7 @@ RETRACEMENT_RATIOS = (0.236, 0.382, 0.5, 0.618, 0.786)
 EXTENSION_RATIOS = (1.272, 1.618, 2.618)
 PROJECTION_RATIOS = (1.0, 1.618)  # 1.0 = "symmetry" / measured move
 
-CLUSTER_MIN_HITS = 3            # Boroden's rule: >=3 independent levels = a cluster
+CLUSTER_MIN_HITS = 3  # Boroden's rule: >=3 independent levels = a cluster
 CLUSTER_TOLERANCE_ATR_FRAC = 0.15  # levels within this fraction of 1 ATR cluster together
 MAX_CLUSTERS_RETURNED = 3
 

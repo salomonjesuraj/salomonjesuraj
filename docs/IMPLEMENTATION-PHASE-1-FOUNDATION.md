@@ -1044,6 +1044,7 @@ Every service inherits from this. Loaded once at startup.
 
 from pydantic_settings import BaseSettings
 
+
 class InfusionSettings(BaseSettings):
     """Base settings for all Infusion services."""
 
@@ -1073,6 +1074,7 @@ Services extend this with their own fields:
 # services/ingestion/src/ingestion/config.py
 
 from infusion_common.config import InfusionSettings
+
 
 class IngestionSettings(InfusionSettings):
     upstox_api_key: str = ""
@@ -1298,6 +1300,7 @@ import structlog
 import logging
 import sys
 
+
 def setup_logging(service_name: str, level: str = "info", fmt: str = "json") -> None:
     """Configure structlog for all Infusion services."""
 
@@ -1383,8 +1386,10 @@ from functools import wraps
 
 logger = structlog.get_logger()
 
+
 def measure_latency(operation: str):
     """Decorator that logs operation latency in microseconds."""
+
     def decorator(func):
         @wraps(func)
         async def wrapper(*args, **kwargs):
@@ -1397,7 +1402,9 @@ def measure_latency(operation: str):
                 latency_us=round(elapsed_us, 1),
             )
             return result
+
         return wrapper
+
     return decorator
 ```
 
@@ -1646,6 +1653,7 @@ import time
 import structlog
 
 logger = structlog.get_logger()
+
 
 class HealthReporter:
     """Background task that reports service health to Redis."""

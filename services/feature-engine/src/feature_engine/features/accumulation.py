@@ -68,7 +68,8 @@ def clv_snapshot(state: SymbolState) -> dict:
     """
     volume_weighted = (
         state.clv_vwap_numerator / state.clv_vwap_denominator
-        if state.clv_vwap_denominator > 0 else None
+        if state.clv_vwap_denominator > 0
+        else None
     )
     ready = state.clv_bar_count >= CLV_READY_MIN_BARS
     return {

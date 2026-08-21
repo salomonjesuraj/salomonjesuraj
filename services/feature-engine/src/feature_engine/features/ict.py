@@ -117,9 +117,17 @@ def update_ict(state) -> None:
     is_down_candle = cur["c"] < cur["o"]
     is_up_candle = cur["c"] > cur["o"]
 
-    if sellside_swept and is_down_candle and (state.order_block_bullish is None or not state.order_block_bullish[3]):
+    if (
+        sellside_swept
+        and is_down_candle
+        and (state.order_block_bullish is None or not state.order_block_bullish[3])
+    ):
         state.order_block_bullish = (cur["l"], cur["h"], state.completed_1m_bars, False)
-    if buyside_swept and is_up_candle and (state.order_block_bearish is None or not state.order_block_bearish[3]):
+    if (
+        buyside_swept
+        and is_up_candle
+        and (state.order_block_bearish is None or not state.order_block_bearish[3])
+    ):
         state.order_block_bearish = (cur["l"], cur["h"], state.completed_1m_bars, False)
 
     if state.order_block_bullish is not None:

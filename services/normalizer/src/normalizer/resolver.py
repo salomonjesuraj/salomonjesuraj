@@ -10,9 +10,8 @@ from dataclasses import dataclass
 
 import msgpack
 import structlog
-from redis.asyncio import Redis
-
 from infusion_streams.constants import KEY_SYMBOLS
+from redis.asyncio import Redis
 
 logger = structlog.get_logger()
 
@@ -24,7 +23,7 @@ class SymbolInfo:
     sector_id: str
     is_fno: bool
     lot_size: int
-    tier: int              # 1, 2, or 3
+    tier: int  # 1, 2, or 3
 
 
 class SymbolResolver:

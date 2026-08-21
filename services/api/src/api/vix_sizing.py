@@ -55,6 +55,8 @@ def vix_position_multiplier(vix_level: float | None) -> dict:
                 "vix_size_multiplier_pct": round(multiplier * 100, 0),
             }
     return {  # unreachable given the last tier's ceiling is +inf, kept as a safe fallback
-        "available": True, "vix_level": round(vix_level, 2),
-        "vix_tier": "extreme", "vix_size_multiplier_pct": 50.0,
+        "available": True,
+        "vix_level": round(vix_level, 2),
+        "vix_tier": "extreme",
+        "vix_size_multiplier_pct": 50.0,
     }

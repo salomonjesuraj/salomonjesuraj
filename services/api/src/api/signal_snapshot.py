@@ -71,9 +71,8 @@ async def build_symbol_snapshot(redis, symbol: str) -> dict:
     if sector_id:
         sector = decode_hash(await redis.hgetall(f"infusion:sector:{sector_id}"))
 
-    bias = (
-        signal.get("option_bias")
-        or ("BUY CE" if features.get("change_pct", 0) > 0 else "BUY PE")
+    bias = signal.get("option_bias") or (
+        "BUY CE" if features.get("change_pct", 0) > 0 else "BUY PE"
     )
     option_chain_ready = bool(
         await redis.exists(f"infusion:option-chain:{symbol}")
@@ -116,11 +115,25 @@ async def build_symbol_snapshot(redis, symbol: str) -> dict:
         "technical": {
             key: features.get(key)
             for key in (
-                "vwap", "ema_5", "ema_9", "ema_20", "ema_50",
-                "rsi_14", "macd", "macd_signal", "macd_hist",
-                "rel_vol_20d", "bb_width", "squeeze_state", "nr_pattern",
-                "candle_pattern", "atr_14", "atr_trail_stop", "atr_trend",
-                "spread_bps", "order_imbalance",
+                "vwap",
+                "ema_5",
+                "ema_9",
+                "ema_20",
+                "ema_50",
+                "rsi_14",
+                "macd",
+                "macd_signal",
+                "macd_hist",
+                "rel_vol_20d",
+                "bb_width",
+                "squeeze_state",
+                "nr_pattern",
+                "candle_pattern",
+                "atr_14",
+                "atr_trail_stop",
+                "atr_trend",
+                "spread_bps",
+                "order_imbalance",
             )
         },
         "setup": {

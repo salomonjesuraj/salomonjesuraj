@@ -27,11 +27,11 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 import structlog
+from infusion_common.timing import now_us
+from infusion_streams.constants import KEY_SECTOR_PREFIX
 from redis.asyncio import Redis
 
 from scanner.config import ScannerSettings
-from infusion_streams.constants import KEY_SECTOR_PREFIX
-from infusion_common.timing import now_us
 
 logger = structlog.get_logger()
 
@@ -51,6 +51,7 @@ class SectorTrend(StrEnum):
 @dataclass
 class SymbolSnapshot:
     """Latest feature snapshot for a sector constituent."""
+
     symbol: str
     ltp: float = 0.0
     vwap: float = 0.0
@@ -65,24 +66,25 @@ class SymbolSnapshot:
 @dataclass
 class SectorState:
     """Per-sector aggregate state — incrementally maintained."""
+
     sector_id: str
     constituents: dict[str, SymbolSnapshot] = field(default_factory=dict)
 
     # Computed metrics (updated on every constituent change)
-    breadth_score: float = 0.0          # 0-100
-    strength_score: float = 0.0         # 0-100
+    breadth_score: float = 0.0  # 0-100
+    strength_score: float = 0.0  # 0-100
     avg_rsi: float = 50.0
     avg_rel_vol: float = 1.0
     avg_change_pct: float = 0.0
-    above_vwap_pct: float = 0.0        # % of constituents above VWAP
-    above_ema20_pct: float = 0.0       # % above EMA20
-    positive_change_pct: float = 0.0   # % with positive change
-    rank: int = 0                       # 1 = strongest sector
+    above_vwap_pct: float = 0.0  # % of constituents above VWAP
+    above_ema20_pct: float = 0.0  # % above EMA20
+    positive_change_pct: float = 0.0  # % with positive change
+    rank: int = 0  # 1 = strongest sector
     trend: str = SectorTrend.STABLE
 
     # Momentum tracking (strength history for rotation detection)
     prev_strength: float = 0.0
-    strength_delta: float = 0.0         # current - previous
+    strength_delta: float = 0.0  # current - previous
     updated_us: int = 0
 
 
@@ -178,7 +180,9 @@ class SectorEngine:
             snap.rel_vol_20d = features.get("rel_vol_20d", snap.rel_vol_20d)
             snap.change_pct = features.get("change_pct", snap.change_pct)
             snap.bb_width = features.get("bb_width", snap.bb_width)
-            snap.updated_us = int(features.get("timestamp_us", 0)) or int(features.get("updated_at", 0))
+            snap.updated_us = int(features.get("timestamp_us", 0)) or int(
+                features.get("updated_at", 0)
+            )
             seeded += 1
 
         # Recompute all sector metrics
@@ -242,8 +246,12 @@ class SectorEngine:
         self._index_snapshot.ltp = features.get("ltp", self._index_snapshot.ltp)
         self._index_snapshot.vwap = features.get("vwap", self._index_snapshot.vwap)
         self._index_snapshot.rsi_14 = features.get("rsi_14", self._index_snapshot.rsi_14)
-        self._index_snapshot.rel_vol_20d = features.get("rel_vol_20d", self._index_snapshot.rel_vol_20d)
-        self._index_snapshot.change_pct = features.get("change_pct", self._index_snapshot.change_pct)
+        self._index_snapshot.rel_vol_20d = features.get(
+            "rel_vol_20d", self._index_snapshot.rel_vol_20d
+        )
+        self._index_snapshot.change_pct = features.get(
+            "change_pct", self._index_snapshot.change_pct
+        )
         self._index_snapshot.bb_width = features.get("bb_width", self._index_snapshot.bb_width)
         self._index_snapshot.updated_us = now_us()
 
@@ -337,21 +345,15 @@ class SectorEngine:
 
         if idx.rsi_14 < 40 or idx.change_pct < -1.5:
             self._regime = MarketRegime.RISK_OFF
-            self._regime_reason = (
-                f"index_rsi={idx.rsi_14:.1f}_change={idx.change_pct:+.2f}%"
-            )
-        elif (idx.rsi_14 > 55
-              and idx.change_pct > 0
-              and idx.ltp > idx.vwap > 0):
+            self._regime_reason = f"index_rsi={idx.rsi_14:.1f}_change={idx.change_pct:+.2f}%"
+        elif idx.rsi_14 > 55 and idx.change_pct > 0 and idx.ltp > idx.vwap > 0:
             self._regime = MarketRegime.RISK_ON
             self._regime_reason = (
                 f"index_rsi={idx.rsi_14:.1f}_change={idx.change_pct:+.2f}%_above_vwap"
             )
         else:
             self._regime = MarketRegime.NEUTRAL
-            self._regime_reason = (
-                f"index_rsi={idx.rsi_14:.1f}_change={idx.change_pct:+.2f}%"
-            )
+            self._regime_reason = f"index_rsi={idx.rsi_14:.1f}_change={idx.change_pct:+.2f}%"
 
         if self._regime != old_regime:
             logger.info(
@@ -486,34 +488,24 @@ class SectorEngine:
             )
         elif sector.strength_score < 30:
             adjustment -= 10.0
-            explanations.append(
-                f"Weak sector {sector_id} (strength={sector.strength_score:.0f})"
-            )
+            explanations.append(f"Weak sector {sector_id} (strength={sector.strength_score:.0f})")
 
         # ── Breadth confirmation ───────────────────
         if sector.breadth_score >= 70:
             adjustment += 5.0
-            explanations.append(
-                f"Strong breadth ({sector.above_vwap_pct:.0f}% above VWAP)"
-            )
+            explanations.append(f"Strong breadth ({sector.above_vwap_pct:.0f}% above VWAP)")
         elif sector.breadth_score < 30:
             adjustment -= 5.0
-            explanations.append(
-                f"Weak breadth ({sector.above_vwap_pct:.0f}% above VWAP)"
-            )
+            explanations.append(f"Weak breadth ({sector.above_vwap_pct:.0f}% above VWAP)")
 
         # ── Relative strength bonus ────────────────
         rel_strength = self.get_relative_strength(symbol, sector_id)
         if rel_strength > 1.0:
             adjustment += 5.0
-            explanations.append(
-                f"Outperforming sector by {rel_strength:+.2f}%"
-            )
+            explanations.append(f"Outperforming sector by {rel_strength:+.2f}%")
         elif rel_strength < -1.0:
             adjustment -= 5.0
-            explanations.append(
-                f"Underperforming sector by {rel_strength:+.2f}%"
-            )
+            explanations.append(f"Underperforming sector by {rel_strength:+.2f}%")
 
         # ── Sector trend ───────────────────────────
         if sector.trend == SectorTrend.IMPROVING:
@@ -540,7 +532,9 @@ class SectorEngine:
 
         return adjustment, explanations
 
-    def compute_cross_confirmation(self, sector_id: str, symbol: str, signal_type: str = "bullish") -> dict:
+    def compute_cross_confirmation(
+        self, sector_id: str, symbol: str, signal_type: str = "bullish"
+    ) -> dict:
         """Dow-Theory-style multi-measure confirmation (Schannep's 2-of-3
         index rule, translated to NSE) — is this signal happening in an
         environment where multiple INDEPENDENT measures agree, or is it an
@@ -570,16 +564,22 @@ class SectorEngine:
         """
         sector = self._sectors.get(sector_id)
         empty = {
-            "measures": {}, "confirmations": [], "confirmation_count": 0,
-            "required": 2, "confirmed": False,
-            "concentration_flag": False, "top_mover_share_pct": 0.0,
+            "measures": {},
+            "confirmations": [],
+            "confirmation_count": 0,
+            "required": 2,
+            "confirmed": False,
+            "concentration_flag": False,
+            "top_mover_share_pct": 0.0,
         }
         if sector is None or not sector.constituents:
             return empty
 
         breadth_dir = (
-            "bullish" if sector.positive_change_pct > 50
-            else "bearish" if sector.positive_change_pct < 50
+            "bullish"
+            if sector.positive_change_pct > 50
+            else "bearish"
+            if sector.positive_change_pct < 50
             else "neutral"
         )
 
@@ -593,10 +593,9 @@ class SectorEngine:
             concentration_dir = (
                 "bullish" if excl_avg > 0.1 else "bearish" if excl_avg < -0.1 else "neutral"
             )
-            concentration_flag = (
-                (sector.avg_change_pct > 0) != (excl_avg > 0)
-                and top_mover_share_pct > 40.0
-            )
+            concentration_flag = (sector.avg_change_pct > 0) != (
+                excl_avg > 0
+            ) and top_mover_share_pct > 40.0
         else:
             top_mover_share_pct = 0.0
             concentration_dir = "neutral"

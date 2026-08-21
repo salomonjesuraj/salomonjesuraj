@@ -27,6 +27,7 @@ def check(label, fn):
         errors.append(f"{label}: {e}")
         print(f"  ✗ {label}: {e}")
         import traceback
+
         traceback.print_exc()
 
 
@@ -38,6 +39,7 @@ print("\n--- CONFIG ---")
 
 def test_config():
     from scanner.config import ScannerSettings
+
     s = ScannerSettings()
     assert s.signal_ttl_sec == 300
     assert s.cooldown_sec == 900
@@ -57,6 +59,7 @@ print("\n--- STATE ---")
 
 def test_state():
     from scanner.state import StateManager
+
     mgr = StateManager()
     s = mgr.get_or_create("RELIANCE")
     assert s.symbol == "RELIANCE"
@@ -111,6 +114,7 @@ def _make_features(**overrides):
 
 def _make_state(symbol="RELIANCE", prev_ltp=2488.0, prev_vwap=2490.0):
     from scanner.state import ScannerSymbolState
+
     s = ScannerSymbolState(symbol=symbol)
     s.prev_ltp = prev_ltp
     s.prev_vwap = prev_vwap
@@ -120,8 +124,8 @@ def _make_state(symbol="RELIANCE", prev_ltp=2488.0, prev_vwap=2490.0):
 
 def test_strategy_all_conditions_met():
     """All 7 conditions met → should produce a candidate."""
-    from scanner.strategies.vol_vwap_breakout import VolVwapBreakout
     from scanner.config import ScannerSettings
+    from scanner.strategies.vol_vwap_breakout import VolVwapBreakout
 
     strategy = VolVwapBreakout(ScannerSettings())
     features = _make_features()
@@ -132,7 +136,9 @@ def test_strategy_all_conditions_met():
     assert candidate is not None, "Expected a signal candidate"
     assert candidate.strategy_id == "vol_vwap_breakout"
     assert candidate.signal_type == "bullish"
-    assert all(candidate.conditions_met.values()), f"Not all conditions met: {candidate.conditions_met}"
+    assert all(candidate.conditions_met.values()), (
+        f"Not all conditions met: {candidate.conditions_met}"
+    )
     assert len(candidate.explanation) == 7
     assert candidate.entry_price == 2500.0
     assert candidate.invalidation_price == 2490.0 - 25.0 * 0.5  # vwap - 0.5*atr
@@ -141,8 +147,8 @@ def test_strategy_all_conditions_met():
 
 def test_strategy_no_vwap_crossover():
     """Price already above VWAP on previous tick → no crossover → no signal."""
-    from scanner.strategies.vol_vwap_breakout import VolVwapBreakout
     from scanner.config import ScannerSettings
+    from scanner.strategies.vol_vwap_breakout import VolVwapBreakout
 
     strategy = VolVwapBreakout(ScannerSettings())
     features = _make_features()
@@ -155,8 +161,8 @@ def test_strategy_no_vwap_crossover():
 
 def test_strategy_low_volume():
     """Volume below threshold → no signal."""
-    from scanner.strategies.vol_vwap_breakout import VolVwapBreakout
     from scanner.config import ScannerSettings
+    from scanner.strategies.vol_vwap_breakout import VolVwapBreakout
 
     strategy = VolVwapBreakout(ScannerSettings())
     features = _make_features(rel_vol_20d=1.2)
@@ -168,8 +174,8 @@ def test_strategy_low_volume():
 
 def test_strategy_rsi_overbought():
     """RSI above max → no signal."""
-    from scanner.strategies.vol_vwap_breakout import VolVwapBreakout
     from scanner.config import ScannerSettings
+    from scanner.strategies.vol_vwap_breakout import VolVwapBreakout
 
     strategy = VolVwapBreakout(ScannerSettings())
     features = _make_features(rsi_14=80.0)
@@ -181,8 +187,8 @@ def test_strategy_rsi_overbought():
 
 def test_strategy_high_spread():
     """Wide spread → no signal."""
-    from scanner.strategies.vol_vwap_breakout import VolVwapBreakout
     from scanner.config import ScannerSettings
+    from scanner.strategies.vol_vwap_breakout import VolVwapBreakout
 
     strategy = VolVwapBreakout(ScannerSettings())
     features = _make_features(spread_bps=60.0)
@@ -194,8 +200,8 @@ def test_strategy_high_spread():
 
 def test_strategy_warmup():
     """State with 0 prev_ltp → no signal (guard)."""
-    from scanner.strategies.vol_vwap_breakout import VolVwapBreakout
     from scanner.config import ScannerSettings
+    from scanner.strategies.vol_vwap_breakout import VolVwapBreakout
 
     strategy = VolVwapBreakout(ScannerSettings())
     features = _make_features()
@@ -207,8 +213,8 @@ def test_strategy_warmup():
 
 def test_strategy_determinism():
     """Same inputs → same output."""
-    from scanner.strategies.vol_vwap_breakout import VolVwapBreakout
     from scanner.config import ScannerSettings
+    from scanner.strategies.vol_vwap_breakout import VolVwapBreakout
 
     strategy = VolVwapBreakout(ScannerSettings())
     features = _make_features()
@@ -242,6 +248,7 @@ print("\n--- SCORING ---")
 
 def test_scoring_high():
     from scanner.scoring import compute_conviction, grade_conviction
+
     features = _make_features()
     score, subs = compute_conviction(features)
     assert score > 0
@@ -254,6 +261,7 @@ def test_scoring_high():
 
 def test_scoring_grading():
     from scanner.scoring import grade_conviction
+
     assert grade_conviction(90.0) == "A+"
     assert grade_conviction(85.0) == "A+"
     assert grade_conviction(75.0) == "A"
@@ -264,6 +272,7 @@ def test_scoring_grading():
 
 def test_scoring_determinism():
     from scanner.scoring import compute_conviction
+
     features = _make_features()
     s1, sub1 = compute_conviction(features)
     s2, sub2 = compute_conviction(features)
@@ -273,6 +282,7 @@ def test_scoring_determinism():
 
 def test_risk_reward():
     from scanner.scoring import compute_risk_reward
+
     rr = compute_risk_reward(entry=2500.0, invalidation=2475.0, target=2550.0)
     assert rr == 2.0
     rr_zero = compute_risk_reward(entry=2500.0, invalidation=2500.0, target=2550.0)
@@ -292,9 +302,9 @@ print("\n--- STRATEGY REGISTRY ---")
 
 
 def test_registry():
-    from scanner.strategies import register_strategy, get_strategies, get_strategy
-    from scanner.strategies.vol_vwap_breakout import VolVwapBreakout
     from scanner.config import ScannerSettings
+    from scanner.strategies import get_strategies, get_strategy, register_strategy
+    from scanner.strategies.vol_vwap_breakout import VolVwapBreakout
 
     register_strategy(VolVwapBreakout(ScannerSettings()))
     strategies = get_strategies()

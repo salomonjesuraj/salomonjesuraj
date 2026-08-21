@@ -69,15 +69,27 @@ async def main():
             ts_human = time.strftime("%H:%M:%S", time.gmtime(ts / 1_000_000)) if ts else "?"
 
             if output_json:
-                print(json.dumps({
-                    "id": mid, "type": event_type, "version": version,
-                    "ts": ts, "rx": rx, "payload": payload,
-                }, indent=2, default=str))
+                print(
+                    json.dumps(
+                        {
+                            "id": mid,
+                            "type": event_type,
+                            "version": version,
+                            "ts": ts,
+                            "rx": rx,
+                            "payload": payload,
+                        },
+                        indent=2,
+                        default=str,
+                    )
+                )
             else:
                 symbol = payload.get("symbol") or payload.get("instrument_key", "?")
                 ltp = payload.get("ltp", "?")
                 vol = payload.get("volume", "?")
-                print(f"  [{mid}] {event_type} v{version} | {ts_human} UTC | {symbol} ltp={ltp} vol={vol}")
+                print(
+                    f"  [{mid}] {event_type} v{version} | {ts_human} UTC | {symbol} ltp={ltp} vol={vol}"
+                )
 
         except Exception as e:
             print(f"  [{mid}] DECODE ERROR: {e}")

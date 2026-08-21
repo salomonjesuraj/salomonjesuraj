@@ -1,16 +1,17 @@
 """Scheduler service: broker-history bootstrap and periodic refresh."""
 
 import asyncio
+import contextlib
 import os
 
 import aiohttp
 import redis.asyncio as aioredis
 import structlog
-
 from infusion_common.config import InfusionSettings
 from infusion_common.health import HealthReporter
 from infusion_common.lifecycle import ServiceLifecycle
 from infusion_common.logging import setup_logging
+
 from scheduler.historical import bootstrap_historical
 
 logger = structlog.get_logger()
@@ -24,8 +25,8 @@ logger = structlog.get_logger()
 API_BASE_URL = os.environ.get("INFUSION_API_BASE_URL", "http://api:8000")
 OPTIMIZER_PROPOSAL_INTERVAL_SEC = 24 * 3600
 OPTIMIZER_PROPOSAL_RETRY_SEC = 120  # short retry on failure (e.g. api not up
-                                     # yet on a fresh cold start) instead of
-                                     # stranding the sweep for a full day
+# yet on a fresh cold start) instead of
+# stranding the sweep for a full day
 
 # EBIE EB-14: weekly promotion-review snapshot, per docs/EBIE-
 # IMPLEMENTATION-ANSWERS.md Q5.3 ("Evaluate weekly; promote manually at
@@ -81,10 +82,12 @@ async def run_optimizer_proposal_sweep() -> dict:
     "propose only, never auto-apply" rationale.
     """
     url = f"{API_BASE_URL}/api/backtest/optimizer-proposal"
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url, timeout=aiohttp.ClientTimeout(total=120)) as resp:
-            resp.raise_for_status()
-            return await resp.json()
+    async with (
+        aiohttp.ClientSession() as session,
+        session.get(url, timeout=aiohttp.ClientTimeout(total=120)) as resp,
+    ):
+        resp.raise_for_status()
+        return await resp.json()
 
 
 async def run_promotion_review_sweep() -> dict:
@@ -96,10 +99,12 @@ async def run_promotion_review_sweep() -> dict:
     a live signal. See api/promotion_review.py for the full rationale.
     """
     url = f"{API_BASE_URL}/api/ebie/promotion-review"
-    async with aiohttp.ClientSession() as session:
-        async with session.post(url, timeout=aiohttp.ClientTimeout(total=60)) as resp:
-            resp.raise_for_status()
-            return await resp.json()
+    async with (
+        aiohttp.ClientSession() as session,
+        session.post(url, timeout=aiohttp.ClientTimeout(total=60)) as resp,
+    ):
+        resp.raise_for_status()
+        return await resp.json()
 
 
 async def run_kelly_sizing_sweep() -> dict:
@@ -110,10 +115,12 @@ async def run_kelly_sizing_sweep() -> dict:
     config or auto-applies a size. See compute_kelly_sizing() in
     api/routes/backtest.py."""
     url = f"{API_BASE_URL}/api/backtest/kelly-sizing"
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url, timeout=aiohttp.ClientTimeout(total=60)) as resp:
-            resp.raise_for_status()
-            return await resp.json()
+    async with (
+        aiohttp.ClientSession() as session,
+        session.get(url, timeout=aiohttp.ClientTimeout(total=60)) as resp,
+    ):
+        resp.raise_for_status()
+        return await resp.json()
 
 
 async def run_ml_classifier_sweep() -> dict:
@@ -124,10 +131,12 @@ async def run_ml_classifier_sweep() -> dict:
     never changes scanner's live config, suppression, or the conviction
     score itself. See api/ml_classifier.py's module docstring."""
     url = f"{API_BASE_URL}/api/backtest/ml-classifier"
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url, timeout=aiohttp.ClientTimeout(total=90)) as resp:
-            resp.raise_for_status()
-            return await resp.json()
+    async with (
+        aiohttp.ClientSession() as session,
+        session.get(url, timeout=aiohttp.ClientTimeout(total=90)) as resp,
+    ):
+        resp.raise_for_status()
+        return await resp.json()
 
 
 async def run_vix_multiplier_sweep() -> dict:
@@ -138,10 +147,12 @@ async def run_vix_multiplier_sweep() -> dict:
     scanner's live config or auto-applies a size. See
     api/vix_sizing.py and compute_vix_multiplier() in api/routes/market.py."""
     url = f"{API_BASE_URL}/api/market/vix-multiplier"
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
-            resp.raise_for_status()
-            return await resp.json()
+    async with (
+        aiohttp.ClientSession() as session,
+        session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp,
+    ):
+        resp.raise_for_status()
+        return await resp.json()
 
 
 async def run_premium_capture() -> dict:
@@ -152,10 +163,12 @@ async def run_premium_capture() -> dict:
     exit_premium_bid/option_instrument_key on the signals table, never
     touches scanner's live config or any trading decision."""
     url = f"{API_BASE_URL}/api/backtest/capture-premiums"
-    async with aiohttp.ClientSession() as session:
-        async with session.post(url, timeout=aiohttp.ClientTimeout(total=60)) as resp:
-            resp.raise_for_status()
-            return await resp.json()
+    async with (
+        aiohttp.ClientSession() as session,
+        session.post(url, timeout=aiohttp.ClientTimeout(total=60)) as resp,
+    ):
+        resp.raise_for_status()
+        return await resp.json()
 
 
 async def run() -> None:
@@ -178,10 +191,8 @@ async def run() -> None:
             except Exception as exc:
                 logger.warning("historical_bootstrap_failed", error=str(exc))
             delay = 6 * 3600 if await redis.exists("infusion:symbols") else 300
-            try:
+            with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(lifecycle.shutdown_event.wait(), timeout=delay)
-            except asyncio.TimeoutError:
-                pass
 
     # Phase 11: once-daily optimizer-proposal sweep, independent of the
     # historical-bootstrap cadence above (different purpose, different
@@ -200,13 +211,11 @@ async def run() -> None:
             except Exception as exc:
                 logger.warning("optimizer_proposal_sweep_failed", error=str(exc))
                 delay = OPTIMIZER_PROPOSAL_RETRY_SEC
-            try:
+            with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(
                     lifecycle.shutdown_event.wait(),
                     timeout=delay,
                 )
-            except asyncio.TimeoutError:
-                pass
 
     # EBIE EB-14: weekly promotion-review snapshot -- independent of
     # every loop above. Runs once shortly after startup too (same
@@ -225,13 +234,11 @@ async def run() -> None:
             except Exception as exc:
                 logger.warning("promotion_review_sweep_failed", error=str(exc))
                 delay = PROMOTION_REVIEW_RETRY_SEC
-            try:
+            with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(
                     lifecycle.shutdown_event.wait(),
                     timeout=delay,
                 )
-            except asyncio.TimeoutError:
-                pass
 
     # Phase 13.4: short-interval premium capture, independent of both
     # loops above. Failures just mean "try again in 60s" -- no retry
@@ -250,13 +257,11 @@ async def run() -> None:
                 )
             except Exception as exc:
                 logger.warning("premium_capture_sweep_failed", error=str(exc))
-            try:
+            with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(
                     lifecycle.shutdown_event.wait(),
                     timeout=PREMIUM_CAPTURE_INTERVAL_SEC,
                 )
-            except asyncio.TimeoutError:
-                pass
 
     # Phase 13.10: once-daily half-Kelly sizing sweep, same shape as
     # optimizer_proposal_loop. Runs once at startup too so the Redis cache
@@ -274,13 +279,11 @@ async def run() -> None:
             except Exception as exc:
                 logger.warning("kelly_sizing_sweep_failed", error=str(exc))
                 delay = KELLY_SIZING_RETRY_SEC
-            try:
+            with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(
                     lifecycle.shutdown_event.wait(),
                     timeout=delay,
                 )
-            except asyncio.TimeoutError:
-                pass
 
     # ML classifier: once-daily retrain, same shape as kelly_sizing_loop.
     # Runs once at startup too so the Redis cache is populated without
@@ -302,13 +305,11 @@ async def run() -> None:
             except Exception as exc:
                 logger.warning("ml_classifier_sweep_failed", error=str(exc))
                 delay = ML_CLASSIFIER_RETRY_SEC
-            try:
+            with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(
                     lifecycle.shutdown_event.wait(),
                     timeout=delay,
                 )
-            except asyncio.TimeoutError:
-                pass
 
     # VIX-tiered position-size multiplier: frequent (5 min) sweep, same
     # shape as kelly_sizing_loop otherwise. Runs once at startup too.
@@ -326,18 +327,21 @@ async def run() -> None:
             except Exception as exc:
                 logger.warning("vix_multiplier_sweep_failed", error=str(exc))
                 delay = VIX_MULTIPLIER_RETRY_SEC
-            try:
+            with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(
                     lifecycle.shutdown_event.wait(),
                     timeout=delay,
                 )
-            except asyncio.TimeoutError:
-                pass
 
     async def combined_loop():
         await asyncio.gather(
-            main_loop(), optimizer_proposal_loop(), premium_capture_loop(), kelly_sizing_loop(),
-            ml_classifier_loop(), vix_multiplier_loop(), promotion_review_loop(),
+            main_loop(),
+            optimizer_proposal_loop(),
+            premium_capture_loop(),
+            kelly_sizing_loop(),
+            ml_classifier_loop(),
+            vix_multiplier_loop(),
+            promotion_review_loop(),
         )
 
     await lifecycle.run_until_shutdown(combined_loop)

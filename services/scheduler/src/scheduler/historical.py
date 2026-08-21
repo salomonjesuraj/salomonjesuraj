@@ -237,7 +237,9 @@ async def bootstrap_historical(redis) -> dict:
                 )
                 intraday = await _fetch_intraday(session, instrument_key)
                 combined_minute = list(reversed(intraday)) + minute if intraday else minute
-                await _store_zset(redis, f"infusion:ohlc:{symbol}:history:1m", combined_minute, 3 * 86400)
+                await _store_zset(
+                    redis, f"infusion:ohlc:{symbol}:history:1m", combined_minute, 3 * 86400
+                )
                 await _store_volume_profile(redis, symbol, combined_minute)
                 completed += 1
                 await asyncio.sleep(0.20)

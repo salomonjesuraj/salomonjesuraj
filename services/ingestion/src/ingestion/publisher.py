@@ -1,11 +1,10 @@
 """Tick publisher — publishes RawTick to tick:raw stream."""
 
 import structlog
-
-from infusion_models.tick import RawTickV1
 from infusion_models.events import EventType
+from infusion_models.tick import RawTickV1
+from infusion_streams.constants import MAXLEN_TICK_RAW, STREAM_TICK_RAW
 from infusion_streams.producer import StreamProducer
-from infusion_streams.constants import STREAM_TICK_RAW, MAXLEN_TICK_RAW
 
 logger = structlog.get_logger()
 

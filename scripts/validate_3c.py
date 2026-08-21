@@ -26,6 +26,7 @@ def check(label, fn):
         errors.append(f"{label}: {e}")
         print(f"  ✗ {label}: {e}")
         import traceback
+
         traceback.print_exc()
 
 
@@ -37,11 +38,13 @@ print("\n--- STATE TRANSITIONS ---")
 
 def _make_settings():
     from scanner.config import ScannerSettings
+
     return ScannerSettings()
 
 
 def _make_state(symbol="TEST"):
     from scanner.state import ScannerSymbolState
+
     s = ScannerSymbolState(symbol=symbol)
     s.tick_count = 10
     return s
@@ -49,7 +52,8 @@ def _make_state(symbol="TEST"):
 
 def test_idle_to_compressing():
     """IDLE → COMPRESSING when bb_width declining for N ticks."""
-    from scanner.pre_breakout import PreBreakoutTracker, PBState
+    from scanner.pre_breakout import PBState, PreBreakoutTracker
+
     settings = _make_settings()
 
     tracker = PreBreakoutTracker.__new__(PreBreakoutTracker)
@@ -65,7 +69,8 @@ def test_idle_to_compressing():
 
 def test_idle_stays_idle():
     """IDLE stays IDLE when declining count insufficient."""
-    from scanner.pre_breakout import PreBreakoutTracker, PBState
+    from scanner.pre_breakout import PBState, PreBreakoutTracker
+
     settings = _make_settings()
 
     tracker = PreBreakoutTracker.__new__(PreBreakoutTracker)
@@ -81,7 +86,8 @@ def test_idle_stays_idle():
 
 def test_compressing_to_accumulating():
     """COMPRESSING → ACCUMULATING when volume rises."""
-    from scanner.pre_breakout import PreBreakoutTracker, PBState
+    from scanner.pre_breakout import PBState, PreBreakoutTracker
+
     settings = _make_settings()
 
     tracker = PreBreakoutTracker.__new__(PreBreakoutTracker)
@@ -96,7 +102,8 @@ def test_compressing_to_accumulating():
 
 def test_compressing_to_expired():
     """COMPRESSING → EXPIRED when bb trend reversed for N ticks."""
-    from scanner.pre_breakout import PreBreakoutTracker, PBState
+    from scanner.pre_breakout import PBState, PreBreakoutTracker
+
     settings = _make_settings()
 
     tracker = PreBreakoutTracker.__new__(PreBreakoutTracker)
@@ -104,7 +111,7 @@ def test_compressing_to_expired():
 
     state = _make_state()
     state.bb_width_declining_count = 0  # trend reversed
-    state.ticks_in_pre_breakout = 12   # > pb_reversal_ticks (10)
+    state.ticks_in_pre_breakout = 12  # > pb_reversal_ticks (10)
 
     result = tracker._evaluate(PBState.COMPRESSING, state, bb_width=0.035, rel_vol=0.8, rsi=50.0)
     assert result == PBState.EXPIRED, f"Expected EXPIRED, got {result}"
@@ -112,7 +119,8 @@ def test_compressing_to_expired():
 
 def test_accumulating_to_coiled():
     """ACCUMULATING → COILED when extreme compression + volume + RSI."""
-    from scanner.pre_breakout import PreBreakoutTracker, PBState
+    from scanner.pre_breakout import PBState, PreBreakoutTracker
+
     settings = _make_settings()
 
     tracker = PreBreakoutTracker.__new__(PreBreakoutTracker)
@@ -121,17 +129,19 @@ def test_accumulating_to_coiled():
     state = _make_state()
 
     result = tracker._evaluate(
-        PBState.ACCUMULATING, state,
+        PBState.ACCUMULATING,
+        state,
         bb_width=0.012,  # < 0.015
-        rel_vol=1.8,     # >= 1.5
-        rsi=52.0,        # between 45-60
+        rel_vol=1.8,  # >= 1.5
+        rsi=52.0,  # between 45-60
     )
     assert result == PBState.COILED, f"Expected COILED, got {result}"
 
 
 def test_accumulating_to_expired_volume_drop():
     """ACCUMULATING → EXPIRED when volume drops below 1.0."""
-    from scanner.pre_breakout import PreBreakoutTracker, PBState
+    from scanner.pre_breakout import PBState, PreBreakoutTracker
+
     settings = _make_settings()
 
     tracker = PreBreakoutTracker.__new__(PreBreakoutTracker)
@@ -140,15 +150,19 @@ def test_accumulating_to_expired_volume_drop():
     state = _make_state()
 
     result = tracker._evaluate(
-        PBState.ACCUMULATING, state,
-        bb_width=0.02, rel_vol=0.8, rsi=50.0,
+        PBState.ACCUMULATING,
+        state,
+        bb_width=0.02,
+        rel_vol=0.8,
+        rsi=50.0,
     )
     assert result == PBState.EXPIRED, f"Expected EXPIRED, got {result}"
 
 
 def test_coiled_stays_coiled():
     """COILED stays COILED when conditions hold."""
-    from scanner.pre_breakout import PreBreakoutTracker, PBState
+    from scanner.pre_breakout import PBState, PreBreakoutTracker
+
     settings = _make_settings()
 
     tracker = PreBreakoutTracker.__new__(PreBreakoutTracker)
@@ -157,15 +171,19 @@ def test_coiled_stays_coiled():
     state = _make_state()
 
     result = tracker._evaluate(
-        PBState.COILED, state,
-        bb_width=0.012, rel_vol=1.6, rsi=55.0,
+        PBState.COILED,
+        state,
+        bb_width=0.012,
+        rel_vol=1.6,
+        rsi=55.0,
     )
     assert result == PBState.COILED, f"Expected COILED, got {result}"
 
 
 def test_coiled_to_expired_bb_expansion():
     """COILED → EXPIRED when Bollinger expands without breakout."""
-    from scanner.pre_breakout import PreBreakoutTracker, PBState
+    from scanner.pre_breakout import PBState, PreBreakoutTracker
+
     settings = _make_settings()
 
     tracker = PreBreakoutTracker.__new__(PreBreakoutTracker)
@@ -174,16 +192,19 @@ def test_coiled_to_expired_bb_expansion():
     state = _make_state()
 
     result = tracker._evaluate(
-        PBState.COILED, state,
-        bb_width=0.04,   # > pb_compress_bb_max (0.03)
-        rel_vol=1.5, rsi=55.0,
+        PBState.COILED,
+        state,
+        bb_width=0.04,  # > pb_compress_bb_max (0.03)
+        rel_vol=1.5,
+        rsi=55.0,
     )
     assert result == PBState.EXPIRED, f"Expected EXPIRED, got {result}"
 
 
 def test_coiled_to_expired_extreme_rsi():
     """COILED → EXPIRED when RSI goes extreme."""
-    from scanner.pre_breakout import PreBreakoutTracker, PBState
+    from scanner.pre_breakout import PBState, PreBreakoutTracker
+
     settings = _make_settings()
 
     tracker = PreBreakoutTracker.__new__(PreBreakoutTracker)
@@ -192,15 +213,19 @@ def test_coiled_to_expired_extreme_rsi():
     state = _make_state()
 
     result = tracker._evaluate(
-        PBState.COILED, state,
-        bb_width=0.012, rel_vol=1.5, rsi=85.0,  # RSI > 80
+        PBState.COILED,
+        state,
+        bb_width=0.012,
+        rel_vol=1.5,
+        rsi=85.0,  # RSI > 80
     )
     assert result == PBState.EXPIRED, f"Expected EXPIRED, got {result}"
 
 
 def test_triggered_to_idle():
     """TRIGGERED → IDLE (immediate reset)."""
-    from scanner.pre_breakout import PreBreakoutTracker, PBState
+    from scanner.pre_breakout import PBState, PreBreakoutTracker
+
     settings = _make_settings()
 
     tracker = PreBreakoutTracker.__new__(PreBreakoutTracker)
@@ -214,7 +239,8 @@ def test_triggered_to_idle():
 
 def test_expired_to_idle():
     """EXPIRED → IDLE (immediate reset)."""
-    from scanner.pre_breakout import PreBreakoutTracker, PBState
+    from scanner.pre_breakout import PBState, PreBreakoutTracker
+
     settings = _make_settings()
 
     tracker = PreBreakoutTracker.__new__(PreBreakoutTracker)
@@ -247,7 +273,8 @@ print("\n--- READINESS SCORING ---")
 
 def test_readiness_coiled_high():
     """COILED with strong conditions → high readiness."""
-    from scanner.pre_breakout import PreBreakoutTracker, PBState
+    from scanner.pre_breakout import PBState, PreBreakoutTracker
+
     tracker = PreBreakoutTracker.__new__(PreBreakoutTracker)
     tracker._s = _make_settings()
 
@@ -260,7 +287,8 @@ def test_readiness_coiled_high():
 
 def test_readiness_idle_zero():
     """IDLE with no conditions → low readiness."""
-    from scanner.pre_breakout import PreBreakoutTracker, PBState
+    from scanner.pre_breakout import PBState, PreBreakoutTracker
+
     tracker = PreBreakoutTracker.__new__(PreBreakoutTracker)
     tracker._s = _make_settings()
 
@@ -273,7 +301,8 @@ def test_readiness_idle_zero():
 
 def test_readiness_compressing_moderate():
     """COMPRESSING with moderate conditions → moderate readiness."""
-    from scanner.pre_breakout import PreBreakoutTracker, PBState
+    from scanner.pre_breakout import PBState, PreBreakoutTracker
+
     tracker = PreBreakoutTracker.__new__(PreBreakoutTracker)
     tracker._s = _make_settings()
 
@@ -286,7 +315,8 @@ def test_readiness_compressing_moderate():
 
 def test_readiness_determinism():
     """Same inputs → same readiness score."""
-    from scanner.pre_breakout import PreBreakoutTracker, PBState
+    from scanner.pre_breakout import PBState, PreBreakoutTracker
+
     tracker = PreBreakoutTracker.__new__(PreBreakoutTracker)
     tracker._s = _make_settings()
 
@@ -309,7 +339,8 @@ print("\n--- REPLAY DETERMINISM ---")
 
 def test_replay_sequence():
     """Same feature sequence → identical state progression."""
-    from scanner.pre_breakout import PreBreakoutTracker, PBState
+    from scanner.pre_breakout import PBState, PreBreakoutTracker
+
     settings = _make_settings()
 
     tracker = PreBreakoutTracker.__new__(PreBreakoutTracker)
@@ -318,14 +349,14 @@ def test_replay_sequence():
     # Simulate a sequence: build up compression → accumulation → coil
     sequence = [
         # (bb_width, rel_vol, rsi, prev_bb) → expected state after eval
-        (0.025, 1.0, 50.0),   # declining bb
+        (0.025, 1.0, 50.0),  # declining bb
         (0.024, 1.0, 50.0),
         (0.023, 1.0, 50.0),
         (0.022, 1.0, 50.0),
         (0.021, 1.0, 50.0),
-        (0.020, 1.0, 50.0),   # tick 6 — should now be COMPRESSING
-        (0.019, 1.4, 50.0),   # volume rising → ACCUMULATING
-        (0.013, 1.6, 52.0),   # extreme → COILED
+        (0.020, 1.0, 50.0),  # tick 6 — should now be COMPRESSING
+        (0.019, 1.4, 50.0),  # volume rising → ACCUMULATING
+        (0.013, 1.6, 52.0),  # extreme → COILED
     ]
 
     def run_sequence():
@@ -378,7 +409,8 @@ print("\n--- TRIGGER MARKING ---")
 
 
 def test_mark_triggered():
-    from scanner.pre_breakout import PreBreakoutTracker, PBState
+    from scanner.pre_breakout import PBState, PreBreakoutTracker
+
     tracker = PreBreakoutTracker.__new__(PreBreakoutTracker)
     tracker._s = _make_settings()
 
@@ -387,7 +419,7 @@ def test_mark_triggered():
     state.ticks_in_pre_breakout = 50
 
     tracker.mark_triggered(state)
-    assert state.pre_breakout_state == PBState.TRIGGERED, f"Expected TRIGGERED"
+    assert state.pre_breakout_state == PBState.TRIGGERED, "Expected TRIGGERED"
     assert state.ticks_in_pre_breakout == 0
 
 
@@ -401,7 +433,8 @@ print("\n--- TRANSITION REASONS ---")
 
 
 def test_transition_reasons():
-    from scanner.pre_breakout import PreBreakoutTracker, PBState
+    from scanner.pre_breakout import PBState, PreBreakoutTracker
+
     tracker = PreBreakoutTracker.__new__(PreBreakoutTracker)
     tracker._s = _make_settings()
 
@@ -411,7 +444,9 @@ def test_transition_reasons():
     r1 = tracker._transition_reason(PBState.IDLE, PBState.COMPRESSING, 0.02, 1.0, 50.0, state)
     assert "bb_declining_8" in r1, f"Bad reason: {r1}"
 
-    r2 = tracker._transition_reason(PBState.COMPRESSING, PBState.ACCUMULATING, 0.02, 1.5, 50.0, state)
+    r2 = tracker._transition_reason(
+        PBState.COMPRESSING, PBState.ACCUMULATING, 0.02, 1.5, 50.0, state
+    )
     assert "vol_rising" in r2, f"Bad reason: {r2}"
 
     r3 = tracker._transition_reason(PBState.ACCUMULATING, PBState.COILED, 0.012, 1.8, 52.0, state)

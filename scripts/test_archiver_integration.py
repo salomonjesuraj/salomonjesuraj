@@ -13,12 +13,10 @@ Usage:
 """
 
 import asyncio
-import json
 import os
 import sys
 import time
 import uuid
-from datetime import datetime, timezone, timedelta
 
 base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 for lib in ("infusion-models", "infusion-streams", "infusion-common"):
@@ -27,20 +25,18 @@ sys.path.insert(0, os.path.join(base, "services", "archiver", "src"))
 
 import asyncpg
 import redis.asyncio as aioredis
-
 from archiver.config import ArchiverSettings
-from archiver.writer import SignalWriter, _classify_session
 from archiver.tracker import OutcomeTracker
-
+from archiver.writer import SignalWriter
+from infusion_common.timing import now_us
+from infusion_models.events import EventType
+from infusion_streams.codec import encode_event
 from infusion_streams.constants import (
+    KEY_ARCHIVER_CHECKPOINT,
+    KEY_TICK_PREFIX,
     STREAM_SCAN_SIGNALS,
     STREAM_SCAN_SUPPRESSED,
-    KEY_TICK_PREFIX,
-    KEY_ARCHIVER_CHECKPOINT,
 )
-from infusion_streams.codec import encode_event
-from infusion_models.events import EventType
-from infusion_common.timing import now_us
 
 REDIS_URL = os.environ.get("INFUSION_REDIS_URL", "redis://localhost:6379/0")
 DB_URL = os.environ.get(
@@ -150,8 +146,11 @@ async def run_tests():
         check("Signal 1 grade = A+", rows[0]["conviction_grade"] == "A+")
         check("Signal 2 grade = A", rows[1]["conviction_grade"] == "A")
         check("Signal 3 suppressed", rows[2]["suppressed"] is True)
-        check("Session hour classified", rows[0]["session_hour"] is not None,
-              f"session={rows[0]['session_hour']}")
+        check(
+            "Session hour classified",
+            rows[0]["session_hour"] is not None,
+            f"session={rows[0]['session_hour']}",
+        )
 
     # ═══════════════════════════════════════════════
     # TEST 2: Idempotent UPSERT
@@ -177,13 +176,12 @@ async def run_tests():
 
     # Publish a signal to the stream
     bf_signal = _make_signal("ARCHI_TEST_BF", "A", 88.0)
-    encoded = encode_event(
-        EventType.SCAN_SIGNAL, bf_signal, bf_signal["created_at_us"]
-    )
+    encoded = encode_event(EventType.SCAN_SIGNAL, bf_signal, bf_signal["created_at_us"])
     await r.xadd(STREAM_SCAN_SIGNALS, {"data": encoded})
 
     # Backfill
     from archiver.main import _backfill
+
     bf_writer = SignalWriter(pool, settings)
     bf_count = await _backfill(r, bf_writer, STREAM_SCAN_SIGNALS, settings)
 
@@ -196,12 +194,12 @@ async def run_tests():
     # Verify in Postgres
     async with pool.acquire() as conn:
         bf_row = await conn.fetchrow(
-            "SELECT symbol, conviction_grade FROM signals "
-            "WHERE signal_id = $1::uuid",
+            "SELECT symbol, conviction_grade FROM signals WHERE signal_id = $1::uuid",
             bf_signal["signal_id"],
         )
-    check("Backfilled signal in Postgres",
-          bf_row is not None and bf_row["symbol"] == "ARCHI_TEST_BF")
+    check(
+        "Backfilled signal in Postgres", bf_row is not None and bf_row["symbol"] == "ARCHI_TEST_BF"
+    )
 
     # ═══════════════════════════════════════════════
     # TEST 4: Outcome tracker — TARGET_HIT
@@ -227,7 +225,7 @@ async def run_tests():
 
     # Run tracker cycle
     tracker = OutcomeTracker(pool, r, settings)
-    tracker._market_open = (0, 0)   # Override to always be market hours
+    tracker._market_open = (0, 0)  # Override to always be market hours
     tracker._market_close = (23, 59)
     await tracker._track_cycle()
 
@@ -239,17 +237,15 @@ async def run_tests():
             target_signal["signal_id"],
         )
 
-    check("Outcome = TARGET_HIT",
-          tgt_row and tgt_row["outcome_label"] == "TARGET_HIT")
-    check("outcome_tracked = True",
-          tgt_row and tgt_row["outcome_tracked"] is True)
-    check("target_hit_at set",
-          tgt_row and tgt_row["target_hit_at"] is not None)
-    check("high_after_signal tracked",
-          tgt_row and float(tgt_row["high_after_signal"]) >= 2550.0,
-          f"high={tgt_row['high_after_signal'] if tgt_row else 'N/A'}")
-    check("max_favorable_pct > 0",
-          tgt_row and float(tgt_row["max_favorable_pct"]) > 0)
+    check("Outcome = TARGET_HIT", tgt_row and tgt_row["outcome_label"] == "TARGET_HIT")
+    check("outcome_tracked = True", tgt_row and tgt_row["outcome_tracked"] is True)
+    check("target_hit_at set", tgt_row and tgt_row["target_hit_at"] is not None)
+    check(
+        "high_after_signal tracked",
+        tgt_row and float(tgt_row["high_after_signal"]) >= 2550.0,
+        f"high={tgt_row['high_after_signal'] if tgt_row else 'N/A'}",
+    )
+    check("max_favorable_pct > 0", tgt_row and float(tgt_row["max_favorable_pct"]) > 0)
 
     # ═══════════════════════════════════════════════
     # TEST 5: Outcome tracker — STOP_HIT
@@ -282,15 +278,14 @@ async def run_tests():
             stop_signal["signal_id"],
         )
 
-    check("Outcome = STOP_HIT",
-          stp_row and stp_row["outcome_label"] == "STOP_HIT")
-    check("stop_hit_at set",
-          stp_row and stp_row["stop_hit_at"] is not None)
-    check("low_after_signal tracked",
-          stp_row and float(stp_row["low_after_signal"]) <= 2475.0,
-          f"low={stp_row['low_after_signal'] if stp_row else 'N/A'}")
-    check("max_adverse_pct > 0",
-          stp_row and float(stp_row["max_adverse_pct"]) > 0)
+    check("Outcome = STOP_HIT", stp_row and stp_row["outcome_label"] == "STOP_HIT")
+    check("stop_hit_at set", stp_row and stp_row["stop_hit_at"] is not None)
+    check(
+        "low_after_signal tracked",
+        stp_row and float(stp_row["low_after_signal"]) <= 2475.0,
+        f"low={stp_row['low_after_signal'] if stp_row else 'N/A'}",
+    )
+    check("max_adverse_pct > 0", stp_row and float(stp_row["max_adverse_pct"]) > 0)
 
     # ═══════════════════════════════════════════════
     # TEST 6: Tracker stats
@@ -298,14 +293,14 @@ async def run_tests():
     print("\n--- TRACKER STATS ---")
 
     stats = tracker.stats
-    check("tracker_cycles counter exists", "tracker_cycles" in stats,
-          f"cycles={stats['tracker_cycles']}")
-    check("target_hits >= 1", stats["target_hits"] >= 1,
-          f"hits={stats['target_hits']}")
-    check("stop_hits >= 1", stats["stop_hits"] >= 1,
-          f"hits={stats['stop_hits']}")
-    check("tracked_total >= 2", stats["tracked_total"] >= 2,
-          f"total={stats['tracked_total']}")
+    check(
+        "tracker_cycles counter exists",
+        "tracker_cycles" in stats,
+        f"cycles={stats['tracker_cycles']}",
+    )
+    check("target_hits >= 1", stats["target_hits"] >= 1, f"hits={stats['target_hits']}")
+    check("stop_hits >= 1", stats["stop_hits"] >= 1, f"hits={stats['stop_hits']}")
+    check("tracked_total >= 2", stats["tracked_total"] >= 2, f"total={stats['tracked_total']}")
 
     # ═══════════════════════════════════════════════
     # TEST 7: Suppressed signals archived
@@ -314,8 +309,7 @@ async def run_tests():
 
     async with pool.acquire() as conn:
         sup_count = await conn.fetchval(
-            "SELECT COUNT(*) FROM signals WHERE symbol LIKE 'ARCHI_TEST_%' "
-            "AND suppressed = true"
+            "SELECT COUNT(*) FROM signals WHERE symbol LIKE 'ARCHI_TEST_%' AND suppressed = true"
         )
     check("Suppressed signals archived", sup_count >= 1, f"count={sup_count}")
 
@@ -326,21 +320,34 @@ async def run_tests():
 
     async with pool.acquire() as conn:
         # Check new tables exist
-        for table in ("signal_outcomes_daily", "session_analytics",
-                      "watchlist_conversions", "suppression_daily"):
+        for table in (
+            "signal_outcomes_daily",
+            "session_analytics",
+            "watchlist_conversions",
+            "suppression_daily",
+        ):
             exists = await conn.fetchval(
-                "SELECT EXISTS(SELECT 1 FROM information_schema.tables "
-                "WHERE table_name = $1)", table
+                "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = $1)",
+                table,
             )
             check(f"Table {table} exists", exists)
 
         # Check new columns on signals
-        for col in ("signal_id", "entry_price", "invalidation_price",
-                     "outcome_tracked", "target_hit_at", "stop_hit_at",
-                     "high_after_signal", "max_favorable_pct", "session_hour"):
+        for col in (
+            "signal_id",
+            "entry_price",
+            "invalidation_price",
+            "outcome_tracked",
+            "target_hit_at",
+            "stop_hit_at",
+            "high_after_signal",
+            "max_favorable_pct",
+            "session_hour",
+        ):
             exists = await conn.fetchval(
                 "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
-                "WHERE table_name = 'signals' AND column_name = $1)", col
+                "WHERE table_name = 'signals' AND column_name = $1)",
+                col,
             )
             check(f"Column signals.{col} exists", exists)
 

@@ -22,11 +22,11 @@ actually having moved against `trend_state` over that same short window
 loud," not a claim about the whole swing leg.
 """
 
-from feature_engine.state import SymbolState
 from feature_engine.features.volume import get_volume_sma
+from feature_engine.state import SymbolState
 
 PULLBACK_LOOKBACK_BARS = 3
-DRY_UP_RATIO_THRESHOLD = 0.85   # recent volume meaningfully below the 20-bar baseline
+DRY_UP_RATIO_THRESHOLD = 0.85  # recent volume meaningfully below the 20-bar baseline
 
 
 def pullback_dryup_snapshot(state: SymbolState, trend_state: int) -> dict:
@@ -37,24 +37,38 @@ def pullback_dryup_snapshot(state: SymbolState, trend_state: int) -> dict:
     """
     bars = list(state.recent_1m_bars)
     if trend_state == 0:
-        return {"available": False, "reason": "no trend", "is_pullback": None,
-                "volume_ratio": None, "dry_up": None}
+        return {
+            "available": False,
+            "reason": "no trend",
+            "is_pullback": None,
+            "volume_ratio": None,
+            "dry_up": None,
+        }
     if len(bars) < PULLBACK_LOOKBACK_BARS + 1:
-        return {"available": False, "reason": "insufficient bars", "is_pullback": None,
-                "volume_ratio": None, "dry_up": None}
+        return {
+            "available": False,
+            "reason": "insufficient bars",
+            "is_pullback": None,
+            "volume_ratio": None,
+            "dry_up": None,
+        }
 
     recent = bars[-PULLBACK_LOOKBACK_BARS:]
     recent_avg_vol = sum(float(b.get("v") or 0.0) for b in recent) / len(recent)
     baseline_vol = get_volume_sma(state)
     if baseline_vol <= 0:
-        return {"available": False, "reason": "no volume baseline yet", "is_pullback": None,
-                "volume_ratio": None, "dry_up": None}
+        return {
+            "available": False,
+            "reason": "no volume baseline yet",
+            "is_pullback": None,
+            "volume_ratio": None,
+            "dry_up": None,
+        }
 
     first_close = float(recent[0].get("c") or 0.0)
     last_close = float(recent[-1].get("c") or 0.0)
-    is_pullback = (
-        (trend_state == 1 and last_close < first_close)
-        or (trend_state == -1 and last_close > first_close)
+    is_pullback = (trend_state == 1 and last_close < first_close) or (
+        trend_state == -1 and last_close > first_close
     )
 
     ratio = recent_avg_vol / baseline_vol

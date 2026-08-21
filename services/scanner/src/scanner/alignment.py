@@ -22,14 +22,30 @@ absent family is not evidence against the trade, it's simply silent.
 from __future__ import annotations
 
 BULLISH_CANDLES = {
-    "Bullish Engulfing", "Hammer", "Bullish Marubozu", "Bullish Harami",
-    "Bullish Pin Bar", "Three White Soldiers", "Piercing Line",
-    "Morning Star", "Dragonfly Doji", "Strong Bull Candle", "Tweezer Bottom",
+    "Bullish Engulfing",
+    "Hammer",
+    "Bullish Marubozu",
+    "Bullish Harami",
+    "Bullish Pin Bar",
+    "Three White Soldiers",
+    "Piercing Line",
+    "Morning Star",
+    "Dragonfly Doji",
+    "Strong Bull Candle",
+    "Tweezer Bottom",
 }
 BEARISH_CANDLES = {
-    "Bearish Engulfing", "Shooting Star", "Bearish Marubozu", "Bearish Harami",
-    "Bearish Pin Bar", "Three Black Crows", "Dark Cloud Cover",
-    "Evening Star", "Gravestone Doji", "Strong Bear Candle", "Tweezer Top",
+    "Bearish Engulfing",
+    "Shooting Star",
+    "Bearish Marubozu",
+    "Bearish Harami",
+    "Bearish Pin Bar",
+    "Three Black Crows",
+    "Dark Cloud Cover",
+    "Evening Star",
+    "Gravestone Doji",
+    "Strong Bear Candle",
+    "Tweezer Top",
 }
 
 
@@ -51,8 +67,7 @@ def compute_signal_alignment(
 
     trend_state = ml.get("trend_state")
     families["structure"] = (
-        None if trend_state is None or trend_state == 0
-        else (trend_state == 1) == bullish
+        None if trend_state is None or trend_state == 0 else (trend_state == 1) == bullish
     )
 
     if candle_pattern in BULLISH_CANDLES:
@@ -71,8 +86,16 @@ def compute_signal_alignment(
     else:
         families["zone"] = None  # neither active, or both at once -- no clean read
 
-    ict_bull = bool(ml.get("fvg_bullish_ce")) or bool(ml.get("order_block_bullish_validated")) or ml.get("last_liquidity_sweep") == "sellside"
-    ict_bear = bool(ml.get("fvg_bearish_ce")) or bool(ml.get("order_block_bearish_validated")) or ml.get("last_liquidity_sweep") == "buyside"
+    ict_bull = (
+        bool(ml.get("fvg_bullish_ce"))
+        or bool(ml.get("order_block_bullish_validated"))
+        or ml.get("last_liquidity_sweep") == "sellside"
+    )
+    ict_bear = (
+        bool(ml.get("fvg_bearish_ce"))
+        or bool(ml.get("order_block_bearish_validated"))
+        or ml.get("last_liquidity_sweep") == "buyside"
+    )
     if ict_bull and not ict_bear:
         families["ict"] = bullish
     elif ict_bear and not ict_bull:

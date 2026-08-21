@@ -13,7 +13,7 @@ Design:
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone, timedelta
+from datetime import date, timedelta, timezone
 
 import asyncpg
 import structlog
@@ -88,8 +88,12 @@ class SignalAnalytics:
             "avg_rr": float(row["avg_rr"]) if row["avg_rr"] else None,
             "avg_mfe_pct": float(row["avg_mfe"]) if row["avg_mfe"] else None,
             "avg_mae_pct": float(row["avg_mae"]) if row["avg_mae"] else None,
-            "avg_time_to_target_min": float(row["avg_time_to_target"]) if row["avg_time_to_target"] else None,
-            "avg_time_to_stop_min": float(row["avg_time_to_stop"]) if row["avg_time_to_stop"] else None,
+            "avg_time_to_target_min": float(row["avg_time_to_target"])
+            if row["avg_time_to_target"]
+            else None,
+            "avg_time_to_stop_min": float(row["avg_time_to_stop"])
+            if row["avg_time_to_stop"]
+            else None,
             "target_levels": {
                 "t1": row["t1_hits"] or 0,
                 "t2": row["t2_hits"] or 0,
@@ -127,15 +131,17 @@ class SignalAnalytics:
             hits = r["target_hits"] or 0
             stops = r["stop_hits"] or 0
             decided = hits + stops
-            results.append({
-                "grade": r["grade"],
-                "total": r["total"],
-                "target_hits": hits,
-                "stop_hits": stops,
-                "expired": r["expired"] or 0,
-                "precision_pct": round((hits / decided) * 100, 1) if decided > 0 else None,
-                "avg_score": float(r["avg_score"]) if r["avg_score"] else None,
-            })
+            results.append(
+                {
+                    "grade": r["grade"],
+                    "total": r["total"],
+                    "target_hits": hits,
+                    "stop_hits": stops,
+                    "expired": r["expired"] or 0,
+                    "precision_pct": round((hits / decided) * 100, 1) if decided > 0 else None,
+                    "avg_score": float(r["avg_score"]) if r["avg_score"] else None,
+                }
+            )
         return results
 
     # ═══════════════════════════════════════════════
@@ -171,15 +177,19 @@ class SignalAnalytics:
             hits = r["target_hits"] or 0
             stops = r["stop_hits"] or 0
             decided = hits + stops
-            results.append({
-                "sector_id": r["sector_id"],
-                "total": r["total"],
-                "target_hits": hits,
-                "stop_hits": stops,
-                "precision_pct": round((hits / decided) * 100, 1) if decided > 0 else None,
-                "avg_sector_strength": float(r["avg_sector_strength"]) if r["avg_sector_strength"] else None,
-                "avg_score": float(r["avg_score"]) if r["avg_score"] else None,
-            })
+            results.append(
+                {
+                    "sector_id": r["sector_id"],
+                    "total": r["total"],
+                    "target_hits": hits,
+                    "stop_hits": stops,
+                    "precision_pct": round((hits / decided) * 100, 1) if decided > 0 else None,
+                    "avg_sector_strength": float(r["avg_sector_strength"])
+                    if r["avg_sector_strength"]
+                    else None,
+                    "avg_score": float(r["avg_score"]) if r["avg_score"] else None,
+                }
+            )
         return results
 
     # ═══════════════════════════════════════════════
@@ -221,14 +231,16 @@ class SignalAnalytics:
             hits = r["target_hits"] or 0
             stops = r["stop_hits"] or 0
             decided = hits + stops
-            results.append({
-                "session": r["session_hour"],
-                "total": r["total"],
-                "target_hits": hits,
-                "stop_hits": stops,
-                "precision_pct": round((hits / decided) * 100, 1) if decided > 0 else None,
-                "avg_score": float(r["avg_score"]) if r["avg_score"] else None,
-            })
+            results.append(
+                {
+                    "session": r["session_hour"],
+                    "total": r["total"],
+                    "target_hits": hits,
+                    "stop_hits": stops,
+                    "precision_pct": round((hits / decided) * 100, 1) if decided > 0 else None,
+                    "avg_score": float(r["avg_score"]) if r["avg_score"] else None,
+                }
+            )
         return results
 
     # ═══════════════════════════════════════════════
@@ -259,11 +271,13 @@ class SignalAnalytics:
         total = sum(r["total_suppressed"] for r in rows)
         by_reason = []
         for r in rows:
-            by_reason.append({
-                "reason": r["reason"] or "unknown",
-                "count": r["total_suppressed"],
-                "avg_score": float(r["avg_score"]) if r["avg_score"] else None,
-            })
+            by_reason.append(
+                {
+                    "reason": r["reason"] or "unknown",
+                    "count": r["total_suppressed"],
+                    "avg_score": float(r["avg_score"]) if r["avg_score"] else None,
+                }
+            )
 
         return {
             "total_suppressed": total,
@@ -302,14 +316,16 @@ class SignalAnalytics:
             hits = r["target_hits"] or 0
             stops = r["stop_hits"] or 0
             decided = hits + stops
-            results.append({
-                "regime": r["regime"],
-                "total": r["total"],
-                "target_hits": hits,
-                "stop_hits": stops,
-                "precision_pct": round((hits / decided) * 100, 1) if decided > 0 else None,
-                "avg_score": float(r["avg_score"]) if r["avg_score"] else None,
-            })
+            results.append(
+                {
+                    "regime": r["regime"],
+                    "total": r["total"],
+                    "target_hits": hits,
+                    "stop_hits": stops,
+                    "precision_pct": round((hits / decided) * 100, 1) if decided > 0 else None,
+                    "avg_score": float(r["avg_score"]) if r["avg_score"] else None,
+                }
+            )
         return results
 
     # ═══════════════════════════════════════════════
@@ -364,7 +380,9 @@ class SignalAnalytics:
                 "regime": r["market_regime"],
                 "mfe_pct": float(r["max_favorable_pct"]) if r["max_favorable_pct"] else 0,
                 "mae_pct": float(r["max_adverse_pct"]) if r["max_adverse_pct"] else 0,
-                "time_to_target_min": float(r["time_to_target_min"]) if r["time_to_target_min"] else None,
+                "time_to_target_min": float(r["time_to_target_min"])
+                if r["time_to_target_min"]
+                else None,
                 "time_to_stop_min": float(r["time_to_stop_min"]) if r["time_to_stop_min"] else None,
                 "created_at": r["created_at"].isoformat() if r["created_at"] else None,
                 # Phase N8: 'T1'/'T2'/'T3' on a TARGET_HIT row, null on
@@ -396,7 +414,8 @@ class SignalAnalytics:
                 "SELECT COUNT(*) as total, "
                 "COUNT(*) FILTER (WHERE NOT suppressed) as active, "
                 "COUNT(*) FILTER (WHERE suppressed) as suppressed "
-                "FROM signals WHERE created_at::date = $1", td
+                "FROM signals WHERE created_at::date = $1",
+                td,
             )
 
         return {

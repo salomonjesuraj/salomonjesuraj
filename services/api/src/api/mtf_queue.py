@@ -54,11 +54,15 @@ async def mtf_queue_loop(app) -> None:
     interval = max(45, int(getattr(config, "mtf_refresh_interval_sec", 90) or 90))
     limit = max(0, int(getattr(config, "mtf_candidate_limit", 60) or 60))
     if not enabled or limit <= 0:
-        await redis.set(STATUS_KEY, json.dumps({"enabled": False, "reason": "disabled_by_config"}), ex=600)
+        await redis.set(
+            STATUS_KEY, json.dumps({"enabled": False, "reason": "disabled_by_config"}), ex=600
+        )
         return
     logger.info("mtf_queue_started", interval=interval, limit=limit)
     while True:
         with contextlib.suppress(Exception):
             status = await refresh_mtf_candidates_once(redis, limit=limit)
-            logger.info("mtf_queue_cycle", **{k: v for k, v in status.items() if not isinstance(v, list)})
+            logger.info(
+                "mtf_queue_cycle", **{k: v for k, v in status.items() if not isinstance(v, list)}
+            )
         await asyncio.sleep(interval)

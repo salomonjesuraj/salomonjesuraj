@@ -33,8 +33,10 @@ over double) or the higher Bulkowski hit rate.
 
 from __future__ import annotations
 
-PEAK_SIMILARITY_PCT = 5.0      # Bulkowski's own stated tolerance for double-bottom valleys; extended here to peaks and triple variants for consistency
-PATTERN_LOOKBACK_PIVOTS = 8    # how many recent pivots are worth checking for a live, still-relevant pattern
+PEAK_SIMILARITY_PCT = 5.0  # Bulkowski's own stated tolerance for double-bottom valleys; extended here to peaks and triple variants for consistency
+PATTERN_LOOKBACK_PIVOTS = (
+    8  # how many recent pivots are worth checking for a live, still-relevant pattern
+)
 
 
 def _similar(a: float, b: float, tolerance_pct: float = PEAK_SIMILARITY_PCT) -> bool:
@@ -43,7 +45,9 @@ def _similar(a: float, b: float, tolerance_pct: float = PEAK_SIMILARITY_PCT) -> 
     return abs(a - b) / max(a, b) * 100.0 <= tolerance_pct
 
 
-def fractal_pivots_indexed(bars: list[dict], left: int = 2, right: int = 2) -> list[tuple[float, str, int]]:
+def fractal_pivots_indexed(
+    bars: list[dict], left: int = 2, right: int = 2
+) -> list[tuple[float, str, int]]:
     """Chronological (price, 'high'|'low', bar_index) pivot list — the same
     fractal left/right rule as api.routes.mtf._fractal_pivots, but indexed
     and interleaved (one combined, ordered sequence) so pattern detectors
@@ -55,7 +59,7 @@ def fractal_pivots_indexed(bars: list[dict], left: int = 2, right: int = 2) -> l
     if len(bars) < window:
         return out
     for i in range(left, len(bars) - right):
-        segment = bars[i - left: i + right + 1]
+        segment = bars[i - left : i + right + 1]
         cand_high = bars[i]["high"]
         cand_low = bars[i]["low"]
         seg_highs = [b["high"] for b in segment]
@@ -68,7 +72,9 @@ def fractal_pivots_indexed(bars: list[dict], left: int = 2, right: int = 2) -> l
     return out
 
 
-def _recent(pivots: list[tuple[float, str, int]], n: int = PATTERN_LOOKBACK_PIVOTS) -> list[tuple[float, str, int]]:
+def _recent(
+    pivots: list[tuple[float, str, int]], n: int = PATTERN_LOOKBACK_PIVOTS
+) -> list[tuple[float, str, int]]:
     return pivots[-n:] if len(pivots) > n else pivots
 
 
@@ -91,8 +97,11 @@ def detect_double_top(pivots: list[tuple[float, str, int]], current_price: float
             if height <= 0:
                 continue
             return {
-                "pattern": "double_top", "bias": "bearish",
-                "peak_1": round(p1, 2), "valley": round(valley, 2), "peak_2": round(p3, 2),
+                "pattern": "double_top",
+                "bias": "bearish",
+                "peak_1": round(p1, 2),
+                "valley": round(valley, 2),
+                "peak_2": round(p3, 2),
                 "height": round(height, 2),
                 "confirmation_line": round(valley, 2),
                 "confirmed": current_price < valley,
@@ -118,8 +127,11 @@ def detect_double_bottom(pivots: list[tuple[float, str, int]], current_price: fl
             if height <= 0:
                 continue
             return {
-                "pattern": "double_bottom", "bias": "bullish",
-                "valley_1": round(p1, 2), "peak": round(peak, 2), "valley_2": round(p3, 2),
+                "pattern": "double_bottom",
+                "bias": "bullish",
+                "valley_1": round(p1, 2),
+                "peak": round(peak, 2),
+                "valley_2": round(p3, 2),
                 "height": round(height, 2),
                 "confirmation_line": round(peak, 2),
                 "confirmed": current_price > peak,
@@ -142,14 +154,19 @@ def detect_triple_top(pivots: list[tuple[float, str, int]], current_price: float
         p3, k3, _ = recent[i + 2]
         p4, k4, _ = recent[i + 3]
         p5, k5, _ = recent[i + 4]
-        if (k1, k2, k3, k4, k5) == ("high", "low", "high", "low", "high") and _similar(p1, p3) and _similar(p3, p5):
+        if (
+            (k1, k2, k3, k4, k5) == ("high", "low", "high", "low", "high")
+            and _similar(p1, p3)
+            and _similar(p3, p5)
+        ):
             peak = max(p1, p3, p5)
             valley = min(p2, p4)
             height = peak - valley
             if height <= 0:
                 continue
             return {
-                "pattern": "triple_top", "bias": "bearish",
+                "pattern": "triple_top",
+                "bias": "bearish",
                 "peaks": [round(p1, 2), round(p3, 2), round(p5, 2)],
                 "confirmation_line": round(valley, 2),
                 "height": round(height, 2),
@@ -172,14 +189,19 @@ def detect_triple_bottom(pivots: list[tuple[float, str, int]], current_price: fl
         p3, k3, _ = recent[i + 2]
         p4, k4, _ = recent[i + 3]
         p5, k5, _ = recent[i + 4]
-        if (k1, k2, k3, k4, k5) == ("low", "high", "low", "high", "low") and _similar(p1, p3) and _similar(p3, p5):
+        if (
+            (k1, k2, k3, k4, k5) == ("low", "high", "low", "high", "low")
+            and _similar(p1, p3)
+            and _similar(p3, p5)
+        ):
             valley = min(p1, p3, p5)
             peak = max(p2, p4)
             height = peak - valley
             if height <= 0:
                 continue
             return {
-                "pattern": "triple_bottom", "bias": "bullish",
+                "pattern": "triple_bottom",
+                "bias": "bullish",
                 "valleys": [round(p1, 2), round(p3, 2), round(p5, 2)],
                 "confirmation_line": round(peak, 2),
                 "height": round(height, 2),
@@ -205,7 +227,7 @@ def detect_rectangle(pivots: list[tuple[float, str, int]], current_price: float)
     top_ref = max(highs)
     top_cluster = [h for h in highs if _similar(h, top_ref)]
     bottom_ref = min(lows)
-    bottom_cluster = [l for l in lows if _similar(l, bottom_ref)]
+    bottom_cluster = [low for low in lows if _similar(low, bottom_ref)]
     if len(top_cluster) < 2 or len(bottom_cluster) < 2:
         return None
 
@@ -223,9 +245,12 @@ def detect_rectangle(pivots: list[tuple[float, str, int]], current_price: float)
         breakout, target = "inside", None
 
     return {
-        "pattern": "rectangle", "bias": "breakout_direction_dependent",
-        "top": round(top, 2), "bottom": round(bottom, 2),
-        "top_touches": len(top_cluster), "bottom_touches": len(bottom_cluster),
+        "pattern": "rectangle",
+        "bias": "breakout_direction_dependent",
+        "top": round(top, 2),
+        "bottom": round(bottom, 2),
+        "top_touches": len(top_cluster),
+        "bottom_touches": len(bottom_cluster),
         "height": round(height, 2),
         "breakout": breakout,
         "target": round(target, 2) if target is not None else None,
@@ -235,8 +260,10 @@ def detect_rectangle(pivots: list[tuple[float, str, int]], current_price: float)
 
 
 PATTERN_DETECTORS = (
-    detect_double_top, detect_double_bottom,
-    detect_triple_top, detect_triple_bottom,
+    detect_double_top,
+    detect_double_bottom,
+    detect_triple_top,
+    detect_triple_bottom,
     detect_rectangle,
 )
 

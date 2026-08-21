@@ -497,16 +497,13 @@ def build_tier(tier_name, extra_stocks, parent_data, tiers_list):
 
 def main():
     # Load NIFTY 50 base
-    with open(os.path.join(SYMBOLS_DIR, "nifty50.json"), "r") as f:
+    with open(os.path.join(SYMBOLS_DIR, "nifty50.json")) as f:
         nifty50 = json.load(f)
 
     print(f"NIFTY 50: {len(nifty50)} symbols")
 
     # Build NIFTY 100
-    nifty100 = build_tier(
-        "NIFTY100", NEXT_50, nifty50,
-        ["NIFTY100", "NIFTY200", "NIFTY500"]
-    )
+    nifty100 = build_tier("NIFTY100", NEXT_50, nifty50, ["NIFTY100", "NIFTY200", "NIFTY500"])
     # Update NIFTY 50 members to include NIFTY100 membership
     for sym in nifty50:
         if "NIFTY100" not in nifty100[sym]["index_membership"]:
@@ -514,20 +511,14 @@ def main():
     print(f"NIFTY 100: {len(nifty100)} symbols")
 
     # Build NIFTY 200
-    nifty200 = build_tier(
-        "NIFTY200", NEXT_100, nifty100,
-        ["NIFTY200", "NIFTY500"]
-    )
+    nifty200 = build_tier("NIFTY200", NEXT_100, nifty100, ["NIFTY200", "NIFTY500"])
     for sym in nifty100:
         if "NIFTY200" not in nifty200[sym]["index_membership"]:
             nifty200[sym]["index_membership"].append("NIFTY200")
     print(f"NIFTY 200: {len(nifty200)} symbols")
 
     # Build NIFTY 500
-    nifty500 = build_tier(
-        "NIFTY500", NEXT_300, nifty200,
-        ["NIFTY500"]
-    )
+    nifty500 = build_tier("NIFTY500", NEXT_300, nifty200, ["NIFTY500"])
     for sym in nifty200:
         if "NIFTY500" not in nifty500[sym]["index_membership"]:
             nifty500[sym]["index_membership"].append("NIFTY500")
@@ -547,7 +538,7 @@ def main():
     # Print sector distribution
     print("\nSector distribution (NIFTY 500):")
     sectors = {}
-    for sym, meta in nifty500.items():
+    for _sym, meta in nifty500.items():
         s = meta["sector_id"]
         sectors[s] = sectors.get(s, 0) + 1
     for s, c in sorted(sectors.items(), key=lambda x: -x[1]):

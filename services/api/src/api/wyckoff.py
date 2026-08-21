@@ -13,7 +13,7 @@ practitioners actually read these structures, which is the more defensible
 default.
 
 Source: Wyckoff 2.0 (Villahermosa) — Volume 2 of a two-book series. It
-assumes the full Phase A–E schematic (PS/SC/AR/ST/Spring/SOS/LPS) from a
+assumes the full Phase A-E schematic (PS/SC/AR/ST/Spring/SOS/LPS) from a
 Volume 1 that ISN'T in the corpus this was built from, so full phase
 detection is explicitly BLOCKED — not attempted here or anywhere else in
 this codebase, not faked from general knowledge and passed off as sourced.
@@ -36,11 +36,13 @@ NOT implemented this pass, deferred with reason:
 
 from __future__ import annotations
 
-STRUCTURAL_TOUCH_TOLERANCE_PCT = 5.0     # same convention as chart_patterns.py's peak-similarity rule
-FAILURE_APPROACH_TOLERANCE_PCT = 3.0     # how close a swing must get to an extreme to count as "reaching" it -- Infusion's own calibration, source gives no exact number
+STRUCTURAL_TOUCH_TOLERANCE_PCT = 5.0  # same convention as chart_patterns.py's peak-similarity rule
+FAILURE_APPROACH_TOLERANCE_PCT = 3.0  # how close a swing must get to an extreme to count as "reaching" it -- Infusion's own calibration, source gives no exact number
 SOT_MIN_LEGS = 3
-SOS_SOW_RANGE_MULTIPLIER = 1.2           # "wide-range" -- Infusion's own calibration, source doesn't quantify
-SOS_SOW_VOLUME_MULTIPLIER = 1.2          # "relatively high volume" -- same
+SOS_SOW_RANGE_MULTIPLIER = (
+    1.2  # "wide-range" -- Infusion's own calibration, source doesn't quantify
+)
+SOS_SOW_VOLUME_MULTIPLIER = 1.2  # "relatively high volume" -- same
 SOS_SOW_LOOKBACK = 20
 PATTERN_LOOKBACK_PIVOTS = 8
 
@@ -51,7 +53,9 @@ def _similar(a: float, b: float, tolerance_pct: float) -> bool:
     return abs(a - b) / max(a, b) * 100.0 <= tolerance_pct
 
 
-def detect_structural_failure(pivots: list[tuple[float, str, int]], lookback: int = PATTERN_LOOKBACK_PIVOTS) -> dict | None:
+def detect_structural_failure(
+    pivots: list[tuple[float, str, int]], lookback: int = PATTERN_LOOKBACK_PIVOTS
+) -> dict | None:
     """A validated range (>=2 touches each side, same clustering rule as
     chart_patterns.detect_rectangle) where the most recent swing clearly
     moved toward one extreme from a confirmed touch of the other, but
@@ -84,24 +88,40 @@ def detect_structural_failure(pivots: list[tuple[float, str, int]], lookback: in
     prev_p, prev_k, _ = recent[-2]
     last_p, last_k, _ = recent[-1]
 
-    if prev_k == "low" and _similar(prev_p, bottom, STRUCTURAL_TOUCH_TOLERANCE_PCT) and last_k == "high" and last_p < top - approach_tol:
+    if (
+        prev_k == "low"
+        and _similar(prev_p, bottom, STRUCTURAL_TOUCH_TOLERANCE_PCT)
+        and last_k == "high"
+        and last_p < top - approach_tol
+    ):
         return {
             "type": "weakness",
-            "range_top": round(top, 2), "range_bottom": round(bottom, 2),
-            "failed_at": round(last_p, 2), "shortfall": round(top - last_p, 2),
+            "range_top": round(top, 2),
+            "range_bottom": round(bottom, 2),
+            "failed_at": round(last_p, 2),
+            "shortfall": round(top - last_p, 2),
             "note": "Rally from range support failed to reach range resistance -- underlying weakness",
         }
-    if prev_k == "high" and _similar(prev_p, top, STRUCTURAL_TOUCH_TOLERANCE_PCT) and last_k == "low" and last_p > bottom + approach_tol:
+    if (
+        prev_k == "high"
+        and _similar(prev_p, top, STRUCTURAL_TOUCH_TOLERANCE_PCT)
+        and last_k == "low"
+        and last_p > bottom + approach_tol
+    ):
         return {
             "type": "strength",
-            "range_top": round(top, 2), "range_bottom": round(bottom, 2),
-            "failed_at": round(last_p, 2), "shortfall": round(last_p - bottom, 2),
+            "range_top": round(top, 2),
+            "range_bottom": round(bottom, 2),
+            "failed_at": round(last_p, 2),
+            "shortfall": round(last_p - bottom, 2),
             "note": "Decline from range resistance failed to reach range support -- underlying strength",
         }
     return None
 
 
-def detect_shortening_of_thrust(pivots: list[tuple[float, str, int]], lookback: int = PATTERN_LOOKBACK_PIVOTS) -> dict | None:
+def detect_shortening_of_thrust(
+    pivots: list[tuple[float, str, int]], lookback: int = PATTERN_LOOKBACK_PIVOTS
+) -> dict | None:
     """>= 3 consecutive same-direction legs, each shorter than the last.
     Up-legs (low->high moves) shrinking = possible upside exhaustion;
     down-legs shrinking = possible downside exhaustion. No volume
@@ -124,13 +144,25 @@ def detect_shortening_of_thrust(pivots: list[tuple[float, str, int]], lookback: 
     down_legs = [size for size, k in legs if k == "low"]
 
     for direction, leg_sizes, label in (
-        ("bullish_exhaustion", up_legs, "Each successive rally is shorter than the last -- possible upside exhaustion"),
-        ("bearish_exhaustion", down_legs, "Each successive decline is shorter than the last -- possible downside exhaustion"),
+        (
+            "bullish_exhaustion",
+            up_legs,
+            "Each successive rally is shorter than the last -- possible upside exhaustion",
+        ),
+        (
+            "bearish_exhaustion",
+            down_legs,
+            "Each successive decline is shorter than the last -- possible downside exhaustion",
+        ),
     ):
         if len(leg_sizes) >= SOT_MIN_LEGS:
             last_three = leg_sizes[-SOT_MIN_LEGS:]
             if all(last_three[i] > last_three[i + 1] for i in range(len(last_three) - 1)):
-                return {"type": direction, "leg_sizes": [round(s, 2) for s in last_three], "note": label}
+                return {
+                    "type": direction,
+                    "leg_sizes": [round(s, 2) for s in last_three],
+                    "note": label,
+                }
     return None
 
 
@@ -140,7 +172,7 @@ def detect_sos_sow_bar(daily_bars: list[dict], lookback: int = SOS_SOW_LOOKBACK)
     of its own range -- Wyckoff 2.0's actual entry trigger."""
     if len(daily_bars) < lookback + 1:
         return None
-    window = daily_bars[-(lookback + 1):-1]
+    window = daily_bars[-(lookback + 1) : -1]
     latest = daily_bars[-1]
 
     avg_range = sum(b["high"] - b["low"] for b in window) / len(window)

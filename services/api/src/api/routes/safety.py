@@ -92,7 +92,10 @@ async def safety_status(request):
     risk = _decode_json(await redis.get(RISK_KEY), {})
     risk_updated_today = str(risk.get("updated_at_ist", "")).startswith(today)
     auto_orders_enabled = bool(risk.get("auto_orders_enabled"))
-    paper_first = str(risk.get("execution_mode") or "paper_first") == "paper_first" and not auto_orders_enabled
+    paper_first = (
+        str(risk.get("execution_mode") or "paper_first") == "paper_first"
+        and not auto_orders_enabled
+    )
 
     ingestion = await _health(redis, "ingestion")
     normalizer = await _health(redis, "normalizer")
@@ -135,18 +138,25 @@ async def safety_status(request):
             "key": "kill_switch",
             "label": "Kill switch",
             "state": "block" if kill["enabled"] else "pass",
-            "detail": kill["reason"] or ("Manual block is ON" if kill["enabled"] else "Manual block is OFF"),
+            "detail": kill["reason"]
+            or ("Manual block is ON" if kill["enabled"] else "Manual block is OFF"),
         },
         {
             "key": "token",
             "label": "Upstox token",
             "state": "pass" if token_valid else "block",
-            "detail": f"Expires {auth.get('expiry_ist', '-')}" if token_valid else "Token missing/expired",
+            "detail": f"Expires {auth.get('expiry_ist', '-')}"
+            if token_valid
+            else "Token missing/expired",
         },
         {
             "key": "data",
             "label": "Market data",
-            "state": "pass" if data_fresh else "warn" if session != "open" and tick_count > 0 else "block",
+            "state": "pass"
+            if data_fresh
+            else "warn"
+            if session != "open" and tick_count > 0
+            else "block",
             "detail": f"{tick_count} ticks | age {last_tick_age_ms} ms | {session}",
         },
         {
@@ -158,7 +168,12 @@ async def safety_status(request):
         {
             "key": "services",
             "label": "Services",
-            "state": "pass" if all(s.get("status") == "healthy" for s in [ingestion, normalizer, feature_engine, api_health]) else "warn",
+            "state": "pass"
+            if all(
+                s.get("status") == "healthy"
+                for s in [ingestion, normalizer, feature_engine, api_health]
+            )
+            else "warn",
             "detail": f"Ingestion {ingestion.get('status')} | Feature {feature_engine.get('status')}",
         },
         {
@@ -184,27 +199,29 @@ async def safety_status(request):
     if verdict == "PAPER_READY" and warn_count:
         verdict = "WATCH_READY"
 
-    return web.json_response({
-        "ok": True,
-        "verdict": verdict,
-        "session": session,
-        "timestamp_ist": now.strftime("%Y-%m-%d %H:%M:%S IST"),
-        "paper_first": paper_first,
-        "kill_switch": kill,
-        "gates": gates,
-        "counts": {
-            "active_signals": active_signals,
-            "journal_today": len(today_journal),
-            "staged_today": len(today_staged),
-            "ready_tickets": len(ready_tickets),
-            "blocked_tickets": len(blocked_tickets),
-        },
-        "next_action": (
-            "Do not trade. Clear blockers first."
-            if block_count
-            else "Paper trade only. Stage ticket, visually confirm in TradingView, then journal outcome."
-        ),
-    })
+    return web.json_response(
+        {
+            "ok": True,
+            "verdict": verdict,
+            "session": session,
+            "timestamp_ist": now.strftime("%Y-%m-%d %H:%M:%S IST"),
+            "paper_first": paper_first,
+            "kill_switch": kill,
+            "gates": gates,
+            "counts": {
+                "active_signals": active_signals,
+                "journal_today": len(today_journal),
+                "staged_today": len(today_staged),
+                "ready_tickets": len(ready_tickets),
+                "blocked_tickets": len(blocked_tickets),
+            },
+            "next_action": (
+                "Do not trade. Clear blockers first."
+                if block_count
+                else "Paper trade only. Stage ticket, visually confirm in TradingView, then journal outcome."
+            ),
+        }
+    )
 
 
 @routes.post("/api/safety/kill-switch")

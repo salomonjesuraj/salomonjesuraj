@@ -14,6 +14,7 @@ import json
 import os
 import sys
 import time
+from datetime import UTC
 
 base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 for lib in ("infusion-models", "infusion-streams", "infusion-common"):
@@ -50,21 +51,36 @@ async def main():
     # ═══════════════════════════════════════════════
     print("\n--- MODULE IMPORTS ---")
     try:
+        from feature_engine.features.candles import detect_candle_pattern, update_body_ema
+        from feature_engine.features.ict import ict_snapshot, update_ict
+        from feature_engine.features.momentum import get_adx, update_adx
+        from feature_engine.features.structure import (
+            structure_snapshot,
+            trend_text,
+            update_structure,
+        )
+        from feature_engine.features.volatility import get_supertrend, update_supertrend
+        from feature_engine.features.volman import (
+            check_entry_trigger,
+            detect_buildup,
+            volman_snapshot,
+        )
+        from feature_engine.features.zones import update_zones
         from feature_engine.state import SymbolState
-        from feature_engine.features.structure import update_structure, structure_snapshot, trend_text
-        from feature_engine.features.candles import detect_candle_pattern, update_body_ema, body_pct
-        from feature_engine.features.zones import update_zones, zone_snapshot
-        from feature_engine.features.momentum import update_adx, get_adx
-        from feature_engine.features.volatility import update_supertrend, get_supertrend
-        from feature_engine.features.ict import update_ict, ict_snapshot
-        from feature_engine.features.volman import detect_buildup, check_entry_trigger, volman_snapshot
+
         check("feature_engine Pine-alignment modules import", True)
     except Exception as e:
         check("feature_engine Pine-alignment modules import", False, str(e))
         return
 
     try:
-        from scanner.pine_confidence import compute_pine_decision, compute_strength_meter, MTF_CACHE_STALE_SEC, compute_fib_targets
+        from scanner.pine_confidence import (
+            MTF_CACHE_STALE_SEC,
+            compute_fib_targets,
+            compute_pine_decision,
+            compute_strength_meter,
+        )
+
         check("scanner.pine_confidence imports", True)
     except Exception as e:
         check("scanner.pine_confidence imports", False, str(e))
@@ -72,9 +88,14 @@ async def main():
 
     try:
         from feature_engine.features.fibonacci import (
-            retracement_levels, resistance_retracement_levels, extension_levels,
-            projection_levels, find_confluence_clusters, fib_snapshot,
+            extension_levels,
+            fib_snapshot,
+            find_confluence_clusters,
+            projection_levels,
+            resistance_retracement_levels,
+            retracement_levels,
         )
+
         check("feature_engine.features.fibonacci imports", True)
     except Exception as e:
         check("feature_engine.features.fibonacci imports", False, str(e))
@@ -82,6 +103,7 @@ async def main():
 
     try:
         from api.routes.ticks import _classify_oi_buildup
+
         check("api.routes.ticks OI classification imports", True)
     except Exception as e:
         check("api.routes.ticks OI classification imports", False, str(e))
@@ -89,13 +111,15 @@ async def main():
 
     try:
         from api.routes.ticks import _potential_upside_pct, _trade_horizon_label
+
         check("api.routes.ticks trade-card helpers import", True)
     except Exception as e:
         check("api.routes.ticks trade-card helpers import", False, str(e))
         return
 
     try:
-        from scanner.scoring import compute_conviction, grade_conviction, CHASEABLE_GRADE_CAP
+        from scanner.scoring import CHASEABLE_GRADE_CAP, compute_conviction, grade_conviction
+
         check("scanner.scoring imports", True)
     except Exception as e:
         check("scanner.scoring imports", False, str(e))
@@ -103,6 +127,7 @@ async def main():
 
     try:
         from scanner.sector import SectorEngine, SectorState, SymbolSnapshot
+
         check("scanner.sector imports", True)
     except Exception as e:
         check("scanner.sector imports", False, str(e))
@@ -110,20 +135,28 @@ async def main():
 
     try:
         from scanner.suppression import _current_session
+
         check("scanner.suppression imports", True)
     except Exception as e:
         check("scanner.suppression imports", False, str(e))
         return
 
     try:
-        from api.options_analytics import compute_pcr, compute_oi_support_resistance, compute_max_pain, classify_pcr
+        from api.options_analytics import (
+            classify_pcr,
+            compute_max_pain,
+            compute_oi_support_resistance,
+            compute_pcr,
+        )
+
         check("api.options_analytics imports", True)
     except Exception as e:
         check("api.options_analytics imports", False, str(e))
         return
 
     try:
-        from api.routes.mtf import _fractal_pivots, _major_blocker, compute_mtf
+        from api.routes.mtf import _fractal_pivots, _major_blocker
+
         check("api.routes.mtf blocker functions import", True)
     except Exception as e:
         check("api.routes.mtf blocker functions import", False, str(e))
@@ -131,22 +164,33 @@ async def main():
 
     try:
         from api.routes.backtest import (
-            compute_walkforward, compute_feature_ablation, compute_optimizer_proposal,
-            _ablation_field_present, _ablation_group_metrics, _read_live_config,
-            KNOWN_ABLATION_FIELDS, KNOWN_ABLATION_FIELDS_SUB_SCORES,
-            LIVE_CONFIG_KEY, OPTIMIZER_PROPOSAL_KEY,
+            KNOWN_ABLATION_FIELDS,
+            KNOWN_ABLATION_FIELDS_SUB_SCORES,
+            LIVE_CONFIG_KEY,
+            OPTIMIZER_PROPOSAL_KEY,
+            _ablation_field_present,
+            _ablation_group_metrics,
+            _read_live_config,
+            compute_feature_ablation,
+            compute_optimizer_proposal,
+            compute_walkforward,
         )
+
         check("api.routes.backtest optimizer-scheduler functions import", True)
     except Exception as e:
         check("api.routes.backtest optimizer-scheduler functions import", False, str(e))
         return
 
     try:
-        from api.signal_snapshot import build_symbol_snapshot, decode_hash
         from api.ai_query import (
-            classify_intents, find_mentioned_symbols, find_mentioned_ablation_field,
-            gather_facts, format_facts_as_text, load_known_symbols,
+            classify_intents,
+            find_mentioned_ablation_field,
+            find_mentioned_symbols,
+            format_facts_as_text,
+            gather_facts,
+            load_known_symbols,
         )
+
         check("api.ai_query (Phase 12 NL query layer) imports", True)
     except Exception as e:
         check("api.ai_query (Phase 12 NL query layer) imports", False, str(e))
@@ -154,13 +198,15 @@ async def main():
 
     try:
         from api.routes.mtf import _classic_pivots, _pivot_bias, _virgin_cpr_zones
+
         check("api.routes.mtf pivot/CPR functions import", True)
     except Exception as e:
         check("api.routes.mtf pivot/CPR functions import", False, str(e))
         return
 
     try:
-        from api.routes.mtf import _ma_regime, _sma_series, _regime_at
+        from api.routes.mtf import _ma_regime, _regime_at, _sma_series
+
         check("api.routes.mtf MA-regime functions import", True)
     except Exception as e:
         check("api.routes.mtf MA-regime functions import", False, str(e))
@@ -168,9 +214,16 @@ async def main():
 
     try:
         from api.chart_patterns import (
-            detect_double_top, detect_double_bottom, detect_triple_top, detect_triple_bottom,
-            detect_rectangle, detect_chart_patterns, fractal_pivots_indexed, _similar,
+            _similar,
+            detect_chart_patterns,
+            detect_double_bottom,
+            detect_double_top,
+            detect_rectangle,
+            detect_triple_bottom,
+            detect_triple_top,
+            fractal_pivots_indexed,
         )
+
         check("api.chart_patterns functions import", True)
     except Exception as e:
         check("api.chart_patterns functions import", False, str(e))
@@ -178,20 +231,27 @@ async def main():
 
     try:
         from infusion_common.sizing import compute_position_size
+
         check("infusion_common.sizing imports", True)
     except Exception as e:
         check("infusion_common.sizing imports", False, str(e))
         return
 
     try:
-        from api.routes.mtf import _donchian_channel, DONCHIAN_PERIOD
+        from api.routes.mtf import DONCHIAN_PERIOD, _donchian_channel
+
         check("api.routes.mtf Donchian channel function imports", True)
     except Exception as e:
         check("api.routes.mtf Donchian channel function imports", False, str(e))
         return
 
     try:
-        from api.wyckoff import detect_structural_failure, detect_shortening_of_thrust, detect_sos_sow_bar
+        from api.wyckoff import (
+            detect_shortening_of_thrust,
+            detect_sos_sow_bar,
+            detect_structural_failure,
+        )
+
         check("api.wyckoff functions import", True)
     except Exception as e:
         check("api.wyckoff functions import", False, str(e))
@@ -199,6 +259,7 @@ async def main():
 
     try:
         from alerter.formatter import format_signal
+
         check("alerter.formatter imports", True)
     except Exception as e:
         check("alerter.formatter imports", False, str(e))
@@ -224,7 +285,11 @@ async def main():
         update_structure(state)
     snap = structure_snapshot(state)
     check("Swing high pivot detected (105)", state.swing_high_1 == 105, f"got {state.swing_high_1}")
-    check("Bullish BOS fired on break", snap["last_event_label"] == "Bullish BOS", f"got {snap['last_event_label']}")
+    check(
+        "Bullish BOS fired on break",
+        snap["last_event_label"] == "Bullish BOS",
+        f"got {snap['last_event_label']}",
+    )
     check("trend_state flipped bullish", snap["trend_state"] == 1, f"got {snap['trend_state']}")
     check("trend_text() formats correctly", trend_text(1) == "UPTREND (HH/HL)")
 
@@ -254,20 +319,28 @@ async def main():
     print("\n--- PHASE 3: ADX / SUPERTREND / STRENGTH METER / MTF CACHE ---")
     state3 = SymbolState(symbol="TEST3")
     for i in range(20):
-        h, l, c = 100 + i * 0.5, 99 + i * 0.5, 99.8 + i * 0.5
-        update_adx(state3, h, l, c)
-        update_supertrend(state3, h, l, c, atr=1.0)
-    di_plus, di_minus, adx = get_adx(state3)
-    st_level, st_bull = get_supertrend(state3)
+        h, low, c = 100 + i * 0.5, 99 + i * 0.5, 99.8 + i * 0.5
+        update_adx(state3, h, low, c)
+        update_supertrend(state3, h, low, c, atr=1.0)
+    _di_plus, _di_minus, adx = get_adx(state3)
+    _st_level, st_bull = get_supertrend(state3)
     check("ADX computes a finite value", adx >= 0, f"adx={adx}")
     check("Supertrend flips bullish on sustained uptrend", st_bull is True)
 
     strong_features = {
-        "ltp": 100.0, "vwap": 99.0, "ema_5": 100.5, "ema_20": 98.0, "atr_14": 1.0,
+        "ltp": 100.0,
+        "vwap": 99.0,
+        "ema_5": 100.5,
+        "ema_20": 98.0,
+        "atr_14": 1.0,
         "ml_features": {"adx": 35.0, "supertrend_bullish": True, "candle_body_pct": 0.7},
     }
     weak_features = {
-        "ltp": 100.0, "vwap": 101.0, "ema_5": 100.0, "ema_20": 100.0, "atr_14": 1.0,
+        "ltp": 100.0,
+        "vwap": 101.0,
+        "ema_5": 100.0,
+        "ema_20": 100.0,
+        "atr_14": 1.0,
         "ml_features": {"adx": 5.0, "supertrend_bullish": False, "candle_body_pct": 0.1},
     }
     strong = compute_strength_meter(strong_features, bullish=True)
@@ -277,27 +350,54 @@ async def main():
 
     no_cache = compute_pine_decision(strong_features, bullish=True, entry=100.0, invalidation=98.0)
     check("Falls back to live proxy with no MTF cache", no_cache.mtf_source == "live_proxy")
-    fresh = {**strong_features, "mtf_cache": {
-        "dots": {"1M": "G", "5M": "G", "15M": "G", "1H": "G", "4H": "G", "1D": "G"},
-        "mtf": {"1M": "BULL", "5M": "BULL", "15M": "BULL", "1H": "BULL", "4H": "BULL", "1D": "BULL"},
-        "mtf_text": "Strong CE alignment", "updated_at": time.time(),
-    }}
+    fresh = {
+        **strong_features,
+        "mtf_cache": {
+            "dots": {"1M": "G", "5M": "G", "15M": "G", "1H": "G", "4H": "G", "1D": "G"},
+            "mtf": {
+                "1M": "BULL",
+                "5M": "BULL",
+                "15M": "BULL",
+                "1H": "BULL",
+                "4H": "BULL",
+                "1D": "BULL",
+            },
+            "mtf_text": "Strong CE alignment",
+            "updated_at": time.time(),
+        },
+    }
     with_cache = compute_pine_decision(fresh, bullish=True, entry=100.0, invalidation=98.0)
     check("Prefers fresh MTF cache over live proxy", with_cache.mtf_source == "historical_cache")
-    stale = {**strong_features, "mtf_cache": {
-        "dots": {"1M": "G"}, "mtf": {"1M": "BULL"}, "mtf_text": "x",
-        "updated_at": time.time() - (MTF_CACHE_STALE_SEC + 100),
-    }}
+    stale = {
+        **strong_features,
+        "mtf_cache": {
+            "dots": {"1M": "G"},
+            "mtf": {"1M": "BULL"},
+            "mtf_text": "x",
+            "updated_at": time.time() - (MTF_CACHE_STALE_SEC + 100),
+        },
+    }
     stale_result = compute_pine_decision(stale, bullish=True, entry=100.0, invalidation=98.0)
     check("Falls back when MTF cache is stale", stale_result.mtf_source == "live_proxy")
 
-    check("T1 < T2 < T3 ordering (bullish)", with_cache.t1_price < with_cache.t2_price < with_cache.t3_price,
-          f"{with_cache.t1_price} < {with_cache.t2_price} < {with_cache.t3_price}")
+    check(
+        "T1 < T2 < T3 ordering (bullish)",
+        with_cache.t1_price < with_cache.t2_price < with_cache.t3_price,
+        f"{with_cache.t1_price} < {with_cache.t2_price} < {with_cache.t3_price}",
+    )
     chase_features = {**strong_features, "ltp": 100.0, "vwap": 99.0}
-    chase_features["ml_features"] = {"adx": 35.0, "supertrend_bullish": True, "candle_body_pct": 0.7}
-    chaseable_decision = compute_pine_decision(chase_features, bullish=True, entry=100.0, invalidation=98.0)
+    chase_features["ml_features"] = {
+        "adx": 35.0,
+        "supertrend_bullish": True,
+        "candle_body_pct": 0.7,
+    }
+    chaseable_decision = compute_pine_decision(
+        chase_features, bullish=True, entry=100.0, invalidation=98.0
+    )
     check("Chaseable flag true on strong aligned setup", chaseable_decision.chaseable is True)
-    weak_chase = compute_pine_decision(weak_features | {"ltp": 100.0, "vwap": 101.0}, bullish=True, entry=100.0, invalidation=98.0)
+    weak_chase = compute_pine_decision(
+        weak_features | {"ltp": 100.0, "vwap": 101.0}, bullish=True, entry=100.0, invalidation=98.0
+    )
     check("Chaseable flag false on weak setup", weak_chase.chaseable is False)
 
     # ═══════════════════════════════════════════════
@@ -307,68 +407,111 @@ async def main():
     # ═══════════════════════════════════════════════
     print("\n--- UNIFIED CONVICTION SCORE ---")
     base_technical = {
-        "rel_vol_20d": 5.0, "direction": "bullish", "ltp": 101.0, "vwap": 100.9,
-        "rsi_14": 58, "ema_9": 100, "ema_20": 99, "order_imbalance": 0.4,
-        "bb_upper": 100.5, "bb_width": 0.03, "atr_trend": "BULL",
-        "candle_pattern": "Bullish Engulfing", "spread_bps": 5,
+        "rel_vol_20d": 5.0,
+        "direction": "bullish",
+        "ltp": 101.0,
+        "vwap": 100.9,
+        "rsi_14": 58,
+        "ema_9": 100,
+        "ema_20": 99,
+        "order_imbalance": 0.4,
+        "bb_upper": 100.5,
+        "bb_width": 0.03,
+        "atr_trend": "BULL",
+        "candle_pattern": "Bullish Engulfing",
+        "spread_bps": 5,
     }
     strong = {
-        **base_technical, "pine_confidence": 90.0, "strength_score": 88.0,
-        "chaseable": True, "last_event_label": "Bullish BOS", "trend_state": 1,
-        "anti_chase_ok": True, "rejection_reasons": [],
+        **base_technical,
+        "pine_confidence": 90.0,
+        "strength_score": 88.0,
+        "chaseable": True,
+        "last_event_label": "Bullish BOS",
+        "trend_state": 1,
+        "anti_chase_ok": True,
+        "rejection_reasons": [],
     }
     score_strong, _ = compute_conviction(strong)
-    check("Strong aligned + chaseable setup reaches A/A+", grade_conviction(score_strong) in ("A", "A+"),
-          f"score={score_strong}")
+    check(
+        "Strong aligned + chaseable setup reaches A/A+",
+        grade_conviction(score_strong) in ("A", "A+"),
+        f"score={score_strong}",
+    )
 
     capped = {**strong, "chaseable": False}
-    score_capped, sub_capped = compute_conviction(capped)
-    check("Not-chaseable setup hard-capped below A", score_capped == CHASEABLE_GRADE_CAP, f"score={score_capped}")
+    score_capped, _sub_capped = compute_conviction(capped)
+    check(
+        "Not-chaseable setup hard-capped below A",
+        score_capped == CHASEABLE_GRADE_CAP,
+        f"score={score_capped}",
+    )
     check("Cap keeps grade at B even with strong raw inputs", grade_conviction(score_capped) == "B")
 
     opposing = {**strong, "last_event_label": "Bearish BOS", "trend_state": -1}
     score_opposed, _ = compute_conviction(opposing)
-    check("Opposing structure scores lower than aligned structure", score_opposed < score_strong,
-          f"opposed={score_opposed} vs aligned={score_strong}")
+    check(
+        "Opposing structure scores lower than aligned structure",
+        score_opposed < score_strong,
+        f"opposed={score_opposed} vs aligned={score_strong}",
+    )
 
-    no_pine_score, no_pine_sub = compute_conviction(base_technical)
-    check("No pine_confidence -> unaffected legacy technical-only path",
-          "pine_confidence_component" not in no_pine_sub)
+    _no_pine_score, no_pine_sub = compute_conviction(base_technical)
+    check(
+        "No pine_confidence -> unaffected legacy technical-only path",
+        "pine_confidence_component" not in no_pine_sub,
+    )
 
     # ═══════════════════════════════════════════════
     # OI BUILDUP CLASSIFICATION (Long/Short Buildup, Short Covering,
     # Long Unwinding) -- was in the original design doc, never implemented.
     # ═══════════════════════════════════════════════
     print("\n--- OI BUILDUP CLASSIFICATION ---")
-    check("Price up + OI up -> Long Buildup",
-          _classify_oi_buildup(15.0, 1.2)["label"] == "LONG BUILDUP")
-    check("Price down + OI up -> Short Buildup",
-          _classify_oi_buildup(15.0, -1.2)["label"] == "SHORT BUILDUP")
-    check("Price up + OI down -> Short Covering",
-          _classify_oi_buildup(-15.0, 1.2)["label"] == "SHORT COVERING")
-    check("Price down + OI down -> Long Unwinding",
-          _classify_oi_buildup(-15.0, -1.2)["label"] == "LONG UNWINDING")
-    check("Small OI move -> OI FLAT, not a false signal",
-          _classify_oi_buildup(1.0, 2.0)["label"] == "OI FLAT")
-    check("Missing data never raises",
-          _classify_oi_buildup(None, None)["label"] == "NO_DATA")
-    check("Long Buildup / Short Covering both tag BULLISH bias",
-          _classify_oi_buildup(15.0, 1.2)["bias"] == "BULLISH" == _classify_oi_buildup(-15.0, 1.2)["bias"])
+    check(
+        "Price up + OI up -> Long Buildup",
+        _classify_oi_buildup(15.0, 1.2)["label"] == "LONG BUILDUP",
+    )
+    check(
+        "Price down + OI up -> Short Buildup",
+        _classify_oi_buildup(15.0, -1.2)["label"] == "SHORT BUILDUP",
+    )
+    check(
+        "Price up + OI down -> Short Covering",
+        _classify_oi_buildup(-15.0, 1.2)["label"] == "SHORT COVERING",
+    )
+    check(
+        "Price down + OI down -> Long Unwinding",
+        _classify_oi_buildup(-15.0, -1.2)["label"] == "LONG UNWINDING",
+    )
+    check(
+        "Small OI move -> OI FLAT, not a false signal",
+        _classify_oi_buildup(1.0, 2.0)["label"] == "OI FLAT",
+    )
+    check("Missing data never raises", _classify_oi_buildup(None, None)["label"] == "NO_DATA")
+    check(
+        "Long Buildup / Short Covering both tag BULLISH bias",
+        _classify_oi_buildup(15.0, 1.2)["bias"]
+        == "BULLISH"
+        == _classify_oi_buildup(-15.0, 1.2)["bias"],
+    )
 
     # ═══════════════════════════════════════════════
     # PHASE 4 — MTF MAJOR BLOCKER
     # ═══════════════════════════════════════════════
     print("\n--- PHASE 4: MTF MAJOR BLOCKER ---")
 
-    def bar(o, h, l, c):
-        return {"open": o, "high": h, "low": l, "close": c}
+    def bar(o, h, low, c):
+        return {"open": o, "high": h, "low": low, "close": c}
 
     h1_bars = [
-        bar(100, 101, 99, 100), bar(100, 102, 100, 101), bar(101, 110, 101, 108),
-        bar(108, 108, 105, 106), bar(106, 107, 104, 105), bar(105, 106, 103, 104),
+        bar(100, 101, 99, 100),
+        bar(100, 102, 100, 101),
+        bar(101, 110, 101, 108),
+        bar(108, 108, 105, 106),
+        bar(106, 107, 104, 105),
+        bar(105, 106, 103, 104),
         bar(104, 105, 100, 100),
     ]
-    highs, lows = _fractal_pivots(h1_bars)
+    highs, _lows = _fractal_pivots(h1_bars)
     check("Fractal pivot high found on 1H bars", 110 in highs, f"highs={highs}")
     blocker = _major_blocker({"1H": h1_bars, "1D": []}, ltp=100.0)
     check("Blocker reports nearest resistance above price", blocker["blocker_up_level"] == 110.0)
@@ -379,7 +522,11 @@ async def main():
     # ═══════════════════════════════════════════════
     print("\n--- PHASE 5: POSITION SIZING ---")
     sizing = compute_position_size(risk_amount=5000, per_unit_risk=2, lot_size=50, max_lots=5)
-    check("Sizing computes lots correctly", sizing["lot_count"] == 5 and sizing["quantity"] == 250, f"got {sizing}")
+    check(
+        "Sizing computes lots correctly",
+        sizing["lot_count"] == 5 and sizing["quantity"] == 250,
+        f"got {sizing}",
+    )
     zero_sizing = compute_position_size(risk_amount=0, per_unit_risk=2, lot_size=50)
     check("Sizing never raises on degenerate input", zero_sizing == {"quantity": 0, "lot_count": 0})
 
@@ -388,13 +535,29 @@ async def main():
     # ═══════════════════════════════════════════════
     print("\n--- PHASE 6: TELEGRAM FORMATTER WIRING ---")
     payload = {
-        "symbol": "RELIANCE", "strategy_id": "options_first_hybrid", "signal_type": "bullish",
-        "conviction_score": 84, "conviction_grade": "A+", "risk_reward_ratio": 2.1,
-        "entry_price": 2847.5, "invalidation_price": 2820.0, "target_price": 2900.0,
-        "sub_scores": {"position_sizing": {"lot_count": 3, "lot_size": 250, "quantity": 750, "risk_amount": 500.0}},
+        "symbol": "RELIANCE",
+        "strategy_id": "options_first_hybrid",
+        "signal_type": "bullish",
+        "conviction_score": 84,
+        "conviction_grade": "A+",
+        "risk_reward_ratio": 2.1,
+        "entry_price": 2847.5,
+        "invalidation_price": 2820.0,
+        "target_price": 2900.0,
+        "sub_scores": {
+            "position_sizing": {
+                "lot_count": 3,
+                "lot_size": 250,
+                "quantity": 750,
+                "risk_amount": 500.0,
+            }
+        },
         "features_snapshot": {
-            "t1_price": 2880.0, "t2_price": 2900.0, "t3_price": 2920.0,
-            "chaseable": True, "option_bias": "BUY CE",
+            "t1_price": 2880.0,
+            "t2_price": 2900.0,
+            "t3_price": 2920.0,
+            "chaseable": True,
+            "option_bias": "BUY CE",
             "mtf_dots": {"1M": "G", "5M": "G", "15M": "G", "1H": "G", "4H": "Y", "1D": "G"},
         },
     }
@@ -402,11 +565,18 @@ async def main():
     # Short, score-first format per direct feedback: score/grade, MTF dots,
     # entry/SL/T1/T2/T3, chaseable flag, sizing -- no prose walls of text.
     check("Formatter includes score", "Score 84" in text)
-    check("Formatter includes MTF colour dots line", any(line.startswith("MTF") for line in text.split("\n")))
+    check(
+        "Formatter includes MTF colour dots line",
+        any(line.startswith("MTF") for line in text.split("\n")),
+    )
     check("Formatter includes chaseable flag", "Chaseable" in text)
     check("Formatter includes T1/T2/T3", "T1" in text and "T2" in text and "T3" in text)
     check("Formatter includes Sizing line", "Sizing: 3 lot" in text)
-    check("Formatter stays short (<= 10 lines)", text.count("\n") <= 9, f"lines={text.count(chr(10))+1}")
+    check(
+        "Formatter stays short (<= 10 lines)",
+        text.count("\n") <= 9,
+        f"lines={text.count(chr(10)) + 1}",
+    )
     check("Formatter does not crash on missing fields", format_signal({"symbol": "X"}) is not None)
 
     # ═══════════════════════════════════════════════
@@ -421,27 +591,55 @@ async def main():
     rr = resistance_retracement_levels(100.0, 200.0)
     check("Resistance retracement 61.8% formula", abs(rr[0.618] - 161.8) < 1e-9, f"got {rr[0.618]}")
     e_bull = extension_levels(100.0, 200.0, bullish=True)
-    check("Extension 1.618 bullish formula", abs(e_bull[1.618] - 361.8) < 1e-9, f"got {e_bull[1.618]}")
+    check(
+        "Extension 1.618 bullish formula", abs(e_bull[1.618] - 361.8) < 1e-9, f"got {e_bull[1.618]}"
+    )
     e_bear = extension_levels(100.0, 200.0, bullish=False)
-    check("Extension 1.618 bearish formula", abs(e_bear[1.618] - (100.0 - 100.0 * 1.618)) < 1e-9, f"got {e_bear[1.618]}")
+    check(
+        "Extension 1.618 bearish formula",
+        abs(e_bear[1.618] - (100.0 - 100.0 * 1.618)) < 1e-9,
+        f"got {e_bear[1.618]}",
+    )
     p = projection_levels(100.0, 200.0, 150.0)
     check("Projection 1.0 (symmetry) formula", abs(p[1.0] - 250.0) < 1e-9, f"got {p[1.0]}")
-    check("Projection 1.618 formula", abs(p[1.618] - (150.0 + 100.0 * 1.618)) < 1e-9, f"got {p[1.618]}")
+    check(
+        "Projection 1.618 formula",
+        abs(p[1.618] - (150.0 + 100.0 * 1.618)) < 1e-9,
+        f"got {p[1.618]}",
+    )
 
     # Confluence cluster: repeated 100<->200 swings put a 50%-retracement
     # level at exactly 150 six times over -- must cluster with >=3 hits.
     convergent_swings = [
-        (100.0, "low", 1), (200.0, "high", 2), (100.0, "low", 3),
-        (200.0, "high", 4), (100.0, "low", 5), (200.0, "high", 6),
+        (100.0, "low", 1),
+        (200.0, "high", 2),
+        (100.0, "low", 3),
+        (200.0, "high", 4),
+        (100.0, "low", 5),
+        (200.0, "high", 6),
     ]
     clusters = find_confluence_clusters(convergent_swings, current_price=150.0, atr=2.0)
-    check("Confluence cluster found near repeated 50% level", bool(clusters) and clusters[0]["hits"] >= 3, f"got {clusters}")
+    check(
+        "Confluence cluster found near repeated 50% level",
+        bool(clusters) and clusters[0]["hits"] >= 3,
+        f"got {clusters}",
+    )
     if clusters:
-        check("Nearest cluster centers on 150.0", abs(clusters[0]["center"] - 150.0) < 1.0, f"got {clusters[0]['center']}")
+        check(
+            "Nearest cluster centers on 150.0",
+            abs(clusters[0]["center"] - 150.0) < 1.0,
+            f"got {clusters[0]['center']}",
+        )
 
     # No swing history / too few points -> no crash, empty result.
-    check("Confluence scan on empty history returns []", find_confluence_clusters([], 100.0, 1.0) == [])
-    check("Confluence scan on single point returns []", find_confluence_clusters([(100.0, "low", 1)], 100.0, 1.0) == [])
+    check(
+        "Confluence scan on empty history returns []",
+        find_confluence_clusters([], 100.0, 1.0) == [],
+    )
+    check(
+        "Confluence scan on single point returns []",
+        find_confluence_clusters([(100.0, "low", 1)], 100.0, 1.0) == [],
+    )
 
     # Integration: feed a real bar sequence through update_structure and
     # confirm swing_points accumulates (not just swing_high_1/2) and
@@ -449,57 +647,119 @@ async def main():
     fib_state = SymbolState(symbol="TESTFIB")
     fib_state.atr = 1.5
     fib_bars = [
-        {"o": 100, "h": 101, "l": 99, "c": 100}, {"o": 100, "h": 102, "l": 100, "c": 101},
-        {"o": 101, "h": 110, "l": 101, "c": 108}, {"o": 108, "h": 108, "l": 105, "c": 106},
-        {"o": 106, "h": 107, "l": 95, "c": 96}, {"o": 96, "h": 97, "l": 94, "c": 95},
-        {"o": 95, "h": 105, "l": 95, "c": 104}, {"o": 104, "h": 104, "l": 100, "c": 101},
-        {"o": 101, "h": 102, "l": 98, "c": 99}, {"o": 99, "h": 112, "l": 99, "c": 111},
-        {"o": 111, "h": 111, "l": 107, "c": 108}, {"o": 108, "h": 109, "l": 104, "c": 105},
+        {"o": 100, "h": 101, "l": 99, "c": 100},
+        {"o": 100, "h": 102, "l": 100, "c": 101},
+        {"o": 101, "h": 110, "l": 101, "c": 108},
+        {"o": 108, "h": 108, "l": 105, "c": 106},
+        {"o": 106, "h": 107, "l": 95, "c": 96},
+        {"o": 96, "h": 97, "l": 94, "c": 95},
+        {"o": 95, "h": 105, "l": 95, "c": 104},
+        {"o": 104, "h": 104, "l": 100, "c": 101},
+        {"o": 101, "h": 102, "l": 98, "c": 99},
+        {"o": 99, "h": 112, "l": 99, "c": 111},
+        {"o": 111, "h": 111, "l": 107, "c": 108},
+        {"o": 108, "h": 109, "l": 104, "c": 105},
     ]
     for b in fib_bars:
         fib_state.recent_1m_bars.append(b)
         update_structure(fib_state)
-    check("swing_points accumulates beyond the 2 BOS/CHOCH slots", len(fib_state.swing_points) >= 2, f"got {len(fib_state.swing_points)}")
+    check(
+        "swing_points accumulates beyond the 2 BOS/CHOCH slots",
+        len(fib_state.swing_points) >= 2,
+        f"got {len(fib_state.swing_points)}",
+    )
     snap = fib_snapshot(fib_state, ltp=105.0)
-    check("fib_snapshot returns expected keys", set(snap) == {
-        "fib_cluster_center", "fib_cluster_low", "fib_cluster_high",
-        "fib_cluster_hits", "fib_cluster_sources", "fib_swing_count",
-    }, f"got {set(snap)}")
-    check("fib_snapshot swing count matches state", snap["fib_swing_count"] == len(fib_state.swing_points))
+    check(
+        "fib_snapshot returns expected keys",
+        set(snap)
+        == {
+            "fib_cluster_center",
+            "fib_cluster_low",
+            "fib_cluster_high",
+            "fib_cluster_hits",
+            "fib_cluster_sources",
+            "fib_swing_count",
+        },
+        f"got {set(snap)}",
+    )
+    check(
+        "fib_snapshot swing count matches state",
+        snap["fib_swing_count"] == len(fib_state.swing_points),
+    )
 
     # compute_fib_targets: no cluster -> None (thin/no history), never crashes.
-    check("compute_fib_targets None when no cluster in ml_features", compute_fib_targets({}, bullish=True, entry=100.0) is None)
+    check(
+        "compute_fib_targets None when no cluster in ml_features",
+        compute_fib_targets({}, bullish=True, entry=100.0) is None,
+    )
 
     # compute_fib_targets: synthetic ml_features simulating a confirmed
     # cluster ahead of entry for a bullish trade -> valid, ordered T1<T2<T3.
     fib_ml = {
-        "fib_cluster_center": 100.0, "fib_cluster_hits": 4,
-        "swing_high_1": 120.0, "swing_low_1": 100.0,
+        "fib_cluster_center": 100.0,
+        "fib_cluster_hits": 4,
+        "swing_high_1": 120.0,
+        "swing_low_1": 100.0,
     }
     ft = compute_fib_targets(fib_ml, bullish=True, entry=95.0)
-    check("compute_fib_targets returns targets for a valid ahead-of-entry cluster", ft is not None, f"got {ft}")
+    check(
+        "compute_fib_targets returns targets for a valid ahead-of-entry cluster",
+        ft is not None,
+        f"got {ft}",
+    )
     if ft:
-        check("Fib targets ordered T1 < T2 < T3 (bullish)", ft["fib_t1_price"] < ft["fib_t2_price"] < ft["fib_t3_price"], f"got {ft}")
-        check("Fib T1 matches 1.272 extension formula", abs(ft["fib_t1_price"] - (100.0 + 20.0 * 1.272)) < 1e-6, f"got {ft['fib_t1_price']}")
+        check(
+            "Fib targets ordered T1 < T2 < T3 (bullish)",
+            ft["fib_t1_price"] < ft["fib_t2_price"] < ft["fib_t3_price"],
+            f"got {ft}",
+        )
+        check(
+            "Fib T1 matches 1.272 extension formula",
+            abs(ft["fib_t1_price"] - (100.0 + 20.0 * 1.272)) < 1e-6,
+            f"got {ft['fib_t1_price']}",
+        )
 
     # compute_fib_targets: entry already sits past where the bullish T1
     # would project to (target already behind price) -> None (honest
     # fallback to ATR-based targets), not a nonsense already-hit target.
     ft_behind = compute_fib_targets(fib_ml, bullish=True, entry=130.0)
-    check("compute_fib_targets None when target is already behind entry", ft_behind is None, f"got {ft_behind}")
+    check(
+        "compute_fib_targets None when target is already behind entry",
+        ft_behind is None,
+        f"got {ft_behind}",
+    )
 
     # compute_pine_decision must not crash when ml_features has no fib data
     # at all (new symbol, thin swing history) -- fib_targets should be None.
     decision_features = {
-        "ltp": 100.0, "vwap": 99.5, "ema_5": 100.5, "ema_9": 100.0, "ema_20": 99.0, "ema_50": 98.0,
-        "rsi_14": 60.0, "macd": 0.5, "macd_signal": 0.3, "macd_hist": 0.2, "rel_vol_20d": 1.2,
-        "atr_14": 1.0, "spread_bps": 20.0, "change_pct": 1.0, "bb_width": 0.02,
-        "atr_trend": "BULL", "candle_pattern": "", "squeeze_state": "", "nr_pattern": "",
+        "ltp": 100.0,
+        "vwap": 99.5,
+        "ema_5": 100.5,
+        "ema_9": 100.0,
+        "ema_20": 99.0,
+        "ema_50": 98.0,
+        "rsi_14": 60.0,
+        "macd": 0.5,
+        "macd_signal": 0.3,
+        "macd_hist": 0.2,
+        "rel_vol_20d": 1.2,
+        "atr_14": 1.0,
+        "spread_bps": 20.0,
+        "change_pct": 1.0,
+        "bb_width": 0.02,
+        "atr_trend": "BULL",
+        "candle_pattern": "",
+        "squeeze_state": "",
+        "nr_pattern": "",
         "ml_features": {},
     }
-    decision = compute_pine_decision(decision_features, bullish=True, entry=100.0, invalidation=98.0)
+    decision = compute_pine_decision(
+        decision_features, bullish=True, entry=100.0, invalidation=98.0
+    )
     check("PineDecision.fib_targets is None with no fib data", decision.fib_targets is None)
-    check("PineDecision.as_snapshot includes fib_targets key", "fib_targets" in decision.as_snapshot())
+    check(
+        "PineDecision.as_snapshot includes fib_targets key", "fib_targets" in decision.as_snapshot()
+    )
 
     # ═══════════════════════════════════════════════
     # PHASE 2 (NEW) — CLASSIC PIVOTS / CPR / VIRGIN CPR
@@ -514,8 +774,16 @@ async def main():
     check("S2 formula P-range", piv.get("s2") == 96.0, f"got {piv.get('s2')}")
     check("R3 formula H+2(P-L)", piv.get("r3") == 122.0, f"got {piv.get('r3')}")
     check("S3 formula L-2(H-P)", piv.get("s3") == 92.0, f"got {piv.get('s3')}")
-    check("CPR top/bottom from BCPR/TCPR", piv.get("cpr_top") == 107.0 and piv.get("cpr_bottom") == 105.0, f"got {piv}")
-    check("Wide CPR classified correctly", piv.get("day_type") == "wide_range_bias", f"got {piv.get('day_type')}")
+    check(
+        "CPR top/bottom from BCPR/TCPR",
+        piv.get("cpr_top") == 107.0 and piv.get("cpr_bottom") == 105.0,
+        f"got {piv}",
+    )
+    check(
+        "Wide CPR classified correctly",
+        piv.get("day_type") == "wide_range_bias",
+        f"got {piv.get('day_type')}",
+    )
     check("Degenerate/invalid input returns {}", _classic_pivots(0, 0, 0) == {})
     check("Pivot bias bullish above pivot", _pivot_bias(110.0, piv) == "bullish")
     check("Pivot bias bearish below pivot", _pivot_bias(100.0, piv) == "bearish")
@@ -526,23 +794,51 @@ async def main():
         {"time": 2, "open": 101, "high": 103, "low": 99, "close": 102, "volume": 0},
         {"time": 3, "open": 104, "high": 106, "low": 102, "close": 105, "volume": 0},
         {"time": 4, "open": 107, "high": 109, "low": 104, "close": 108, "volume": 0},
-        {"time": 5, "open": 104.3, "high": 105, "low": 103, "close": 104.5, "volume": 0},  # touches the age=3 zone
+        {
+            "time": 5,
+            "open": 104.3,
+            "high": 105,
+            "low": 103,
+            "close": 104.5,
+            "volume": 0,
+        },  # touches the age=3 zone
     ]
     # Regression guard: age=1 must be TODAY's own CPR -- i.e. exactly what
     # _classic_pivots(daily[-1]...) returns, the same value the live `pivots`
     # field uses. An earlier version of this function was off-by-one here
     # (age=1 silently meant "yesterday's CPR" instead of "today's").
-    live_pivots = _classic_pivots(virgin_bars[-1]["high"], virgin_bars[-1]["low"], virgin_bars[-1]["close"])
+    live_pivots = _classic_pivots(
+        virgin_bars[-1]["high"], virgin_bars[-1]["low"], virgin_bars[-1]["close"]
+    )
     vz = _virgin_cpr_zones(virgin_bars, current_ltp=0.0)
     age1 = next((z for z in vz if z["formed_days_ago"] == 1), None)
-    check("Virgin CPR age=1 matches the live pivots CPR exactly", age1 is not None and age1["cpr_top"] == live_pivots["cpr_top"] and age1["cpr_bottom"] == live_pivots["cpr_bottom"], f"age1={age1} vs pivots={live_pivots}")
+    check(
+        "Virgin CPR age=1 matches the live pivots CPR exactly",
+        age1 is not None
+        and age1["cpr_top"] == live_pivots["cpr_top"]
+        and age1["cpr_bottom"] == live_pivots["cpr_bottom"],
+        f"age1={age1} vs pivots={live_pivots}",
+    )
     ages = sorted(z["formed_days_ago"] for z in vz)
-    check("Virgin CPR: subsequent-day body touch excludes that zone", ages == [1, 2, 4], f"got {ages}")
+    check(
+        "Virgin CPR: subsequent-day body touch excludes that zone", ages == [1, 2, 4], f"got {ages}"
+    )
     vz_ltp = _virgin_cpr_zones(virgin_bars, current_ltp=107.0)
     ages_ltp = sorted(z["formed_days_ago"] for z in vz_ltp)
-    check("Virgin CPR: current_ltp inside a zone also counts as touched", ages_ltp == [1, 4, 5], f"got {ages_ltp}")
-    check("Virgin CPR: thin history (<2 bars) returns [] without crashing", _virgin_cpr_zones(virgin_bars[:1], 0.0) == [])
-    check("Virgin CPR: zones sorted strongest-first", all(vz[i]["strength"] >= vz[i + 1]["strength"] for i in range(len(vz) - 1)), f"got {vz}")
+    check(
+        "Virgin CPR: current_ltp inside a zone also counts as touched",
+        ages_ltp == [1, 4, 5],
+        f"got {ages_ltp}",
+    )
+    check(
+        "Virgin CPR: thin history (<2 bars) returns [] without crashing",
+        _virgin_cpr_zones(virgin_bars[:1], 0.0) == [],
+    )
+    check(
+        "Virgin CPR: zones sorted strongest-first",
+        all(vz[i]["strength"] >= vz[i + 1]["strength"] for i in range(len(vz) - 1)),
+        f"got {vz}",
+    )
     check("Virgin CPR: capped at 3 zones", len(vz) <= 3)
 
     # ═══════════════════════════════════════════════
@@ -561,14 +857,26 @@ async def main():
     up_pe = _potential_upside_pct("BUY PE", 100.0, 90.0)
     check("PE upside is the downward move framed positive", up_pe == 10.0, f"got {up_pe}")
     up_pe_wrong_side = _potential_upside_pct("BUY PE", 100.0, 110.0)
-    check("PE target above current price gives negative upside (honest, not clamped)", up_pe_wrong_side == -10.0, f"got {up_pe_wrong_side}")
-    check("Zero/negative ltp never raises, returns 0.0", _potential_upside_pct("BUY CE", 0.0, 100.0) == 0.0)
+    check(
+        "PE target above current price gives negative upside (honest, not clamped)",
+        up_pe_wrong_side == -10.0,
+        f"got {up_pe_wrong_side}",
+    )
+    check(
+        "Zero/negative ltp never raises, returns 0.0",
+        _potential_upside_pct("BUY CE", 0.0, 100.0) == 0.0,
+    )
 
     check("Horizon label: INTRADAY -> Intraday", _trade_horizon_label("INTRADAY") == "Intraday")
-    check("Horizon label: BTST_1_2D -> Short Term", _trade_horizon_label("BTST_1_2D") == "Short Term")
+    check(
+        "Horizon label: BTST_1_2D -> Short Term", _trade_horizon_label("BTST_1_2D") == "Short Term"
+    )
     check("Horizon label: SWING -> Medium Term", _trade_horizon_label("SWING") == "Medium Term")
     check("Horizon label: AVOID -> Avoid", _trade_horizon_label("AVOID") == "Avoid")
-    check("Horizon label: unknown value falls back to title-case, no crash", _trade_horizon_label("some_new_state") == "Some_New_State")
+    check(
+        "Horizon label: unknown value falls back to title-case, no crash",
+        _trade_horizon_label("some_new_state") == "Some_New_State",
+    )
 
     # ═══════════════════════════════════════════════
     # PHASE 4 (NEW) — GOLDEN/DEATH CROSS + MA-STACK REGIME
@@ -578,21 +886,44 @@ async def main():
     def flat_then_jump(base, target, jump_days):
         return [{"close": c} for c in [base] * 200 + [target] * jump_days]
 
-    check("_sma_series returns None before enough history", _sma_series([1.0, 2.0, 3.0], 5) == [None, None, None])
+    check(
+        "_sma_series returns None before enough history",
+        _sma_series([1.0, 2.0, 3.0], 5) == [None, None, None],
+    )
     sma3 = _sma_series([1.0, 2.0, 3.0, 4.0, 5.0], 3)
-    check("_sma_series computes correctly once warmed up", sma3 == [None, None, 2.0, 3.0, 4.0], f"got {sma3}")
+    check(
+        "_sma_series computes correctly once warmed up",
+        sma3 == [None, None, 2.0, 3.0, 4.0],
+        f"got {sma3}",
+    )
     check("_regime_at: sma50>sma200 -> golden_cross", _regime_at(110.0, 100.0) == "golden_cross")
     check("_regime_at: sma50<sma200 -> death_cross", _regime_at(90.0, 100.0) == "death_cross")
     check("_regime_at: equal -> neutral", _regime_at(100.0, 100.0) == "neutral")
     check("_regime_at: missing data -> unknown", _regime_at(None, 100.0) == "unknown")
 
     r_recent = _ma_regime(flat_then_jump(100.0, 200.0, 8))
-    check("Golden cross detected on a clean crossover series", r_recent["regime"] == "golden_cross", f"got {r_recent}")
-    check("Cross flagged recent when it happened 7 trading days ago", r_recent["cross_recent"] is True, f"got {r_recent}")
-    check("Strong bull stack detected (price > 20 > 50 > 200 SMA)", r_recent["stack"] == "strong_bull_stack", f"got {r_recent}")
+    check(
+        "Golden cross detected on a clean crossover series",
+        r_recent["regime"] == "golden_cross",
+        f"got {r_recent}",
+    )
+    check(
+        "Cross flagged recent when it happened 7 trading days ago",
+        r_recent["cross_recent"] is True,
+        f"got {r_recent}",
+    )
+    check(
+        "Strong bull stack detected (price > 20 > 50 > 200 SMA)",
+        r_recent["stack"] == "strong_bull_stack",
+        f"got {r_recent}",
+    )
 
     r_old = _ma_regime(flat_then_jump(100.0, 200.0, 15))
-    check("Same crossover NOT flagged recent once 14 days old", r_old["cross_recent"] is False, f"got {r_old}")
+    check(
+        "Same crossover NOT flagged recent once 14 days old",
+        r_old["cross_recent"] is False,
+        f"got {r_old}",
+    )
     check(
         "A real crossover passing through equal-SMA (neutral) still counts as a differing prior state",
         r_recent["cross_recent"] is True,
@@ -600,12 +931,24 @@ async def main():
     )
 
     r_death = _ma_regime(flat_then_jump(200.0, 100.0, 8))
-    check("Death cross detected on the mirror-image series", r_death["regime"] == "death_cross", f"got {r_death}")
+    check(
+        "Death cross detected on the mirror-image series",
+        r_death["regime"] == "death_cross",
+        f"got {r_death}",
+    )
     check("Death cross also flagged recent", r_death["cross_recent"] is True, f"got {r_death}")
-    check("Strong bear stack detected on death-cross series", r_death["stack"] == "strong_bear_stack", f"got {r_death}")
+    check(
+        "Strong bear stack detected on death-cross series",
+        r_death["stack"] == "strong_bear_stack",
+        f"got {r_death}",
+    )
 
     thin = _ma_regime([{"close": 100.0}] * 5)
-    check("Thin history (<20 days) returns unknown regime, never crashes", thin["regime"] == "unknown" and thin["sma50"] is None, f"got {thin}")
+    check(
+        "Thin history (<20 days) returns unknown regime, never crashes",
+        thin["regime"] == "unknown" and thin["sma50"] is None,
+        f"got {thin}",
+    )
 
     # ═══════════════════════════════════════════════
     # PHASE 5 (NEW) — CHART-PATTERN GEOMETRY (DAILY TIMEFRAME)
@@ -618,35 +961,98 @@ async def main():
 
     piv_dt = [(100.0, "low", 0), (150.0, "high", 1), (110.0, "low", 2), (151.0, "high", 3)]
     dt = detect_double_top(piv_dt, current_price=105.0)
-    check("Double top: height computed correctly", dt is not None and dt["height"] == 41.0, f"got {dt}")
-    check("Double top: half-height target (Bulkowski correction)", dt is not None and dt["target"] == 89.5, f"got {dt}")
-    check("Double top: confirmed when price closes below the valley", dt is not None and dt["confirmed"] is True)
+    check(
+        "Double top: height computed correctly",
+        dt is not None and dt["height"] == 41.0,
+        f"got {dt}",
+    )
+    check(
+        "Double top: half-height target (Bulkowski correction)",
+        dt is not None and dt["target"] == 89.5,
+        f"got {dt}",
+    )
+    check(
+        "Double top: confirmed when price closes below the valley",
+        dt is not None and dt["confirmed"] is True,
+    )
     dt_unconfirmed = detect_double_top(piv_dt, current_price=130.0)
-    check("Double top: NOT confirmed while price sits above the valley", dt_unconfirmed is not None and dt_unconfirmed["confirmed"] is False)
+    check(
+        "Double top: NOT confirmed while price sits above the valley",
+        dt_unconfirmed is not None and dt_unconfirmed["confirmed"] is False,
+    )
 
     piv_db = [(150.0, "high", 0), (100.0, "low", 1), (140.0, "high", 2), (101.0, "low", 3)]
     db = detect_double_bottom(piv_db, current_price=145.0)
-    check("Double bottom: height + half-height target", db is not None and db["height"] == 40.0 and db["target"] == 160.0, f"got {db}")
+    check(
+        "Double bottom: height + half-height target",
+        db is not None and db["height"] == 40.0 and db["target"] == 160.0,
+        f"got {db}",
+    )
     check("Double bottom: confirmed above the peak", db is not None and db["confirmed"] is True)
 
-    piv_tt = [(150.0, "high", 0), (120.0, "low", 1), (151.0, "high", 2), (118.0, "low", 3), (149.0, "high", 4)]
+    piv_tt = [
+        (150.0, "high", 0),
+        (120.0, "low", 1),
+        (151.0, "high", 2),
+        (118.0, "low", 3),
+        (149.0, "high", 4),
+    ]
     tt = detect_triple_top(piv_tt, current_price=110.0)
-    check("Triple top: uses the LOWER intervening valley as confirmation line", tt is not None and tt["confirmation_line"] == 118.0, f"got {tt}")
-    check("Triple top: full-height target (no half-height correction)", tt is not None and tt["target"] == 85.0, f"got {tt}")
+    check(
+        "Triple top: uses the LOWER intervening valley as confirmation line",
+        tt is not None and tt["confirmation_line"] == 118.0,
+        f"got {tt}",
+    )
+    check(
+        "Triple top: full-height target (no half-height correction)",
+        tt is not None and tt["target"] == 85.0,
+        f"got {tt}",
+    )
 
-    piv_tb = [(100.0, "low", 0), (130.0, "high", 1), (99.0, "low", 2), (132.0, "high", 3), (101.0, "low", 4)]
+    piv_tb = [
+        (100.0, "low", 0),
+        (130.0, "high", 1),
+        (99.0, "low", 2),
+        (132.0, "high", 3),
+        (101.0, "low", 4),
+    ]
     tb = detect_triple_bottom(piv_tb, current_price=140.0)
-    check("Triple bottom: uses the HIGHER intervening peak as confirmation line", tb is not None and tb["confirmation_line"] == 132.0, f"got {tb}")
-    check("Triple bottom: full-height target", tb is not None and tb["target"] == 165.0, f"got {tb}")
+    check(
+        "Triple bottom: uses the HIGHER intervening peak as confirmation line",
+        tb is not None and tb["confirmation_line"] == 132.0,
+        f"got {tb}",
+    )
+    check(
+        "Triple bottom: full-height target", tb is not None and tb["target"] == 165.0, f"got {tb}"
+    )
 
-    piv_rect = [(150.0, "high", 0), (100.0, "low", 1), (151.0, "high", 2), (99.0, "low", 3), (150.5, "high", 4)]
+    piv_rect = [
+        (150.0, "high", 0),
+        (100.0, "low", 1),
+        (151.0, "high", 2),
+        (99.0, "low", 3),
+        (150.5, "high", 4),
+    ]
     rect_inside = detect_rectangle(piv_rect, current_price=125.0)
-    check("Rectangle: no target while price sits inside the channel", rect_inside is not None and rect_inside["breakout"] == "inside" and rect_inside["target"] is None, f"got {rect_inside}")
+    check(
+        "Rectangle: no target while price sits inside the channel",
+        rect_inside is not None
+        and rect_inside["breakout"] == "inside"
+        and rect_inside["target"] is None,
+        f"got {rect_inside}",
+    )
     rect_up = detect_rectangle(piv_rect, current_price=160.0)
-    check("Rectangle: full-height target on an upside breakout", rect_up is not None and rect_up["breakout"] == "up" and rect_up["target"] == 201.5, f"got {rect_up}")
+    check(
+        "Rectangle: full-height target on an upside breakout",
+        rect_up is not None and rect_up["breakout"] == "up" and rect_up["target"] == 201.5,
+        f"got {rect_up}",
+    )
 
     noise = [(100.0, "high", 0), (90.0, "low", 1), (120.0, "high", 2)]
-    check("No pattern forced on dissimilar peaks (honest None, not a false positive)", detect_double_top(noise, 95.0) is None)
+    check(
+        "No pattern forced on dissimilar peaks (honest None, not a false positive)",
+        detect_double_top(noise, 95.0) is None,
+    )
     check("Thin/empty pivot list never crashes", detect_chart_patterns([], 100.0) == [])
 
     overlap = detect_chart_patterns(piv_rect, current_price=160.0)
@@ -657,11 +1063,20 @@ async def main():
         f"got {overlap_names}",
     )
 
-    idx_pivots = fractal_pivots_indexed([
-        {"high": 101, "low": 99}, {"high": 102, "low": 100}, {"high": 110, "low": 101},
-        {"high": 108, "low": 105}, {"high": 107, "low": 104},
-    ])
-    check("fractal_pivots_indexed returns chronologically ordered tuples", idx_pivots == sorted(idx_pivots, key=lambda t: t[2]), f"got {idx_pivots}")
+    idx_pivots = fractal_pivots_indexed(
+        [
+            {"high": 101, "low": 99},
+            {"high": 102, "low": 100},
+            {"high": 110, "low": 101},
+            {"high": 108, "low": 105},
+            {"high": 107, "low": 104},
+        ]
+    )
+    check(
+        "fractal_pivots_indexed returns chronologically ordered tuples",
+        idx_pivots == sorted(idx_pivots, key=lambda t: t[2]),
+        f"got {idx_pivots}",
+    )
 
     # ═══════════════════════════════════════════════
     # PHASE 6 (NEW) — ICT: FVG / LIQUIDITY SWEEP / ORDER BLOCK
@@ -680,9 +1095,17 @@ async def main():
         {"o": 103, "h": 106, "l": 105, "c": 105.5},
     ]:
         feed(ict1, b)
-    check("FVG (BISI) detected: candle1.high < candle3.low", ict1.fvg_bullish == (100, 105, 3), f"got {ict1.fvg_bullish}")
+    check(
+        "FVG (BISI) detected: candle1.high < candle3.low",
+        ict1.fvg_bullish == (100, 105, 3),
+        f"got {ict1.fvg_bullish}",
+    )
     ict1_snap = ict_snapshot(ict1)
-    check("FVG CE is the 50% midpoint", ict1_snap["fvg_bullish_ce"] == 102.5, f"got {ict1_snap['fvg_bullish_ce']}")
+    check(
+        "FVG CE is the 50% midpoint",
+        ict1_snap["fvg_bullish_ce"] == 102.5,
+        f"got {ict1_snap['fvg_bullish_ce']}",
+    )
     for _ in range(3):
         feed(ict1, {"o": 102, "h": 103, "l": 101, "c": 102.5})  # closes inside the gap each time
     check("FVG fully rebalances on the 3rd touch (ICT's own rule)", ict1.fvg_bullish is None)
@@ -691,28 +1114,57 @@ async def main():
     ict2.swing_low_1 = 100.0
     for b in [{"o": 101, "h": 102, "l": 100.5, "c": 101.5}] * 3:
         feed(ict2, b)
-    feed(ict2, {"o": 101, "h": 101.5, "l": 99.0, "c": 101.2})  # wicks below the swing low, closes back above
-    check("Liquidity sweep: sellside detected on wick-through-close-back-above", ict2.last_liquidity_sweep == "sellside", f"got {ict2.last_liquidity_sweep}")
+    feed(
+        ict2, {"o": 101, "h": 101.5, "l": 99.0, "c": 101.2}
+    )  # wicks below the swing low, closes back above
+    check(
+        "Liquidity sweep: sellside detected on wick-through-close-back-above",
+        ict2.last_liquidity_sweep == "sellside",
+        f"got {ict2.last_liquidity_sweep}",
+    )
 
     ict3 = SymbolState(symbol="ICT3")
     ict3.swing_low_1 = 100.0
     for b in [{"o": 101, "h": 102, "l": 100.5, "c": 101.5}] * 3:
         feed(ict3, b)
-    feed(ict3, {"o": 101.5, "h": 102.0, "l": 99.0, "c": 100.5})  # down-close candle sweeping sellside
-    check("Order Block candidate forms on sweep + down-close", ict3.order_block_bullish == (99.0, 102.0, ict3.completed_1m_bars, False), f"got {ict3.order_block_bullish}")
-    check("Order Block NOT validated on formation (needs a later close beyond its high)", ict3.order_block_bullish[3] is False)
+    feed(
+        ict3, {"o": 101.5, "h": 102.0, "l": 99.0, "c": 100.5}
+    )  # down-close candle sweeping sellside
+    check(
+        "Order Block candidate forms on sweep + down-close",
+        ict3.order_block_bullish == (99.0, 102.0, ict3.completed_1m_bars, False),
+        f"got {ict3.order_block_bullish}",
+    )
+    check(
+        "Order Block NOT validated on formation (needs a later close beyond its high)",
+        ict3.order_block_bullish[3] is False,
+    )
     feed(ict3, {"o": 102.0, "h": 103.5, "l": 102.0, "c": 103.0})  # close above OB high
-    check("Order Block validates once price closes above its high", ict3.order_block_bullish is not None and ict3.order_block_bullish[3] is True, f"got {ict3.order_block_bullish}")
-    feed(ict3, {"o": 101.0, "h": 101.0, "l": 99.5, "c": 100.0})  # close below the 50% mean threshold (100.5)
-    check("Order Block invalidates on a close below its mean threshold", ict3.order_block_bullish is None)
+    check(
+        "Order Block validates once price closes above its high",
+        ict3.order_block_bullish is not None and ict3.order_block_bullish[3] is True,
+        f"got {ict3.order_block_bullish}",
+    )
+    feed(
+        ict3, {"o": 101.0, "h": 101.0, "l": 99.5, "c": 100.0}
+    )  # close below the 50% mean threshold (100.5)
+    check(
+        "Order Block invalidates on a close below its mean threshold",
+        ict3.order_block_bullish is None,
+    )
 
     ict4 = SymbolState(symbol="ICT4")
     ict4.swing_low_1 = 100.0
     for b in [{"o": 101, "h": 102, "l": 100.5, "c": 101.5}] * 3:
         feed(ict4, b)
     feed(ict4, {"o": 101.5, "h": 102.0, "l": 99.0, "c": 100.5})  # candidate forms (99, 102)
-    feed(ict4, {"o": 100.0, "h": 100.0, "l": 97.0, "c": 98.0})   # closes below the candidate's own low before ever validating
-    check("Order Block fails outright if price closes below its low before validating", ict4.order_block_bullish is None)
+    feed(
+        ict4, {"o": 100.0, "h": 100.0, "l": 97.0, "c": 98.0}
+    )  # closes below the candidate's own low before ever validating
+    check(
+        "Order Block fails outright if price closes below its low before validating",
+        ict4.order_block_bullish is None,
+    )
 
     ict5 = SymbolState(symbol="ICT5")
     ict5.swing_high_1 = 100.0
@@ -720,10 +1172,17 @@ async def main():
         feed(ict5, b)
     feed(ict5, {"o": 99.5, "h": 101.0, "l": 99.0, "c": 99.8})  # up-close candle sweeping buyside
     check("Bearish mirror: buyside sweep detected", ict5.last_liquidity_sweep == "buyside")
-    check("Bearish Order Block candidate forms on the mirror conditions", ict5.order_block_bearish == (99.0, 101.0, ict5.completed_1m_bars, False), f"got {ict5.order_block_bearish}")
+    check(
+        "Bearish Order Block candidate forms on the mirror conditions",
+        ict5.order_block_bearish == (99.0, 101.0, ict5.completed_1m_bars, False),
+        f"got {ict5.order_block_bearish}",
+    )
 
     ict6 = SymbolState(symbol="ICT6")
-    check("update_ict never crashes on thin history (<3 bars)", update_ict(ict6) is None and ict6.fvg_bullish is None)
+    check(
+        "update_ict never crashes on thin history (<3 bars)",
+        update_ict(ict6) is None and ict6.fvg_bullish is None,
+    )
 
     # ═══════════════════════════════════════════════
     # PHASE 7 (NEW) — ATR-SCALED POSITION SIZING + DONCHIAN CHANNEL
@@ -731,91 +1190,211 @@ async def main():
     print("\n--- PHASE 7 (NEW): ATR-SCALED POSITION SIZING (TURTLE) + DONCHIAN CHANNEL ---")
 
     no_atr = compute_position_size(5000, 2, 50, max_lots=5)
-    check("No-ATR call preserves the exact original 2-key result shape", no_atr == {"quantity": 250, "lot_count": 5}, f"got {no_atr}")
-    check("No-ATR call never adds a sizing_method key (backward compat)", "sizing_method" not in no_atr)
+    check(
+        "No-ATR call preserves the exact original 2-key result shape",
+        no_atr == {"quantity": 250, "lot_count": 5},
+        f"got {no_atr}",
+    )
+    check(
+        "No-ATR call never adds a sizing_method key (backward compat)",
+        "sizing_method" not in no_atr,
+    )
 
     tight_stop = compute_position_size(5000, 2, 50, max_lots=100, atr=50)
-    check("ATR cap kicks in when a tight stop implies oversizing", tight_stop.get("sizing_method") == "atr_capped", f"got {tight_stop}")
-    check("ATR-capped size matches risk_amount/(multiplier*atr)/lot_size", tight_stop["lot_count"] == 1, f"got {tight_stop}")
+    check(
+        "ATR cap kicks in when a tight stop implies oversizing",
+        tight_stop.get("sizing_method") == "atr_capped",
+        f"got {tight_stop}",
+    )
+    check(
+        "ATR-capped size matches risk_amount/(multiplier*atr)/lot_size",
+        tight_stop["lot_count"] == 1,
+        f"got {tight_stop}",
+    )
 
     wide_stop = compute_position_size(5000, 100, 50, max_lots=100, atr=1.0)
-    check("Risk-distance sizing still wins when it's the tighter constraint", wide_stop.get("sizing_method") == "risk_distance", f"got {wide_stop}")
+    check(
+        "Risk-distance sizing still wins when it's the tighter constraint",
+        wide_stop.get("sizing_method") == "risk_distance",
+        f"got {wide_stop}",
+    )
 
     zero_atr = compute_position_size(5000, 2, 50, max_lots=5, atr=0.0)
-    check("atr=0.0 is treated as not supplied, not a division by zero", zero_atr == {"quantity": 250, "lot_count": 5}, f"got {zero_atr}")
+    check(
+        "atr=0.0 is treated as not supplied, not a division by zero",
+        zero_atr == {"quantity": 250, "lot_count": 5},
+        f"got {zero_atr}",
+    )
     none_input = compute_position_size(0, 2, 50, atr=10.0)
-    check("Degenerate risk_amount never raises even with ATR supplied", none_input == {"quantity": 0, "lot_count": 0})
+    check(
+        "Degenerate risk_amount never raises even with ATR supplied",
+        none_input == {"quantity": 0, "lot_count": 0},
+    )
 
     donchian_bars = [{"high": 100 + i, "low": 90 + i, "close": 95 + i} for i in range(25)]
     dc = _donchian_channel(donchian_bars, period=20)
-    check("Donchian channel high/low computed correctly over the window", dc["high"] == 124 and dc["low"] == 95, f"got {dc}")
-    check("Fresh high breakout flagged when today set the window's extreme", dc["fresh_high_breakout"] is True, f"got {dc}")
-    check("Fresh low breakout correctly false (today's low isn't the window min)", dc["fresh_low_breakout"] is False, f"got {dc}")
+    check(
+        "Donchian channel high/low computed correctly over the window",
+        dc["high"] == 124 and dc["low"] == 95,
+        f"got {dc}",
+    )
+    check(
+        "Fresh high breakout flagged when today set the window's extreme",
+        dc["fresh_high_breakout"] is True,
+        f"got {dc}",
+    )
+    check(
+        "Fresh low breakout correctly false (today's low isn't the window min)",
+        dc["fresh_low_breakout"] is False,
+        f"got {dc}",
+    )
 
     pullback_bars = list(donchian_bars)
     pullback_bars[-1] = {"high": 110, "low": 108, "close": 109}
     dc_pullback = _donchian_channel(pullback_bars, period=20)
-    check("A pullback day (not setting a new extreme) is NOT flagged as a fresh breakout", dc_pullback["fresh_high_breakout"] is False, f"got {dc_pullback}")
+    check(
+        "A pullback day (not setting a new extreme) is NOT flagged as a fresh breakout",
+        dc_pullback["fresh_high_breakout"] is False,
+        f"got {dc_pullback}",
+    )
 
     thin_dc = _donchian_channel(donchian_bars[:5], period=DONCHIAN_PERIOD)
-    check("Thin history returns None channel values, never crashes", thin_dc["high"] is None and thin_dc["low"] is None)
+    check(
+        "Thin history returns None channel values, never crashes",
+        thin_dc["high"] is None and thin_dc["low"] is None,
+    )
 
     # ═══════════════════════════════════════════════
     # PHASE 8 (NEW) — WYCKOFF (STRUCTURAL FAILURE, SOT, SOS/SOW)
     # ═══════════════════════════════════════════════
     print("\n--- PHASE 8 (NEW): WYCKOFF STRUCTURAL FAILURE / SOT / SOS-SOW BAR ---")
 
-    piv_weak = [(150.0, "high", 0), (100.0, "low", 1), (151.0, "high", 2), (99.0, "low", 3), (140.0, "high", 4)]
+    piv_weak = [
+        (150.0, "high", 0),
+        (100.0, "low", 1),
+        (151.0, "high", 2),
+        (99.0, "low", 3),
+        (140.0, "high", 4),
+    ]
     weak = detect_structural_failure(piv_weak)
-    check("Structural weakness: rally fails to reach validated range top", weak is not None and weak["type"] == "weakness", f"got {weak}")
+    check(
+        "Structural weakness: rally fails to reach validated range top",
+        weak is not None and weak["type"] == "weakness",
+        f"got {weak}",
+    )
 
-    piv_strong = [(100.0, "low", 0), (150.0, "high", 1), (99.0, "low", 2), (151.0, "high", 3), (110.0, "low", 4)]
+    piv_strong = [
+        (100.0, "low", 0),
+        (150.0, "high", 1),
+        (99.0, "low", 2),
+        (151.0, "high", 3),
+        (110.0, "low", 4),
+    ]
     strong = detect_structural_failure(piv_strong)
-    check("Structural strength: decline fails to reach validated range bottom", strong is not None and strong["type"] == "strength", f"got {strong}")
+    check(
+        "Structural strength: decline fails to reach validated range bottom",
+        strong is not None and strong["type"] == "strength",
+        f"got {strong}",
+    )
 
     piv_no_range = [(100.0, "low", 0), (150.0, "high", 1), (105.0, "low", 2)]
-    check("No structural failure without a validated (>=2 touch) range", detect_structural_failure(piv_no_range) is None)
+    check(
+        "No structural failure without a validated (>=2 touch) range",
+        detect_structural_failure(piv_no_range) is None,
+    )
 
-    piv_reached = [(150.0, "high", 0), (100.0, "low", 1), (151.0, "high", 2), (99.0, "low", 3), (149.5, "high", 4)]
-    check("No structural failure when the swing actually reaches the extreme", detect_structural_failure(piv_reached) is None)
+    piv_reached = [
+        (150.0, "high", 0),
+        (100.0, "low", 1),
+        (151.0, "high", 2),
+        (99.0, "low", 3),
+        (149.5, "high", 4),
+    ]
+    check(
+        "No structural failure when the swing actually reaches the extreme",
+        detect_structural_failure(piv_reached) is None,
+    )
 
     piv_sot = [
-        (100.0, "low", 0), (150.0, "high", 1), (120.0, "low", 2), (155.0, "high", 3),
-        (125.0, "low", 4), (145.0, "high", 5), (115.0, "low", 6),
+        (100.0, "low", 0),
+        (150.0, "high", 1),
+        (120.0, "low", 2),
+        (155.0, "high", 3),
+        (125.0, "low", 4),
+        (145.0, "high", 5),
+        (115.0, "low", 6),
     ]
     sot = detect_shortening_of_thrust(piv_sot)
-    check("SOT: bullish exhaustion detected on 3 shrinking up-legs", sot is not None and sot["type"] == "bullish_exhaustion", f"got {sot}")
-    check("SOT: leg sizes reported in shrinking order", sot is not None and sot["leg_sizes"] == [50.0, 35.0, 20.0], f"got {sot}")
-    check("SOT: too few pivots returns None, not a crash", detect_shortening_of_thrust(piv_sot[:4]) is None)
+    check(
+        "SOT: bullish exhaustion detected on 3 shrinking up-legs",
+        sot is not None and sot["type"] == "bullish_exhaustion",
+        f"got {sot}",
+    )
+    check(
+        "SOT: leg sizes reported in shrinking order",
+        sot is not None and sot["leg_sizes"] == [50.0, 35.0, 20.0],
+        f"got {sot}",
+    )
+    check(
+        "SOT: too few pivots returns None, not a crash",
+        detect_shortening_of_thrust(piv_sot[:4]) is None,
+    )
 
     piv_no_sot = [
-        (100.0, "low", 0), (150.0, "high", 1), (120.0, "low", 2), (148.0, "high", 3),
-        (118.0, "low", 4), (151.0, "high", 5), (116.0, "low", 6),
+        (100.0, "low", 0),
+        (150.0, "high", 1),
+        (120.0, "low", 2),
+        (148.0, "high", 3),
+        (118.0, "low", 4),
+        (151.0, "high", 5),
+        (116.0, "low", 6),
     ]
-    check("SOT: non-monotonic legs correctly return None (no forced match)", detect_shortening_of_thrust(piv_no_sot) is None)
+    check(
+        "SOT: non-monotonic legs correctly return None (no forced match)",
+        detect_shortening_of_thrust(piv_no_sot) is None,
+    )
 
     sos_window = [{"high": 110, "low": 100, "close": 105, "volume": 1000} for _ in range(20)]
-    sos_bars = sos_window + [{"high": 125, "low": 100, "close": 122, "volume": 1500}]
+    sos_bars = [*sos_window, {"high": 125, "low": 100, "close": 122, "volume": 1500}]
     sos = detect_sos_sow_bar(sos_bars)
-    check("SOS bar: wide range + high volume + close in upper third", sos is not None and sos["type"] == "SOS", f"got {sos}")
+    check(
+        "SOS bar: wide range + high volume + close in upper third",
+        sos is not None and sos["type"] == "SOS",
+        f"got {sos}",
+    )
 
-    sow_bars = sos_window + [{"high": 110, "low": 85, "close": 88, "volume": 1500}]
+    sow_bars = [*sos_window, {"high": 110, "low": 85, "close": 88, "volume": 1500}]
     sow = detect_sos_sow_bar(sow_bars)
-    check("SOW bar: wide range + high volume + close in lower third", sow is not None and sow["type"] == "SOW", f"got {sow}")
+    check(
+        "SOW bar: wide range + high volume + close in lower third",
+        sow is not None and sow["type"] == "SOW",
+        f"got {sow}",
+    )
 
-    mid_bars = sos_window + [{"high": 125, "low": 100, "close": 112, "volume": 1500}]
-    check("No SOS/SOW when wide/high-volume bar closes in the middle third", detect_sos_sow_bar(mid_bars) is None)
+    mid_bars = [*sos_window, {"high": 125, "low": 100, "close": 112, "volume": 1500}]
+    check(
+        "No SOS/SOW when wide/high-volume bar closes in the middle third",
+        detect_sos_sow_bar(mid_bars) is None,
+    )
 
-    normal_bars = sos_window + [{"high": 108, "low": 102, "close": 107, "volume": 1000}]
-    check("No SOS/SOW on an ordinary (not wide, not high-volume) bar", detect_sos_sow_bar(normal_bars) is None)
-    check("SOS/SOW: thin history returns None, never crashes", detect_sos_sow_bar(sos_bars[:5]) is None)
+    normal_bars = [*sos_window, {"high": 108, "low": 102, "close": 107, "volume": 1000}]
+    check(
+        "No SOS/SOW on an ordinary (not wide, not high-volume) bar",
+        detect_sos_sow_bar(normal_bars) is None,
+    )
+    check(
+        "SOS/SOW: thin history returns None, never crashes",
+        detect_sos_sow_bar(sos_bars[:5]) is None,
+    )
 
     # ═══════════════════════════════════════════════
     # PHASE 9 (NEW) — CROSS-INDEX CONFIRMATION (DOW-STYLE 2-OF-3)
     # ═══════════════════════════════════════════════
     print("\n--- PHASE 9 (NEW): CROSS-INDEX CONFIRMATION + CONCENTRATION FLAG ---")
 
-    eng = SectorEngine.__new__(SectorEngine)  # bypass __init__ (needs a real redis/settings) -- pure unit test of the new method only
+    eng = SectorEngine.__new__(
+        SectorEngine
+    )  # bypass __init__ (needs a real redis/settings) -- pure unit test of the new method only
     eng._sectors = {}
     eng._index_snapshot = SymbolSnapshot(symbol="INDEX")
 
@@ -828,7 +1407,11 @@ async def main():
     eng._index_snapshot.change_pct = 0.5
 
     r_genuine = eng.compute_cross_confirmation("IT", "S0", "bullish")
-    check("Genuine broad sector move: all 3 measures confirm", r_genuine["confirmation_count"] == 3, f"got {r_genuine}")
+    check(
+        "Genuine broad sector move: all 3 measures confirm",
+        r_genuine["confirmation_count"] == 3,
+        f"got {r_genuine}",
+    )
     check("Genuine broad move: confirmed (>=2 of 3)", r_genuine["confirmed"] is True)
     check("Genuine broad move: no concentration flag", r_genuine["concentration_flag"] is False)
 
@@ -837,28 +1420,44 @@ async def main():
     for i, chg in enumerate(changes):
         masquerade.constituents[f"D{i}"] = SymbolSnapshot(symbol=f"D{i}", change_pct=chg)
     masquerade.positive_change_pct = 25.0
-    masquerade.avg_change_pct = sum(changes) / len(changes)  # still net-positive only because of the 8% outlier
+    masquerade.avg_change_pct = sum(changes) / len(
+        changes
+    )  # still net-positive only because of the 8% outlier
     eng._sectors["DEFENCE"] = masquerade
     eng._index_snapshot.change_pct = -0.3
 
     r_mask = eng.compute_cross_confirmation("DEFENCE", "D0", "bullish")
     check(
         "Single-stock masquerade: concentration flag fires (avg flips sign once top mover excluded)",
-        r_mask["concentration_flag"] is True, f"got {r_mask}",
+        r_mask["concentration_flag"] is True,
+        f"got {r_mask}",
     )
-    check("Single-stock masquerade: top mover share correctly dominant", r_mask["top_mover_share_pct"] > 80, f"got {r_mask}")
+    check(
+        "Single-stock masquerade: top mover share correctly dominant",
+        r_mask["top_mover_share_pct"] > 80,
+        f"got {r_mask}",
+    )
     check(
         "Single-stock masquerade: NOT confirmed bullish once breadth/market/concentration are all checked",
-        r_mask["confirmed"] is False, f"got {r_mask}",
+        r_mask["confirmed"] is False,
+        f"got {r_mask}",
     )
 
     r_unknown = eng.compute_cross_confirmation("NOPE", "X", "bullish")
-    check("Unknown sector returns a safe empty result, never crashes", r_unknown["confirmed"] is False and r_unknown["confirmation_count"] == 0, f"got {r_unknown}")
+    check(
+        "Unknown sector returns a safe empty result, never crashes",
+        r_unknown["confirmed"] is False and r_unknown["confirmation_count"] == 0,
+        f"got {r_unknown}",
+    )
 
     empty_sector = SectorState(sector_id="EMPTY")
     eng._sectors["EMPTY"] = empty_sector
     r_empty = eng.compute_cross_confirmation("EMPTY", "X", "bullish")
-    check("Sector with zero constituents never crashes (division-by-zero guard)", r_empty["confirmed"] is False, f"got {r_empty}")
+    check(
+        "Sector with zero constituents never crashes (division-by-zero guard)",
+        r_empty["confirmed"] is False,
+        f"got {r_empty}",
+    )
 
     # ═══════════════════════════════════════════════
     # PHASE 10 (NEW) — VOLMAN ENTRY-TIMING LAYER
@@ -870,15 +1469,26 @@ async def main():
     proper_bars = [
         {"o": 100.0, "h": 100.4, "l": 99.8, "c": 100.2},
         {"o": 100.2, "h": 100.6, "l": 100.0, "c": 100.5},
-        {"o": 100.5, "h": 100.7, "l": 100.1, "c": 100.6},   # signal bar, close_pos=0.833
-        {"o": 100.6, "h": 101.0, "l": 100.5, "c": 100.9},   # trigger bar
+        {"o": 100.5, "h": 100.7, "l": 100.1, "c": 100.6},  # signal bar, close_pos=0.833
+        {"o": 100.6, "h": 101.0, "l": 100.5, "c": 100.9},  # trigger bar
     ]
     proper = detect_buildup(proper_bars, boundary, atr, bullish=True)
-    check("Proper break: tight cluster directly at the boundary", proper is not None and proper["quality"] == "proper", f"got {proper}")
-    check("Proper break: entry trigger fires on the break bar", check_entry_trigger(proper_bars, proper, bullish=True) is True)
+    check(
+        "Proper break: tight cluster directly at the boundary",
+        proper is not None and proper["quality"] == "proper",
+        f"got {proper}",
+    )
+    check(
+        "Proper break: entry trigger fires on the break bar",
+        check_entry_trigger(proper_bars, proper, bullish=True) is True,
+    )
 
     tease = detect_buildup(proper_bars, boundary=200.0, atr=atr, bullish=True)
-    check("Tease break: same tight cluster, but far from the boundary", tease is not None and tease["quality"] == "tease", f"got {tease}")
+    check(
+        "Tease break: same tight cluster, but far from the boundary",
+        tease is not None and tease["quality"] == "tease",
+        f"got {tease}",
+    )
 
     wide_bars = [
         {"o": 100.0, "h": 103.0, "l": 97.0, "c": 101.0},
@@ -886,29 +1496,63 @@ async def main():
         {"o": 102.0, "h": 105.0, "l": 99.0, "c": 103.0},
         {"o": 103.0, "h": 106.0, "l": 100.0, "c": 104.0},
     ]
-    check("False break: no buildup at all (bars not tight) -> None, not traded", detect_buildup(wide_bars, boundary, atr, bullish=True) is None)
+    check(
+        "False break: no buildup at all (bars not tight) -> None, not traded",
+        detect_buildup(wide_bars, boundary, atr, bullish=True) is None,
+    )
 
     wrong_close_bars = list(proper_bars)
-    wrong_close_bars[2] = {"o": 100.5, "h": 100.7, "l": 100.1, "c": 100.15}  # signal bar closes near its own low
-    check("Signal bar rejected when its own close opposes the anticipated direction", detect_buildup(wrong_close_bars, boundary, atr, bullish=True) is None)
+    wrong_close_bars[2] = {
+        "o": 100.5,
+        "h": 100.7,
+        "l": 100.1,
+        "c": 100.15,
+    }  # signal bar closes near its own low
+    check(
+        "Signal bar rejected when its own close opposes the anticipated direction",
+        detect_buildup(wrong_close_bars, boundary, atr, bullish=True) is None,
+    )
 
     no_trigger_bars = list(proper_bars)
-    no_trigger_bars[-1] = {"o": 100.6, "h": 100.65, "l": 100.5, "c": 100.6}  # stays inside the signal bar's range
+    no_trigger_bars[-1] = {
+        "o": 100.6,
+        "h": 100.65,
+        "l": 100.5,
+        "c": 100.6,
+    }  # stays inside the signal bar's range
     buildup_ready = detect_buildup(no_trigger_bars, boundary, atr, bullish=True)
-    check("Buildup can be valid while the trigger hasn't fired yet", buildup_ready is not None and check_entry_trigger(no_trigger_bars, buildup_ready, bullish=True) is False, f"got {buildup_ready}")
+    check(
+        "Buildup can be valid while the trigger hasn't fired yet",
+        buildup_ready is not None
+        and check_entry_trigger(no_trigger_bars, buildup_ready, bullish=True) is False,
+        f"got {buildup_ready}",
+    )
 
     bear_bars = [
         {"o": 100.0, "h": 100.2, "l": 99.6, "c": 99.8},
         {"o": 99.8, "h": 100.0, "l": 99.4, "c": 99.5},
-        {"o": 99.5, "h": 99.9, "l": 99.3, "c": 99.4},   # signal bar close_pos=0.167
-        {"o": 99.4, "h": 99.5, "l": 99.0, "c": 99.1},   # breaks below signal_bar_low
+        {"o": 99.5, "h": 99.9, "l": 99.3, "c": 99.4},  # signal bar close_pos=0.167
+        {"o": 99.4, "h": 99.5, "l": 99.0, "c": 99.1},  # breaks below signal_bar_low
     ]
     bear = detect_buildup(bear_bars, boundary=99.5, atr=atr, bullish=False)
-    check("Bearish mirror: proper break detected", bear is not None and bear["quality"] == "proper", f"got {bear}")
-    check("Bearish mirror: entry trigger fires on the break below", check_entry_trigger(bear_bars, bear, bullish=False) is True)
+    check(
+        "Bearish mirror: proper break detected",
+        bear is not None and bear["quality"] == "proper",
+        f"got {bear}",
+    )
+    check(
+        "Bearish mirror: entry trigger fires on the break below",
+        check_entry_trigger(bear_bars, bear, bullish=False) is True,
+    )
 
-    check("Thin history returns None, never crashes", detect_buildup(proper_bars[:2], boundary, atr, bullish=True) is None)
-    check("check_entry_trigger on empty bars/None buildup never crashes", check_entry_trigger([], None, True) is False)
+    check(
+        "Thin history returns None, never crashes",
+        detect_buildup(proper_bars[:2], boundary, atr, bullish=True) is None,
+    )
+    check(
+        "check_entry_trigger on empty bars/None buildup never crashes",
+        check_entry_trigger([], None, True) is False,
+    )
 
     vstate = SymbolState(symbol="TESTVOLMAN")
     vstate.atr = atr
@@ -916,12 +1560,20 @@ async def main():
     for b in proper_bars:
         vstate.recent_1m_bars.append(b)
     vsnap = volman_snapshot(vstate)
-    check("volman_snapshot finds the buildup against an active demand zone", vsnap["volman_source"] == "demand_zone" and vsnap["volman_entry_triggered"] is True, f"got {vsnap}")
+    check(
+        "volman_snapshot finds the buildup against an active demand zone",
+        vsnap["volman_source"] == "demand_zone" and vsnap["volman_entry_triggered"] is True,
+        f"got {vsnap}",
+    )
 
     vstate_empty = SymbolState(symbol="TESTVOLMAN2")
     vstate_empty.atr = atr
     vsnap_empty = volman_snapshot(vstate_empty)
-    check("volman_snapshot with no active zones returns safe empty fields", vsnap_empty["volman_source"] is None and vsnap_empty["volman_entry_triggered"] is False, f"got {vsnap_empty}")
+    check(
+        "volman_snapshot with no active zones returns safe empty fields",
+        vsnap_empty["volman_source"] is None and vsnap_empty["volman_entry_triggered"] is False,
+        f"got {vsnap_empty}",
+    )
 
     # ═══════════════════════════════════════════════
     # SESSION BOUNDARIES (NEW) — CAS (CLOSING AUCTION SESSION)
@@ -930,23 +1582,38 @@ async def main():
     from datetime import time as dt_time_local
 
     check("14:00 is closing", _current_session(dt_time_local(14, 0)) == "closing")
-    check("15:14 is still closing (just before the CAS cut)", _current_session(dt_time_local(15, 14)) == "closing")
-    check("15:15 is cas_auction, not closing (the actual regression this session guards)", _current_session(dt_time_local(15, 15)) == "cas_auction")
+    check(
+        "15:14 is still closing (just before the CAS cut)",
+        _current_session(dt_time_local(15, 14)) == "closing",
+    )
+    check(
+        "15:15 is cas_auction, not closing (the actual regression this session guards)",
+        _current_session(dt_time_local(15, 15)) == "cas_auction",
+    )
     check("15:29 is still cas_auction", _current_session(dt_time_local(15, 29)) == "cas_auction")
     check("15:30 is post_market", _current_session(dt_time_local(15, 30)) == "post_market")
     check("09:15 is opening", _current_session(dt_time_local(9, 15)) == "opening")
     check("09:14 is pre_market", _current_session(dt_time_local(9, 14)) == "pre_market")
     check("10:00 is mid_morning", _current_session(dt_time_local(10, 0)) == "mid_morning")
     check("12:00 is midday", _current_session(dt_time_local(12, 0)) == "midday")
-    check("No-arg call never crashes (falls back to real wall-clock time)", isinstance(_current_session(), str))
+    check(
+        "No-arg call never crashes (falls back to real wall-clock time)",
+        isinstance(_current_session(), str),
+    )
 
     # ═══════════════════════════════════════════════
     # OPTIONS ANALYTICS (NEW) — PCR / OI SUPPORT-RESISTANCE / MAX PAIN
     # ═══════════════════════════════════════════════
-    print("\n--- OPTIONS ANALYTICS (NEW): PCR / OI SUPPORT-RESISTANCE / MAX PAIN (Upstox-sourced) ---")
+    print(
+        "\n--- OPTIONS ANALYTICS (NEW): PCR / OI SUPPORT-RESISTANCE / MAX PAIN (Upstox-sourced) ---"
+    )
 
     def oi_row(strike, call_oi, put_oi):
-        return {"strike_price": strike, "call_options": {"market_data": {"oi": call_oi}}, "put_options": {"market_data": {"oi": put_oi}}}
+        return {
+            "strike_price": strike,
+            "call_options": {"market_data": {"oi": call_oi}},
+            "put_options": {"market_data": {"oi": put_oi}},
+        }
 
     check("classify_pcr: <0.7 strong bullish", classify_pcr(0.5) == "strong_bullish")
     check("classify_pcr: 0.7-0.95 neutral bullish", classify_pcr(0.85) == "neutral_bullish")
@@ -956,21 +1623,53 @@ async def main():
 
     pcr_rows = [oi_row(100, 1000, 500), oi_row(110, 2000, 1000), oi_row(120, 500, 1500)]
     pcr = compute_pcr(pcr_rows)
-    check("PCR: Put OI / Call OI computed correctly", pcr is not None and pcr["pcr"] == round(3000 / 3500, 3), f"got {pcr}")
-    check("PCR: sentiment matches classify_pcr on the same value", pcr is not None and pcr["sentiment"] == classify_pcr(pcr["pcr"]))
-    check("PCR: zero call OI returns None, not a division error", compute_pcr([oi_row(100, 0, 500)]) is None)
+    check(
+        "PCR: Put OI / Call OI computed correctly",
+        pcr is not None and pcr["pcr"] == round(3000 / 3500, 3),
+        f"got {pcr}",
+    )
+    check(
+        "PCR: sentiment matches classify_pcr on the same value",
+        pcr is not None and pcr["sentiment"] == classify_pcr(pcr["pcr"]),
+    )
+    check(
+        "PCR: zero call OI returns None, not a division error",
+        compute_pcr([oi_row(100, 0, 500)]) is None,
+    )
 
     sr = compute_oi_support_resistance(pcr_rows)
-    check("OI S/R: max Call-OI strike is resistance", sr is not None and sr["resistance"] == 110 and sr["resistance_oi"] == 2000, f"got {sr}")
-    check("OI S/R: max Put-OI strike is support", sr is not None and sr["support"] == 120 and sr["support_oi"] == 1500, f"got {sr}")
-    check("OI S/R: empty chain returns None, never crashes", compute_oi_support_resistance([]) is None)
+    check(
+        "OI S/R: max Call-OI strike is resistance",
+        sr is not None and sr["resistance"] == 110 and sr["resistance_oi"] == 2000,
+        f"got {sr}",
+    )
+    check(
+        "OI S/R: max Put-OI strike is support",
+        sr is not None and sr["support"] == 120 and sr["support_oi"] == 1500,
+        f"got {sr}",
+    )
+    check(
+        "OI S/R: empty chain returns None, never crashes", compute_oi_support_resistance([]) is None
+    )
 
     mp_single = compute_max_pain([oi_row(100, 0, 0), oi_row(110, 1000, 1000), oi_row(120, 0, 0)])
-    check("Max Pain: single OI concentration wins with zero payout there", mp_single is not None and mp_single["max_pain_strike"] == 110 and mp_single["min_total_payout"] == 0.0, f"got {mp_single}")
+    check(
+        "Max Pain: single OI concentration wins with zero payout there",
+        mp_single is not None
+        and mp_single["max_pain_strike"] == 110
+        and mp_single["min_total_payout"] == 0.0,
+        f"got {mp_single}",
+    )
 
     # Cross-checked against an independently-written brute-force calculation
     # of the same sourced formula (not just re-deriving the same code path).
-    spread_rows = [oi_row(80, 100, 800), oi_row(90, 300, 1200), oi_row(100, 600, 600), oi_row(110, 1500, 300), oi_row(120, 900, 100)]
+    spread_rows = [
+        oi_row(80, 100, 800),
+        oi_row(90, 300, 1200),
+        oi_row(100, 600, 600),
+        oi_row(110, 1500, 300),
+        oi_row(120, 900, 100),
+    ]
     mp_spread = compute_max_pain(spread_rows)
     strikes = [80, 90, 100, 110, 120]
     call_oi_map = {80: 100, 90: 300, 100: 600, 110: 1500, 120: 900}
@@ -988,7 +1687,9 @@ async def main():
     expected = min(strikes, key=brute_pain)
     check(
         "Max Pain matches an independently-written brute-force calc (not just internally self-consistent)",
-        mp_spread is not None and mp_spread["max_pain_strike"] == expected and abs(mp_spread["min_total_payout"] - brute_pain(expected)) < 1e-6,
+        mp_spread is not None
+        and mp_spread["max_pain_strike"] == expected
+        and abs(mp_spread["min_total_payout"] - brute_pain(expected)) < 1e-6,
         f"got {mp_spread}, expected strike {expected}",
     )
     check(
@@ -1001,7 +1702,9 @@ async def main():
     # ═══════════════════════════════════════════════
     # SELF-IMPROVING OPTIMIZER SCHEDULER (NEW) — Phase 11
     # ═══════════════════════════════════════════════
-    print("\n--- OPTIMIZER SCHEDULER (NEW): feature-ablation + walk-forward-vs-live proposal (Phase 11) ---")
+    print(
+        "\n--- OPTIMIZER SCHEDULER (NEW): feature-ablation + walk-forward-vs-live proposal (Phase 11) ---"
+    )
 
     class _FakeConn:
         def __init__(self, rows):
@@ -1050,11 +1753,26 @@ async def main():
 
     # --- _ablation_field_present: Python-truthy matrix ---
     truthy_cases = [
-        (None, False), (0, False), (0.0, False), ("", False), ({}, False), ([], False), (False, False),
-        ("x", True), (1, True), (-1, True), ({"a": 1}, True), ([1], True), (True, True),
+        (None, False),
+        (0, False),
+        (0.0, False),
+        ("", False),
+        ({}, False),
+        ([], False),
+        (False, False),
+        ("x", True),
+        (1, True),
+        (-1, True),
+        ({"a": 1}, True),
+        ([1], True),
+        (True, True),
     ]
     truthy_ok = all(_ablation_field_present(v) == expected for v, expected in truthy_cases)
-    check("_ablation_field_present matches Python truthy semantics across types", truthy_ok, str(truthy_cases))
+    check(
+        "_ablation_field_present matches Python truthy semantics across types",
+        truthy_ok,
+        str(truthy_cases),
+    )
 
     # --- _ablation_group_metrics: hand-computed win/loss split ---
     def fs_row(present, outcome):
@@ -1062,11 +1780,17 @@ async def main():
         return {"outcome_label": outcome, "features_snapshot": snapshot}
 
     small_rows = (
-        [fs_row(True, "TARGET_HIT")] * 4 + [fs_row(True, "STOP_HIT")] * 1
-        + [fs_row(False, "TARGET_HIT")] * 3 + [fs_row(False, "STOP_HIT")] * 2
+        [fs_row(True, "TARGET_HIT")] * 4
+        + [fs_row(True, "STOP_HIT")] * 1
+        + [fs_row(False, "TARGET_HIT")] * 3
+        + [fs_row(False, "STOP_HIT")] * 2
     )
-    present_metrics = _ablation_group_metrics(small_rows, "features_snapshot", "chart_patterns", True)
-    absent_metrics = _ablation_group_metrics(small_rows, "features_snapshot", "chart_patterns", False)
+    present_metrics = _ablation_group_metrics(
+        small_rows, "features_snapshot", "chart_patterns", True
+    )
+    absent_metrics = _ablation_group_metrics(
+        small_rows, "features_snapshot", "chart_patterns", False
+    )
     check(
         "_ablation_group_metrics: present group wins/losses/precision hand-computed correctly",
         present_metrics == {"wins": 4, "losses": 1, "decided": 5, "precision_pct": 80.0},
@@ -1079,7 +1803,9 @@ async def main():
     )
 
     # --- compute_feature_ablation: small-sample note (both groups < 20 decided) ---
-    result_small = await compute_feature_ablation(_FakePool(small_rows), field="chart_patterns", column="features_snapshot", days=90)
+    result_small = await compute_feature_ablation(
+        _FakePool(small_rows), field="chart_patterns", column="features_snapshot", days=90
+    )
     check(
         "compute_feature_ablation: small sample flagged as not-yet-meaningful",
         result_small["available"] and "fewer than" in result_small["note"],
@@ -1093,16 +1819,23 @@ async def main():
 
     # --- compute_feature_ablation: adequate-sample note (both groups >= 20 decided) ---
     big_rows = (
-        [fs_row(True, "TARGET_HIT")] * 20 + [fs_row(True, "STOP_HIT")] * 5
-        + [fs_row(False, "TARGET_HIT")] * 12 + [fs_row(False, "STOP_HIT")] * 13
+        [fs_row(True, "TARGET_HIT")] * 20
+        + [fs_row(True, "STOP_HIT")] * 5
+        + [fs_row(False, "TARGET_HIT")] * 12
+        + [fs_row(False, "STOP_HIT")] * 13
     )
-    result_big = await compute_feature_ablation(_FakePool(big_rows), field="chart_patterns", column="features_snapshot", days=90)
+    result_big = await compute_feature_ablation(
+        _FakePool(big_rows), field="chart_patterns", column="features_snapshot", days=90
+    )
     check(
         "compute_feature_ablation: adequate sample surfaces a human-review note when lift is large",
         result_big["available"] and "human-reviewed follow-up" in result_big["note"],
         f"got {result_big}",
     )
-    check("compute_feature_ablation: total_decided matches row count", result_big["total_decided"] == len(big_rows))
+    check(
+        "compute_feature_ablation: total_decided matches row count",
+        result_big["total_decided"] == len(big_rows),
+    )
 
     # --- compute_feature_ablation: sub_scores column + unknown column rejected ---
     def ss_row(present, outcome):
@@ -1110,16 +1843,30 @@ async def main():
         return {"outcome_label": outcome, "sub_scores": snapshot}
 
     ss_rows = [ss_row(True, "TARGET_HIT")] * 25 + [ss_row(False, "STOP_HIT")] * 25
-    result_ss = await compute_feature_ablation(_FakePool(ss_rows), field="cross_confirmation", column="sub_scores", days=90)
+    result_ss = await compute_feature_ablation(
+        _FakePool(ss_rows), field="cross_confirmation", column="sub_scores", days=90
+    )
     check(
         "compute_feature_ablation: sub_scores column works (cross_confirmation lives there, not features_snapshot)",
-        result_ss["available"] and result_ss["present"]["precision_pct"] == 100.0 and result_ss["absent"]["precision_pct"] == 0.0,
+        result_ss["available"]
+        and result_ss["present"]["precision_pct"] == 100.0
+        and result_ss["absent"]["precision_pct"] == 0.0,
         f"got {result_ss}",
     )
-    result_bad_col = await compute_feature_ablation(_FakePool([]), field="x", column="not_a_real_column", days=90)
-    check("compute_feature_ablation: unknown column is rejected, not silently accepted", not result_bad_col["available"])
-    result_no_field = await compute_feature_ablation(_FakePool([]), field="", column="features_snapshot", days=90)
-    check("compute_feature_ablation: missing field param is rejected", not result_no_field["available"])
+    result_bad_col = await compute_feature_ablation(
+        _FakePool([]), field="x", column="not_a_real_column", days=90
+    )
+    check(
+        "compute_feature_ablation: unknown column is rejected, not silently accepted",
+        not result_bad_col["available"],
+    )
+    result_no_field = await compute_feature_ablation(
+        _FakePool([]), field="", column="features_snapshot", days=90
+    )
+    check(
+        "compute_feature_ablation: missing field param is rejected",
+        not result_no_field["available"],
+    )
 
     # --- _read_live_config: parses a real Redis hash shape (bytes keys/values, decode_responses=False) ---
     live_hash_bytes = {
@@ -1133,7 +1880,8 @@ async def main():
     live_parsed = await _read_live_config(_FakeRedis({LIVE_CONFIG_KEY: live_hash_bytes}))
     check(
         "_read_live_config: parses bytes hash into typed dict (bool/float/str)",
-        live_parsed == {
+        live_parsed
+        == {
             "precision_guard_enabled": True,
             "precision_guard_min_score": 80.0,
             "precision_guard_min_rr": 1.2,
@@ -1143,19 +1891,22 @@ async def main():
         },
         f"got {live_parsed}",
     )
-    check("_read_live_config: missing key returns None, not a crash", await _read_live_config(_FakeRedis({})) is None)
+    check(
+        "_read_live_config: missing key returns None, not a crash",
+        await _read_live_config(_FakeRedis({})) is None,
+    )
 
     # --- compute_optimizer_proposal: end-to-end against a synthetic walk-forward dataset ---
     # 200 decided signals, identical score/rr/grade/session (90 / 2.0 / A+ / closing),
     # 10% STOP_HIT evenly distributed so both the train and test walk-forward
     # splits land at ~90% precision -- comfortably above the 80% target, so a
     # profile reliably reaches FORWARD_TARGET_MET regardless of exact split index.
-    from datetime import datetime, timedelta, timezone as _tz
+    from datetime import datetime, timedelta
 
     def wf_row(i):
         outcome = "STOP_HIT" if i % 10 == 0 else "TARGET_HIT"
         return {
-            "created_at": datetime(2026, 1, 1, tzinfo=_tz.utc) + timedelta(hours=i),
+            "created_at": datetime(2026, 1, 1, tzinfo=UTC) + timedelta(hours=i),
             "symbol": "RELIANCE",
             "sector_id": "energy",
             "session_hour": "closing",
@@ -1210,7 +1961,7 @@ async def main():
     #     minutes 84, 86, 88 (indices 42, 43, 44) fall inside it; minute
     #     90 (index 45) does not. Exactly three test rows embargoed.
     def overlap_row(i):
-        created = datetime(2026, 1, 1, tzinfo=_tz.utc) + timedelta(minutes=2 * i)
+        created = datetime(2026, 1, 1, tzinfo=UTC) + timedelta(minutes=2 * i)
         resolved = created + timedelta(minutes=3)
         return {
             "created_at": created,
@@ -1231,7 +1982,13 @@ async def main():
 
     overlap_rows = [overlap_row(i) for i in range(60)]
     overlap_result = await compute_walkforward(
-        _FakePool(overlap_rows), days=120, target=80.0, min_train=30, min_test=15, train_pct=0.70, embargo_min=5.0,
+        _FakePool(overlap_rows),
+        days=120,
+        target=80.0,
+        min_train=30,
+        min_test=15,
+        train_pct=0.70,
+        embargo_min=5.0,
     )
     check(
         "compute_walkforward purge: exactly 1 train row purged (its outcome resolved 1 min past the split boundary)",
@@ -1256,11 +2013,18 @@ async def main():
     # embargo_min=0 must disable the embargo entirely (opt-out, not a
     # silent floor) while purge still runs off real resolution timestamps.
     no_embargo_result = await compute_walkforward(
-        _FakePool(overlap_rows), days=120, target=80.0, min_train=30, min_test=15, train_pct=0.70, embargo_min=0.0,
+        _FakePool(overlap_rows),
+        days=120,
+        target=80.0,
+        min_train=30,
+        min_test=15,
+        train_pct=0.70,
+        embargo_min=0.0,
     )
     check(
         "compute_walkforward: embargo_min=0 disables embargo (0 embargoed) but purge still applies (1 purged)",
-        no_embargo_result.get("embargoed_test_count") == 0 and no_embargo_result.get("purged_train_count") == 1,
+        no_embargo_result.get("embargoed_test_count") == 0
+        and no_embargo_result.get("purged_train_count") == 1,
         f"got {no_embargo_result.get('embargoed_test_count')}/{no_embargo_result.get('purged_train_count')}",
     )
 
@@ -1272,24 +2036,37 @@ async def main():
     # min_test=15 -- so this specifically exercises the POST-purge/embargo
     # re-check, not the earlier pre-split one.
     thin_result = await compute_walkforward(
-        _FakePool(overlap_rows), days=120, target=80.0, min_train=30, min_test=15, train_pct=0.70, embargo_min=30.0,
+        _FakePool(overlap_rows),
+        days=120,
+        target=80.0,
+        min_train=30,
+        min_test=15,
+        train_pct=0.70,
+        embargo_min=30.0,
     )
     check(
         "compute_walkforward: an embargo that eats most of the test set reports LOW_SAMPLE post-split, not a false result",
-        thin_result.get("status") == "LOW_SAMPLE" and thin_result.get("recommended") is None
+        thin_result.get("status") == "LOW_SAMPLE"
+        and thin_result.get("recommended") is None
         and thin_result.get("test_size") == 3,
         f"got {thin_result}",
     )
 
-    diverged_redis = _FakeRedis({LIVE_CONFIG_KEY: {
-        b"precision_guard_enabled": b"True",
-        b"precision_guard_min_score": b"80.0",
-        b"precision_guard_min_rr": b"1.2",
-        b"precision_guard_sessions": b"mid_morning,midday,closing",
-        b"precision_guard_strategy_ids": b"options_first_hybrid,vol_vwap_breakout",
-        b"published_at_us": b"1000000",
-    }})
-    proposal_diverged = await compute_optimizer_proposal(_FakePool(wf_rows), diverged_redis, days=120, target=80.0)
+    diverged_redis = _FakeRedis(
+        {
+            LIVE_CONFIG_KEY: {
+                b"precision_guard_enabled": b"True",
+                b"precision_guard_min_score": b"80.0",
+                b"precision_guard_min_rr": b"1.2",
+                b"precision_guard_sessions": b"mid_morning,midday,closing",
+                b"precision_guard_strategy_ids": b"options_first_hybrid,vol_vwap_breakout",
+                b"published_at_us": b"1000000",
+            }
+        }
+    )
+    proposal_diverged = await compute_optimizer_proposal(
+        _FakePool(wf_rows), diverged_redis, days=120, target=80.0
+    )
     check(
         "compute_optimizer_proposal: divergent live config produces a PROPOSED status",
         proposal_diverged["available"] and proposal_diverged["status"] == "PROPOSED",
@@ -1307,15 +2084,21 @@ async def main():
     )
 
     recommended = proposal_diverged.get("recommended") or {}
-    matching_redis = _FakeRedis({LIVE_CONFIG_KEY: {
-        b"precision_guard_enabled": b"True",
-        b"precision_guard_min_score": str(recommended.get("min_score", 50)).encode(),
-        b"precision_guard_min_rr": str(recommended.get("min_rr", 0)).encode(),
-        b"precision_guard_sessions": b"regular,mid_morning,midday,closing",
-        b"precision_guard_strategy_ids": b"options_first_hybrid,vol_vwap_breakout",
-        b"published_at_us": b"1000000",
-    }})
-    proposal_matching = await compute_optimizer_proposal(_FakePool(wf_rows), matching_redis, days=120, target=80.0)
+    matching_redis = _FakeRedis(
+        {
+            LIVE_CONFIG_KEY: {
+                b"precision_guard_enabled": b"True",
+                b"precision_guard_min_score": str(recommended.get("min_score", 50)).encode(),
+                b"precision_guard_min_rr": str(recommended.get("min_rr", 0)).encode(),
+                b"precision_guard_sessions": b"regular,mid_morning,midday,closing",
+                b"precision_guard_strategy_ids": b"options_first_hybrid,vol_vwap_breakout",
+                b"published_at_us": b"1000000",
+            }
+        }
+    )
+    proposal_matching = await compute_optimizer_proposal(
+        _FakePool(wf_rows), matching_redis, days=120, target=80.0
+    )
     check(
         "compute_optimizer_proposal: live config matching the recommendation produces NO_DRIFT",
         proposal_matching["available"] and proposal_matching["status"] == "NO_DRIFT",
@@ -1323,7 +2106,9 @@ async def main():
     )
 
     empty_redis = _FakeRedis({})
-    proposal_no_config = await compute_optimizer_proposal(_FakePool(wf_rows), empty_redis, days=120, target=80.0)
+    proposal_no_config = await compute_optimizer_proposal(
+        _FakePool(wf_rows), empty_redis, days=120, target=80.0
+    )
     check(
         "compute_optimizer_proposal: missing live config is reported as unavailable, not a crash/default guess",
         not proposal_no_config["available"] and LIVE_CONFIG_KEY in proposal_no_config["reason"],
@@ -1331,7 +2116,10 @@ async def main():
     )
 
     proposal_no_pool = await compute_optimizer_proposal(None, diverged_redis, days=120, target=80.0)
-    check("compute_optimizer_proposal: no Postgres pool is reported as unavailable, not a crash", not proposal_no_pool["available"])
+    check(
+        "compute_optimizer_proposal: no Postgres pool is reported as unavailable, not a crash",
+        not proposal_no_pool["available"],
+    )
 
     # ═══════════════════════════════════════════════
     # NL QUERY LAYER (NEW) — Phase 12
@@ -1342,7 +2130,8 @@ async def main():
 
     check(
         "find_mentioned_symbols: matches whole-word tickers, ignores prose",
-        find_mentioned_symbols("How is RELIANCE doing vs TCS today?", known_symbols) == ["RELIANCE", "TCS"],
+        find_mentioned_symbols("How is RELIANCE doing vs TCS today?", known_symbols)
+        == ["RELIANCE", "TCS"],
         f"got {find_mentioned_symbols('How is RELIANCE doing vs TCS today?', known_symbols)}",
     )
     check(
@@ -1352,49 +2141,62 @@ async def main():
 
     check(
         "find_mentioned_ablation_field: natural phrase resolves to the real field + column",
-        find_mentioned_ablation_field("does chart patterns actually help precision?") == ("chart_patterns", "features_snapshot"),
+        find_mentioned_ablation_field("does chart patterns actually help precision?")
+        == ("chart_patterns", "features_snapshot"),
         f"got {find_mentioned_ablation_field('does chart patterns actually help precision?')}",
     )
     check(
         "find_mentioned_ablation_field: sub_scores field resolves to the sub_scores column",
-        find_mentioned_ablation_field("what about cross confirmation") == ("cross_confirmation", "sub_scores"),
+        find_mentioned_ablation_field("what about cross confirmation")
+        == ("cross_confirmation", "sub_scores"),
         f"got {find_mentioned_ablation_field('what about cross confirmation')}",
     )
-    check("find_mentioned_ablation_field: no match on unrelated text", find_mentioned_ablation_field("what's the weather") is None)
+    check(
+        "find_mentioned_ablation_field: no match on unrelated text",
+        find_mentioned_ablation_field("what's the weather") is None,
+    )
 
     check(
         "classify_intents: market regime question",
-        [i["type"] for i in classify_intents("what's the market regime right now?", known_symbols)] == ["regime"],
+        [i["type"] for i in classify_intents("what's the market regime right now?", known_symbols)]
+        == ["regime"],
     )
     check(
         "classify_intents: sector rankings question",
-        [i["type"] for i in classify_intents("show me sector rankings", known_symbols)] == ["sectors"],
+        [i["type"] for i in classify_intents("show me sector rankings", known_symbols)]
+        == ["sectors"],
     )
     signal_intents = classify_intents("any active PE signals right now?", known_symbols)
     check(
         "classify_intents: signals question with PE direction detected",
-        len(signal_intents) == 1 and signal_intents[0] == {"type": "signals", "direction": "BUY PE"},
+        len(signal_intents) == 1
+        and signal_intents[0] == {"type": "signals", "direction": "BUY PE"},
         f"got {signal_intents}",
     )
     check(
         "classify_intents: bare symbol mention -> symbol intent",
-        classify_intents("how is RELIANCE doing", known_symbols) == [{"type": "symbol", "symbol": "RELIANCE"}],
+        classify_intents("how is RELIANCE doing", known_symbols)
+        == [{"type": "symbol", "symbol": "RELIANCE"}],
     )
     check(
         "classify_intents: symbol + PCR/max-pain wording -> options_analytics intent, not a plain symbol lookup",
-        classify_intents("what's the PCR and max pain for RELIANCE", known_symbols) == [{"type": "options_analytics", "symbol": "RELIANCE"}],
+        classify_intents("what's the PCR and max pain for RELIANCE", known_symbols)
+        == [{"type": "options_analytics", "symbol": "RELIANCE"}],
     )
     check(
         "classify_intents: walk-forward question",
-        [i["type"] for i in classify_intents("is walk-forward hitting target?", known_symbols)] == ["walkforward"],
+        [i["type"] for i in classify_intents("is walk-forward hitting target?", known_symbols)]
+        == ["walkforward"],
     )
     check(
         "classify_intents: optimizer drift question",
-        [i["type"] for i in classify_intents("any optimizer drift proposal?", known_symbols)] == ["optimizer_proposal"],
+        [i["type"] for i in classify_intents("any optimizer drift proposal?", known_symbols)]
+        == ["optimizer_proposal"],
     )
     check(
         "classify_intents: feature-evidence question",
-        classify_intents("does chart patterns actually help precision?", known_symbols) == [{"type": "feature_ablation", "field": "chart_patterns", "column": "features_snapshot"}],
+        classify_intents("does chart patterns actually help precision?", known_symbols)
+        == [{"type": "feature_ablation", "field": "chart_patterns", "column": "features_snapshot"}],
     )
     combo = classify_intents("what's the market regime and how is RELIANCE doing", known_symbols)
     check(
@@ -1402,7 +2204,10 @@ async def main():
         {i["type"] for i in combo} == {"regime", "symbol"},
         f"got {combo}",
     )
-    check("classify_intents: unrelated gibberish matches nothing", classify_intents("asdkjaslkdj qqweoiu", known_symbols) == [])
+    check(
+        "classify_intents: unrelated gibberish matches nothing",
+        classify_intents("asdkjaslkdj qqweoiu", known_symbols) == [],
+    )
 
     # --- gather_facts + format_facts_as_text: full synthetic Redis double ---
     class _FakePipeline:
@@ -1432,7 +2237,7 @@ async def main():
 
         async def zrevrange(self, key, start, end, withscores=False):
             items = sorted(self._zsets.get(key, []), key=lambda kv: -kv[1])
-            sliced = items[start:] if end == -1 else items[start:end + 1]
+            sliced = items[start:] if end == -1 else items[start : end + 1]
             return sliced if withscores else [m for m, s in sliced]
 
         async def exists(self, key):
@@ -1449,78 +2254,175 @@ async def main():
 
     fr = _FakeRedis2()
     fr._hashes["infusion:regime"] = {"regime": "bullish", "reason": "broad_advance"}
-    fr._hashes["infusion:sector:FINANCIALS"] = {"sector_id": "FINANCIALS", "rank": "1", "strength_score": "72.5", "trend": "up"}
-    fr._hashes["infusion:sector:IT"] = {"sector_id": "IT", "rank": "2", "strength_score": "55.0", "trend": "flat"}
+    fr._hashes["infusion:sector:FINANCIALS"] = {
+        "sector_id": "FINANCIALS",
+        "rank": "1",
+        "strength_score": "72.5",
+        "trend": "up",
+    }
+    fr._hashes["infusion:sector:IT"] = {
+        "sector_id": "IT",
+        "rank": "2",
+        "strength_score": "55.0",
+        "trend": "flat",
+    }
     fr._zsets["infusion:signals:active"] = [("RELIANCE:options_first_hybrid", 88.0)]
     fr._hashes["infusion:signal:RELIANCE:options_first_hybrid"] = {
-        "conviction_grade": "A+", "conviction_score": "88", "option_bias": "BUY CE", "symbol": "RELIANCE",
+        "conviction_grade": "A+",
+        "conviction_score": "88",
+        "option_bias": "BUY CE",
+        "symbol": "RELIANCE",
     }
-    fr._hashes["infusion:tick:RELIANCE"] = {"ltp": "2500.5", "change_pct": "1.2", "sector_id": "FINANCIALS"}
+    fr._hashes["infusion:tick:RELIANCE"] = {
+        "ltp": "2500.5",
+        "change_pct": "1.2",
+        "sector_id": "FINANCIALS",
+    }
     fr._hashes["infusion:feature:RELIANCE"] = {"ltp": "2500.5", "change_pct": "1.2"}
 
     regime_fact = await gather_facts({"type": "regime"}, redis=fr, pool=None, options_chain_fn=None)
-    check("gather_facts(regime): reads the real regime hash", regime_fact["regime"]["regime"] == "bullish", f"got {regime_fact}")
+    check(
+        "gather_facts(regime): reads the real regime hash",
+        regime_fact["regime"]["regime"] == "bullish",
+        f"got {regime_fact}",
+    )
 
-    sectors_fact = await gather_facts({"type": "sectors"}, redis=fr, pool=None, options_chain_fn=None)
+    sectors_fact = await gather_facts(
+        {"type": "sectors"}, redis=fr, pool=None, options_chain_fn=None
+    )
     check(
         "gather_facts(sectors): sorted by rank, FINANCIALS (rank 1) first",
         sectors_fact["sectors"][0]["sector_id"] == "FINANCIALS" and sectors_fact["total"] == 2,
         f"got {sectors_fact}",
     )
 
-    signals_all = await gather_facts({"type": "signals", "direction": None}, redis=fr, pool=None, options_chain_fn=None)
-    check("gather_facts(signals, no direction filter): finds the one active signal", signals_all["total"] == 1 and signals_all["signals"][0]["symbol"] == "RELIANCE", f"got {signals_all}")
+    signals_all = await gather_facts(
+        {"type": "signals", "direction": None}, redis=fr, pool=None, options_chain_fn=None
+    )
+    check(
+        "gather_facts(signals, no direction filter): finds the one active signal",
+        signals_all["total"] == 1 and signals_all["signals"][0]["symbol"] == "RELIANCE",
+        f"got {signals_all}",
+    )
 
-    signals_pe = await gather_facts({"type": "signals", "direction": "BUY PE"}, redis=fr, pool=None, options_chain_fn=None)
-    check("gather_facts(signals, PE filter): correctly excludes the BUY CE signal", signals_pe["total"] == 0, f"got {signals_pe}")
+    signals_pe = await gather_facts(
+        {"type": "signals", "direction": "BUY PE"}, redis=fr, pool=None, options_chain_fn=None
+    )
+    check(
+        "gather_facts(signals, PE filter): correctly excludes the BUY CE signal",
+        signals_pe["total"] == 0,
+        f"got {signals_pe}",
+    )
 
-    symbol_fact = await gather_facts({"type": "symbol", "symbol": "RELIANCE"}, redis=fr, pool=None, options_chain_fn=None)
-    check("gather_facts(symbol): builds a real snapshot with live LTP", symbol_fact["snapshot"]["market"]["ltp"] == 2500.5, f"got {symbol_fact}")
+    symbol_fact = await gather_facts(
+        {"type": "symbol", "symbol": "RELIANCE"}, redis=fr, pool=None, options_chain_fn=None
+    )
+    check(
+        "gather_facts(symbol): builds a real snapshot with live LTP",
+        symbol_fact["snapshot"]["market"]["ltp"] == 2500.5,
+        f"got {symbol_fact}",
+    )
 
     async def _fake_options_chain_ready(redis, symbol):
-        return {"ready": True, "pcr": {"pcr": 0.8, "sentiment": "neutral_bullish"}, "oi_support_resistance": {"resistance": 2600, "support": 2400}, "max_pain": {"max_pain_strike": 2500}}
+        return {
+            "ready": True,
+            "pcr": {"pcr": 0.8, "sentiment": "neutral_bullish"},
+            "oi_support_resistance": {"resistance": 2600, "support": 2400},
+            "max_pain": {"max_pain_strike": 2500},
+        }
 
     async def _fake_options_chain_not_ready(redis, symbol):
         return {"ready": False, "reason": "Upstox auth token missing"}
 
-    options_fact = await gather_facts({"type": "options_analytics", "symbol": "RELIANCE"}, redis=fr, pool=None, options_chain_fn=_fake_options_chain_ready)
-    check("gather_facts(options_analytics): passes through the injected chain function's result", options_fact["result"]["pcr"]["pcr"] == 0.8, f"got {options_fact}")
+    options_fact = await gather_facts(
+        {"type": "options_analytics", "symbol": "RELIANCE"},
+        redis=fr,
+        pool=None,
+        options_chain_fn=_fake_options_chain_ready,
+    )
+    check(
+        "gather_facts(options_analytics): passes through the injected chain function's result",
+        options_fact["result"]["pcr"]["pcr"] == 0.8,
+        f"got {options_fact}",
+    )
 
-    wf_fact_none = await gather_facts({"type": "walkforward"}, redis=fr, pool=None, options_chain_fn=None)
-    check("gather_facts(walkforward) with no pool: unavailable, not a crash", not wf_fact_none["result"]["available"])
+    wf_fact_none = await gather_facts(
+        {"type": "walkforward"}, redis=fr, pool=None, options_chain_fn=None
+    )
+    check(
+        "gather_facts(walkforward) with no pool: unavailable, not a crash",
+        not wf_fact_none["result"]["available"],
+    )
 
-    opt_fact_none = await gather_facts({"type": "optimizer_proposal"}, redis=fr, pool=None, options_chain_fn=None)
-    check("gather_facts(optimizer_proposal) with no pool: unavailable, not a crash", not opt_fact_none["result"]["available"])
+    opt_fact_none = await gather_facts(
+        {"type": "optimizer_proposal"}, redis=fr, pool=None, options_chain_fn=None
+    )
+    check(
+        "gather_facts(optimizer_proposal) with no pool: unavailable, not a crash",
+        not opt_fact_none["result"]["available"],
+    )
 
-    abl_fact_none = await gather_facts({"type": "feature_ablation", "field": "chart_patterns", "column": "features_snapshot"}, redis=fr, pool=None, options_chain_fn=None)
-    check("gather_facts(feature_ablation) with no pool: unavailable, not a crash", not abl_fact_none["result"]["available"])
+    abl_fact_none = await gather_facts(
+        {"type": "feature_ablation", "field": "chart_patterns", "column": "features_snapshot"},
+        redis=fr,
+        pool=None,
+        options_chain_fn=None,
+    )
+    check(
+        "gather_facts(feature_ablation) with no pool: unavailable, not a crash",
+        not abl_fact_none["result"]["available"],
+    )
 
     # --- format_facts_as_text: deterministic text grounds every branch ---
     empty_text = format_facts_as_text("asdkjaslkdj", [], [])
-    check("format_facts_as_text: no-intent question returns the capabilities help message", "I couldn't match" in empty_text, empty_text)
+    check(
+        "format_facts_as_text: no-intent question returns the capabilities help message",
+        "I couldn't match" in empty_text,
+        empty_text,
+    )
 
     single_intents = [{"type": "regime"}]
     single_facts = [regime_fact]
     regime_text = format_facts_as_text("what's the regime", single_intents, single_facts)
-    check("format_facts_as_text: regime fact renders the actual regime value", "bullish" in regime_text, regime_text)
+    check(
+        "format_facts_as_text: regime fact renders the actual regime value",
+        "bullish" in regime_text,
+        regime_text,
+    )
 
     options_text = format_facts_as_text(
         "PCR for RELIANCE",
         [{"type": "options_analytics", "symbol": "RELIANCE"}],
         [options_fact],
     )
-    check("format_facts_as_text: options fact renders PCR/support/resistance/max-pain numbers", "0.8" in options_text and "2600" in options_text and "2500" in options_text, options_text)
+    check(
+        "format_facts_as_text: options fact renders PCR/support/resistance/max-pain numbers",
+        "0.8" in options_text and "2600" in options_text and "2500" in options_text,
+        options_text,
+    )
 
-    options_unavailable_fact = await gather_facts({"type": "options_analytics", "symbol": "RELIANCE"}, redis=fr, pool=None, options_chain_fn=_fake_options_chain_not_ready)
+    options_unavailable_fact = await gather_facts(
+        {"type": "options_analytics", "symbol": "RELIANCE"},
+        redis=fr,
+        pool=None,
+        options_chain_fn=_fake_options_chain_not_ready,
+    )
     options_unavail_text = format_facts_as_text(
         "PCR for RELIANCE",
         [{"type": "options_analytics", "symbol": "RELIANCE"}],
         [options_unavailable_fact],
     )
-    check("format_facts_as_text: unready options chain reports unavailable + real reason, not fabricated numbers", "unavailable" in options_unavail_text and "Upstox auth token missing" in options_unavail_text, options_unavail_text)
+    check(
+        "format_facts_as_text: unready options chain reports unavailable + real reason, not fabricated numbers",
+        "unavailable" in options_unavail_text
+        and "Upstox auth token missing" in options_unavail_text,
+        options_unavail_text,
+    )
 
     # --- full pipeline: classify -> gather -> format, multi-intent question ---
-    combo_question = "What's the market regime and how is RELIANCE doing, any PCR data for RELIANCE too?"
+    combo_question = (
+        "What's the market regime and how is RELIANCE doing, any PCR data for RELIANCE too?"
+    )
     combo_intents = classify_intents(combo_question, known_symbols)
     combo_facts = [
         await gather_facts(i, redis=fr, pool=None, options_chain_fn=_fake_options_chain_ready)
@@ -1534,7 +2436,8 @@ async def main():
     check(
         "Full pipeline: multi-intent question produces a grounded answer covering every matched intent",
         {i["type"] for i in combo_intents} == {"regime", "options_analytics"}
-        and "Market regime:" in combo_text and "RELIANCE options:" in combo_text,
+        and "Market regime:" in combo_text
+        and "RELIANCE options:" in combo_text,
         combo_text,
     )
 
@@ -1544,16 +2447,22 @@ async def main():
         await gather_facts(i, redis=fr, pool=None, options_chain_fn=_fake_options_chain_ready)
         for i in plain_combo_intents
     ]
-    plain_combo_text = format_facts_as_text(plain_combo_question, plain_combo_intents, plain_combo_facts)
+    plain_combo_text = format_facts_as_text(
+        plain_combo_question, plain_combo_intents, plain_combo_facts
+    )
     check(
         "Full pipeline: regime + plain symbol combo (no PCR wording) renders both facts",
         {i["type"] for i in plain_combo_intents} == {"regime", "symbol"}
-        and "Market regime:" in plain_combo_text and "RELIANCE: LTP" in plain_combo_text,
+        and "Market regime:" in plain_combo_text
+        and "RELIANCE: LTP" in plain_combo_text,
         plain_combo_text,
     )
 
     load_symbols_fake = await load_known_symbols(fr)
-    check("load_known_symbols: no infusion:symbols hash returns an empty set, never crashes", load_symbols_fake == set())
+    check(
+        "load_known_symbols: no infusion:symbols hash returns an empty set, never crashes",
+        load_symbols_fake == set(),
+    )
 
     # ═══════════════════════════════════════════════
     # SUMMARY

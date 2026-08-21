@@ -30,7 +30,10 @@ async def options_dynamics_for_symbol(request):
     raw = await redis.get(f"infusion:options-dynamics:{symbol}")
     if not raw:
         return web.json_response(
-            {"available": False, "reason": f"No dynamic option data for {symbol} yet -- not in the current sweep candidate set, or its chain isn't ready."},
+            {
+                "available": False,
+                "reason": f"No dynamic option data for {symbol} yet -- not in the current sweep candidate set, or its chain isn't ready.",
+            },
             status=404,
         )
     return web.json_response(json.loads(raw))

@@ -103,42 +103,43 @@ packages = ["src/infusion_models"]
 
 from pydantic import BaseModel, Field
 
+
 class RawTickV1(BaseModel, frozen=True):
     """Broker-specific tick. Output of ingestion adapter."""
 
-    broker: str                          # "upstox" | "kite"
-    instrument_key: str                  # Broker-specific identifier
-    exchange: str                        # "NSE" | "BSE"
-    segment: str                         # "EQ" | "FO" | "INDEX"
+    broker: str  # "upstox" | "kite"
+    instrument_key: str  # Broker-specific identifier
+    exchange: str  # "NSE" | "BSE"
+    segment: str  # "EQ" | "FO" | "INDEX"
     ltp: float
     open: float
     high: float
     low: float
-    close: float                         # Previous day close
+    close: float  # Previous day close
     volume: int
-    oi: int = 0                          # 0 for non-F&O
+    oi: int = 0  # 0 for non-F&O
     total_buy_qty: int = 0
     total_sell_qty: int = 0
     best_bid: float = 0.0
     best_ask: float = 0.0
     best_bid_qty: int = 0
     best_ask_qty: int = 0
-    exchange_timestamp_ms: int           # UTC epoch milliseconds (authoritative)
-    received_at_us: int                  # Local receipt epoch microseconds
+    exchange_timestamp_ms: int  # UTC epoch milliseconds (authoritative)
+    received_at_us: int  # Local receipt epoch microseconds
 
 
 class NormalizedTickV1(BaseModel, frozen=True):
     """Universal tick. Output of normalizer."""
 
-    symbol: str                          # "RELIANCE", "INFY"
-    sector_id: str                       # "NIFTY_BANK", "NIFTY_IT", "UNCATEGORIZED"
+    symbol: str  # "RELIANCE", "INFY"
+    sector_id: str  # "NIFTY_BANK", "NIFTY_IT", "UNCATEGORIZED"
     is_fno: bool
-    tier: int                            # 1, 2, or 3
+    tier: int  # 1, 2, or 3
     ltp: float
     open: float
     high: float
     low: float
-    close: float                         # Previous day close
+    close: float  # Previous day close
     volume: int
     oi: int = 0
     best_bid: float = 0.0
@@ -157,20 +158,21 @@ class NormalizedTickV1(BaseModel, frozen=True):
 
 from pydantic import BaseModel
 
+
 class FeatureVectorV1(BaseModel, frozen=True):
     """Computed features for a single symbol at a point in time."""
 
     symbol: str
-    timestamp_us: int                    # when features were computed
+    timestamp_us: int  # when features were computed
 
     # Price
     ltp: float
     vwap: float = 0.0
-    gap_pct: float = 0.0                 # (open - prev_close) / prev_close * 100
+    gap_pct: float = 0.0  # (open - prev_close) / prev_close * 100
     day_high: float = 0.0
     day_low: float = 0.0
     prev_close: float = 0.0
-    change_pct: float = 0.0             # (ltp - prev_close) / prev_close * 100
+    change_pct: float = 0.0  # (ltp - prev_close) / prev_close * 100
 
     # Moving averages
     ema_5: float = 0.0
@@ -194,14 +196,14 @@ class FeatureVectorV1(BaseModel, frozen=True):
     cci_20: float = 0.0
 
     # Volume
-    rel_vol_20d: float = 1.0            # current volume / 20-day avg volume
+    rel_vol_20d: float = 1.0  # current volume / 20-day avg volume
     obv: float = 0.0
     volume_sma_20: float = 0.0
 
     # Microstructure
-    spread_bps: float = 0.0             # (ask - bid) / mid * 10000
-    order_imbalance: float = 0.0        # (buy_qty - sell_qty) / (buy_qty + sell_qty)
-    delivery_pct: float = 0.0           # from NSE data (when available)
+    spread_bps: float = 0.0  # (ask - bid) / mid * 10000
+    order_imbalance: float = 0.0  # (buy_qty - sell_qty) / (buy_qty + sell_qty)
+    delivery_pct: float = 0.0  # from NSE data (when available)
 
     # ML features (free-form, for future model iteration)
     ml_features: dict = {}
@@ -215,10 +217,12 @@ class FeatureVectorV1(BaseModel, frozen=True):
 from pydantic import BaseModel
 from enum import StrEnum
 
+
 class HealthState(StrEnum):
     HEALTHY = "healthy"
     DEGRADED = "degraded"
     UNHEALTHY = "unhealthy"
+
 
 class ServiceHealth(BaseModel):
     service: str
@@ -306,12 +310,12 @@ MAXLEN_DLQ = 1_000
 # ═══════════════════════════════════════════════════
 # Hot State Keys
 # ═══════════════════════════════════════════════════
-KEY_TICK_PREFIX = "infusion:tick:"         # + {symbol}  → HASH
-KEY_FEATURE_PREFIX = "infusion:feature:"   # + {symbol}  → HASH
-KEY_OHLC_PREFIX = "infusion:ohlc:"        # + {symbol}:{tf} → ZSET
-KEY_HEALTH_PREFIX = "infusion:health:"     # + {service} → STRING
-KEY_SYMBOLS = "infusion:symbols"           # HASH: instrument_key → symbol metadata
-KEY_AUTH_UPSTOX = "infusion:auth:upstox"   # STRING: access_token
+KEY_TICK_PREFIX = "infusion:tick:"  # + {symbol}  → HASH
+KEY_FEATURE_PREFIX = "infusion:feature:"  # + {symbol}  → HASH
+KEY_OHLC_PREFIX = "infusion:ohlc:"  # + {symbol}:{tf} → ZSET
+KEY_HEALTH_PREFIX = "infusion:health:"  # + {service} → STRING
+KEY_SYMBOLS = "infusion:symbols"  # HASH: instrument_key → symbol metadata
+KEY_AUTH_UPSTOX = "infusion:auth:upstox"  # STRING: access_token
 ```
 
 #### codec.py — Versioned Envelope Codec
@@ -470,9 +474,7 @@ class StreamConsumer:
     async def ensure_group(self):
         """Create consumer group if it doesn't exist."""
         try:
-            await self.redis.xgroup_create(
-                self.stream, self.group, id="0", mkstream=True
-            )
+            await self.redis.xgroup_create(self.stream, self.group, id="0", mkstream=True)
             logger.info("consumer_group_created", stream=self.stream, group=self.group)
         except Exception as e:
             if "BUSYGROUP" in str(e):
@@ -518,9 +520,7 @@ class StreamConsumer:
                     try:
                         event_type, version, ts, rx, payload = decode_event(raw_data)
                     except Exception as e:
-                        await self._send_to_dlq(
-                            msg_id, raw_data, "MALFORMED_DATA", str(e)
-                        )
+                        await self._send_to_dlq(msg_id, raw_data, "MALFORMED_DATA", str(e))
                         await self.redis.xack(self.stream, self.group, msg_id)
                         self._errors += 1
                         continue
@@ -561,9 +561,7 @@ class StreamConsumer:
             self._errors += 1
             return False
 
-    async def _send_to_dlq(
-        self, msg_id, raw_data: bytes, category: str, reason: str
-    ):
+    async def _send_to_dlq(self, msg_id, raw_data: bytes, category: str, reason: str):
         """Move poison message to dead letter stream."""
         dlq_entry = {
             "original_stream": self.stream,
@@ -658,7 +656,7 @@ class InfusionSettings(BaseSettings):
 
     # Service identity
     service_name: str = "unknown"
-    environment: str = "development"       # development | staging | production
+    environment: str = "development"  # development | staging | production
 
     # Redis
     redis_url: str = "redis://localhost:6379/0"
@@ -668,7 +666,7 @@ class InfusionSettings(BaseSettings):
 
     # Logging
     log_level: str = "INFO"
-    log_format: str = "json"               # json | console
+    log_format: str = "json"  # json | console
 
     # Health
     health_interval_sec: int = 10
@@ -739,6 +737,7 @@ def now_us() -> int:
 
 def measure_latency(func):
     """Decorator that logs function execution time in microseconds."""
+
     @functools.wraps(func)
     async def wrapper(*args, **kwargs):
         start = time.perf_counter_ns()
@@ -750,6 +749,7 @@ def measure_latency(func):
             elapsed_us=round(elapsed_us, 1),
         )
         return result
+
     return wrapper
 ```
 
@@ -867,6 +867,7 @@ class HealthReporter:
                 }
 
                 import msgpack
+
                 key = f"{KEY_HEALTH_PREFIX}{self.service_name}"
                 await self.redis.set(
                     key,
@@ -916,18 +917,18 @@ class IngestionSettings(InfusionSettings):
     service_name: str = "ingestion"
 
     # Broker
-    broker_primary: str = "upstox"         # "upstox" | "kite" | "mock"
+    broker_primary: str = "upstox"  # "upstox" | "kite" | "mock"
     broker_secondary: str = ""
 
     # Upstox
     upstox_api_key: str = ""
     upstox_api_secret: str = ""
     upstox_redirect_uri: str = "http://localhost:5000/callback"
-    upstox_access_token: str = ""          # set via env or Redis
+    upstox_access_token: str = ""  # set via env or Redis
 
     # Mock adapter
-    mock_symbols: int = 50                 # number of symbols to simulate
-    mock_tick_rate_hz: int = 100           # ticks per second
+    mock_symbols: int = 50  # number of symbols to simulate
+    mock_tick_rate_hz: int = 100  # ticks per second
 
     # Connection
     ws_ping_interval_sec: int = 30
@@ -985,9 +986,7 @@ class BrokerAdapter(ABC):
         ...
 
     @abstractmethod
-    async def start_streaming(
-        self, on_tick: Callable[[RawTickV1], Awaitable[None]]
-    ) -> None:
+    async def start_streaming(self, on_tick: Callable[[RawTickV1], Awaitable[None]]) -> None:
         """Begin receiving ticks. Calls on_tick for each decoded tick."""
         ...
 
@@ -1191,10 +1190,10 @@ from infusion_common.timing import now_us
 
 
 MOCK_SYMBOLS = [
-    ("NSE_EQ|INE002A01018", "NSE", "EQ"),   # RELIANCE
-    ("NSE_EQ|INE009A01021", "NSE", "EQ"),   # INFY
-    ("NSE_EQ|INE040A01034", "NSE", "EQ"),   # HDFCBANK
-    ("NSE_EQ|INE467B01029", "NSE", "EQ"),   # TCS
+    ("NSE_EQ|INE002A01018", "NSE", "EQ"),  # RELIANCE
+    ("NSE_EQ|INE009A01021", "NSE", "EQ"),  # INFY
+    ("NSE_EQ|INE040A01034", "NSE", "EQ"),  # HDFCBANK
+    ("NSE_EQ|INE467B01029", "NSE", "EQ"),  # TCS
     ("NSE_INDEX|Nifty 50", "NSE", "INDEX"),
 ]
 
@@ -1478,10 +1477,12 @@ async def main():
     )
 
     # Set health details
-    health.set_details_fn(lambda: {
-        **adapter.health(),
-        "published": publisher.producer.published_count,
-    })
+    health.set_details_fn(
+        lambda: {
+            **adapter.health(),
+            "published": publisher.producer.published_count,
+        }
+    )
 
     # Cleanup
     lifecycle.register_cleanup(health.stop)
@@ -1586,7 +1587,7 @@ class NormalizerSettings(InfusionSettings):
     tier3_min_interval_ms: int = 2000
 
     # Dedup
-    dedup_ring_size: int = 20             # per-symbol ring buffer size
+    dedup_ring_size: int = 20  # per-symbol ring buffer size
 
     # Consumer
     batch_size: int = 200
@@ -1613,7 +1614,7 @@ class SymbolInfo:
     sector_id: str
     is_fno: bool
     lot_size: int
-    tier: int              # 1, 2, or 3
+    tier: int  # 1, 2, or 3
 
 
 class SymbolResolver:
@@ -1671,7 +1672,7 @@ class TierThrottler:
 
     def __init__(self, tier2_ms: int = 500, tier3_ms: int = 2000):
         self._thresholds = {
-            1: 0,                     # no throttling
+            1: 0,  # no throttling
             2: tier2_ms / 1000.0,
             3: tier3_ms / 1000.0,
         }
@@ -1791,8 +1792,10 @@ from infusion_models.events import EventType
 from infusion_streams.consumer import StreamConsumer
 from infusion_streams.producer import StreamProducer
 from infusion_streams.constants import (
-    STREAM_TICK_RAW, STREAM_TICK_NORMALIZED,
-    CG_NORMALIZER, MAXLEN_TICK_NORMALIZED,
+    STREAM_TICK_RAW,
+    STREAM_TICK_NORMALIZED,
+    CG_NORMALIZER,
+    MAXLEN_TICK_NORMALIZED,
     KEY_TICK_PREFIX,
 )
 
@@ -1819,8 +1822,12 @@ async def main():
 
     # Stream I/O
     consumer = StreamConsumer(
-        redis, STREAM_TICK_RAW, CG_NORMALIZER, "normalizer-1",
-        batch_size=config.batch_size, block_ms=config.block_ms,
+        redis,
+        STREAM_TICK_RAW,
+        CG_NORMALIZER,
+        "normalizer-1",
+        batch_size=config.batch_size,
+        block_ms=config.block_ms,
     )
     await consumer.ensure_group()
 
@@ -1828,13 +1835,15 @@ async def main():
 
     # Health
     health = HealthReporter(redis, config.service_name)
-    health.set_details_fn(lambda: {
-        "symbols_loaded": resolver.count,
-        "throttled_dropped": throttler.dropped_count,
-        "duplicates_dropped": dedup.duplicate_count,
-        "consumed": consumer.stats,
-        "published": producer.published_count,
-    })
+    health.set_details_fn(
+        lambda: {
+            "symbols_loaded": resolver.count,
+            "throttled_dropped": throttler.dropped_count,
+            "duplicates_dropped": dedup.duplicate_count,
+            "consumed": consumer.stats,
+            "published": producer.published_count,
+        }
+    )
     await health.start()
     lifecycle.register_cleanup(health.stop)
     lifecycle.register_cleanup(redis.aclose)
@@ -1879,6 +1888,7 @@ async def main():
 
         # 6. Update hot state (latest tick per symbol)
         import msgpack
+
         await redis.hset(
             f"{KEY_TICK_PREFIX}{info.symbol}",
             mapping={
@@ -1886,7 +1896,8 @@ async def main():
                 "volume": str(normalized.volume),
                 "change_pct": str(
                     round((normalized.ltp - normalized.close) / normalized.close * 100, 2)
-                    if normalized.close > 0 else 0
+                    if normalized.close > 0
+                    else 0
                 ),
                 "exchange_ts": str(normalized.exchange_timestamp_ms),
                 "updated_at": str(normalized.normalized_at_us),
@@ -1942,8 +1953,8 @@ class FeatureEngineSettings(InfusionSettings):
     service_name: str = "feature-engine"
 
     # Micro-batch
-    batch_timer_ms: int = 5              # flush every 5ms
-    batch_max_ticks: int = 200           # flush if buffer reaches 200
+    batch_timer_ms: int = 5  # flush every 5ms
+    batch_max_ticks: int = 200  # flush if buffer reaches 200
 
     # Consumer
     consumer_batch_size: int = 200
@@ -1962,9 +1973,9 @@ class FeatureEngineSettings(InfusionSettings):
     volume_sma_period: int = 20
 
     # OHLC bar retention in Redis sorted sets
-    ohlc_1m_max: int = 390               # 1 day of 1-min bars
-    ohlc_5m_max: int = 78                # 1 day of 5-min bars
-    ohlc_15m_max: int = 26               # 1 day of 15-min bars
+    ohlc_1m_max: int = 390  # 1 day of 1-min bars
+    ohlc_5m_max: int = 78  # 1 day of 5-min bars
+    ohlc_15m_max: int = 26  # 1 day of 15-min bars
 ```
 
 ### 5.3 Per-Symbol State
@@ -1980,15 +1991,16 @@ from collections import deque
 @dataclass
 class OHLCBar:
     """A single OHLC bar."""
+
     open: float = 0.0
     high: float = 0.0
     low: float = float("inf")
     close: float = 0.0
     volume: int = 0
-    vwap_numerator: float = 0.0          # sum(price * volume)
-    vwap_denominator: int = 0            # sum(volume)
+    vwap_numerator: float = 0.0  # sum(price * volume)
+    vwap_denominator: int = 0  # sum(volume)
     tick_count: int = 0
-    bar_start_ms: int = 0                # exchange timestamp of bar start
+    bar_start_ms: int = 0  # exchange timestamp of bar start
 
 
 @dataclass
@@ -2099,8 +2111,12 @@ def update_bars(state: SymbolState, ltp: float, volume: int, exchange_ms: int):
 
             # Reset for new bar
             new_bar = OHLCBar(
-                open=ltp, high=ltp, low=ltp, close=ltp,
-                volume=volume, tick_count=1,
+                open=ltp,
+                high=ltp,
+                low=ltp,
+                close=ltp,
+                volume=volume,
+                tick_count=1,
                 bar_start_ms=bar_start,
             )
             setattr(state, bar_attr, new_bar)
@@ -2315,7 +2331,9 @@ def update_bollinger(state: SymbolState, close: float):
     state.bb_prices.append(close)
 
 
-def get_bollinger(state: SymbolState, period: int = 20, num_std: float = 2.0) -> tuple[float, float, float]:
+def get_bollinger(
+    state: SymbolState, period: int = 20, num_std: float = 2.0
+) -> tuple[float, float, float]:
     """Returns (upper, lower, width)."""
     if len(state.bb_prices) < 2:
         return state.ltp * 1.02, state.ltp * 0.98, 0.04
@@ -2409,10 +2427,21 @@ from collections import defaultdict
 
 from feature_engine.state import SymbolState
 from feature_engine.bar_builder import update_bars
-from feature_engine.features.price import update_price_features, get_vwap, get_gap_pct, get_change_pct
+from feature_engine.features.price import (
+    update_price_features,
+    get_vwap,
+    get_gap_pct,
+    get_change_pct,
+)
 from feature_engine.features.momentum import (
-    update_rsi, get_rsi, update_macd, get_macd,
-    update_stochastic, get_stochastic, update_cci, get_cci,
+    update_rsi,
+    get_rsi,
+    update_macd,
+    get_macd,
+    update_stochastic,
+    get_stochastic,
+    update_cci,
+    get_cci,
 )
 from feature_engine.features.volatility import update_atr, update_bollinger, get_bollinger
 from feature_engine.features.volume import update_obv, get_relative_volume, get_volume_sma
@@ -2517,7 +2546,9 @@ class FeatureEngine:
         # Update all features
         update_price_features(state, ltp, volume)
         update_rsi(state, ltp, self.config.rsi_period)
-        update_macd(state, ltp, self.config.macd_fast, self.config.macd_slow, self.config.macd_signal)
+        update_macd(
+            state, ltp, self.config.macd_fast, self.config.macd_slow, self.config.macd_signal
+        )
         update_atr(state, high, low, ltp, self.config.atr_period)
         update_bollinger(state, ltp)
         update_stochastic(state, high, low, ltp)
@@ -2591,8 +2622,10 @@ from infusion_models.events import EventType
 from infusion_streams.consumer import StreamConsumer
 from infusion_streams.producer import StreamProducer
 from infusion_streams.constants import (
-    STREAM_TICK_NORMALIZED, STREAM_FEATURE_COMPUTED,
-    CG_FEATURE, MAXLEN_FEATURE_COMPUTED,
+    STREAM_TICK_NORMALIZED,
+    STREAM_FEATURE_COMPUTED,
+    CG_FEATURE,
+    MAXLEN_FEATURE_COMPUTED,
     KEY_FEATURE_PREFIX,
 )
 
@@ -2609,8 +2642,12 @@ async def main():
 
     # Stream I/O
     consumer = StreamConsumer(
-        redis, STREAM_TICK_NORMALIZED, CG_FEATURE, "feature-engine-1",
-        batch_size=config.consumer_batch_size, block_ms=config.consumer_block_ms,
+        redis,
+        STREAM_TICK_NORMALIZED,
+        CG_FEATURE,
+        "feature-engine-1",
+        batch_size=config.consumer_batch_size,
+        block_ms=config.consumer_block_ms,
     )
     await consumer.ensure_group()
 
@@ -2637,11 +2674,13 @@ async def main():
 
     # Health
     health = HealthReporter(redis, config.service_name)
-    health.set_details_fn(lambda: {
-        **engine.stats,
-        "consumed": consumer.stats,
-        "published": producer.published_count,
-    })
+    health.set_details_fn(
+        lambda: {
+            **engine.stats,
+            "consumed": consumer.stats,
+            "published": producer.published_count,
+        }
+    )
     await health.start()
     lifecycle.register_cleanup(health.stop)
     lifecycle.register_cleanup(redis.aclose)
@@ -2702,8 +2741,8 @@ class WSGatewaySettings(InfusionSettings):
     ws_port: int = 8080
 
     # Batching
-    price_batch_ms: int = 100          # batch price updates every 100ms
-    signal_immediate: bool = True      # push signals immediately
+    price_batch_ms: int = 100  # batch price updates every 100ms
+    signal_immediate: bool = True  # push signals immediately
 
     # Consumer
     consumer_batch_size: int = 100
@@ -2765,11 +2804,13 @@ class ClientManager:
             return
 
         # Build message
-        message = json.dumps({
-            "type": "tick_batch",
-            "data": buffer,
-            "ts": int(time.time() * 1000),
-        })
+        message = json.dumps(
+            {
+                "type": "tick_batch",
+                "data": buffer,
+                "ts": int(time.time() * 1000),
+            }
+        )
 
         # Fan out to all clients
         dead_clients = []
@@ -2788,11 +2829,13 @@ class ClientManager:
         if not self._clients:
             return
 
-        message = json.dumps({
-            "type": "signal",
-            "data": signal_data,
-            "ts": int(time.time() * 1000),
-        })
+        message = json.dumps(
+            {
+                "type": "signal",
+                "data": signal_data,
+                "ts": int(time.time() * 1000),
+            }
+        )
 
         dead_clients = []
         for client_id, ws in self._clients.items():
@@ -2827,7 +2870,8 @@ from infusion_common.logging import setup_logging
 from infusion_common.health import HealthReporter
 from infusion_streams.consumer import StreamConsumer
 from infusion_streams.constants import (
-    STREAM_TICK_NORMALIZED, STREAM_FEATURE_COMPUTED,
+    STREAM_TICK_NORMALIZED,
+    STREAM_FEATURE_COMPUTED,
     CG_DASHBOARD,
 )
 
@@ -2848,8 +2892,12 @@ async def main():
 
     # Stream consumers for tick and feature data
     tick_consumer = StreamConsumer(
-        redis, STREAM_TICK_NORMALIZED, CG_DASHBOARD, "ws-gateway-tick",
-        batch_size=config.consumer_batch_size, block_ms=config.consumer_block_ms,
+        redis,
+        STREAM_TICK_NORMALIZED,
+        CG_DASHBOARD,
+        "ws-gateway-tick",
+        batch_size=config.consumer_batch_size,
+        block_ms=config.consumer_block_ms,
     )
     await tick_consumer.ensure_group()
 
@@ -2857,12 +2905,15 @@ async def main():
     async def tick_reader():
         async for event_type, version, rx_us, payload, ack in tick_consumer.consume():
             symbol = payload.get("symbol", "")
-            await clients.buffer_tick(symbol, {
-                "ltp": payload.get("ltp"),
-                "volume": payload.get("volume"),
-                "high": payload.get("high"),
-                "low": payload.get("low"),
-            })
+            await clients.buffer_tick(
+                symbol,
+                {
+                    "ltp": payload.get("ltp"),
+                    "volume": payload.get("volume"),
+                    "high": payload.get("high"),
+                    "low": payload.get("low"),
+                },
+            )
             await ack()
 
     # Background: flush batched ticks every 100ms
@@ -2884,6 +2935,7 @@ async def main():
             async for msg in ws:
                 if msg.type == web.WSMsgType.TEXT:
                     import json
+
                     try:
                         data = json.loads(msg.data)
                         if data.get("type") == "subscribe":
@@ -3037,13 +3089,13 @@ async def health(request: Request):
     for svc in services:
         raw = await redis.get(f"infusion:health:{svc}")
         if raw:
-            result[svc] = msgpack.unpackb(raw, raw=False) if isinstance(raw, bytes) else {"status": "healthy"}
+            result[svc] = (
+                msgpack.unpackb(raw, raw=False) if isinstance(raw, bytes) else {"status": "healthy"}
+            )
         else:
             result[svc] = {"status": "unhealthy", "reason": "no heartbeat"}
 
-    all_healthy = all(
-        s.get("status") == "healthy" for s in result.values()
-    )
+    all_healthy = all(s.get("status") == "healthy" for s in result.values())
 
     return {
         "status": "healthy" if all_healthy else "degraded",
@@ -3072,10 +3124,12 @@ async def list_symbols(request: Request):
     for key, value in raw.items():
         k = key if isinstance(key, str) else key.decode()
         info = msgpack.unpackb(value if isinstance(value, bytes) else value.encode(), raw=False)
-        symbols.append({
-            "instrument_key": k,
-            **info,
-        })
+        symbols.append(
+            {
+                "instrument_key": k,
+                **info,
+            }
+        )
 
     return {"count": len(symbols), "symbols": symbols}
 ```

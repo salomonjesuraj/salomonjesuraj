@@ -22,12 +22,13 @@ routes = web.RouteTableDef()
 
 
 async def compute_strategy_selection(redis, symbol: str) -> dict:
+    from api.options_analytics import compute_max_pain, compute_pcr
+    from api.options_strategies import _atm_index, _row_at_strike, _sorted_strikes
     from api.routes.market import (
-        _fetch_full_option_chain, _instrument_key_for_symbol, _iv_rank, _default_symbol,
+        _fetch_full_option_chain,
+        _iv_rank,
     )
-    from api.options_analytics import compute_pcr, compute_max_pain
     from api.routes.mtf import compute_mtf
-    from api.options_strategies import _sorted_strikes, _atm_index, _row_at_strike
 
     chain = await _fetch_full_option_chain(redis, symbol)
     if not chain.get("ready"):
@@ -96,7 +97,9 @@ async def strategy_selector(request):
     if not symbol:
         symbol = await _default_symbol(redis)
     if not symbol:
-        return web.json_response({"ready": False, "reason": "No symbol provided and no default symbol available."})
+        return web.json_response(
+            {"ready": False, "reason": "No symbol provided and no default symbol available."}
+        )
 
     result = await compute_strategy_selection(redis, symbol)
     return web.json_response(result)

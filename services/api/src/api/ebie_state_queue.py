@@ -41,18 +41,20 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+from datetime import UTC, datetime
 
 import msgpack
 import structlog
-from datetime import datetime, timezone
+from infusion_streams.constants import (
+    KEY_EBIE_STATE_PREFIX,
+    KEY_EBIE_VERDICT_LITE_PREFIX,
+    KEY_MARKET_CONTEXT_PREFIX,
+    KEY_SIGNAL_PREFIX,
+)
 
 from api.futures import FUTURES_STATE_PREFIX
 from api.market_breadth import compute_market_breadth
 from api.routes.ticks import _build_ticks
-from infusion_streams.constants import (
-    KEY_EBIE_STATE_PREFIX, KEY_EBIE_VERDICT_LITE_PREFIX, KEY_MARKET_CONTEXT_PREFIX,
-    KEY_SIGNAL_PREFIX,
-)
 
 logger = structlog.get_logger()
 
@@ -63,8 +65,15 @@ SWEEP_INTERVAL_SEC = 60
 STATUS_KEY = "infusion:ebie-state-queue:status"
 
 CANONICAL_STATES = (
-    "IDLE", "DEVELOPING", "PRE_BREAKOUT", "PRE_BREAKDOWN",
-    "READY", "ARMED", "TRIGGERED", "CONFIRMED", "FAILED",
+    "IDLE",
+    "DEVELOPING",
+    "PRE_BREAKOUT",
+    "PRE_BREAKDOWN",
+    "READY",
+    "ARMED",
+    "TRIGGERED",
+    "CONFIRMED",
+    "FAILED",
 )
 
 # EBIE EB-15 Phase 3 (P2 item 4, "Generate Lightweight Verdicts for
@@ -77,9 +86,17 @@ CANONICAL_STATES = (
 # the directive's own "two-stage verdict model" (lightweight for the
 # whole universe, full after candidate promotion).
 LIGHTWEIGHT_VERDICT_LABELS = (
-    "NO_TRADE", "WATCH_LONG", "WATCH_SHORT", "LONG_DEVELOPING", "SHORT_DEVELOPING",
-    "LONG_READY", "SHORT_READY", "BREAKOUT_ARMED", "BREAKDOWN_ARMED",
-    "AVOID_TRAP_RISK", "DATA_UNRELIABLE",
+    "NO_TRADE",
+    "WATCH_LONG",
+    "WATCH_SHORT",
+    "LONG_DEVELOPING",
+    "SHORT_DEVELOPING",
+    "LONG_READY",
+    "SHORT_READY",
+    "BREAKOUT_ARMED",
+    "BREAKDOWN_ARMED",
+    "AVOID_TRAP_RISK",
+    "DATA_UNRELIABLE",
 )
 
 # Same literal P6 policy as api/routes/ebie_candidates.py's _dq_status()
@@ -114,8 +131,11 @@ def _confidence_band(score) -> str:
 
 
 def compute_lightweight_verdict(
-    entry: dict, state: str, direction: str,
-    market_context: dict | None = None, futures: dict | None = None,
+    entry: dict,
+    state: str,
+    direction: str,
+    market_context: dict | None = None,
+    futures: dict | None = None,
 ) -> dict:
     """Phase 3 -- one lightweight verdict per (symbol, direction) per
     sweep. Pure function, no I/O, same testability shape as
@@ -179,9 +199,13 @@ def compute_lightweight_verdict(
     day_high = entry.get("day_high")
     day_low = entry.get("day_low")
     if bullish and isinstance(day_low, (int, float)) and day_low > 0:
-        invalidation_reason = f"Would invalidate on a sustained break below day low (~₹{day_low:.2f})"
+        invalidation_reason = (
+            f"Would invalidate on a sustained break below day low (~₹{day_low:.2f})"
+        )
     elif not bullish and isinstance(day_high, (int, float)) and day_high > 0:
-        invalidation_reason = f"Would invalidate on a sustained break above day high (~₹{day_high:.2f})"
+        invalidation_reason = (
+            f"Would invalidate on a sustained break above day high (~₹{day_high:.2f})"
+        )
     else:
         invalidation_reason = "No structural invalidation level available yet"
 
@@ -230,14 +254,16 @@ def compute_lightweight_verdict(
                 "sector_avg_change_pct": (market_context or {}).get("sector_avg_change_pct"),
                 "market_health_score": (market_context or {}).get("market_health_score"),
             }
-            if market_context else None
+            if market_context
+            else None
         ),
         "futures_context": (
             {
                 "basis_pct": (futures or {}).get("basis_pct"),
                 "oi_change_pct": (futures or {}).get("oi_change_pct"),
             }
-            if futures else None
+            if futures
+            else None
         ),
     }
 
@@ -288,7 +314,7 @@ async def _read_prev_states(redis, keys: list[str]) -> dict[str, str]:
         return {}
     values = await redis.mget([f"{KEY_EBIE_STATE_PREFIX}{k}" for k in keys])
     result: dict[str, str] = {}
-    for key, raw in zip(keys, values):
+    for key, raw in zip(keys, values, strict=False):
         if raw:
             result[key] = raw.decode() if isinstance(raw, bytes) else raw
     return result
@@ -325,7 +351,7 @@ async def sweep_once(app) -> dict:
     for symbol in symbols:
         active_pipe.exists(f"{KEY_SIGNAL_PREFIX}{symbol}")
     active_results = await active_pipe.execute() if symbols else []
-    has_signal = {s: bool(r) for s, r in zip(symbols, active_results)}
+    has_signal = {s: bool(r) for s, r in zip(symbols, active_results, strict=False)}
 
     mapped: dict[str, tuple[str, str, str]] = {}
     for entry in ticks:
@@ -359,9 +385,16 @@ async def sweep_once(app) -> dict:
                      legacy_tier, legacy_pb_state, score, ltp)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                 """,
-                symbol, direction, entry.get("sector_id"), state, prev_state, reason,
-                entry.get("stock_breakout_tier"), entry.get("setup_state"),
-                entry.get("stock_breakout_score"), entry.get("ltp"),
+                symbol,
+                direction,
+                entry.get("sector_id"),
+                state,
+                prev_state,
+                reason,
+                entry.get("stock_breakout_tier"),
+                entry.get("setup_state"),
+                entry.get("stock_breakout_score"),
+                entry.get("ltp"),
             )
             transitions += 1
 
@@ -405,7 +438,7 @@ async def sweep_once(app) -> dict:
         for symbol in symbols:
             futures_pipe.hgetall(f"{FUTURES_STATE_PREFIX}{symbol}")
         futures_results = await futures_pipe.execute()
-        for symbol, raw in zip(symbols, futures_results):
+        for symbol, raw in zip(symbols, futures_results, strict=False):
             if not raw:
                 continue
             decoded: dict = {}
@@ -413,10 +446,8 @@ async def sweep_once(app) -> dict:
                 key = k.decode() if isinstance(k, bytes) else k
                 val = v.decode() if isinstance(v, bytes) else v
                 if key in ("basis_pct", "oi_change_pct") and val != "":
-                    try:
+                    with contextlib.suppress(TypeError, ValueError):
                         decoded[key] = float(val)
-                    except (TypeError, ValueError):
-                        pass
             if decoded:
                 futures_map[symbol] = decoded
     except Exception:
@@ -436,13 +467,16 @@ async def sweep_once(app) -> dict:
             "market_health_score": market_health_score,
         }
         verdict = compute_lightweight_verdict(
-            entry, state, direction,
-            market_context=symbol_market_context, futures=futures_map.get(symbol),
+            entry,
+            state,
+            direction,
+            market_context=symbol_market_context,
+            futures=futures_map.get(symbol),
         )
         verdict["symbol"] = symbol
         verdict["ebie_state"] = state
         verdict["sector_id"] = entry.get("sector_id")
-        verdict["checked_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        verdict["checked_at"] = datetime.now(UTC).isoformat(timespec="seconds")
         verdict_pipe.set(
             f"{KEY_EBIE_VERDICT_LITE_PREFIX}{symbol}",
             msgpack.packb(verdict, use_bin_type=True),
@@ -485,7 +519,7 @@ async def sweep_once(app) -> dict:
         "transitions": transitions,
         "verdicts_written": verdicts_written,
         "market_context_written": market_context_written,
-        "checked_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "checked_at": datetime.now(UTC).isoformat(timespec="seconds"),
     }
     await redis.set(STATUS_KEY, json.dumps(status, separators=(",", ":")), ex=600)
     return status
@@ -501,5 +535,7 @@ async def ebie_state_loop(app) -> None:
     while True:
         with contextlib.suppress(Exception):
             status = await sweep_once(app)
-            logger.info("ebie_state_sweep", **{k: v for k, v in status.items() if k != "checked_at"})
+            logger.info(
+                "ebie_state_sweep", **{k: v for k, v in status.items() if k != "checked_at"}
+            )
         await asyncio.sleep(SWEEP_INTERVAL_SEC)

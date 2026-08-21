@@ -16,7 +16,6 @@ import json
 
 import msgpack
 from aiohttp import web
-
 from infusion_streams.constants import KEY_EBIE_VERDICT_LITE_PREFIX
 
 routes = web.RouteTableDef()
@@ -27,9 +26,16 @@ routes = web.RouteTableDef()
 # same reasoning as the Breakout Radar's own NO_CHASE-heavy tiering) --
 # pass ?include_no_trade=true to see the full unfiltered universe.
 _ACTIONABLE_LIGHTWEIGHT_VERDICTS = {
-    "WATCH_LONG", "WATCH_SHORT", "LONG_DEVELOPING", "SHORT_DEVELOPING",
-    "LONG_READY", "SHORT_READY", "BREAKOUT_ARMED", "BREAKDOWN_ARMED",
-    "AVOID_TRAP_RISK", "DATA_UNRELIABLE",
+    "WATCH_LONG",
+    "WATCH_SHORT",
+    "LONG_DEVELOPING",
+    "SHORT_DEVELOPING",
+    "LONG_READY",
+    "SHORT_READY",
+    "BREAKOUT_ARMED",
+    "BREAKDOWN_ARMED",
+    "AVOID_TRAP_RISK",
+    "DATA_UNRELIABLE",
 }
 
 
@@ -66,7 +72,8 @@ async def ebie_transitions_recent(request):
                 WHERE symbol = $1
                 ORDER BY transitioned_at DESC LIMIT $2
                 """,
-                symbol.upper(), limit,
+                symbol.upper(),
+                limit,
             )
         else:
             rows = await conn.fetch(
@@ -79,26 +86,28 @@ async def ebie_transitions_recent(request):
                 limit,
             )
 
-    return web.json_response({
-        "available": True,
-        "count": len(rows),
-        "transitions": [
-            {
-                "symbol": r["symbol"],
-                "direction": r["direction"],
-                "sector_id": r["sector_id"],
-                "state": r["state"],
-                "prev_state": r["prev_state"],
-                "reason": r["reason"],
-                "legacy_tier": r["legacy_tier"],
-                "legacy_pb_state": r["legacy_pb_state"],
-                "score": float(r["score"]) if r["score"] is not None else None,
-                "ltp": float(r["ltp"]) if r["ltp"] is not None else None,
-                "transitioned_at": r["transitioned_at"].isoformat(),
-            }
-            for r in rows
-        ],
-    })
+    return web.json_response(
+        {
+            "available": True,
+            "count": len(rows),
+            "transitions": [
+                {
+                    "symbol": r["symbol"],
+                    "direction": r["direction"],
+                    "sector_id": r["sector_id"],
+                    "state": r["state"],
+                    "prev_state": r["prev_state"],
+                    "reason": r["reason"],
+                    "legacy_tier": r["legacy_tier"],
+                    "legacy_pb_state": r["legacy_pb_state"],
+                    "score": float(r["score"]) if r["score"] is not None else None,
+                    "ltp": float(r["ltp"]) if r["ltp"] is not None else None,
+                    "transitioned_at": r["transitioned_at"].isoformat(),
+                }
+                for r in rows
+            ],
+        }
+    )
 
 
 @routes.get("/api/ebie/comparison")
@@ -142,16 +151,18 @@ async def ebie_comparison(request):
             str(hours),
         )
 
-    return web.json_response({
-        "available": True,
-        "window_hours": hours,
-        "total_transitions": total,
-        "state_distribution": [{"state": r["state"], "count": r["n"]} for r in state_counts],
-        "state_vs_legacy_tier": [
-            {"state": r["state"], "legacy_tier": r["legacy_tier"], "count": r["n"]}
-            for r in cross_tab
-        ],
-    })
+    return web.json_response(
+        {
+            "available": True,
+            "window_hours": hours,
+            "total_transitions": total,
+            "state_distribution": [{"state": r["state"], "count": r["n"]} for r in state_counts],
+            "state_vs_legacy_tier": [
+                {"state": r["state"], "legacy_tier": r["legacy_tier"], "count": r["n"]}
+                for r in cross_tab
+            ],
+        }
+    )
 
 
 @routes.get("/api/ebie/lightweight-verdicts")
@@ -169,7 +180,9 @@ async def ebie_lightweight_verdicts(request):
 
     all_symbols_raw = await redis.hgetall("infusion:symbols")
     if not all_symbols_raw:
-        return web.json_response({"available": False, "reason": "Symbol universe not loaded yet.", "verdicts": []})
+        return web.json_response(
+            {"available": False, "reason": "Symbol universe not loaded yet.", "verdicts": []}
+        )
 
     symbols: list[str] = []
     for meta_raw in all_symbols_raw.values():
@@ -203,9 +216,11 @@ async def ebie_lightweight_verdicts(request):
     band_rank = {"VERY_HIGH": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
     verdicts.sort(key=lambda v: band_rank.get(v.get("confidence_band"), 9))
 
-    return web.json_response({
-        "available": True,
-        "count": len(verdicts),
-        "universe_size": len(symbols),
-        "verdicts": verdicts,
-    })
+    return web.json_response(
+        {
+            "available": True,
+            "count": len(verdicts),
+            "universe_size": len(symbols),
+            "verdicts": verdicts,
+        }
+    )

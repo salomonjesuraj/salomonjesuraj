@@ -13,11 +13,11 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from aiohttp import web
+from infusion_common.sizing import compute_position_size
 
 from api.cost_model import OptionTradeCostInput, compute
 from api.option_reality import derive_option_sl
 from api.routes.risk import DEFAULT_RISK
-from infusion_common.sizing import compute_position_size
 
 routes = web.RouteTableDef()
 
@@ -60,17 +60,25 @@ def _build_ticket(payload: dict, max_lots: int = DEFAULT_RISK["max_lots"]) -> di
     decision = _text(trade.get("decision"), "WAIT").upper()
     premium = _num(option.get("premium"))
     entry_ask = _num(option.get("ask") or option.get("entry_fill") or option.get("premium"))
-    entry_bid = _num(option.get("bid") or option.get("exit_fill_reference") or option.get("premium"))
+    entry_bid = _num(
+        option.get("bid") or option.get("exit_fill_reference") or option.get("premium")
+    )
     delta = _num(option.get("delta") or option.get("delta_used"))
     spread_pct = _num(option.get("spread_pct"))
     liquidity_ok = option.get("liquidity_whitelist_pass")
     physical_settlement_block = bool(option.get("physical_settlement_block"))
-    event_calendar = option.get("event_calendar") if isinstance(option.get("event_calendar"), dict) else {}
+    event_calendar = (
+        option.get("event_calendar") if isinstance(option.get("event_calendar"), dict) else {}
+    )
     risk_amount = _num(trade.get("risk_amount"))
     lot_size = int(_num(option.get("lot_size"), 0) or 0)
     instrument_key = _text(option.get("instrument_key"), "")
     hard_blockers = _list(option.get("hard_blockers"))
-    blockers = _list(option.get("blockers")) + _list(trade.get("rejection_reasons")) + _list(news.get("risks"))
+    blockers = (
+        _list(option.get("blockers"))
+        + _list(trade.get("rejection_reasons"))
+        + _list(news.get("risks"))
+    )
 
     side = "BUY"
     product = "INTRADAY"
@@ -93,7 +101,11 @@ def _build_ticket(payload: dict, max_lots: int = DEFAULT_RISK["max_lots"]) -> di
             quantity=quantity or max(lot_size, 1),
         )
     )
-    trigger_price = _num(trade.get("positive_above") if "CE" in decision or decision == "BUY" else trade.get("negative_below"))
+    trigger_price = _num(
+        trade.get("positive_above")
+        if "CE" in decision or decision == "BUY"
+        else trade.get("negative_below")
+    )
 
     gate_blocks: list[str] = []
     if trade.get("status") == "BLOCKED":
@@ -115,7 +127,9 @@ def _build_ticket(payload: dict, max_lots: int = DEFAULT_RISK["max_lots"]) -> di
     if physical_settlement_block:
         gate_blocks.append("Physical settlement risk: stock option expiry <= 3 days")
     if event_calendar and not event_calendar.get("entry_allowed", True):
-        gate_blocks.append(str(event_calendar.get("block_reason") or "Event calendar blocks new entry"))
+        gate_blocks.append(
+            str(event_calendar.get("block_reason") or "Event calendar blocks new entry")
+        )
     if sl_model.get("hard_blockers"):
         gate_blocks.extend(_list(sl_model.get("hard_blockers"))[:4])
     if risk_amount <= 0:
@@ -155,7 +169,9 @@ def _build_ticket(payload: dict, max_lots: int = DEFAULT_RISK["max_lots"]) -> di
         "liquidity_whitelist_pass": liquidity_ok,
         "physical_settlement_block": physical_settlement_block,
         "event_calendar": event_calendar,
-        "next_event_date": _text(option.get("next_event_date") or event_calendar.get("next_event_date"), ""),
+        "next_event_date": _text(
+            option.get("next_event_date") or event_calendar.get("next_event_date"), ""
+        ),
         "fill_policy": cost_preview.get("fill_policy"),
         "risk_amount": risk_amount,
         "trigger_price": trigger_price,
@@ -223,4 +239,6 @@ async def get_staged_tickets(request):
     rows = await _load_rows(redis, limit)
     ready = len([r for r in rows if r.get("status") == "READY_TO_STAGE"])
     blocked = len([r for r in rows if r.get("status") == "BLOCKED"])
-    return web.json_response({"ok": True, "count": len(rows), "ready": ready, "blocked": blocked, "tickets": rows})
+    return web.json_response(
+        {"ok": True, "count": len(rows), "ready": ready, "blocked": blocked, "tickets": rows}
+    )

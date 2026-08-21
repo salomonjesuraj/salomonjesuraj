@@ -13,9 +13,7 @@ async def get_features(request):
 
     data = await redis.hgetall(f"infusion:feature:{symbol}")
     if not data:
-        return web.json_response(
-            {"error": f"No feature data for {symbol}"}, status=404
-        )
+        return web.json_response({"error": f"No feature data for {symbol}"}, status=404)
 
     result = {"symbol": symbol}
     for k, v in data.items():

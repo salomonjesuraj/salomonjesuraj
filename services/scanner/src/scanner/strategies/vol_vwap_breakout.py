@@ -57,9 +57,13 @@ class VolVwapBreakout(BaseStrategy):
 
         # Guard: need valid prices, warmed candle state and a historical
         # time-of-day volume profile. Missing history is not neutral volume.
-        if (ltp <= 0 or vwap <= 0 or state.prev_ltp <= 0
-                or not features.get("indicator_ready", False)
-                or not features.get("volume_profile_ready", False)):
+        if (
+            ltp <= 0
+            or vwap <= 0
+            or state.prev_ltp <= 0
+            or not features.get("indicator_ready", False)
+            or not features.get("volume_profile_ready", False)
+        ):
             return None
 
         conditions: dict[str, bool] = {}
@@ -79,9 +83,7 @@ class VolVwapBreakout(BaseStrategy):
         vwap_reclaim = vwap_above and vwap_was_below
         conditions["vwap_reclaim"] = vwap_reclaim
         if vwap_reclaim:
-            explanation.append(
-                f"Price reclaimed VWAP (₹{vwap:,.2f}) from below"
-            )
+            explanation.append(f"Price reclaimed VWAP (₹{vwap:,.2f}) from below")
 
         # ── Condition 3: Price above EMA(9) ────────────────
         ema9_ok = ltp > ema_9 > 0
@@ -106,13 +108,9 @@ class VolVwapBreakout(BaseStrategy):
         if bb_ok:
             bb_upper = features.get("bb_upper", 0.0)
             if ltp > bb_upper > 0:
-                explanation.append(
-                    f"Breaking above Bollinger upper (width {bb_width:.3f})"
-                )
+                explanation.append(f"Breaking above Bollinger upper (width {bb_width:.3f})")
             else:
-                explanation.append(
-                    f"Bollinger width {bb_width:.3f} — not in dead squeeze"
-                )
+                explanation.append(f"Bollinger width {bb_width:.3f} — not in dead squeeze")
 
         # ── Condition 6: Order flow ────────────────────────
         flow_ok = order_imbalance > self._s.vvb_min_order_imbalance
@@ -164,12 +162,17 @@ class VolVwapBreakout(BaseStrategy):
         def _fresh_entry_invalidation() -> tuple[float, float]:
             entry = ltp
             atr_safe = atr if atr > 0 else max(ltp * 0.0045, 0.50)
-            invalidation = min(vwap - (atr_safe * 0.35), entry - max(atr_safe * 0.75, entry * 0.0035, 0.50))
+            invalidation = min(
+                vwap - (atr_safe * 0.35), entry - max(atr_safe * 0.75, entry * 0.0035, 0.50)
+            )
             return entry, invalidation
 
         basis = resolve_ladder_basis(
-            episode=episode, now_us=now_us, ttl_us=ttl_us,
-            invalidated=_invalidated, compute_fresh_entry_invalidation=_fresh_entry_invalidation,
+            episode=episode,
+            now_us=now_us,
+            ttl_us=ttl_us,
+            invalidated=_invalidated,
+            compute_fresh_entry_invalidation=_fresh_entry_invalidation,
         )
         entry = basis.entry_price
         invalidation = basis.invalidation_price
@@ -179,8 +182,8 @@ class VolVwapBreakout(BaseStrategy):
         # no Pine-consistent explanation. It also computes T1/T2/T3
         # internally, so reuse rather than recomputing.
         pine = compute_pine_decision(features, bullish=True, entry=entry, invalidation=invalidation)
-        suppress, episode_snapshot, target, target2, target3, effective_risk, target_method = finalize_episode(
-            basis, pine, bool(pine.chaseable)
+        suppress, episode_snapshot, target, target2, target3, effective_risk, target_method = (
+            finalize_episode(basis, pine, bool(pine.chaseable))
         )
         if suppress:
             return None
@@ -211,7 +214,10 @@ class VolVwapBreakout(BaseStrategy):
         odyn_call_wall = (odyn_wall.get("call_wall") or [{}])[0]
         odyn_put_wall = (odyn_wall.get("put_wall") or [{}])[0]
         alignment = compute_signal_alignment(
-            bullish=True, ml=ml, ma_regime=ma_regime, donchian=donchian,
+            bullish=True,
+            ml=ml,
+            ma_regime=ma_regime,
+            donchian=donchian,
             wyckoff_sos_sow=wyckoff_sos_sow,
             atr_trend=str(features.get("atr_trend") or ""),
             candle_pattern=str(features.get("candle_pattern") or ""),
@@ -306,7 +312,9 @@ class VolVwapBreakout(BaseStrategy):
                 # _week52_stats() and nse_scraper/delivery.py.
                 "week52_high": (mtf_cache.get("week52") or {}).get("week52_high"),
                 "week52_low": (mtf_cache.get("week52") or {}).get("week52_low"),
-                "week52_high_distance_pct": (mtf_cache.get("week52") or {}).get("week52_high_distance_pct"),
+                "week52_high_distance_pct": (mtf_cache.get("week52") or {}).get(
+                    "week52_high_distance_pct"
+                ),
                 "week52_near_high": (mtf_cache.get("week52") or {}).get("week52_near_high"),
                 "delivery_pct": features.get("delivery_pct"),
                 "delivery_pct_avg_20d": ml.get("delivery_pct_avg_20d"),
@@ -338,7 +346,9 @@ class VolVwapBreakout(BaseStrategy):
                 # identical fields for the full rationale.
                 "futures_basis_pct": futures_cache.get("basis_pct"),
                 "futures_oi_change_pct": futures_cache.get("oi_change_pct"),
-                "weighted_pcr": (options_dynamics_cache.get("weighted_pcr") or {}).get("weighted_pcr"),
+                "weighted_pcr": (options_dynamics_cache.get("weighted_pcr") or {}).get(
+                    "weighted_pcr"
+                ),
                 "pcr_velocity": options_dynamics_cache.get("pcr_velocity"),
                 "call_wall_state": odyn_call_wall.get("state"),
                 "put_wall_state": odyn_put_wall.get("state"),

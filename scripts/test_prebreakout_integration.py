@@ -20,15 +20,13 @@ for lib in ("infusion-models", "infusion-streams", "infusion-common"):
 sys.path.insert(0, os.path.join(base, "services", "scanner", "src"))
 
 import redis.asyncio as aioredis
-
+from infusion_common.timing import now_us
+from infusion_streams.constants import KEY_PRE_BREAKOUT_PREFIX, KEY_SIGNAL_ACTIVE
 from scanner.config import ScannerSettings
 from scanner.engine import ScannerEngine
-from scanner.strategies import register_strategy, _REGISTRY
-from scanner.strategies.vol_vwap_breakout import VolVwapBreakout
 from scanner.pre_breakout import PBState
-
-from infusion_streams.constants import KEY_PRE_BREAKOUT_PREFIX, KEY_SIGNAL_ACTIVE
-from infusion_common.timing import now_us
+from scanner.strategies import _REGISTRY, register_strategy
+from scanner.strategies.vol_vwap_breakout import VolVwapBreakout
 
 REDIS_URL = os.environ.get("INFUSION_REDIS_URL", "redis://localhost:6379/0")
 SYMBOL = "PB_TEST"
@@ -78,7 +76,7 @@ def _features(bb_width, rel_vol, rsi, ltp=2500.0, vwap=2490.0, **kw):
 async def run_tests():
     r = aioredis.from_url(REDIS_URL, decode_responses=False)
     await r.ping()
-    print(f"✓ Redis connected\n")
+    print("✓ Redis connected\n")
 
     settings = ScannerSettings()
 
@@ -105,9 +103,7 @@ async def run_tests():
     # ═══════════════════════════════════════════════
     print("--- WARMUP ---")
     for i in range(settings.warmup_ticks):
-        await engine.process_feature(
-            _features(bb_width=0.03 - i * 0.001, rel_vol=1.0, rsi=50.0)
-        )
+        await engine.process_feature(_features(bb_width=0.03 - i * 0.001, rel_vol=1.0, rsi=50.0))
 
     state = engine.state_mgr.get_or_create(SYMBOL)
     check("Warmup complete", state.tick_count >= settings.warmup_ticks)
@@ -121,9 +117,7 @@ async def run_tests():
     for i in range(settings.pb_compress_ticks + 2):
         bb = 0.025 - (i * 0.001)
         bb = max(bb, 0.005)
-        await engine.process_feature(
-            _features(bb_width=bb, rel_vol=1.0, rsi=50.0)
-        )
+        await engine.process_feature(_features(bb_width=bb, rel_vol=1.0, rsi=50.0))
 
     state = engine.state_mgr.get_or_create(SYMBOL)
     check(
@@ -138,20 +132,19 @@ async def run_tests():
     check("Pre-breakout key in Redis", len(pb_data) > 0)
     if pb_data:
         redis_state = pb_data.get(b"state", b"").decode()
-        check("Redis state = compressing", redis_state == "compressing", f"redis_state={redis_state}")
+        check(
+            "Redis state = compressing", redis_state == "compressing", f"redis_state={redis_state}"
+        )
         readiness = float(pb_data.get(b"readiness_score", b"0").decode())
         check("Readiness score > 0", readiness > 0, f"readiness={readiness}")
-        check("Transition reason present",
-              len(pb_data.get(b"transition_reason", b"").decode()) > 0)
+        check("Transition reason present", len(pb_data.get(b"transition_reason", b"").decode()) > 0)
 
     # ═══════════════════════════════════════════════
     # Phase 3: Drive COMPRESSING → ACCUMULATING
     # ═══════════════════════════════════════════════
     print("\n--- COMPRESSING → ACCUMULATING ---")
     for _ in range(3):
-        await engine.process_feature(
-            _features(bb_width=0.018, rel_vol=1.5, rsi=52.0)
-        )
+        await engine.process_feature(_features(bb_width=0.018, rel_vol=1.5, rsi=52.0))
 
     state = engine.state_mgr.get_or_create(SYMBOL)
     check(
@@ -165,9 +158,7 @@ async def run_tests():
     # ═══════════════════════════════════════════════
     print("\n--- ACCUMULATING → COILED ---")
     for _ in range(3):
-        await engine.process_feature(
-            _features(bb_width=0.012, rel_vol=1.8, rsi=52.0)
-        )
+        await engine.process_feature(_features(bb_width=0.012, rel_vol=1.8, rsi=52.0))
 
     state = engine.state_mgr.get_or_create(SYMBOL)
     check(
@@ -213,9 +204,7 @@ async def run_tests():
     for i in range(settings.pb_compress_ticks + 2):
         bb = 0.025 - (i * 0.001)
         bb = max(bb, 0.005)
-        await engine.process_feature(
-            _features(bb_width=bb, rel_vol=1.0, rsi=50.0)
-        )
+        await engine.process_feature(_features(bb_width=bb, rel_vol=1.0, rsi=50.0))
 
     state = engine.state_mgr.get_or_create(SYMBOL)
     check(
@@ -226,15 +215,11 @@ async def run_tests():
 
     # COMPRESSING → ACCUMULATING
     for _ in range(3):
-        await engine.process_feature(
-            _features(bb_width=0.018, rel_vol=1.5, rsi=52.0)
-        )
+        await engine.process_feature(_features(bb_width=0.018, rel_vol=1.5, rsi=52.0))
 
     # ACCUMULATING → COILED
     for _ in range(3):
-        await engine.process_feature(
-            _features(bb_width=0.012, rel_vol=1.8, rsi=52.0)
-        )
+        await engine.process_feature(_features(bb_width=0.012, rel_vol=1.8, rsi=52.0))
 
     state = engine.state_mgr.get_or_create(SYMBOL)
     check(
@@ -248,9 +233,13 @@ async def run_tests():
     state.prev_vwap = 2490.0
     await engine.process_feature(
         _features(
-            bb_width=0.012, rel_vol=3.5, rsi=58.0,
-            ltp=2500.0, vwap=2490.0,
-            order_imbalance=0.25, spread_bps=8.0,
+            bb_width=0.012,
+            rel_vol=3.5,
+            rsi=58.0,
+            ltp=2500.0,
+            vwap=2490.0,
+            order_imbalance=0.25,
+            spread_bps=8.0,
         )
     )
 
@@ -263,9 +252,7 @@ async def run_tests():
     check("Signal emitted count >= 1", engine._signals_emitted >= 1)
 
     # Next tick should reset to IDLE
-    await engine.process_feature(
-        _features(bb_width=0.015, rel_vol=2.0, rsi=60.0)
-    )
+    await engine.process_feature(_features(bb_width=0.015, rel_vol=2.0, rsi=60.0))
     state = engine.state_mgr.get_or_create(SYMBOL)
     check(
         "TRIGGERED → IDLE on next tick",
@@ -279,11 +266,13 @@ async def run_tests():
     print("\n--- REPLAY DETERMINISM ---")
 
     # Clear state and replay the same sequence
-    from scanner.pre_breakout import PreBreakoutTracker
+
     tracker = engine.pre_breakout
-    check("Pre-breakout transitions > 0",
-          tracker.stats["prebreak_transitions"] > 0,
-          f"transitions={tracker.stats['prebreak_transitions']}")
+    check(
+        "Pre-breakout transitions > 0",
+        tracker.stats["prebreak_transitions"] > 0,
+        f"transitions={tracker.stats['prebreak_transitions']}",
+    )
 
     # ═══════════════════════════════════════════════
     # Phase 8: Engine stats include pre-breakout
@@ -291,9 +280,11 @@ async def run_tests():
     print("\n--- ENGINE STATS ---")
 
     stats = engine.stats
-    check("Stats include prebreak_transitions",
-          "prebreak_transitions" in stats,
-          f"keys={list(stats.keys())}")
+    check(
+        "Stats include prebreak_transitions",
+        "prebreak_transitions" in stats,
+        f"keys={list(stats.keys())}",
+    )
     check("Stats evaluations > 0", stats["evaluations"] > 0)
 
     # ═══════════════════════════════════════════════

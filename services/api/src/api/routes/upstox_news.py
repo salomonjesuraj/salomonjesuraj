@@ -66,18 +66,31 @@ async def upstox_news_for_symbol(request):
         cached_raw = await redis.get(f"infusion:news:{symbol}")
         if cached_raw:
             try:
-                cached = json.loads(cached_raw.decode() if isinstance(cached_raw, bytes) else cached_raw)
+                cached = json.loads(
+                    cached_raw.decode() if isinstance(cached_raw, bytes) else cached_raw
+                )
                 if cached:
-                    return web.json_response({
-                        "symbol": symbol, "available": True, "source": "cache",
-                        "articles": cached[:limit],
-                    })
+                    return web.json_response(
+                        {
+                            "symbol": symbol,
+                            "available": True,
+                            "source": "cache",
+                            "articles": cached[:limit],
+                        }
+                    )
             except Exception:
                 pass
 
     pool = request.app.get("pg_pool")
     if not pool:
-        return web.json_response({"symbol": symbol, "available": False, "reason": "Postgres unavailable.", "articles": []})
+        return web.json_response(
+            {
+                "symbol": symbol,
+                "available": False,
+                "reason": "Postgres unavailable.",
+                "articles": [],
+            }
+        )
 
     async with pool.acquire() as conn:
         rows = await conn.fetch(
@@ -88,14 +101,24 @@ async def upstox_news_for_symbol(request):
             ORDER BY published_time_ms DESC NULLS LAST, first_seen_at DESC
             LIMIT $2
             """,
-            symbol, limit,
+            symbol,
+            limit,
         )
     if not rows:
-        return web.json_response({
-            "symbol": symbol, "available": True, "source": "postgres",
-            "articles": [], "reason": "No news captured for this symbol yet.",
-        })
-    return web.json_response({
-        "symbol": symbol, "available": True, "source": "postgres",
-        "articles": [_row_to_article(r) for r in rows],
-    })
+        return web.json_response(
+            {
+                "symbol": symbol,
+                "available": True,
+                "source": "postgres",
+                "articles": [],
+                "reason": "No news captured for this symbol yet.",
+            }
+        )
+    return web.json_response(
+        {
+            "symbol": symbol,
+            "available": True,
+            "source": "postgres",
+            "articles": [_row_to_article(r) for r in rows],
+        }
+    )

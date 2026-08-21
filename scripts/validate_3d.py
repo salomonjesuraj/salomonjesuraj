@@ -26,6 +26,7 @@ def check(label, fn):
         errors.append(f"{label}: {e}")
         print(f"  ✗ {label}: {e}")
         import traceback
+
         traceback.print_exc()
 
 
@@ -36,17 +37,22 @@ print("\n--- SECTOR BREADTH ---")
 
 
 def _make_sector_engine():
-    from scanner.sector import SectorEngine
     from scanner.config import ScannerSettings
+    from scanner.sector import SectorEngine
 
     class FakeRedis:
         async def pipeline(self):
             return FakePipeline()
 
     class FakePipeline:
-        def hset(self, *a, **kw): pass
-        def expire(self, *a, **kw): pass
-        async def execute(self): pass
+        def hset(self, *a, **kw):
+            pass
+
+        def expire(self, *a, **kw):
+            pass
+
+        async def execute(self):
+            pass
 
     return SectorEngine(
         redis=FakeRedis(),
@@ -68,9 +74,26 @@ def test_breadth_strong():
     assert sector is not None
 
     from scanner.sector import SymbolSnapshot
+
     sector.constituents = {
-        "INFY": SymbolSnapshot(symbol="INFY", ltp=1500, vwap=1490, ema_20=1480, change_pct=1.5, rsi_14=60, rel_vol_20d=1.5),
-        "TCS": SymbolSnapshot(symbol="TCS", ltp=3500, vwap=3490, ema_20=3480, change_pct=1.2, rsi_14=58, rel_vol_20d=1.3),
+        "INFY": SymbolSnapshot(
+            symbol="INFY",
+            ltp=1500,
+            vwap=1490,
+            ema_20=1480,
+            change_pct=1.5,
+            rsi_14=60,
+            rel_vol_20d=1.5,
+        ),
+        "TCS": SymbolSnapshot(
+            symbol="TCS",
+            ltp=3500,
+            vwap=3490,
+            ema_20=3480,
+            change_pct=1.2,
+            rsi_14=58,
+            rel_vol_20d=1.3,
+        ),
     }
     engine._recompute_sector(sector)
 
@@ -86,9 +109,26 @@ def test_breadth_mixed():
     sector = engine.get_sector("NIFTY_IT")
 
     from scanner.sector import SymbolSnapshot
+
     sector.constituents = {
-        "INFY": SymbolSnapshot(symbol="INFY", ltp=1500, vwap=1490, ema_20=1480, change_pct=1.0, rsi_14=55, rel_vol_20d=1.0),
-        "TCS": SymbolSnapshot(symbol="TCS", ltp=3400, vwap=3500, ema_20=3480, change_pct=-0.5, rsi_14=45, rel_vol_20d=0.8),
+        "INFY": SymbolSnapshot(
+            symbol="INFY",
+            ltp=1500,
+            vwap=1490,
+            ema_20=1480,
+            change_pct=1.0,
+            rsi_14=55,
+            rel_vol_20d=1.0,
+        ),
+        "TCS": SymbolSnapshot(
+            symbol="TCS",
+            ltp=3400,
+            vwap=3500,
+            ema_20=3480,
+            change_pct=-0.5,
+            rsi_14=45,
+            rel_vol_20d=0.8,
+        ),
     }
     engine._recompute_sector(sector)
 
@@ -115,9 +155,26 @@ def test_strength_formula():
     sector = engine.get_sector("NIFTY_IT")
 
     from scanner.sector import SymbolSnapshot
+
     sector.constituents = {
-        "INFY": SymbolSnapshot(symbol="INFY", ltp=1500, vwap=1490, ema_20=1480, change_pct=1.5, rsi_14=60, rel_vol_20d=2.0),
-        "TCS": SymbolSnapshot(symbol="TCS", ltp=3500, vwap=3490, ema_20=3480, change_pct=1.2, rsi_14=58, rel_vol_20d=1.8),
+        "INFY": SymbolSnapshot(
+            symbol="INFY",
+            ltp=1500,
+            vwap=1490,
+            ema_20=1480,
+            change_pct=1.5,
+            rsi_14=60,
+            rel_vol_20d=2.0,
+        ),
+        "TCS": SymbolSnapshot(
+            symbol="TCS",
+            ltp=3500,
+            vwap=3490,
+            ema_20=3480,
+            change_pct=1.2,
+            rsi_14=58,
+            rel_vol_20d=1.8,
+        ),
     }
     engine._recompute_sector(sector)
 
@@ -138,10 +195,24 @@ def test_strength_determinism():
     for engine in (engine1, engine2):
         sector = engine.get_sector("NIFTY_IT")
         sector.constituents = {
-            "INFY": SymbolSnapshot(symbol="INFY", ltp=1500, vwap=1490, ema_20=1480,
-                                   change_pct=1.0, rsi_14=55, rel_vol_20d=1.5),
-            "TCS": SymbolSnapshot(symbol="TCS", ltp=3500, vwap=3490, ema_20=3480,
-                                  change_pct=0.8, rsi_14=52, rel_vol_20d=1.2),
+            "INFY": SymbolSnapshot(
+                symbol="INFY",
+                ltp=1500,
+                vwap=1490,
+                ema_20=1480,
+                change_pct=1.0,
+                rsi_14=55,
+                rel_vol_20d=1.5,
+            ),
+            "TCS": SymbolSnapshot(
+                symbol="TCS",
+                ltp=3500,
+                vwap=3490,
+                ema_20=3480,
+                change_pct=0.8,
+                rsi_14=52,
+                rel_vol_20d=1.2,
+            ),
         }
         engine._recompute_sector(sector)
 
@@ -163,23 +234,45 @@ print("\n--- SECTOR RANKINGS ---")
 def test_rankings():
     """Stronger sectors ranked higher."""
     from scanner.sector import SymbolSnapshot
+
     engine = _make_sector_engine()
 
     # Make NIFTY_IT strong
     sec_it = engine.get_sector("NIFTY_IT")
     sec_it.constituents = {
-        "INFY": SymbolSnapshot(symbol="INFY", ltp=1500, vwap=1490, ema_20=1480,
-                               change_pct=2.0, rsi_14=65, rel_vol_20d=2.5),
-        "TCS": SymbolSnapshot(symbol="TCS", ltp=3500, vwap=3490, ema_20=3480,
-                               change_pct=1.8, rsi_14=62, rel_vol_20d=2.2),
+        "INFY": SymbolSnapshot(
+            symbol="INFY",
+            ltp=1500,
+            vwap=1490,
+            ema_20=1480,
+            change_pct=2.0,
+            rsi_14=65,
+            rel_vol_20d=2.5,
+        ),
+        "TCS": SymbolSnapshot(
+            symbol="TCS",
+            ltp=3500,
+            vwap=3490,
+            ema_20=3480,
+            change_pct=1.8,
+            rsi_14=62,
+            rel_vol_20d=2.2,
+        ),
     }
     engine._recompute_sector(sec_it)
 
     # Make NIFTY_BANK weak
     sec_bank = engine.get_sector("NIFTY_BANK")
     sec_bank.constituents = {
-        "HDFCBANK": SymbolSnapshot(symbol="HDFCBANK", ltp=1500, vwap=1520, ema_20=1530,
-                                    change_pct=-1.0, rsi_14=38, rel_vol_20d=0.7),
+        "HDFCBANK": SymbolSnapshot(
+            symbol="HDFCBANK",
+            ltp=1500,
+            vwap=1520,
+            ema_20=1530,
+            change_pct=-1.0,
+            rsi_14=38,
+            rel_vol_20d=0.7,
+        ),
     }
     engine._recompute_sector(sec_bank)
 
@@ -203,44 +296,72 @@ print("\n--- MARKET REGIME ---")
 def test_regime_risk_on():
     """RISK_ON when index RSI > 55, change > 0, above VWAP."""
     from scanner.sector import MarketRegime
+
     engine = _make_sector_engine()
-    engine._update_index({
-        "ltp": 22000, "vwap": 21900, "rsi_14": 62, "change_pct": 0.8,
-        "rel_vol_20d": 1.2, "bb_width": 0.02,
-    })
+    engine._update_index(
+        {
+            "ltp": 22000,
+            "vwap": 21900,
+            "rsi_14": 62,
+            "change_pct": 0.8,
+            "rel_vol_20d": 1.2,
+            "bb_width": 0.02,
+        }
+    )
     assert engine.regime == MarketRegime.RISK_ON
 
 
 def test_regime_risk_off_rsi():
     """RISK_OFF when index RSI < 40."""
     from scanner.sector import MarketRegime
+
     engine = _make_sector_engine()
-    engine._update_index({
-        "ltp": 21000, "vwap": 21500, "rsi_14": 35, "change_pct": -0.3,
-        "rel_vol_20d": 1.0, "bb_width": 0.02,
-    })
+    engine._update_index(
+        {
+            "ltp": 21000,
+            "vwap": 21500,
+            "rsi_14": 35,
+            "change_pct": -0.3,
+            "rel_vol_20d": 1.0,
+            "bb_width": 0.02,
+        }
+    )
     assert engine.regime == MarketRegime.RISK_OFF
 
 
 def test_regime_risk_off_crash():
     """RISK_OFF when index change < -1.5%."""
     from scanner.sector import MarketRegime
+
     engine = _make_sector_engine()
-    engine._update_index({
-        "ltp": 21000, "vwap": 21500, "rsi_14": 48, "change_pct": -2.0,
-        "rel_vol_20d": 1.0, "bb_width": 0.02,
-    })
+    engine._update_index(
+        {
+            "ltp": 21000,
+            "vwap": 21500,
+            "rsi_14": 48,
+            "change_pct": -2.0,
+            "rel_vol_20d": 1.0,
+            "bb_width": 0.02,
+        }
+    )
     assert engine.regime == MarketRegime.RISK_OFF
 
 
 def test_regime_neutral():
     """NEUTRAL when conditions are mixed."""
     from scanner.sector import MarketRegime
+
     engine = _make_sector_engine()
-    engine._update_index({
-        "ltp": 21500, "vwap": 21400, "rsi_14": 50, "change_pct": 0.2,
-        "rel_vol_20d": 1.0, "bb_width": 0.02,
-    })
+    engine._update_index(
+        {
+            "ltp": 21500,
+            "vwap": 21400,
+            "rsi_14": 50,
+            "change_pct": 0.2,
+            "rel_vol_20d": 1.0,
+            "bb_width": 0.02,
+        }
+    )
     assert engine.regime == MarketRegime.NEUTRAL
 
 
@@ -259,14 +380,29 @@ print("\n--- CONVICTION ADJUSTMENTS ---")
 def test_conviction_strong_sector():
     """Strong sector → positive conviction adjustment."""
     from scanner.sector import SymbolSnapshot
+
     engine = _make_sector_engine()
 
     sec = engine.get_sector("NIFTY_IT")
     sec.constituents = {
-        "INFY": SymbolSnapshot(symbol="INFY", ltp=1500, vwap=1490, ema_20=1480,
-                               change_pct=2.0, rsi_14=65, rel_vol_20d=2.0),
-        "TCS": SymbolSnapshot(symbol="TCS", ltp=3500, vwap=3490, ema_20=3480,
-                               change_pct=1.5, rsi_14=60, rel_vol_20d=1.8),
+        "INFY": SymbolSnapshot(
+            symbol="INFY",
+            ltp=1500,
+            vwap=1490,
+            ema_20=1480,
+            change_pct=2.0,
+            rsi_14=65,
+            rel_vol_20d=2.0,
+        ),
+        "TCS": SymbolSnapshot(
+            symbol="TCS",
+            ltp=3500,
+            vwap=3490,
+            ema_20=3480,
+            change_pct=1.5,
+            rsi_14=60,
+            rel_vol_20d=1.8,
+        ),
     }
     engine._recompute_sector(sec)
     engine._recalculate_rankings()
@@ -279,12 +415,20 @@ def test_conviction_strong_sector():
 def test_conviction_weak_sector():
     """Weak sector → negative conviction adjustment."""
     from scanner.sector import SymbolSnapshot
+
     engine = _make_sector_engine()
 
     sec = engine.get_sector("NIFTY_BANK")
     sec.constituents = {
-        "HDFCBANK": SymbolSnapshot(symbol="HDFCBANK", ltp=1500, vwap=1520, ema_20=1530,
-                                    change_pct=-1.5, rsi_14=35, rel_vol_20d=0.6),
+        "HDFCBANK": SymbolSnapshot(
+            symbol="HDFCBANK",
+            ltp=1500,
+            vwap=1520,
+            ema_20=1530,
+            change_pct=-1.5,
+            rsi_14=35,
+            rel_vol_20d=0.6,
+        ),
     }
     engine._recompute_sector(sec)
 
@@ -296,21 +440,42 @@ def test_conviction_weak_sector():
 def test_conviction_regime_risk_off():
     """RISK_OFF regime → major negative adjustment."""
     from scanner.sector import SymbolSnapshot
+
     engine = _make_sector_engine()
 
     # Set regime to RISK_OFF
-    engine._update_index({
-        "ltp": 21000, "vwap": 21500, "rsi_14": 35, "change_pct": -2.0,
-        "rel_vol_20d": 1.0, "bb_width": 0.02,
-    })
+    engine._update_index(
+        {
+            "ltp": 21000,
+            "vwap": 21500,
+            "rsi_14": 35,
+            "change_pct": -2.0,
+            "rel_vol_20d": 1.0,
+            "bb_width": 0.02,
+        }
+    )
 
     # Weak sector constituents (below VWAP, negative change)
     sec = engine.get_sector("NIFTY_IT")
     sec.constituents = {
-        "INFY": SymbolSnapshot(symbol="INFY", ltp=1480, vwap=1500, ema_20=1510,
-                               change_pct=-0.8, rsi_14=42, rel_vol_20d=0.7),
-        "TCS": SymbolSnapshot(symbol="TCS", ltp=3450, vwap=3500, ema_20=3520,
-                               change_pct=-1.0, rsi_14=38, rel_vol_20d=0.6),
+        "INFY": SymbolSnapshot(
+            symbol="INFY",
+            ltp=1480,
+            vwap=1500,
+            ema_20=1510,
+            change_pct=-0.8,
+            rsi_14=42,
+            rel_vol_20d=0.7,
+        ),
+        "TCS": SymbolSnapshot(
+            symbol="TCS",
+            ltp=3450,
+            vwap=3500,
+            ema_20=3520,
+            change_pct=-1.0,
+            rsi_14=38,
+            rel_vol_20d=0.6,
+        ),
     }
     engine._recompute_sector(sec)
 
@@ -323,6 +488,7 @@ def test_conviction_regime_risk_off():
 def test_conviction_clamp():
     """Adjustment clamped to [-20, +15]."""
     from scanner.sector import SymbolSnapshot
+
     engine = _make_sector_engine()
 
     # Create extremely strong sector to test upper clamp
@@ -332,10 +498,24 @@ def test_conviction_clamp():
     sec.trend = "improving"
     sec.rank = 1
     sec.constituents = {
-        "INFY": SymbolSnapshot(symbol="INFY", ltp=1500, vwap=1490, ema_20=1480,
-                               change_pct=3.0, rsi_14=60, rel_vol_20d=2.0),
-        "TCS": SymbolSnapshot(symbol="TCS", ltp=3500, vwap=3490, ema_20=3480,
-                               change_pct=2.0, rsi_14=58, rel_vol_20d=1.8),
+        "INFY": SymbolSnapshot(
+            symbol="INFY",
+            ltp=1500,
+            vwap=1490,
+            ema_20=1480,
+            change_pct=3.0,
+            rsi_14=60,
+            rel_vol_20d=2.0,
+        ),
+        "TCS": SymbolSnapshot(
+            symbol="TCS",
+            ltp=3500,
+            vwap=3490,
+            ema_20=3480,
+            change_pct=2.0,
+            rsi_14=58,
+            rel_vol_20d=1.8,
+        ),
     }
     sec.avg_change_pct = 2.5
 
@@ -359,6 +539,7 @@ print("\n--- RELATIVE STRENGTH ---")
 def test_relative_strength():
     """Stock outperforming sector → positive relative strength."""
     from scanner.sector import SymbolSnapshot
+
     engine = _make_sector_engine()
 
     sec = engine.get_sector("NIFTY_IT")
@@ -372,7 +553,7 @@ def test_relative_strength():
     assert rel > 0, f"Expected positive relative strength, got {rel}"
 
     rel_weak = engine.get_relative_strength("TCS", "NIFTY_IT")
-    assert rel_weak < 0, f"Expected negative relative strength for underperformer"
+    assert rel_weak < 0, "Expected negative relative strength for underperformer"
 
 
 check("Relative strength: outperformer positive", test_relative_strength)
@@ -386,13 +567,21 @@ print("\n--- SECTOR TREND ---")
 
 def test_sector_trend():
     """Improving strength delta → IMPROVING trend."""
-    from scanner.sector import SymbolSnapshot, SectorTrend
+    from scanner.sector import SectorTrend, SymbolSnapshot
+
     engine = _make_sector_engine()
 
     sec = engine.get_sector("NIFTY_IT")
     sec.constituents = {
-        "INFY": SymbolSnapshot(symbol="INFY", ltp=1500, vwap=1490, ema_20=1480,
-                               change_pct=1.0, rsi_14=55, rel_vol_20d=1.0),
+        "INFY": SymbolSnapshot(
+            symbol="INFY",
+            ltp=1500,
+            vwap=1490,
+            ema_20=1480,
+            change_pct=1.0,
+            rsi_14=55,
+            rel_vol_20d=1.0,
+        ),
     }
     sec.strength_score = 40  # previous
     engine._recompute_sector(sec)

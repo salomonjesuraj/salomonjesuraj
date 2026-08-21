@@ -1,4 +1,4 @@
-.PHONY: up down logs restart clean build test lint infra bootstrap
+.PHONY: up down logs restart clean build test lint infra bootstrap setup-dev test-all compile-check compose-check
 
 # ═══════════════════════════════════════════════
 # INFUSION SCREENER — Makefile
@@ -6,6 +6,10 @@
 
 COMPOSE = docker compose
 COMPOSE_DEV = docker compose -f docker-compose.yml -f docker-compose.dev.yml
+PY = .venv/Scripts/python
+PIP = .venv/Scripts/pip
+RUFF = .venv/Scripts/ruff
+MYPY = .venv/Scripts/mypy
 
 # ── Stack Management ──
 
@@ -48,23 +52,41 @@ bootstrap:
 migrate:
 	cd migrations && alembic upgrade head
 
+# ── Local developer environment ──
+
+setup-dev:
+	python -m venv .venv
+	$(PY) -m pip install -U pip setuptools wheel
+	$(PY) -m pip install -r requirements-dev.txt
+	$(PY) -m pip install -e libs/infusion-models -e libs/infusion-streams -e libs/infusion-common
+	$(PY) -m pip install -e services/feature-engine -e services/api -e services/scanner -e services/archiver
+
 # ── Quality ──
 
 lint:
-	ruff check .
-	ruff format --check .
+	$(RUFF) check .
+	$(RUFF) format --check .
 
 format:
-	ruff format .
+	$(RUFF) format .
 
 typecheck:
-	mypy libs/ services/
+	$(MYPY) libs/ services/
 
 test:
-	pytest tests/unit/ -v
+	$(PY) -m pytest tests/unit/ -v
+
+test-all:
+	$(PY) -m pytest tests/ -v
 
 test-integration:
-	pytest tests/integration/ -v
+	$(PY) -m pytest tests/integration/ -v
+
+compile-check:
+	$(PY) -m compileall -q libs services scripts tests
+
+compose-check:
+	$(COMPOSE) config --quiet
 
 # ── Utility ──
 

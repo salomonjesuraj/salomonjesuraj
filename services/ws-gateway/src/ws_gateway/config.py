@@ -11,8 +11,8 @@ class WSGatewaySettings(InfusionSettings):
     ws_port: int = 8001
 
     # Batching
-    price_batch_ms: int = 100          # batch price updates every 100ms
-    signal_immediate: bool = True      # push signals immediately
+    price_batch_ms: int = 100  # batch price updates every 100ms
+    signal_immediate: bool = True  # push signals immediately
 
     # Consumer
     consumer_batch_size: int = 100

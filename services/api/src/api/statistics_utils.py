@@ -31,7 +31,9 @@ def r_multiple(outcome_label: str | None, risk_reward_ratio: float | None) -> fl
     (EXPIRED, missing outcome)."""
     if outcome_label == "TARGET_HIT":
         rr = float(risk_reward_ratio or 0)
-        return rr if rr > 0 else 1.0  # a stored 0/missing R:R still means "won", fall back to a flat 1R
+        return (
+            rr if rr > 0 else 1.0
+        )  # a stored 0/missing R:R still means "won", fall back to a flat 1R
     if outcome_label == "STOP_HIT":
         return -1.0
     return None
@@ -50,8 +52,8 @@ def sharpe_stats(r_multiples: list[float]) -> dict:
     std = math.sqrt(variance) if variance > 0 else 0.0
     sharpe = (mean / std) if std > 0 else None
     if std > 0:
-        skew = (sum((x - mean) ** 3 for x in r_multiples) / n) / (std ** 3)
-        kurtosis = (sum((x - mean) ** 4 for x in r_multiples) / n) / (std ** 4)
+        skew = (sum((x - mean) ** 3 for x in r_multiples) / n) / (std**3)
+        kurtosis = (sum((x - mean) ** 4 for x in r_multiples) / n) / (std**4)
     else:
         skew, kurtosis = 0.0, 3.0
     return {
@@ -100,7 +102,7 @@ def probabilistic_sharpe_ratio(
     N tries."""
     if n < 2:
         return None
-    denom = math.sqrt(max(1 - skew * sr_hat + (kurtosis - 1) / 4 * sr_hat ** 2, 1e-9))
+    denom = math.sqrt(max(1 - skew * sr_hat + (kurtosis - 1) / 4 * sr_hat**2, 1e-9))
     z = (sr_hat - sr_benchmark) * math.sqrt(n - 1) / denom
     return _NORMAL.cdf(z)
 
@@ -115,7 +117,7 @@ def pearson_r(xs: list[float], ys: list[float]) -> float | None:
         return None
     mean_x = sum(xs) / n
     mean_y = sum(ys) / n
-    cov = sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, ys))
+    cov = sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, ys, strict=False))
     var_x = sum((x - mean_x) ** 2 for x in xs)
     var_y = sum((y - mean_y) ** 2 for y in ys)
     if var_x <= 0 or var_y <= 0:

@@ -75,7 +75,9 @@ def evaluate_promotion_readiness(report: dict) -> dict:
                 f"{gate_b.get('dominant_symbol_share_pct')}% of episodes -- too concentrated."
             )
     if not precision_available:
-        reasons.append(f"Precision comparison unavailable: {precision.get('reason', 'insufficient sample')}.")
+        reasons.append(
+            f"Precision comparison unavailable: {precision.get('reason', 'insufficient sample')}."
+        )
     elif not precision_favors_ebie:
         reasons.append(
             f"Precision comparison does not yet favor EBIE "
@@ -83,17 +85,25 @@ def evaluate_promotion_readiness(report: dict) -> dict:
             f"{precision.get('baseline_precision_pct')}%)."
         )
     if not false_break_reliable:
-        reasons.append("False-break rate baseline is not yet reliable (insufficient decided sample).")
+        reasons.append(
+            "False-break rate baseline is not yet reliable (insufficient decided sample)."
+        )
     if not calibration_reliable:
         reasons.append("ML classifier calibration is not yet reliable.")
 
     ready = (
-        gate_a_met and gate_b_met and precision_available
-        and precision_favors_ebie and false_break_reliable and calibration_reliable
+        gate_a_met
+        and gate_b_met
+        and precision_available
+        and precision_favors_ebie
+        and false_break_reliable
+        and calibration_reliable
     )
     readiness = "READY_FOR_HUMAN_REVIEW" if ready else "NOT_READY"
     if not reasons:
-        reasons.append("All tracked criteria currently met -- still requires an explicit human decision to promote anything.")
+        reasons.append(
+            "All tracked criteria currently met -- still requires an explicit human decision to promote anything."
+        )
 
     return {
         "readiness": readiness,
@@ -151,7 +161,11 @@ async def record_promotion_review(pool, report: dict) -> dict:
 
 async def fetch_promotion_review_history(pool, limit: int = 20) -> dict:
     if not pool:
-        return {"available": False, "reason": "Postgres analytics pool is not available.", "reviews": []}
+        return {
+            "available": False,
+            "reason": "Postgres analytics pool is not available.",
+            "reviews": [],
+        }
 
     async with pool.acquire() as conn:
         rows = await conn.fetch(
@@ -186,7 +200,9 @@ async def fetch_promotion_review_history(pool, limit: int = 20) -> dict:
                 "readiness_reasons": r["readiness_reasons"],
                 "human_decision": r["human_decision"],
                 "human_decision_note": r["human_decision_note"],
-                "human_decision_at": r["human_decision_at"].isoformat() if r["human_decision_at"] else None,
+                "human_decision_at": r["human_decision_at"].isoformat()
+                if r["human_decision_at"]
+                else None,
             }
             for r in rows
         ],

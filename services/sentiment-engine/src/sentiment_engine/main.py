@@ -30,13 +30,12 @@ import asyncio
 import asyncpg
 import redis.asyncio as aioredis
 import structlog
-
 from infusion_common.config import InfusionSettings
 from infusion_common.health import HealthReporter
 from infusion_common.lifecycle import ServiceLifecycle
 from infusion_common.logging import setup_logging
 
-from sentiment_engine.classifier import FinbertClassifier, MODEL_VERSION
+from sentiment_engine.classifier import MODEL_VERSION, FinbertClassifier
 from sentiment_engine.event_taxonomy import classify_event_type, event_severity
 from sentiment_engine.relevance import compute_novelty, compute_relevance, source_quality
 
@@ -72,12 +71,16 @@ async def _recent_headlines(pool, symbol: str, exclude_id: int) -> list[str]:
             ORDER BY ss.classified_at DESC
             LIMIT $3
             """,
-            symbol, exclude_id, NOVELTY_LOOKBACK,
+            symbol,
+            exclude_id,
+            NOVELTY_LOOKBACK,
         )
     return [r["heading"] for r in rows]
 
 
-async def _write_result(pool, article_id: int, symbol: str, result: dict, mark_complete: bool) -> None:
+async def _write_result(
+    pool, article_id: int, symbol: str, result: dict, mark_complete: bool
+) -> None:
     """Upsert (not insert-only) -- a real classification must be able
     to overwrite an earlier fallback 'unknown' row from a window where
     the model was unavailable (see mark_complete below), not be
@@ -94,10 +97,9 @@ async def _write_result(pool, article_id: int, symbol: str, result: dict, mark_c
     real Docker-volume permission bug (also fixed, see the Dockerfile)
     left a batch of real articles classified during the model's
     unavailable window."""
-    async with pool.acquire() as conn:
-        async with conn.transaction():
-            await conn.execute(
-                """
+    async with pool.acquire() as conn, conn.transaction():
+        await conn.execute(
+            """
                 INSERT INTO sentiment_scores
                     (news_event_id, symbol, event_type, direction, confidence,
                      severity, relevance, novelty, source_quality, model_version)
@@ -113,15 +115,22 @@ async def _write_result(pool, article_id: int, symbol: str, result: dict, mark_c
                     model_version = EXCLUDED.model_version,
                     classified_at = now()
                 """,
-                article_id, symbol, result["event_type"], result["direction"],
-                result["confidence"], result["severity"], result["relevance"],
-                result["novelty"], result["source_quality"], result["model_version"],
+            article_id,
+            symbol,
+            result["event_type"],
+            result["direction"],
+            result["confidence"],
+            result["severity"],
+            result["relevance"],
+            result["novelty"],
+            result["source_quality"],
+            result["model_version"],
+        )
+        if mark_complete:
+            await conn.execute(
+                "UPDATE news_events SET sentiment_completed_at = now() WHERE id = $1",
+                article_id,
             )
-            if mark_complete:
-                await conn.execute(
-                    "UPDATE news_events SET sentiment_completed_at = now() WHERE id = $1",
-                    article_id,
-                )
 
 
 async def _process_batch(pool, classifier: FinbertClassifier, rows: list[asyncpg.Record]) -> int:
@@ -135,7 +144,7 @@ async def _process_batch(pool, classifier: FinbertClassifier, rows: list[asyncpg
     sentiments = classifier.classify_batch(texts)
 
     processed = 0
-    for row, sentiment in zip(rows, sentiments):
+    for row, sentiment in zip(rows, sentiments, strict=False):
         try:
             heading = row["heading"]
             summary = row["summary"]
@@ -152,12 +161,16 @@ async def _process_batch(pool, classifier: FinbertClassifier, rows: list[asyncpg
                 "relevance": compute_relevance(symbol, heading, summary),
                 "novelty": compute_novelty(heading, recent),
                 "source_quality": source_quality(row["article_link"]),
-                "model_version": MODEL_VERSION if sentiment else f"{MODEL_VERSION}+model_unavailable",
+                "model_version": MODEL_VERSION
+                if sentiment
+                else f"{MODEL_VERSION}+model_unavailable",
             }
             # Only a genuine classification marks the article complete
             # -- a fallback/unknown result stays retryable (see
             # _write_result's own docstring for why).
-            await _write_result(pool, row["id"], symbol, result, mark_complete=sentiment is not None)
+            await _write_result(
+                pool, row["id"], symbol, result, mark_complete=sentiment is not None
+            )
             processed += 1
         except Exception as exc:
             # One bad article must never stall the whole batch/sweep --
@@ -168,7 +181,11 @@ async def _process_batch(pool, classifier: FinbertClassifier, rows: list[asyncpg
 
 
 async def sentiment_loop(pool, classifier: FinbertClassifier) -> None:
-    logger.info("sentiment_engine_loop_started", interval=POLL_INTERVAL_SEC, model_available=classifier.available)
+    logger.info(
+        "sentiment_engine_loop_started",
+        interval=POLL_INTERVAL_SEC,
+        model_available=classifier.available,
+    )
     while True:
         try:
             rows = await _fetch_pending(pool, BATCH_SIZE)
@@ -196,10 +213,12 @@ async def main() -> None:
 
     redis = aioredis.from_url(settings.redis_url)
     health = HealthReporter(redis, settings.service_name)
-    health.set_details_fn(lambda: {
-        "model_available": classifier.available,
-        "model_version": MODEL_VERSION,
-    })
+    health.set_details_fn(
+        lambda: {
+            "model_available": classifier.available,
+            "model_version": MODEL_VERSION,
+        }
+    )
     await health.start()
 
     lifecycle = ServiceLifecycle(settings.service_name)

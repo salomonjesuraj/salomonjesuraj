@@ -12,10 +12,9 @@ import time
 import uuid
 
 from aiohttp import web
-
 from infusion_models.events import EventType
 from infusion_streams.codec import encode_event
-from infusion_streams.constants import STREAM_SCAN_SIGNALS, MAXLEN_SIGNALS
+from infusion_streams.constants import MAXLEN_SIGNALS, STREAM_SCAN_SIGNALS
 
 routes = web.RouteTableDef()
 
@@ -89,7 +88,13 @@ def _trigger_state(trigger: dict, snap: dict) -> dict:
         state, color = "NEAR", "yellow"
         reason = f"Near trigger ({distance_pct:+.2f}%)"
     else:
-        state, color = "WAIT", "red" if (direction == "above" and distance_pct < -1.0) or (direction == "below" and distance_pct > 1.0) else "yellow"
+        state, color = (
+            "WAIT",
+            "red"
+            if (direction == "above" and distance_pct < -1.0)
+            or (direction == "below" and distance_pct > 1.0)
+            else "yellow",
+        )
         reason = f"Waiting for {direction} {trigger_price:.2f}"
 
     return {
@@ -122,9 +127,15 @@ async def _emit_trigger_alert(redis, evaluated: dict) -> bool:
     action = str(evaluated.get("action") or "WATCH")
     ltp = _num(evaluated.get("ltp"))
     trigger_price = _num(evaluated.get("trigger_price"))
-    stop = _num(evaluated.get("sl")) or (trigger_price * 0.995 if direction == "above" else trigger_price * 1.005)
-    t1 = _num(evaluated.get("t1")) or (trigger_price * 1.006 if direction == "above" else trigger_price * 0.994)
-    t2 = _num(evaluated.get("t2")) or (trigger_price * 1.012 if direction == "above" else trigger_price * 0.988)
+    stop = _num(evaluated.get("sl")) or (
+        trigger_price * 0.995 if direction == "above" else trigger_price * 1.005
+    )
+    t1 = _num(evaluated.get("t1")) or (
+        trigger_price * 1.006 if direction == "above" else trigger_price * 0.994
+    )
+    t2 = _num(evaluated.get("t2")) or (
+        trigger_price * 1.012 if direction == "above" else trigger_price * 0.988
+    )
     now_us = int(time.time() * 1_000_000)
     payload = {
         "signal_id": f"trigger-{trigger_id}-{int(time.time())}",
@@ -199,7 +210,9 @@ async def create_trigger(request):
         "symbol": symbol,
         "trigger_price": trigger_price,
         "direction": direction,
-        "action": str(body.get("action") or ("BUY CE" if direction == "above" else "BUY PE")).upper(),
+        "action": str(
+            body.get("action") or ("BUY CE" if direction == "above" else "BUY PE")
+        ).upper(),
         "near_pct": _num(body.get("near_pct"), 0.15),
         "sl": _num(body.get("sl")),
         "t1": _num(body.get("t1")),

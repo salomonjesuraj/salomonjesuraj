@@ -746,9 +746,9 @@ Every service runs a single `asyncio` event loop on a single thread. No thread p
 ```python
 # Every service entry point follows this pattern
 async def main():
-    config = Settings()                          # pydantic-settings from env
-    redis = await create_redis_pool(config)       # hiredis-backed pool
-    
+    config = Settings()  # pydantic-settings from env
+    redis = await create_redis_pool(config)  # hiredis-backed pool
+
     consumer = StreamConsumer(
         redis=redis,
         stream="tick:normalized",
@@ -756,17 +756,18 @@ async def main():
         consumer_name=f"feature-{config.instance_id}",
     )
     producer = StreamProducer(redis=redis, stream="feature:computed")
-    
+
     engine = FeatureEngine(config)
-    
+
     # Claim any pending messages from previous crash
     await consumer.recover_pending()
-    
+
     # Main loop — BLOCK 0 means zero CPU when idle
     async for batch in consumer.read(count=100, block_ms=0):
         results = engine.process(batch)
         await producer.write_batch(results)
         await consumer.ack(batch)
+
 
 if __name__ == "__main__":
     asyncio.run(main())
@@ -1419,15 +1420,15 @@ Binary packet decode:
 ```python
 class ExponentialBackoff:
     """Reconnect with exponential backoff + jitter."""
-    
-    initial_delay: float = 1.0       # seconds
-    max_delay: float = 30.0          # seconds
+
+    initial_delay: float = 1.0  # seconds
+    max_delay: float = 30.0  # seconds
     multiplier: float = 2.0
-    jitter_pct: float = 0.2          # ±20% randomization
-    
+    jitter_pct: float = 0.2  # ±20% randomization
+
     # Sequence: 1.0s → 2.0s → 4.0s → 8.0s → 16.0s → 30.0s → 30.0s → ...
     # With jitter: 0.8-1.2s → 1.6-2.4s → 3.2-4.8s → ...
-    
+
     # Reset to initial_delay after successful connection + first tick received.
     # NOT on connect success — only on first tick. This prevents
     # rapid reconnect loops when broker accepts WS but sends no data.

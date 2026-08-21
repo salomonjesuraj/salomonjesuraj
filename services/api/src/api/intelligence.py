@@ -76,9 +76,15 @@ def _dominance_label(entry: dict, decision: str) -> tuple[str, str]:
     vwap = str(entry.get("vwap_state") or "").upper()
     trend = str(entry.get("trend_bias") or "").upper()
     if ce >= pe + 12 and (decision == "BUY CE" or vwap == "ABOVE" or "BUY" in trend):
-        return "BUYERS", f"Buyers lead CE {ce:.0f} vs PE {pe:.0f}; price/VWAP confirmation still required."
+        return (
+            "BUYERS",
+            f"Buyers lead CE {ce:.0f} vs PE {pe:.0f}; price/VWAP confirmation still required.",
+        )
     if pe >= ce + 12 and (decision == "BUY PE" or vwap == "BELOW" or "SELL" in trend):
-        return "SELLERS", f"Sellers lead PE {pe:.0f} vs CE {ce:.0f}; breakdown confirmation still required."
+        return (
+            "SELLERS",
+            f"Sellers lead PE {pe:.0f} vs CE {ce:.0f}; breakdown confirmation still required.",
+        )
     return "MIXED", f"No clean domination yet: CE {ce:.0f} vs PE {pe:.0f}. Wait for level break."
 
 
@@ -89,19 +95,37 @@ def _index_drag_label(entry: dict, sector: float) -> tuple[str, str]:
     stock = _num(entry.get("change_pct"))
     if nifty is None and bank is None:
         if sector >= 62 and stock < 0:
-            return "POSSIBLE_SECTOR_SUPPORT", "Stock is red while sector strength is supportive; check NIFTY/BANKNIFTY before shorting."
+            return (
+                "POSSIBLE_SECTOR_SUPPORT",
+                "Stock is red while sector strength is supportive; check NIFTY/BANKNIFTY before shorting.",
+            )
         if sector <= 38 and stock > 0:
-            return "POSSIBLE_SECTOR_DRAG", "Stock is green but sector is weak; demand stronger confirmation before chasing CE."
-        return "NEEDS_INDEX_JOIN", "Index drag needs live NIFTY/BANKNIFTY fields joined into scanner rows."
+            return (
+                "POSSIBLE_SECTOR_DRAG",
+                "Stock is green but sector is weak; demand stronger confirmation before chasing CE.",
+            )
+        return (
+            "NEEDS_INDEX_JOIN",
+            "Index drag needs live NIFTY/BANKNIFTY fields joined into scanner rows.",
+        )
     nifty_chg = _num(nifty)
     bank_chg = _num(bank)
     index_chg = bank_chg if abs(bank_chg) > abs(nifty_chg) else nifty_chg
     if stock >= 0.25 and index_chg <= -0.25:
-        return "RELATIVE_STRENGTH", "Stock is holding green while index is weak; bounce/follow-through candidate if trigger sustains."
+        return (
+            "RELATIVE_STRENGTH",
+            "Stock is holding green while index is weak; bounce/follow-through candidate if trigger sustains.",
+        )
     if stock <= -0.25 and index_chg >= 0.25:
-        return "RELATIVE_WEAKNESS", "Stock is weak despite positive index; avoid CE unless it reclaims trigger."
+        return (
+            "RELATIVE_WEAKNESS",
+            "Stock is weak despite positive index; avoid CE unless it reclaims trigger.",
+        )
     if stock < 0 and index_chg < 0 and sector >= 60:
-        return "INDEX_PULLBACK", "Sector is strong but index pressure is dragging price; watch for reclaim before CE."
+        return (
+            "INDEX_PULLBACK",
+            "Sector is strong but index pressure is dragging price; watch for reclaim before CE.",
+        )
     return "NORMAL", "No special index-drag edge detected."
 
 
@@ -127,7 +151,13 @@ def _build_command_center(
     stop = _num(entry.get("stop_loss_hint"))
     t1 = _num(entry.get("target_1_hint") or entry.get("move_to"))
     t2 = _num(entry.get("target_2_hint") or entry.get("extended_move_to"))
-    t3 = _num(entry.get("target_3_hint")) or (t2 + abs(t2 - t1) if t1 and t2 and decision == "BUY CE" else t2 - abs(t2 - t1) if t1 and t2 and decision == "BUY PE" else 0.0)
+    t3 = _num(entry.get("target_3_hint")) or (
+        t2 + abs(t2 - t1)
+        if t1 and t2 and decision == "BUY CE"
+        else t2 - abs(t2 - t1)
+        if t1 and t2 and decision == "BUY PE"
+        else 0.0
+    )
     fibo_s2 = _num(entry.get("fibo_s2"))
     fibo_r2 = _num(entry.get("fibo_r2"))
     atr_stop = _num(entry.get("atr_trail_stop"))
@@ -135,34 +165,54 @@ def _build_command_center(
     day_high = _num(features.get("day_high") or entry.get("day_high"))
     support_candidates = [v for v in [below, fibo_s2, atr_stop, day_low] if v > 0]
     resistance_candidates = [v for v in [above, fibo_r2, day_high] if v > 0]
-    support = max([v for v in support_candidates if entry_hint <= 0 or v <= entry_hint] or support_candidates or [0.0])
-    resistance = min([v for v in resistance_candidates if entry_hint <= 0 or v >= entry_hint] or resistance_candidates or [0.0])
+    support = max(
+        [v for v in support_candidates if entry_hint <= 0 or v <= entry_hint]
+        or support_candidates
+        or [0.0]
+    )
+    resistance = min(
+        [v for v in resistance_candidates if entry_hint <= 0 or v >= entry_hint]
+        or resistance_candidates
+        or [0.0]
+    )
     sustain = str(entry.get("sustain_rule") or "5M/15M close")
     dominance, dominance_reason = _dominance_label(entry, decision)
     index_state, index_note = _index_drag_label(entry, sector)
     chain_ready = bool(option_summary.get("option_chain_ready") or option_summary.get("ready"))
-    metrics = option_summary.get("metrics") if isinstance(option_summary.get("metrics"), dict) else {}
+    metrics = (
+        option_summary.get("metrics") if isinstance(option_summary.get("metrics"), dict) else {}
+    )
     spread = _num(metrics.get("spread_pct") or entry.get("chain_spread_pct"))
     oi = _num(metrics.get("oi") or entry.get("chain_oi"))
     iv = _num(metrics.get("iv") or entry.get("chain_iv"))
     premium = _num(metrics.get("ltp") or metrics.get("premium"))
-    option_state = str(option_summary.get("execution_status") or entry.get("chain_execution_status") or ("CHAIN_READY" if chain_ready else "CHAIN_PENDING")).upper()
+    option_state = str(
+        option_summary.get("execution_status")
+        or entry.get("chain_execution_status")
+        or ("CHAIN_READY" if chain_ready else "CHAIN_PENDING")
+    ).upper()
     news_state = str(news_confirmation.get("state") or "NO_NEWS").upper()
 
     if decision == "BUY CE":
         headline = f"CE only above {_level_text(above)}; no chase inside {_level_text(below)}-{_level_text(above)}."
         action_text = f"If price sustains above {_level_text(above)} on {sustain}, plan CE with SL {_level_text(stop)} and targets {_level_text(t1)}, {_level_text(t2)}, {_level_text(t3)}."
-        fail_text = f"If price loses {_level_text(below)}, bullish view fails; avoid CE and reassess PE."
+        fail_text = (
+            f"If price loses {_level_text(below)}, bullish view fails; avoid CE and reassess PE."
+        )
     elif decision == "BUY PE":
         headline = f"PE only below {_level_text(below)}; no chase inside {_level_text(below)}-{_level_text(above)}."
         action_text = f"If price sustains below {_level_text(below)} on {sustain}, plan PE with SL {_level_text(stop)} and targets {_level_text(t1)}, {_level_text(t2)}, {_level_text(t3)}."
-        fail_text = f"If price reclaims {_level_text(above)}, bearish view fails; avoid PE and reassess CE."
+        fail_text = (
+            f"If price reclaims {_level_text(above)}, bearish view fails; avoid PE and reassess CE."
+        )
     else:
         headline = f"Watch zone: CE above {_level_text(above)}, PE below {_level_text(below)}."
         action_text = "No blind trade. Wait for closed-candle acceptance, volume, and option-chain confirmation."
         fail_text = "If price stays inside the wait zone, skip the trade."
 
-    chase_text = "Clean to consider after chart confirmation." if anti_chase_ok else f"No chase: {blocker}"
+    chase_text = (
+        "Clean to consider after chart confirmation." if anti_chase_ok else f"No chase: {blocker}"
+    )
     if action_quality not in {"TRADE_READY", "WATCHLIST", "WAIT_CONFIRMATION"}:
         chase_text = f"Do not execute yet: {blocker}"
 
@@ -190,7 +240,10 @@ def _build_command_center(
         "news_state": news_state,
         "news_message": news_confirmation.get("message") or "No news edge available.",
         "option_state": option_state,
-        "option_contract": option_summary.get("contract") or option_summary.get("suggested_contract") or entry.get("chain_suggested_contract") or "",
+        "option_contract": option_summary.get("contract")
+        or option_summary.get("suggested_contract")
+        or entry.get("chain_suggested_contract")
+        or "",
         "option_evidence": {
             "premium": round(premium, 2) if premium else None,
             "spread_pct": round(spread, 2) if spread else None,
@@ -230,8 +283,12 @@ def build_intelligence_layer(
     horizon = str(entry.get("trade_horizon") or "INTRADAY").upper()
     chase = str(entry.get("chase_quality") or "WATCH_ONLY").upper()
     anti_chase_ok = entry.get("anti_chase_ok") is not False
-    rejection_reasons = entry.get("rejection_reasons") if isinstance(entry.get("rejection_reasons"), list) else []
-    strength_reasons = entry.get("strength_reasons") if isinstance(entry.get("strength_reasons"), list) else []
+    rejection_reasons = (
+        entry.get("rejection_reasons") if isinstance(entry.get("rejection_reasons"), list) else []
+    )
+    strength_reasons = (
+        entry.get("strength_reasons") if isinstance(entry.get("strength_reasons"), list) else []
+    )
 
     news_confirmation = build_news_confirmation(entry, features, news_edge)
     news_score = _num(news_confirmation.get("score"), 50.0)
@@ -247,7 +304,11 @@ def build_intelligence_layer(
         )
     option_source = "upstox_option_chain" if chain_ready else "proxy_underlying_until_chain"
     option_status = str(option_summary.get("execution_status") or "").upper()
-    option_hard_blockers = option_summary.get("hard_blockers") if isinstance(option_summary.get("hard_blockers"), list) else []
+    option_hard_blockers = (
+        option_summary.get("hard_blockers")
+        if isinstance(option_summary.get("hard_blockers"), list)
+        else []
+    )
     option_trade_ready = bool(option_summary.get("trade_ready"))
     event_entry_allowed = event_risk.get("entry_allowed", True) is not False
 
@@ -297,7 +358,11 @@ def build_intelligence_layer(
         action_quality = "EVENT_BLOCK"
     elif chain_ready and not option_trade_ready and option_hard_blockers:
         action_quality = "AVOID_CONTRACT"
-    elif chain_ready and not option_trade_ready and option_status in {"CHAIN_PENDING", "WAIT_CONTRACT"}:
+    elif (
+        chain_ready
+        and not option_trade_ready
+        and option_status in {"CHAIN_PENDING", "WAIT_CONTRACT"}
+    ):
         action_quality = "WAIT_CONTRACT"
     elif news_confirmation.get("state") == "CONFLICTING" and decision in {"BUY CE", "BUY PE"}:
         action_quality = "WAIT_CONFIRMATION"
@@ -310,18 +375,26 @@ def build_intelligence_layer(
     else:
         action_quality = "NO_TRADE"
 
-    direction_word = "bullish" if decision == "BUY CE" else "bearish" if decision == "BUY PE" else "neutral"
+    direction_word = (
+        "bullish" if decision == "BUY CE" else "bearish" if decision == "BUY PE" else "neutral"
+    )
     above = _num(entry.get("positive_above"))
     below = _num(entry.get("negative_below"))
     t1 = _num(entry.get("target_1_hint") or entry.get("move_to"))
     t2 = _num(entry.get("target_2_hint") or entry.get("extended_move_to"))
     sustain = str(entry.get("sustain_rule") or "5M/15M close")
     if decision == "BUY PE":
-        map_summary = f"Bearish only below {below:.2f}; sustain {sustain}; targets {t1:.2f}/{t2:.2f}."
+        map_summary = (
+            f"Bearish only below {below:.2f}; sustain {sustain}; targets {t1:.2f}/{t2:.2f}."
+        )
     elif decision == "BUY CE":
-        map_summary = f"Bullish only above {above:.2f}; sustain {sustain}; targets {t1:.2f}/{t2:.2f}."
+        map_summary = (
+            f"Bullish only above {above:.2f}; sustain {sustain}; targets {t1:.2f}/{t2:.2f}."
+        )
     else:
-        map_summary = f"Watch above {above:.2f} for CE and below {below:.2f} for PE; wait for confirmation."
+        map_summary = (
+            f"Watch above {above:.2f} for CE and below {below:.2f} for PE; wait for confirmation."
+        )
 
     if not event_entry_allowed:
         blocker = str(event_risk.get("block_reason") or "Event calendar blocks new entry")
@@ -332,8 +405,16 @@ def build_intelligence_layer(
     elif news_confirmation.get("state") == "CONFLICTING":
         blocker = str(news_confirmation.get("message") or "News conflicts with scanner")
     else:
-        blocker = rejection_reasons[0] if rejection_reasons else ("Anti-chase clean" if anti_chase_ok else "Retest needed")
-    primary_reason = strength_reasons[0] if strength_reasons else str(entry.get("mtf_text") or "Evidence building")
+        blocker = (
+            rejection_reasons[0]
+            if rejection_reasons
+            else ("Anti-chase clean" if anti_chase_ok else "Retest needed")
+        )
+    primary_reason = (
+        strength_reasons[0]
+        if strength_reasons
+        else str(entry.get("mtf_text") or "Evidence building")
+    )
     summary = (
         f"{_state_label(decision, intelligence_horizon, chase)} - "
         f"{direction_word} bias - {primary_reason}. Block: {blocker}."
@@ -383,14 +464,23 @@ def build_intelligence_layer(
         "news_confirmation": news_confirmation,
         "event_calendar": event_risk,
         "option_confirmation": {
-            "state": option_status or ("TRADE_READY" if option_trade_ready else "CHAIN_PENDING" if not chain_ready else "WAIT_CONTRACT"),
+            "state": option_status
+            or (
+                "TRADE_READY"
+                if option_trade_ready
+                else "CHAIN_PENDING"
+                if not chain_ready
+                else "WAIT_CONTRACT"
+            ),
             "trade_ready": option_trade_ready,
             "score": round(option, 1),
             "raw_score": option_summary.get("raw_option_score"),
             "grade": option_summary.get("quality_grade"),
             "score_cap_reason": option_summary.get("score_cap_reason") or "",
             "score_cap_detail": option_summary.get("score_cap_detail") or "",
-            "contract": option_summary.get("contract") or option_summary.get("suggested_contract") or "",
+            "contract": option_summary.get("contract")
+            or option_summary.get("suggested_contract")
+            or "",
             "hard_blockers": option_hard_blockers,
         },
         "map_summary": map_summary,
@@ -416,7 +506,9 @@ def build_intelligence_layer(
     }
 
 
-def build_news_confirmation(entry: dict, features: dict | None = None, news_edge: dict | None = None) -> dict:
+def build_news_confirmation(
+    entry: dict, features: dict | None = None, news_edge: dict | None = None
+) -> dict:
     """Confirm public-news stance only when price and volume agree.
 
     Public feeds can be slow or noisy. For options, news becomes useful only

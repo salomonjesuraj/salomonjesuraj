@@ -13,8 +13,8 @@ class ArchiverSettings(InfusionSettings):
     archiver_block_ms: int = 500
 
     # Writer
-    write_batch_size: int = 10         # batch INSERT threshold
-    write_flush_sec: float = 5.0       # max seconds before forced flush
+    write_batch_size: int = 10  # batch INSERT threshold
+    write_flush_sec: float = 5.0  # max seconds before forced flush
 
     # Outcome tracker
     # EBIE EB-10A: widened from 5 min (real finding: at the old 5-min TTL,
@@ -33,10 +33,12 @@ class ArchiverSettings(InfusionSettings):
     # Swing-horizon (1-3 session) calibration would need a much longer
     # TTL plus cross-session-boundary handling in _get_ltp/tracker.py --
     # explicitly out of scope for this change, a further follow-up.
-    tracker_interval_sec: int = 30     # outcome sampling interval
-    tracker_lookback_min: int = 90     # track signals from last N minutes (must exceed signal_ttl_min or a
-                                        # still-open signal would fall out of the query before reaching its TTL)
-    signal_ttl_min: int = 75           # signal validity window for outcome tracking (see note above)
+    tracker_interval_sec: int = 30  # outcome sampling interval
+    tracker_lookback_min: int = (
+        90  # track signals from last N minutes (must exceed signal_ttl_min or a
+    )
+    # still-open signal would fall out of the query before reaching its TTL)
+    signal_ttl_min: int = 75  # signal validity window for outcome tracking (see note above)
 
     # Market hours (IST) — only track outcomes during market
     market_open_hour: int = 9
@@ -45,5 +47,5 @@ class ArchiverSettings(InfusionSettings):
     market_close_min: int = 30
 
     # Backfill
-    backfill_on_startup: bool = True   # replay existing stream history
-    backfill_batch_size: int = 100     # messages per XRANGE batch
+    backfill_on_startup: bool = True  # replay existing stream history
+    backfill_batch_size: int = 100  # messages per XRANGE batch

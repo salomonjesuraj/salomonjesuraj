@@ -42,10 +42,12 @@ async def capability(request):
         except Exception:
             sub_data = None
 
-    return web.json_response({
-        "capability": cap_data,
-        "capability_available": cap_data is not None,
-        "capability_provider": cap_provider,
-        "subscription": sub_data,
-        "subscription_available": sub_data is not None,
-    })
+    return web.json_response(
+        {
+            "capability": cap_data,
+            "capability_available": cap_data is not None,
+            "capability_provider": cap_provider,
+            "subscription": sub_data,
+            "subscription_available": sub_data is not None,
+        }
+    )

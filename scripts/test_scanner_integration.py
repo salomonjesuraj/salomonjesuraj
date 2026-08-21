@@ -13,7 +13,6 @@ import asyncio
 import os
 import sys
 import time
-import uuid
 
 base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 for lib in ("infusion-models", "infusion-streams", "infusion-common"):
@@ -21,22 +20,19 @@ for lib in ("infusion-models", "infusion-streams", "infusion-common"):
 sys.path.insert(0, os.path.join(base, "services", "scanner", "src"))
 
 import redis.asyncio as aioredis
-
-from scanner.config import ScannerSettings
-from scanner.engine import ScannerEngine
-from scanner.state import StateManager
-from scanner.strategies import register_strategy, _REGISTRY
-from scanner.strategies.vol_vwap_breakout import VolVwapBreakout
-
+from infusion_common.timing import now_us
+from infusion_streams.codec import decode_event
 from infusion_streams.constants import (
+    KEY_COOLDOWN_PREFIX,
+    KEY_SIGNAL_ACTIVE,
+    KEY_SIGNAL_PREFIX,
     STREAM_SCAN_SIGNALS,
     STREAM_SCAN_SUPPRESSED,
-    KEY_SIGNAL_PREFIX,
-    KEY_SIGNAL_ACTIVE,
-    KEY_COOLDOWN_PREFIX,
 )
-from infusion_streams.codec import decode_event
-from infusion_common.timing import now_us
+from scanner.config import ScannerSettings
+from scanner.engine import ScannerEngine
+from scanner.strategies import _REGISTRY, register_strategy
+from scanner.strategies.vol_vwap_breakout import VolVwapBreakout
 
 REDIS_URL = os.environ.get("INFUSION_REDIS_URL", "redis://localhost:6379/0")
 
@@ -101,7 +97,7 @@ def _no_trigger_features(symbol, timestamp_us):
 async def run_tests():
     r = aioredis.from_url(REDIS_URL, decode_responses=False)
     await r.ping()
-    print(f"✓ Redis connected\n")
+    print("✓ Redis connected\n")
 
     settings = ScannerSettings()
 
@@ -130,6 +126,7 @@ async def run_tests():
 
     # Seed sector data so sector_weak suppression doesn't block test signals
     from infusion_streams.constants import KEY_SECTOR_PREFIX
+
     for sec in ("NIFTY_50", "NIFTY_IT"):
         await r.hset(
             f"{KEY_SECTOR_PREFIX}{sec}",
@@ -148,7 +145,7 @@ async def run_tests():
     # ═══════════════════════════════════════════════
     print("--- WARMUP ---")
 
-    for i in range(settings.warmup_ticks):
+    for _i in range(settings.warmup_ticks):
         features = _breakout_features("TEST_RELIANCE", now_us())
         await engine.process_feature(features)
 
@@ -166,7 +163,7 @@ async def run_tests():
 
     # Set prev state: price was below VWAP
     state = engine.state_mgr.get_or_create("TEST_RELIANCE")
-    state.prev_ltp = 2488.0   # below VWAP
+    state.prev_ltp = 2488.0  # below VWAP
     state.prev_vwap = 2490.0
 
     # Now send a feature where ltp > vwap → crossover
@@ -193,7 +190,9 @@ async def run_tests():
         grade = hot_data.get(b"conviction_grade", b"").decode()
         score_raw = hot_data.get(b"conviction_score", b"0").decode()
         lifecycle = hot_data.get(b"lifecycle", b"").decode()
-        check("Hot state has conviction_grade", grade in ("A+", "A", "B", "C", "D"), f"grade={grade}")
+        check(
+            "Hot state has conviction_grade", grade in ("A+", "A", "B", "C", "D"), f"grade={grade}"
+        )
         check("Hot state conviction_score > 0", float(score_raw) > 0, f"score={score_raw}")
         check("Hot state lifecycle = active", lifecycle == "active", f"lifecycle={lifecycle}")
 
@@ -211,7 +210,9 @@ async def run_tests():
     check("Cooldown set after signal", bool(cooldown_exists), f"key={cooldown_key}")
 
     cooldown_ttl = await r.ttl(cooldown_key)
-    check("Cooldown TTL reasonable", 0 < cooldown_ttl <= settings.cooldown_sec, f"ttl={cooldown_ttl}s")
+    check(
+        "Cooldown TTL reasonable", 0 < cooldown_ttl <= settings.cooldown_sec, f"ttl={cooldown_ttl}s"
+    )
 
     # ═══════════════════════════════════════════════
     # TEST 3: Duplicate suppression — same symbol+strategy
@@ -245,7 +246,7 @@ async def run_tests():
     print("\n--- NO TRIGGER ---")
 
     # Warmup INFY
-    for i in range(settings.warmup_ticks + 1):
+    for _i in range(settings.warmup_ticks + 1):
         features = _no_trigger_features("TEST_INFY", now_us())
         await engine.process_feature(features)
 
@@ -275,21 +276,32 @@ async def run_tests():
     # Read latest signal from stream
     msgs = await r.xrevrange(STREAM_SCAN_SIGNALS, count=5)
     found_test_signal = False
-    for msg_id, fields in msgs:
+    for _msg_id, fields in msgs:
         raw_data = fields.get(b"data")
         if raw_data:
-            et, ver, ts, rx, payload = decode_event(raw_data)
+            _et, ver, _ts, _rx, payload = decode_event(raw_data)
             if payload.get("symbol") == "TEST_RELIANCE":
                 found_test_signal = True
                 check("Stream signal has signal_id", "signal_id" in payload)
-                check("Stream signal has strategy_id", payload.get("strategy_id") == "vol_vwap_breakout")
+                check(
+                    "Stream signal has strategy_id",
+                    payload.get("strategy_id") == "vol_vwap_breakout",
+                )
                 check("Stream signal has conviction_score", payload.get("conviction_score", 0) > 0)
-                check("Stream signal has explanation", len(payload.get("explanation", [])) > 0,
-                      f"explanations={len(payload.get('explanation', []))}")
-                check("Stream signal has conditions_met", len(payload.get("conditions_met", {})) == 7,
-                      f"conditions={len(payload.get('conditions_met', {}))}")
+                check(
+                    "Stream signal has explanation",
+                    len(payload.get("explanation", [])) > 0,
+                    f"explanations={len(payload.get('explanation', []))}",
+                )
+                check(
+                    "Stream signal has conditions_met",
+                    len(payload.get("conditions_met", {})) == 7,
+                    f"conditions={len(payload.get('conditions_met', {}))}",
+                )
                 check("Stream signal has entry_price", payload.get("entry_price", 0) > 0)
-                check("Stream signal has invalidation_price", payload.get("invalidation_price", 0) > 0)
+                check(
+                    "Stream signal has invalidation_price", payload.get("invalidation_price", 0) > 0
+                )
                 check("Stream signal not suppressed", payload.get("suppressed") is False)
                 check("Stream signal version = 2", ver == 2, f"version={ver}")
                 break
@@ -303,14 +315,16 @@ async def run_tests():
 
     msgs_sup = await r.xrevrange(STREAM_SCAN_SUPPRESSED, count=5)
     found_suppressed = False
-    for msg_id, fields in msgs_sup:
+    for _msg_id, fields in msgs_sup:
         raw_data = fields.get(b"data")
         if raw_data:
-            et, ver, ts, rx, payload = decode_event(raw_data)
+            _et, ver, _ts, _rx, payload = decode_event(raw_data)
             if payload.get("symbol") == "TEST_RELIANCE":
                 found_suppressed = True
-                check("Suppressed signal has suppression_reason",
-                      payload.get("suppression_reason") in ("duplicate_active", "cooldown_active"))
+                check(
+                    "Suppressed signal has suppression_reason",
+                    payload.get("suppression_reason") in ("duplicate_active", "cooldown_active"),
+                )
                 check("Suppressed signal suppressed=True", payload.get("suppressed") is True)
                 check("Suppressed signal has signal_id", "signal_id" in payload)
                 break
@@ -323,6 +337,7 @@ async def run_tests():
     print("\n--- DETERMINISM ---")
 
     from scanner.scoring import compute_conviction
+
     features_snap = _breakout_features("TEST_RELIANCE", now_us())
     score1, subs1 = compute_conviction(features_snap)
     score2, subs2 = compute_conviction(features_snap)
@@ -336,9 +351,17 @@ async def run_tests():
 
     stats = engine.stats
     check("Evaluations > 0", stats["evaluations"] > 0, f"evaluations={stats['evaluations']}")
-    check("Signals emitted >= 1", stats["signals_emitted"] >= 1, f"emitted={stats['signals_emitted']}")
-    check("Signals suppressed >= 1", stats["signals_suppressed"] >= 1, f"suppressed={stats['signals_suppressed']}")
-    check("Symbols tracked >= 1", stats["symbols_tracked"] >= 1, f"tracked={stats['symbols_tracked']}")
+    check(
+        "Signals emitted >= 1", stats["signals_emitted"] >= 1, f"emitted={stats['signals_emitted']}"
+    )
+    check(
+        "Signals suppressed >= 1",
+        stats["signals_suppressed"] >= 1,
+        f"suppressed={stats['signals_suppressed']}",
+    )
+    check(
+        "Symbols tracked >= 1", stats["symbols_tracked"] >= 1, f"tracked={stats['symbols_tracked']}"
+    )
 
     # ═══════════════════════════════════════════════
     # Cleanup test keys

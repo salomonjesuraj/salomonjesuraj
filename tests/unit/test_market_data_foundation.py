@@ -1,24 +1,35 @@
 from types import SimpleNamespace
 
+from api.routes.charts import _aggregate, _merge_bars
 from feature_engine.bar_builder import update_bars
 from feature_engine.engine import FeatureEngine
 from feature_engine.features.volume import get_relative_volume
 from feature_engine.state import SymbolState
-from api.routes.charts import _aggregate, _merge_bars
 
 
 def config():
     return SimpleNamespace(
-        batch_max_ticks=200, batch_timer_ms=5, rsi_period=14,
-        macd_fast=12, macd_slow=26, macd_signal=9, atr_period=14,
-        bb_period=20, cci_period=20,
+        batch_max_ticks=200,
+        batch_timer_ms=5,
+        rsi_period=14,
+        macd_fast=12,
+        macd_slow=26,
+        macd_signal=9,
+        atr_period=14,
+        bb_period=20,
+        cci_period=20,
     )
 
 
 def tick(ts_ms, price, cumulative_volume):
     return {
-        "symbol": "TEST", "ltp": price, "open": 100, "high": 102,
-        "low": 99, "close": 100, "volume": cumulative_volume,
+        "symbol": "TEST",
+        "ltp": price,
+        "open": 100,
+        "high": 102,
+        "low": 99,
+        "close": 100,
+        "volume": cumulative_volume,
         "exchange_timestamp_ms": ts_ms,
     }
 
@@ -31,7 +42,12 @@ def test_bar_builder_uses_incremental_not_cumulative_volume():
     completed = update_bars(state, 102, 10, start + 60_000)
     one_minute = next(bar for timeframe, bar in completed if timeframe == 1)
     assert one_minute.volume == 25
-    assert (one_minute.open, one_minute.high, one_minute.low, one_minute.close) == (100, 101, 100, 101)
+    assert (one_minute.open, one_minute.high, one_minute.low, one_minute.close) == (
+        100,
+        101,
+        100,
+        101,
+    )
 
 
 def test_indicators_advance_only_when_one_minute_bar_closes():

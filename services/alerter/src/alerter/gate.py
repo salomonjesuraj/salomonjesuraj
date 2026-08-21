@@ -25,17 +25,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import structlog
+from infusion_streams.constants import (
+    KEY_ALERT_BURST,
+    KEY_ALERT_COOLDOWN_PREFIX,
+    KEY_ALERT_DELIVERED,
+    KEY_ALERT_MUTE_STRATEGIES,
+    KEY_ALERT_MUTE_SYMBOLS,
+    KEY_ALERT_RATE,
+)
 from redis.asyncio import Redis
 
 from alerter.config import AlerterSettings
-from infusion_streams.constants import (
-    KEY_ALERT_COOLDOWN_PREFIX,
-    KEY_ALERT_RATE,
-    KEY_ALERT_BURST,
-    KEY_ALERT_DELIVERED,
-    KEY_ALERT_MUTE_SYMBOLS,
-    KEY_ALERT_MUTE_STRATEGIES,
-)
 
 logger = structlog.get_logger()
 
@@ -168,9 +168,7 @@ class DeliveryGate:
 
         return DeliveryResult(passed=True, priority_tier=tier)
 
-    async def record_delivery(
-        self, signal_id: str, symbol: str, cooldown_sec: int
-    ) -> None:
+    async def record_delivery(self, signal_id: str, symbol: str, cooldown_sec: int) -> None:
         """Record a successful delivery: set cooldown, increment counters.
 
         Called after successful Telegram send.
@@ -216,6 +214,4 @@ class DeliveryGate:
 
     async def is_strategy_muted(self, strategy_id: str) -> bool:
         """Check if a strategy is in the mute set."""
-        return bool(
-            await self.redis.sismember(KEY_ALERT_MUTE_STRATEGIES, strategy_id)
-        )
+        return bool(await self.redis.sismember(KEY_ALERT_MUTE_STRATEGIES, strategy_id))

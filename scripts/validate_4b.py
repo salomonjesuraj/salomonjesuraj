@@ -7,13 +7,9 @@ Usage:
     python -X utf8 scripts/validate_4b.py
 """
 
-import asyncio
-import json
 import os
 import sys
 import time
-import uuid
-from datetime import date, datetime, timezone, timedelta
 
 base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 for lib in ("infusion-models", "infusion-streams", "infusion-common"):
@@ -51,13 +47,15 @@ def main():
 
     try:
         from archiver.analytics import SignalAnalytics
+
         check("SignalAnalytics imports", True)
     except Exception as e:
         check("SignalAnalytics imports", False, str(e))
         return
 
     try:
-        from archiver.recap import format_recap, generate_and_publish_recap
+        from archiver.recap import format_recap
+
         check("Recap imports", True)
     except Exception as e:
         check("Recap imports", False, str(e))
@@ -65,6 +63,7 @@ def main():
 
     try:
         from alerter.engine import AlerterEngine
+
         check("AlerterEngine imports", True)
     except Exception as e:
         check("AlerterEngine imports", False, str(e))
@@ -72,6 +71,7 @@ def main():
 
     try:
         from api.routes.analytics import routes as analytics_routes
+
         check("Analytics routes import", True)
     except Exception as e:
         check("Analytics routes import", False, str(e))
@@ -115,24 +115,63 @@ def main():
             "avg_time_to_stop_min": 8.3,
         },
         "by_grade": [
-            {"grade": "A+", "total": 2, "target_hits": 2, "stop_hits": 0,
-             "expired": 0, "precision_pct": 100.0, "avg_score": 95.0},
-            {"grade": "A", "total": 3, "target_hits": 1, "stop_hits": 1,
-             "expired": 1, "precision_pct": 50.0, "avg_score": 82.0},
+            {
+                "grade": "A+",
+                "total": 2,
+                "target_hits": 2,
+                "stop_hits": 0,
+                "expired": 0,
+                "precision_pct": 100.0,
+                "avg_score": 95.0,
+            },
+            {
+                "grade": "A",
+                "total": 3,
+                "target_hits": 1,
+                "stop_hits": 1,
+                "expired": 1,
+                "precision_pct": 50.0,
+                "avg_score": 82.0,
+            },
         ],
         "by_session": [
-            {"session": "opening", "total": 4, "target_hits": 3, "stop_hits": 1,
-             "precision_pct": 75.0, "avg_score": 85.0},
-            {"session": "midday", "total": 1, "target_hits": 0, "stop_hits": 0,
-             "precision_pct": None, "avg_score": 70.0},
+            {
+                "session": "opening",
+                "total": 4,
+                "target_hits": 3,
+                "stop_hits": 1,
+                "precision_pct": 75.0,
+                "avg_score": 85.0,
+            },
+            {
+                "session": "midday",
+                "total": 1,
+                "target_hits": 0,
+                "stop_hits": 0,
+                "precision_pct": None,
+                "avg_score": 70.0,
+            },
         ],
         "by_sector": [
-            {"sector_id": "NIFTY_50", "total": 3, "target_hits": 2, "stop_hits": 1,
-             "precision_pct": 66.7, "avg_sector_strength": 72.0, "avg_score": 84.0},
+            {
+                "sector_id": "NIFTY_50",
+                "total": 3,
+                "target_hits": 2,
+                "stop_hits": 1,
+                "precision_pct": 66.7,
+                "avg_sector_strength": 72.0,
+                "avg_score": 84.0,
+            },
         ],
         "by_regime": [
-            {"regime": "risk_on", "total": 5, "target_hits": 3, "stop_hits": 1,
-             "precision_pct": 75.0, "avg_score": 82.5},
+            {
+                "regime": "risk_on",
+                "total": 5,
+                "target_hits": 3,
+                "stop_hits": 1,
+                "precision_pct": 75.0,
+                "avg_score": 82.5,
+            },
         ],
         "suppression": {
             "total_suppressed": 7,
@@ -168,6 +207,7 @@ def main():
     print("\n--- ALERTER RECAP SUPPORT ---")
 
     import inspect
+
     engine_source = inspect.getsource(AlerterEngine.process_signal)
     check("Engine has recap detection", "recap" in engine_source)
     check("Engine has _deliver_recap method", hasattr(AlerterEngine, "_deliver_recap"))
@@ -181,22 +221,25 @@ def main():
     print("\n--- TELEGRAM PARSE MODE ---")
 
     from alerter.telegram import TelegramClient
+
     tg_source = inspect.getsource(TelegramClient.send_message)
-    check("Telegram conditionally includes parse_mode",
-          "if parse_mode" in tg_source)
+    check("Telegram conditionally includes parse_mode", "if parse_mode" in tg_source)
 
     # ═══════════════════════════════════════════════
     # ANALYTICS API ROUTES
     # ═══════════════════════════════════════════════
     print("\n--- ANALYTICS API ROUTES ---")
 
-    route_paths = [r.resource.canonical for r in analytics_routes if hasattr(r, "resource")]
-    check("Route /api/analytics/precision",
-          any("/api/analytics/precision" in str(r) for r in analytics_routes),
-          f"routes={len(analytics_routes)}")
+    [r.resource.canonical for r in analytics_routes if hasattr(r, "resource")]
+    check(
+        "Route /api/analytics/precision",
+        any("/api/analytics/precision" in str(r) for r in analytics_routes),
+        f"routes={len(analytics_routes)}",
+    )
 
     # Check API main imports
     import api.main as api_main_mod
+
     api_source = inspect.getsource(api_main_mod)
     check("API imports analytics_routes", "analytics_routes" in api_source)
     check("API imports asyncpg", "asyncpg" in api_source)
@@ -209,12 +252,12 @@ def main():
     print("\n--- ARCHIVER RECAP SCHEDULER ---")
 
     import archiver.main as archiver_main
-    check("_recap_scheduler function exists",
-          hasattr(archiver_main, "_recap_scheduler"))
-    check("Archiver imports analytics",
-          "SignalAnalytics" in inspect.getsource(archiver_main))
-    check("Archiver imports recap",
-          "generate_and_publish_recap" in inspect.getsource(archiver_main))
+
+    check("_recap_scheduler function exists", hasattr(archiver_main, "_recap_scheduler"))
+    check("Archiver imports analytics", "SignalAnalytics" in inspect.getsource(archiver_main))
+    check(
+        "Archiver imports recap", "generate_and_publish_recap" in inspect.getsource(archiver_main)
+    )
 
     # ═══════════════════════════════════════════════
     # INFRASTRUCTURE
@@ -222,14 +265,12 @@ def main():
     print("\n--- INFRASTRUCTURE ---")
 
     import pathlib
+
     root = pathlib.Path(base)
 
-    check("analytics.py exists",
-          (root / "services/archiver/src/archiver/analytics.py").exists())
-    check("recap.py exists",
-          (root / "services/archiver/src/archiver/recap.py").exists())
-    check("analytics routes exists",
-          (root / "services/api/src/api/routes/analytics.py").exists())
+    check("analytics.py exists", (root / "services/archiver/src/archiver/analytics.py").exists())
+    check("recap.py exists", (root / "services/archiver/src/archiver/recap.py").exists())
+    check("analytics routes exists", (root / "services/api/src/api/routes/analytics.py").exists())
 
     # API Dockerfile includes archiver
     api_dockerfile = (root / "services/api/Dockerfile").read_text()

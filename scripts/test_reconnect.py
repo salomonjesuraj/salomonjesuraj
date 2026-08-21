@@ -12,13 +12,13 @@ WARNING: This script will restart Docker containers. Run against dev only.
 """
 
 import asyncio
+import contextlib
 import subprocess
 import sys
 import time
 
 import msgpack
 from redis.asyncio import Redis
-
 
 RESULTS = {"pass": 0, "fail": 0, "skip": 0}
 
@@ -34,7 +34,7 @@ def log_result(status, name, detail=""):
 
 def docker_compose(*args):
     """Run docker compose command."""
-    cmd = ["docker", "compose"] + list(args)
+    cmd = ["docker", "compose", *list(args)]
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
     return result.returncode == 0, result.stdout, result.stderr
 
@@ -50,10 +50,8 @@ async def wait_for_redis(redis_url, timeout=30):
             return True
         except Exception:
             await asyncio.sleep(0.5)
-    try:
+    with contextlib.suppress(Exception):
         await redis.aclose()
-    except Exception:
-        pass
     return False
 
 
@@ -78,11 +76,9 @@ async def wait_for_stream_growth(redis_url, stream, timeout=30):
                 return True, delta
         await redis.aclose()
         return False, 0
-    except Exception as e:
-        try:
+    except Exception:
+        with contextlib.suppress(Exception):
             await redis.aclose()
-        except Exception:
-            pass
         return False, 0
 
 
@@ -101,10 +97,8 @@ async def wait_for_health(redis_url, service, timeout=30):
         except Exception:
             pass
         await asyncio.sleep(1)
-    try:
+    with contextlib.suppress(Exception):
         await redis.aclose()
-    except Exception:
-        pass
     return False
 
 
@@ -152,7 +146,7 @@ async def test_redis_restart(redis_url):
     redis = Redis.from_url(redis_url, decode_responses=False)
     try:
         await redis.ping()
-        baseline_len = await redis.xlen("infusion:stream:tick:raw")
+        await redis.xlen("infusion:stream:tick:raw")
         await redis.aclose()
     except Exception as e:
         log_result("skip", "Redis restart", f"Redis not reachable: {e}")
@@ -177,7 +171,9 @@ async def test_redis_restart(redis_url):
     print("  Re-seeding symbols...")
     result = subprocess.run(
         [sys.executable, "scripts/seed_symbols.py"],
-        capture_output=True, text=True, timeout=15,
+        capture_output=True,
+        text=True,
+        timeout=15,
     )
     if result.returncode != 0:
         log_result("warn", "Symbol re-seed", f"failed: {result.stderr[:100]}")
@@ -231,7 +227,9 @@ async def test_partial_pipeline_restart(redis_url):
         log_result("fail", "Normalizer recovery", "no health after 30s")
 
     # 5. Verify normalization resumed
-    growing, delta = await wait_for_stream_growth(redis_url, "infusion:stream:tick:normalized", timeout=30)
+    growing, delta = await wait_for_stream_growth(
+        redis_url, "infusion:stream:tick:normalized", timeout=30
+    )
     if growing:
         log_result("pass", "Normalization resumed", f"+{delta} messages")
     else:

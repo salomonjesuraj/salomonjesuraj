@@ -35,6 +35,7 @@ print("\n--- ENUMS ---")
 
 def test_signal_lifecycle():
     from infusion_models.enums import SignalLifecycle
+
     assert SignalLifecycle.CANDIDATE == "candidate"
     assert SignalLifecycle.CONFIRMED == "confirmed"
     assert SignalLifecycle.ACTIVE == "active"
@@ -46,6 +47,7 @@ def test_signal_lifecycle():
 
 def test_market_regime():
     from infusion_models.enums import MarketRegime
+
     assert MarketRegime.TRENDING_UP == "trending_up"
     assert MarketRegime.TRENDING_DOWN == "trending_down"
     assert MarketRegime.RANGING == "ranging"
@@ -55,6 +57,7 @@ def test_market_regime():
 
 def test_pre_breakout_state():
     from infusion_models.enums import PreBreakoutState
+
     assert PreBreakoutState.IDLE == "idle"
     assert PreBreakoutState.COMPRESSING == "compressing"
     assert PreBreakoutState.ACCUMULATING == "accumulating"
@@ -65,8 +68,11 @@ def test_pre_breakout_state():
 
 def test_existing_enums_preserved():
     from infusion_models.enums import (
-        Exchange, Segment, Series, SignalType, ConvictionGrade, InstrumentTier
+        ConvictionGrade,
+        Exchange,
+        SignalType,
     )
+
     assert Exchange.NSE == "NSE"
     assert SignalType.BULLISH == "bullish"
     assert ConvictionGrade.A_PLUS == "A+"
@@ -86,8 +92,11 @@ print("\n--- SIGNAL MODELS ---")
 
 def test_scan_signal_v1_compat():
     from infusion_models.signal import ScanSignalV1
+
     s = ScanSignalV1(
-        symbol="RELIANCE", strategy="test", signal_type="bullish",
+        symbol="RELIANCE",
+        strategy="test",
+        signal_type="bullish",
         exchange_timestamp_ms=1700000000000,
     )
     assert s.symbol == "RELIANCE"
@@ -96,6 +105,7 @@ def test_scan_signal_v1_compat():
 
 def test_scan_signal_v2():
     from infusion_models.signal import ScanSignalV2
+
     sig_id = str(uuid.uuid4())
     s = ScanSignalV2(
         signal_id=sig_id,
@@ -148,6 +158,7 @@ def test_scan_signal_v2():
 
 def test_scan_signal_v2_defaults():
     from infusion_models.signal import ScanSignalV2
+
     s = ScanSignalV2(
         signal_id="test-id",
         symbol="INFY",
@@ -167,6 +178,7 @@ def test_scan_signal_v2_defaults():
 
 def test_scan_signal_v2_frozen():
     from infusion_models.signal import ScanSignalV2
+
     s = ScanSignalV2(
         signal_id="test-id",
         symbol="TCS",
@@ -175,7 +187,7 @@ def test_scan_signal_v2_frozen():
     )
     try:
         s.symbol = "CHANGED"
-        assert False, "Should be frozen"
+        raise AssertionError("Should be frozen")
     except Exception:
         pass  # Expected
 
@@ -194,6 +206,7 @@ print("\n--- EVENT TYPES ---")
 
 def test_event_types():
     from infusion_models.events import EventType
+
     assert EventType.SCAN_SIGNAL == "scan_signal"
     assert EventType.SCAN_SUPPRESSED == "scan_suppressed"
     assert EventType.RAW_TICK == "raw_tick"
@@ -215,8 +228,9 @@ print("\n--- SCHEMA REGISTRY ---")
 
 
 def test_current_versions():
-    from infusion_models.schema_registry import CURRENT_VERSIONS
     from infusion_models.events import EventType
+    from infusion_models.schema_registry import CURRENT_VERSIONS
+
     assert CURRENT_VERSIONS[EventType.SCAN_SIGNAL] == 2
     assert CURRENT_VERSIONS[EventType.SCAN_SUPPRESSED] == 2
     assert CURRENT_VERSIONS[EventType.RAW_TICK] == 1
@@ -224,8 +238,8 @@ def test_current_versions():
 
 
 def test_schema_lookup():
-    from infusion_models.schema_registry import get_schema, SCHEMA_REGISTRY
     from infusion_models.events import EventType
+    from infusion_models.schema_registry import get_schema
     from infusion_models.signal import ScanSignalV1, ScanSignalV2
 
     # V1 still resolvable
@@ -237,11 +251,12 @@ def test_schema_lookup():
 
 
 def test_schema_version_error():
-    from infusion_models.schema_registry import get_schema, SchemaVersionError
     from infusion_models.events import EventType
+    from infusion_models.schema_registry import SchemaVersionError, get_schema
+
     try:
         get_schema(EventType.SCAN_SIGNAL, 99)
-        assert False, "Should raise SchemaVersionError"
+        raise AssertionError("Should raise SchemaVersionError")
     except SchemaVersionError:
         pass
 
@@ -259,9 +274,11 @@ print("\n--- STREAM CONSTANTS ---")
 
 def test_new_streams():
     from infusion_streams.constants import (
-        STREAM_SCAN_SUPPRESSED, MAXLEN_SCAN_SUPPRESSED,
         CG_ALERT,
+        MAXLEN_SCAN_SUPPRESSED,
+        STREAM_SCAN_SUPPRESSED,
     )
+
     assert STREAM_SCAN_SUPPRESSED == "infusion:stream:scan:suppressed"
     assert MAXLEN_SCAN_SUPPRESSED == 5_000
     assert CG_ALERT == "alert-cg"
@@ -269,9 +286,13 @@ def test_new_streams():
 
 def test_scanner_keys():
     from infusion_streams.constants import (
-        KEY_SIGNAL_PREFIX, KEY_SIGNAL_ACTIVE, KEY_COOLDOWN_PREFIX,
-        KEY_PRE_BREAKOUT_PREFIX, KEY_SECTOR_PREFIX,
+        KEY_COOLDOWN_PREFIX,
+        KEY_PRE_BREAKOUT_PREFIX,
+        KEY_SECTOR_PREFIX,
+        KEY_SIGNAL_ACTIVE,
+        KEY_SIGNAL_PREFIX,
     )
+
     assert KEY_SIGNAL_PREFIX == "infusion:signal:"
     assert KEY_SIGNAL_ACTIVE == "infusion:signals:active"
     assert KEY_COOLDOWN_PREFIX == "infusion:cooldown:"
@@ -281,11 +302,14 @@ def test_scanner_keys():
 
 def test_existing_constants_preserved():
     from infusion_streams.constants import (
-        STREAM_TICK_RAW, STREAM_TICK_NORMALIZED, STREAM_FEATURE_COMPUTED,
-        STREAM_SCAN_SIGNALS, CG_NORMALIZER, CG_FEATURE, CG_SCANNER,
-        KEY_TICK_PREFIX, KEY_FEATURE_PREFIX, KEY_SYMBOLS,
-        MAXLEN_TICK_RAW, MAXLEN_SIGNALS, MAXLEN_DLQ,
+        CG_SCANNER,
+        MAXLEN_DLQ,
+        MAXLEN_SIGNALS,
+        MAXLEN_TICK_RAW,
+        STREAM_SCAN_SIGNALS,
+        STREAM_TICK_RAW,
     )
+
     assert STREAM_TICK_RAW == "infusion:stream:tick:raw"
     assert STREAM_SCAN_SIGNALS == "infusion:stream:scan:signals"
     assert CG_SCANNER == "scanner-cg"
@@ -306,8 +330,8 @@ print("\n--- CODEC ROUND-TRIP ---")
 
 
 def test_codec_signal_v2():
-    from infusion_streams.codec import encode_event, decode_event
     from infusion_models.events import EventType
+    from infusion_streams.codec import decode_event, encode_event
 
     payload = {
         "signal_id": "test-123",
@@ -319,7 +343,7 @@ def test_codec_signal_v2():
     encoded = encode_event(EventType.SCAN_SIGNAL, payload, 1700000000000000)
     assert isinstance(encoded, bytes)
 
-    et, ver, ts, rx, data = decode_event(encoded)
+    et, ver, _ts, rx, data = decode_event(encoded)
     assert et == EventType.SCAN_SIGNAL
     assert ver == 2  # current version
     assert rx == 1700000000000000
@@ -328,8 +352,8 @@ def test_codec_signal_v2():
 
 
 def test_codec_suppressed_v2():
-    from infusion_streams.codec import encode_event, decode_event
     from infusion_models.events import EventType
+    from infusion_streams.codec import decode_event, encode_event
 
     payload = {
         "signal_id": "test-456",
@@ -340,7 +364,7 @@ def test_codec_suppressed_v2():
         "suppression_reason": "cooldown_active",
     }
     encoded = encode_event(EventType.SCAN_SUPPRESSED, payload, 1700000000000000)
-    et, ver, ts, rx, data = decode_event(encoded)
+    et, ver, _ts, _rx, data = decode_event(encoded)
     assert et == EventType.SCAN_SUPPRESSED
     assert ver == 2
     assert data["suppressed"] is True

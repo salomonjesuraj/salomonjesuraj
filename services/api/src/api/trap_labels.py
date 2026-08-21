@@ -32,9 +32,11 @@ from __future__ import annotations
 
 import json
 
-FALSE_BREAK_FAST_STOP_MIN = 15.0  # a STOP_HIT within this many minutes of firing reads as a false break
-MIN_SAMPLE_FOR_RATE = 20          # don't report a rate off a handful of decided signals
-MIN_SAMPLE_PER_BUCKET = 15        # same shape as Feature-IC's min_side
+FALSE_BREAK_FAST_STOP_MIN = (
+    15.0  # a STOP_HIT within this many minutes of firing reads as a false break
+)
+MIN_SAMPLE_FOR_RATE = 20  # don't report a rate off a handful of decided signals
+MIN_SAMPLE_PER_BUCKET = 15  # same shape as Feature-IC's min_side
 
 
 def classify_false_break(outcome_label: str | None, time_to_stop_min: float | None) -> bool | None:
@@ -100,12 +102,14 @@ async def compute_false_break_stats(pool, days: int = 90) -> dict:
             continue
         sub_scores = _decode_json(d.get("sub_scores"))
         trap = (sub_scores.get("trap_risk") or {}).get("trap_risk_score")
-        rows.append({
-            "false_break": label,
-            "strategy_id": d.get("strategy"),
-            "conviction_grade": d.get("conviction_grade"),
-            "trap_risk_score": trap,
-        })
+        rows.append(
+            {
+                "false_break": label,
+                "strategy_id": d.get("strategy"),
+                "conviction_grade": d.get("conviction_grade"),
+                "trap_risk_score": trap,
+            }
+        )
 
     total_labeled = len(rows)
     overall_rate = _rate([r["false_break"] for r in rows])
@@ -117,11 +121,21 @@ async def compute_false_break_stats(pool, days: int = 90) -> dict:
         by_grade.setdefault(r["conviction_grade"] or "unknown", []).append(r["false_break"])
 
     strategy_breakdown = [
-        {"strategy_id": k, "n": len(v), "false_break_rate_pct": _rate(v), "reliable": len(v) >= MIN_SAMPLE_FOR_RATE}
+        {
+            "strategy_id": k,
+            "n": len(v),
+            "false_break_rate_pct": _rate(v),
+            "reliable": len(v) >= MIN_SAMPLE_FOR_RATE,
+        }
         for k, v in sorted(by_strategy.items(), key=lambda kv: -len(kv[1]))
     ]
     grade_breakdown = [
-        {"conviction_grade": k, "n": len(v), "false_break_rate_pct": _rate(v), "reliable": len(v) >= MIN_SAMPLE_FOR_RATE}
+        {
+            "conviction_grade": k,
+            "n": len(v),
+            "false_break_rate_pct": _rate(v),
+            "reliable": len(v) >= MIN_SAMPLE_FOR_RATE,
+        }
         for k, v in sorted(by_grade.items(), key=lambda kv: -len(kv[1]))
     ]
 
@@ -140,12 +154,19 @@ async def compute_false_break_stats(pool, days: int = 90) -> dict:
         by_bucket[bucket].append(r["false_break"])
 
     bucket_breakdown = [
-        {"trap_risk_bucket": k, "n": len(v), "false_break_rate_pct": _rate(v), "reliable": len(v) >= MIN_SAMPLE_PER_BUCKET}
+        {
+            "trap_risk_bucket": k,
+            "n": len(v),
+            "false_break_rate_pct": _rate(v),
+            "reliable": len(v) >= MIN_SAMPLE_PER_BUCKET,
+        }
         for k, v in by_bucket.items()
     ]
-    heuristic_reliable = scored_n >= MIN_SAMPLE_FOR_RATE and all(
-        len(v) >= MIN_SAMPLE_PER_BUCKET for v in by_bucket.values() if v
-    ) and sum(1 for v in by_bucket.values() if v) >= 2
+    heuristic_reliable = (
+        scored_n >= MIN_SAMPLE_FOR_RATE
+        and all(len(v) >= MIN_SAMPLE_PER_BUCKET for v in by_bucket.values() if v)
+        and sum(1 for v in by_bucket.values() if v) >= 2
+    )
 
     return {
         "available": True,
@@ -164,7 +185,7 @@ async def compute_false_break_stats(pool, days: int = 90) -> dict:
             "note": (
                 "Only signals fired after EB-9 increment 1 deployed carry a real "
                 "trap_risk_score -- this sample grows over time. A reliable read needs "
-                f"a real 'high' bucket false-break rate meaningfully above the 'low' "
+                "a real 'high' bucket false-break rate meaningfully above the 'low' "
                 "bucket's; until n_scored is large enough this is not yet checkable."
             ),
         },

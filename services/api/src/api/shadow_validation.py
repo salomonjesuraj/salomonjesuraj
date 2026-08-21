@@ -36,13 +36,15 @@ from __future__ import annotations
 
 import json
 
-from api.trap_labels import compute_false_break_stats
 from api.ml_classifier import read_cached_model
+from api.trap_labels import compute_false_break_stats
 
 GATE_B_MIN_EPISODES = 300
 GATE_B_MIN_SESSIONS = 25
-SYMBOL_DOMINANCE_WARN_PCT = 20.0   # any single symbol above this share of episodes is a real concentration flag
-MIN_COMPARISON_SAMPLE = 30         # don't compare EBIE-verdict vs baseline precision on a tiny sample
+SYMBOL_DOMINANCE_WARN_PCT = (
+    20.0  # any single symbol above this share of episodes is a real concentration flag
+)
+MIN_COMPARISON_SAMPLE = 30  # don't compare EBIE-verdict vs baseline precision on a tiny sample
 
 
 def _decode_json(raw) -> dict:
@@ -73,10 +75,26 @@ async def _fetch_episodes(pool):
 
 def _gate_a(episode_count: int) -> dict:
     checklist = [
-        {"item": "Purged walk-forward CV (no leakage across train/test split)", "status": "verified", "evidence": "Phase 13.3, commit history"},
-        {"item": "Episode-freeze mechanism (no repainting of entry/SL/target within an episode)", "status": "verified", "evidence": "Phase W + EB-1's EpisodeManager"},
-        {"item": "Deterministic replay (same feature snapshot -> same score)", "status": "verified", "evidence": "feature_versions/pure scoring functions throughout EB-1..EB-12"},
-        {"item": "Reproducible feature snapshots (sub_scores/features_snapshot archived per signal)", "status": "verified", "evidence": "archiver JSONB persistence"},
+        {
+            "item": "Purged walk-forward CV (no leakage across train/test split)",
+            "status": "verified",
+            "evidence": "Phase 13.3, commit history",
+        },
+        {
+            "item": "Episode-freeze mechanism (no repainting of entry/SL/target within an episode)",
+            "status": "verified",
+            "evidence": "Phase W + EB-1's EpisodeManager",
+        },
+        {
+            "item": "Deterministic replay (same feature snapshot -> same score)",
+            "status": "verified",
+            "evidence": "feature_versions/pure scoring functions throughout EB-1..EB-12",
+        },
+        {
+            "item": "Reproducible feature snapshots (sub_scores/features_snapshot archived per signal)",
+            "status": "verified",
+            "evidence": "archiver JSONB persistence",
+        },
     ]
     return {
         "checklist": checklist,
@@ -186,7 +204,11 @@ async def compute_shadow_validation_report(pool, redis, days: int = 90) -> dict:
     gate_b = _gate_b(rows)
     precision = _precision_comparison(rows)
     false_break = await compute_false_break_stats(pool, days=days)
-    cached_model = await read_cached_model(redis) if redis else {"available": False, "reason": "Redis unavailable."}
+    cached_model = (
+        await read_cached_model(redis)
+        if redis
+        else {"available": False, "reason": "Redis unavailable."}
+    )
     model_calibration = cached_model.get("calibration") or {}
 
     return {
@@ -202,7 +224,9 @@ async def compute_shadow_validation_report(pool, redis, days: int = 90) -> dict:
         "calibration": {
             "model_available": cached_model.get("available"),
             "model_reliable": cached_model.get("reliable"),
-            "calibration_available": model_calibration.get("available") if cached_model.get("available") else None,
+            "calibration_available": model_calibration.get("available")
+            if cached_model.get("available")
+            else None,
             "platt_ece": (model_calibration.get("platt") or {}).get("ece"),
             "isotonic_ece": (model_calibration.get("isotonic") or {}).get("ece"),
         },
