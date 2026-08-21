@@ -25,7 +25,9 @@ import time
 import structlog
 
 from api.option_chain_queue import build_candidates
-from api.options_analytics_v2 import compute_pcr_velocity, compute_wall_dynamics, compute_weighted_pcr
+from api.options_analytics_v2 import (
+    compute_pcr_acceleration, compute_pcr_velocity, compute_wall_dynamics, compute_weighted_pcr,
+)
 from api.routes.market import _fetch_full_option_chain
 
 logger = structlog.get_logger()
@@ -61,12 +63,19 @@ async def sweep_once(app) -> dict:
             prev = json.loads(prev_raw) if prev_raw else None
             prev_wall = (prev or {}).get("wall")
             prev_pcr = (prev or {}).get("weighted_pcr", {}).get("weighted_pcr") if prev else None
+            prev_velocity = (prev or {}).get("pcr_velocity") if prev else None
 
             weighted = compute_weighted_pcr(rows, spot)
             wall = compute_wall_dynamics(rows, prev_wall)
             velocity = compute_pcr_velocity(
                 weighted.get("weighted_pcr") if weighted else None, prev_pcr
             )
+            # EBIE EB-15 Phase 5 item 8 -- OI acceleration, the second
+            # derivative. Needs the PREVIOUS sweep's own velocity value
+            # (not recomputed from a 2-sweeps-back PCR), same "state
+            # carries forward one field at a time" shape velocity itself
+            # already uses one line up.
+            acceleration = compute_pcr_acceleration(velocity, prev_velocity)
 
             state = {
                 "symbol": symbol,
@@ -74,6 +83,7 @@ async def sweep_once(app) -> dict:
                 "expiry": chain.get("expiry"),
                 "weighted_pcr": weighted,
                 "pcr_velocity": velocity,
+                "pcr_acceleration": acceleration,
                 "wall": wall,
                 "updated_at": int(time.time()),
             }

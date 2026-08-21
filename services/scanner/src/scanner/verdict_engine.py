@@ -96,6 +96,35 @@ scoped follow-up -- see this phase's own commit message for what's
 already symmetric today (CLV/accumulation, and all 8 alignment.py
 families) versus what still needs new logic (VCP's genuinely bull-only-
 by-construction compression read).
+
+EBIE EB-15 Phase 5 (P4: Upgrade Option-Chain Intelligence, items 8+9):
+
+Item 8's "demote static PCR/Max Pain" half was already true before this
+phase touched anything -- verified, not assumed: grep confirmed
+weighted_pcr only ever lands in features_snapshot (informational
+display), never in a scoring function or candidate gate, and the
+options_positioning family above has excluded PCR LEVEL/highest-OI-as-
+support-resistance since EB-8 shipped (Q3.4). What item 8 actually
+needed was the "required replacement" list's OI acceleration (the
+second derivative of weighted PCR, api/options_analytics_v2.py's new
+compute_pcr_acceleration()) -- velocity itself, and strike-wise wall-
+state classification, already existed from EB-5.
+
+Item 9 (option tradeability) closes a gap EB-8's own original pass
+explicitly disclosed as out of scope ("option-quote/liquidity gates
+need live option-chain data this module doesn't have"). That data
+already exists -- api/routes/market.py's _upstox_option_context()
+already computes a real execution_status (TRADE_READY/WAIT_CONTRACT/
+CHAIN_PENDING/AVOID_CONTRACT) with real hard_blockers, already shown on
+the dashboard's Option Basis panel (R6) -- it just never reached this
+module's own hard-gate check. _hard_gates() now rejects a candidate
+with a literal "OPTION_NOT_TRADEABLE" reason whenever real cached chain
+data shows AVOID_CONTRACT, regardless of how strong the underlying
+evidence looks -- directly matching the directive's own acceptance
+criterion ("a strong underlying setup can still be rejected if the
+option contract is untradeable"). Only acts on real, present cache data
+(30s TTL, a genuine miss between sweeps is common and never treated as
+a rejection) -- never fabricates tradeability from absence.
 """
 
 from __future__ import annotations
@@ -386,13 +415,18 @@ FAMILY_DESCRIPTIONS = {
 
 def _hard_gates(
     *, fo_banned: bool, data_quality_score, entry_price, invalidation_price,
-    tick_lag_ms, session_gap_ms,
+    tick_lag_ms, session_gap_ms, option_chain_context,
 ) -> list[str]:
     """Per docs/EBIE-IMPLEMENTATION-ANSWERS.md Q6.1's authorized hard-
-    gate list -- only the subset checkable from data already available
-    at verdict-compute time (option-quote/liquidity gates need live
-    option-chain data this module doesn't have; explicitly not built
-    here, disclosed rather than guessed at)."""
+    gate list. EB-15 Phase 5 item 9 closes the one gap that list's own
+    original comment disclosed as out of scope: option-quote/liquidity
+    gates now DO reach this module, via option_chain_context (the real,
+    already-computed AVOID_CONTRACT/hard_blockers read from
+    api/routes/market.py's _upstox_option_context() -- see
+    engine.py's _fetch_option_chain_context_cache()). Only acts when
+    real chain data is actually cached -- a missing/stale cache (30s
+    TTL, genuinely common between sweeps) is never treated as a
+    rejection, matching this whole module's "never fabricate" rule."""
     gates: list[str] = []
     if fo_banned:
         gates.append("F&O ban in effect")
@@ -408,6 +442,10 @@ def _hard_gates(
         gates.append(f"Stale underlying quote (tick_lag_ms={tick_lag_ms})")
     if session_gap_ms is not None and session_gap_ms > 120_000:
         gates.append(f"Feed gap detected (session_gap_ms={session_gap_ms})")
+    if (option_chain_context or {}).get("execution_status") == "AVOID_CONTRACT":
+        blockers = (option_chain_context or {}).get("hard_blockers") or []
+        detail = f" ({'; '.join(str(b) for b in blockers[:2])})" if blockers else ""
+        gates.append(f"OPTION_NOT_TRADEABLE{detail}")
     return gates
 
 
@@ -456,6 +494,7 @@ def compute_verdict(
     options_dynamics_cache: dict,
     market_context_cache: dict,
     rel_vol_20d,
+    option_chain_context: dict,
     ma_regime: dict | None,
     donchian: dict | None,
     wyckoff_sos_sow: dict | None,
@@ -545,6 +584,7 @@ def compute_verdict(
         fo_banned=fo_banned, data_quality_score=data_quality_score,
         entry_price=entry_price, invalidation_price=invalidation_price,
         tick_lag_ms=tick_lag_ms, session_gap_ms=session_gap_ms,
+        option_chain_context=option_chain_context,
     )
 
     if hard_gate_reasons:

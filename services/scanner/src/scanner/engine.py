@@ -165,6 +165,13 @@ class ScannerEngine:
         if market_context_cache is not None:
             payload = {**payload, "market_context_cache": market_context_cache}
 
+        # EBIE EB-15 Phase 5 item 9: real option-chain execution status
+        # (option_chain_queue.py's own cache) for the option-tradeability
+        # hard gate. Same best-effort pattern as every cache above.
+        option_chain_context = await self._fetch_option_chain_context_cache(symbol)
+        if option_chain_context is not None:
+            payload = {**payload, "option_chain_context": option_chain_context}
+
         # Run all registered strategies
         strategies = get_strategies()
         for strategy in strategies:
@@ -374,6 +381,27 @@ class ScannerEngine:
         except Exception:
             return None
 
+    async def _fetch_option_chain_context_cache(self, symbol: str) -> dict | None:
+        """Best-effort read of api/routes/market.py's own
+        infusion:option-chain:{symbol} cache (_upstox_option_context()'s
+        real execution_status/hard_blockers/gates -- the exact same data
+        the dashboard's Option Basis panel already shows) -- EBIE EB-15
+        Phase 5 item 9. Populated by option_chain_queue.py's candidate
+        sweep (~60s, a real Upstox chain fetch) or an on-demand dashboard
+        view; only 30s TTL, so a genuine cache miss for an actively-
+        covered symbol is expected between refreshes, not a bug -- the
+        option-tradeability gate below only ever acts on data it
+        actually has, never on absence. Never raises into the hot path,
+        same convention as every other best-effort cache read here."""
+        try:
+            raw = await self.redis.get(f"infusion:option-chain:{symbol.upper()}")
+            if not raw:
+                return None
+            text = raw.decode() if isinstance(raw, bytes) else raw
+            return json.loads(text)
+        except Exception:
+            return None
+
     async def _fetch_active_portfolio(self) -> list[dict]:
         """Best-effort read of every currently-active signal's key
         portfolio-relevant fields -- EBIE EB-11's "current open
@@ -565,6 +593,7 @@ class ScannerEngine:
             options_dynamics_cache=features.get("options_dynamics_cache") or {},
             market_context_cache=features.get("market_context_cache") or {},
             rel_vol_20d=fs.get("rel_vol_20d"),
+            option_chain_context=features.get("option_chain_context") or {},
             ma_regime=mtf_cache.get("ma_regime"),
             donchian=mtf_cache.get("donchian"),
             wyckoff_sos_sow=mtf_cache.get("wyckoff_sos_sow"),

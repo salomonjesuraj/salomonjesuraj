@@ -78,6 +78,21 @@ def compute_pcr_velocity(current_pcr: float | None, prev_pcr: float | None) -> f
     return round(current_pcr - prev_pcr, 3)
 
 
+def compute_pcr_acceleration(current_velocity: float | None, prev_velocity: float | None) -> float | None:
+    """EBIE EB-15 Phase 5 item 8's own "OI velocity, OI ACCELERATION"
+    requirement -- the second derivative, same shape as
+    compute_pcr_velocity() one level up (a delta-of-the-delta, not a
+    fresh recomputation). None (not 0.0) whenever either input is
+    genuinely unavailable -- needs at least 3 real sweeps of history
+    (2 velocities) before this can mean anything, so it stays honestly
+    absent for the first sweep after a symbol enters coverage and the
+    one right after that, not a fabricated flat 0.
+    """
+    if current_velocity is None or prev_velocity is None:
+        return None
+    return round(current_velocity - prev_velocity, 3)
+
+
 def _classify_strike_state(current_oi: float, prev_oi: float | None) -> str:
     """strengthening / weakening / stable / new / abandoned -- per
     docs/EBIE-BLUEPRINT.md Section 4.8.3's wall-state vocabulary
