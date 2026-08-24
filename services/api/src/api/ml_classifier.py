@@ -47,6 +47,9 @@ import json
 import math
 import time
 from datetime import UTC, datetime
+from typing import Any
+
+Payload = dict[str, Any]
 
 # api.routes.backtest imports train_classifier/read_cached_model FROM this
 # module (to expose them as routes), so importing it back here at module
@@ -83,7 +86,7 @@ GRADE_ORDER = {"D": 0.0, "C": 1.0, "B": 2.0, "A": 3.0, "A+": 4.0}
 # ---------------------------------------------------------------------------
 
 
-async def _fetch_rows(pool, days: int) -> list[dict]:
+async def _fetch_rows(pool: Any, days: int) -> list[Payload]:
     from api.routes.backtest import _decode_json_column
 
     async with pool.acquire() as conn:
@@ -108,7 +111,7 @@ async def _fetch_rows(pool, days: int) -> list[dict]:
             """,
             days,
         )
-    rows = []
+    rows: list[Payload] = []
     for r in records:
         d = dict(r)
         d["features"] = _decode_json_column(d.get("features"))
@@ -124,7 +127,7 @@ async def _fetch_rows(pool, days: int) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
-def _category_counts(rows: list[dict], column: str) -> dict[str, int]:
+def _category_counts(rows: list[Payload], column: str) -> dict[str, int]:
     counts: dict[str, int] = {}
     for r in rows:
         v = str(r.get(column) or "-")
@@ -141,7 +144,7 @@ def _mean_std(values: list[float]) -> tuple[float, float]:
     return mean, math.sqrt(var)
 
 
-def build_feature_spec(train_rows: list[dict]) -> list[dict]:
+def build_feature_spec(train_rows: list[Payload]) -> list[Payload]:
     """One entry per active model input, in the fixed order weights are
     trained/applied against. Every stat (mean/std, baseline category,
     which informational fields clear the coverage gate) comes from
@@ -154,7 +157,7 @@ def build_feature_spec(train_rows: list[dict]) -> list[dict]:
         _ic_encode,
     )
 
-    spec: list[dict] = []
+    spec: list[Payload] = []
 
     # Core continuous.
     for col in ("conviction_score", "risk_reward_ratio"):
@@ -246,7 +249,7 @@ def build_feature_spec(train_rows: list[dict]) -> list[dict]:
     return spec
 
 
-def encode_row(row: dict, spec: list[dict]) -> list[float]:
+def encode_row(row: Payload, spec: list[Payload]) -> list[float]:
     """Turn one row (Postgres training row, or a live scanner candidate's
     equivalent core fields + features_snapshot/sub_scores dicts -- same
     shape either way) into the numeric vector `spec` describes, in order.
@@ -274,11 +277,11 @@ def encode_row(row: dict, spec: list[dict]) -> list[float]:
             encoded = _ic_encode(f["field"], (row.get(f["column"]) or {}).get(f["field"]))
             out.append(1.0 if encoded == 1.0 else 0.0)
         elif kind == "informational_continuous":
-            raw = (row.get(f["column"]) or {}).get(f["field"])
-            if raw is None:
+            raw_value = (row.get(f["column"]) or {}).get(f["field"])
+            if raw_value is None:
                 out.append(0.0)  # imputed at the training mean -> 0 after standardization
             else:
-                out.append((float(raw) - f["mean"]) / f["std"] if f["std"] > 0 else 0.0)
+                out.append((float(raw_value) - f["mean"]) / f["std"] if f["std"] > 0 else 0.0)
         else:
             out.append(0.0)
     return out
@@ -385,7 +388,7 @@ def compute_auc(y_true: list[float], y_score: list[float]) -> float | None:
     return u / (n_pos * n_neg)
 
 
-def compute_metrics(y_true: list[float], y_score: list[float], threshold: float = 0.5) -> dict:
+def compute_metrics(y_true: list[float], y_score: list[float], threshold: float = 0.5) -> Payload:
     n = len(y_true)
     tp = sum(1 for i in range(n) if y_score[i] >= threshold and y_true[i] == 1.0)
     fp = sum(1 for i in range(n) if y_score[i] >= threshold and y_true[i] == 0.0)
@@ -406,15 +409,14 @@ def compute_metrics(y_true: list[float], y_score: list[float], threshold: float 
             / n
         )
         brier = sum((y_score[i] - y_true[i]) ** 2 for i in range(n)) / n
+    auc_value = compute_auc(y_true, y_score)
     return {
         "accuracy": round(accuracy, 4) if accuracy is not None else None,
         "precision": round(precision, 4) if precision is not None else None,
         "recall": round(recall, 4) if recall is not None else None,
         "log_loss": round(log_loss, 4) if log_loss is not None else None,
         "brier_score": round(brier, 4) if brier is not None else None,
-        "auc": round(compute_auc(y_true, y_score), 4)
-        if compute_auc(y_true, y_score) is not None
-        else None,
+        "auc": round(auc_value, 4) if auc_value is not None else None,
         "confusion_matrix": {"tp": tp, "fp": fp, "tn": tn, "fn": fn},
     }
 
@@ -424,11 +426,11 @@ def compute_metrics(y_true: list[float], y_score: list[float], threshold: float 
 # ---------------------------------------------------------------------------
 
 
-def _label(row: dict) -> float:
+def _label(row: Payload) -> float:
     return 1.0 if row.get("outcome_label") == "TARGET_HIT" else 0.0
 
 
-def _train_sync(train_rows: list[dict], test_rows: list[dict]) -> dict:
+def _train_sync(train_rows: list[Payload], test_rows: list[Payload]) -> Payload:
     """The actual CPU-bound work -- run inside asyncio.to_thread() by the
     caller so a multi-second training pass never blocks the event loop.
     """
@@ -530,8 +532,8 @@ def _train_sync(train_rows: list[dict], test_rows: list[dict]) -> dict:
 
 
 async def train_classifier(
-    pool, redis, days: int = 400, train_pct: float = 0.70, embargo_min: float = 5.0
-) -> dict:
+    pool: Any, redis: Any, days: int = 400, train_pct: float = 0.70, embargo_min: float = 5.0
+) -> Payload:
     """Fetch archived outcomes, apply the same purge/embargo split
     Phase 13.3's walk-forward optimizer uses, train in a worker thread,
     evaluate against the held-out embargoed test set, and cache the
@@ -591,7 +593,7 @@ async def train_classifier(
     return result
 
 
-async def read_cached_model(redis) -> dict:
+async def read_cached_model(redis: Any) -> Payload:
     if not redis:
         return {"available": False, "reason": "Redis is not available."}
     raw = await redis.get(MODEL_KEY)
@@ -602,6 +604,7 @@ async def read_cached_model(redis) -> dict:
         }
     try:
         text = raw.decode() if isinstance(raw, bytes) else raw
-        return json.loads(text)
+        decoded = json.loads(text)
+        return decoded if isinstance(decoded, dict) else {}
     except (json.JSONDecodeError, TypeError):
         return {"available": False, "reason": "Cached model failed to decode."}

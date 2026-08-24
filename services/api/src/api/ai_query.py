@@ -18,6 +18,8 @@ live OpenAI key or a running aiohttp request.
 from __future__ import annotations
 
 import re
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 import msgpack
 
@@ -29,6 +31,8 @@ from api.routes.backtest import (
     compute_walkforward,
 )
 from api.signal_snapshot import build_symbol_snapshot, decode_hash
+
+Payload = dict[str, Any]
 
 SECTOR_PREFIX = "infusion:sector:"
 REGIME_KEY = "infusion:regime"
@@ -68,12 +72,12 @@ _ABLATION_ALIASES.update(
 del _f
 
 
-async def load_known_symbols(redis) -> set[str]:
+async def load_known_symbols(redis: Any) -> set[str]:
     """The live symbol universe (~200 NSE F&O tickers), for detecting a
     ticker mention in a free-text question. Mirrors routes/ticks.py's
     /api/symbols msgpack-decode of infusion:symbols."""
     raw = await redis.hgetall("infusion:symbols")
-    symbols = set()
+    symbols: set[str] = set()
     for meta_raw in raw.values():
         try:
             meta = msgpack.unpackb(meta_raw, raw=False) if isinstance(meta_raw, bytes) else meta_raw
@@ -108,13 +112,13 @@ _DIRECTION_CE = re.compile(r"\bce\b|\bcall\b|\bbullish\b|\bbuy\s*ce\b", re.IGNOR
 _DIRECTION_PE = re.compile(r"\bpe\b|\bput\b|\bbearish\b|\bbuy\s*pe\b", re.IGNORECASE)
 
 
-def classify_intents(question: str, known_symbols: set[str]) -> list[dict]:
+def classify_intents(question: str, known_symbols: set[str]) -> list[Payload]:
     """Deterministic keyword/regex router -- no LLM involved in deciding
     *what* data to fetch, only (optionally) in how to phrase it afterward.
     Returns an ordered list of intent dicts; a question can match several.
     """
     q = question.lower()
-    intents: list[dict] = []
+    intents: list[Payload] = []
 
     if re.search(r"\bregime\b|\bmarket\s+(trend|mood|direction)\b|\bbullish\s+or\s+bearish\b", q):
         intents.append({"type": "regime"})
@@ -158,7 +162,13 @@ def classify_intents(question: str, known_symbols: set[str]) -> list[dict]:
     return intents
 
 
-async def gather_facts(intent: dict, *, redis, pool, options_chain_fn) -> dict:
+async def gather_facts(
+    intent: Payload,
+    *,
+    redis: Any,
+    pool: Any,
+    options_chain_fn: Callable[[Any, str], Awaitable[Payload]],
+) -> Payload:
     """Executes one classified intent against real Infusion state.
     `options_chain_fn` is injected (api.routes.market.compute_options_chain_analytics)
     rather than imported directly, to avoid this module depending on
@@ -235,14 +245,14 @@ async def gather_facts(intent: dict, *, redis, pool, options_chain_fn) -> dict:
     return {"type": "unknown"}
 
 
-def _fmt_pct(v) -> str:
+def _fmt_pct(v: Any) -> str:
     try:
         return f"{float(v):.1f}%"
     except (TypeError, ValueError):
         return "n/a"
 
 
-def format_facts_as_text(question: str, intents: list[dict], facts: list[dict]) -> str:
+def format_facts_as_text(question: str, intents: list[Payload], facts: list[Payload]) -> str:
     """No-LLM deterministic answer. This is the actual grounded answer --
     an OpenAI polish pass (when configured) may only rephrase these exact
     facts, never add to them. Always available, always correct given what
