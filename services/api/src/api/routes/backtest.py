@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import time
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from aiohttp import web
 
@@ -28,6 +29,7 @@ from api.statistics_utils import (
 from api.trap_labels import compute_false_break_stats
 
 routes = web.RouteTableDef()
+Payload = dict[str, Any]
 
 # Sub-signal fields added across Phases 1/4/6/7/8/9/10 this session, all
 # deliberately kept informational-only (not wired into the live conviction
@@ -113,7 +115,7 @@ def _grade_rank(grade: str | None) -> int:
     return order.get((grade or "").upper(), 0)
 
 
-def _row_matches_profile(row: dict, profile: dict) -> bool:
+def _row_matches_profile(row: Payload, profile: Payload) -> bool:
     if float(row.get("conviction_score") or 0) < profile["min_score"]:
         return False
     rr = row.get("risk_reward_ratio")
@@ -127,7 +129,7 @@ def _row_matches_profile(row: dict, profile: dict) -> bool:
     )
 
 
-def _describe_profile(profile: dict) -> str:
+def _describe_profile(profile: Payload) -> str:
     grade_labels = {
         4: "A+ only",
         3: "A and A+",
@@ -146,7 +148,7 @@ def _describe_profile(profile: dict) -> str:
     )
 
 
-def _profile_metrics(rows: list[dict], profile: dict, days: int) -> dict:
+def _profile_metrics(rows: list[Payload], profile: Payload, days: int) -> Payload:
     matched = [r for r in rows if _row_matches_profile(r, profile)]
     wins = sum(1 for r in matched if r.get("outcome_label") == "TARGET_HIT")
     losses = sum(1 for r in matched if r.get("outcome_label") == "STOP_HIT")
@@ -167,7 +169,7 @@ def _profile_metrics(rows: list[dict], profile: dict, days: int) -> dict:
     }
 
 
-def _profile_sharpe(rows: list[dict], profile: dict) -> dict:
+def _profile_sharpe(rows: list[Payload], profile: Payload) -> Payload:
     """Phase 13.8: R-multiple-based Sharpe stats for one profile's matched
     rows -- the "trial" Sharpe that feeds the Deflated Sharpe Ratio
     correction in compute_walkforward(). Deliberately NOT annualized (a
@@ -191,7 +193,7 @@ MIN_NET_OF_COST_SAMPLE = (
 )
 
 
-def _net_of_cost_metrics(rows: list[dict], profile: dict | None = None) -> dict:
+def _net_of_cost_metrics(rows: list[Payload], profile: Payload | None = None) -> Payload:
     """Phase 13.4b: net-of-cost precision for whichever decided rows
     actually have real captured option premium data (entry_premium_ask/
     entry_premium_bid/exit_premium_bid -- Phase 13.4's capture
@@ -300,8 +302,8 @@ def _net_of_cost_metrics(rows: list[dict], profile: dict | None = None) -> dict:
 
 
 def _purge_and_embargo(
-    rows: list[dict], split: int, embargo_min: float
-) -> tuple[list[dict], list[dict], int, int]:
+    rows: list[Payload], split: int, embargo_min: float
+) -> tuple[list[Payload], list[Payload], int, int]:
     """Phase 13.3: harden the chronological train/test cut against a
     specific leakage mode a plain index split ignores.
 
@@ -364,7 +366,7 @@ def _purge_and_embargo(
     return purged_train, embargoed_test, purged_count, embargoed_count
 
 
-def _compute_dsr(profiles: list[dict], recommended: dict | None) -> dict:
+def _compute_dsr(profiles: list[Payload], recommended: Payload | None) -> Payload:
     """Phase 13.8: Deflated Sharpe Ratio for the recommended (best-utility)
     profile, benchmarked against the expected-max-Sharpe-by-chance across
     every profile the grid search actually evaluated -- i.e. corrects for
@@ -418,7 +420,7 @@ def _compute_dsr(profiles: list[dict], recommended: dict | None) -> dict:
     }
 
 
-def _walkforward_status(test: dict, target: float, min_test: int) -> tuple[str, str]:
+def _walkforward_status(test: Payload, target: float, min_test: int) -> tuple[str, str]:
     precision = test.get("precision_pct")
     decided = int(test.get("decided") or 0)
     if decided <= 0:
@@ -481,12 +483,12 @@ GROUP BY GROUPING SETS ((), (conviction_grade), (session_hour), (sector_id))
 """
 
 
-async def _compute_backtest_summary(pool, days: int, strategy: str) -> dict:
+async def _compute_backtest_summary(pool: Any, days: int, strategy: str) -> Payload:
     """The actual query + shaping, extracted so the route handler can
     cache around it. Same output shape as before this follow-up -- only
     how it's computed changed, not what callers get back."""
     where_strategy = "AND strategy = $2" if strategy else ""
-    params = [days]
+    params: list[Any] = [days]
     if strategy:
         params.append(strategy)
 
@@ -534,8 +536,8 @@ async def _compute_backtest_summary(pool, days: int, strategy: str) -> dict:
     precision = round(hits / decided * 100, 1) if decided else None
     reliability, note = _reliability(decided, total, precision)
 
-    def rows(records, label_key):
-        out = []
+    def rows(records: list[Payload], label_key: str) -> list[Payload]:
+        out: list[Payload] = []
         for d in records:
             wins = int(d.get("target_hits") or 0)
             losses = int(d.get("stop_hits") or 0)
@@ -591,7 +593,7 @@ async def _compute_backtest_summary(pool, days: int, strategy: str) -> dict:
 
 
 @routes.get("/api/backtest/summary")
-async def backtest_summary(request):
+async def backtest_summary(request: web.Request) -> web.Response:
     pool = request.app.get("pg_pool")
     if not pool:
         return web.json_response(
@@ -632,7 +634,7 @@ async def backtest_summary(request):
 
 
 @routes.get("/api/backtest/optimize")
-async def backtest_optimize(request):
+async def backtest_optimize(request: web.Request) -> web.Response:
     """Sweep archived outcomes for stricter parameter profiles.
 
     This is an optimizer, not a guarantee. It deliberately reports sample size
@@ -687,7 +689,7 @@ async def backtest_optimize(request):
                 status=200,
             )
 
-    rows = []
+    rows: list[Payload] = []
     for record in records:
         item = dict(record)
         if (item.get("session_hour") or "unknown") in valid_sessions:
@@ -696,7 +698,7 @@ async def backtest_optimize(request):
     current_losses = sum(1 for r in rows if r.get("outcome_label") == "STOP_HIT")
     current_precision = _precision(current_wins, current_losses)
 
-    profiles = []
+    profiles: list[Payload] = []
     score_floors = [40, 50, 55, 60, 65, 70, 75, 80, 85, 90]
     rr_floors = [0, 1.2, 1.5, 1.8, 2.0, 2.5, 3.0]
     grade_floors = [0, 1, 2, 3, 4]
@@ -819,7 +821,7 @@ async def backtest_optimize(request):
 
 
 @routes.get("/api/backtest/forward")
-async def backtest_forward(request):
+async def backtest_forward(request: web.Request) -> web.Response:
     """Forward proof for the currently deployed precision guard.
 
     This separates live-after-change evidence from historical optimization so
@@ -898,6 +900,8 @@ async def backtest_forward(request):
             )
 
     o = dict(overview or {})
+    first_signal_at = o.get("first_signal_at")
+    last_signal_at = o.get("last_signal_at")
     wins = int(o.get("wins") or 0)
     losses = int(o.get("losses") or 0)
     decided = wins + losses
@@ -914,8 +918,8 @@ async def backtest_forward(request):
             "Forward proof is below target. Re-optimize only after enough corrected live outcomes."
         )
 
-    def rows(records):
-        out = []
+    def rows(records: Any) -> list[Payload]:
+        out: list[Payload] = []
         for r in records:
             d = dict(r)
             rw = int(d.get("wins") or 0)
@@ -956,12 +960,8 @@ async def backtest_forward(request):
             "avg_rr": round(float(o.get("avg_rr") or 0), 2)
             if o.get("avg_rr") is not None
             else None,
-            "first_signal_at": o.get("first_signal_at").isoformat()
-            if o.get("first_signal_at")
-            else None,
-            "last_signal_at": o.get("last_signal_at").isoformat()
-            if o.get("last_signal_at")
-            else None,
+            "first_signal_at": first_signal_at.isoformat() if first_signal_at else None,
+            "last_signal_at": last_signal_at.isoformat() if last_signal_at else None,
             "status": status,
             "note": note,
             "by_direction": rows(by_direction),
@@ -970,14 +970,14 @@ async def backtest_forward(request):
 
 
 async def compute_walkforward(
-    pool,
+    pool: Any,
     days: int = 120,
     target: float = 80.0,
     min_train: int = 30,
     min_test: int = 15,
     train_pct: float = 0.70,
     embargo_min: float = 5.0,
-) -> dict:
+) -> Payload:
     """Out-of-sample rule validation -- the actual computation, extracted
     from the /api/backtest/walkforward route handler so other callers
     (the optimizer-drift proposal check below, the scheduler) can reuse
@@ -1046,7 +1046,7 @@ async def compute_walkforward(
                 "reason": f"Walk-forward validation could not read archived outcomes: {exc}",
             }
 
-    rows = [
+    rows: list[Payload] = [
         dict(r) for r in records if (dict(r).get("session_hour") or "unknown") in valid_sessions
     ]
     total = len(rows)
@@ -1101,7 +1101,7 @@ async def compute_walkforward(
             ),
         }
 
-    profiles = []
+    profiles: list[Payload] = []
     score_floors = [50, 55, 60, 65, 70, 75, 80, 85, 90]
     rr_floors = [0, 1.2, 1.5, 1.8, 2.0, 2.5, 3.0]
     grade_floors = [0, 1, 2, 3, 4]
@@ -1208,7 +1208,7 @@ async def compute_walkforward(
 
 
 @routes.get("/api/backtest/walkforward")
-async def backtest_walkforward(request):
+async def backtest_walkforward(request: web.Request) -> web.Response:
     """Thin route wrapper around compute_walkforward() -- same behavior as
     before this was extracted into a reusable function."""
     pool = request.app.get("pg_pool")
@@ -1230,7 +1230,7 @@ async def backtest_walkforward(request):
     return web.json_response(result)
 
 
-def _ablation_field_present(value) -> bool:
+def _ablation_field_present(value: Any) -> bool:
     """Python-truthy presence check for a decoded features_snapshot/sub_scores
     field. Deliberately plain Python truthiness (not "key exists") so that
     e.g. an empty dict/list/0/False/None/"" all count as "absent" -- matches
@@ -1247,7 +1247,9 @@ def _ablation_field_present(value) -> bool:
     return bool(value)
 
 
-def _ablation_group_metrics(rows: list[dict], column: str, field: str, want_present: bool) -> dict:
+def _ablation_group_metrics(
+    rows: list[Payload], column: str, field: str, want_present: bool
+) -> Payload:
     wins = 0
     losses = 0
     for row in rows:
@@ -1275,8 +1277,8 @@ def _ablation_group_metrics(rows: list[dict], column: str, field: str, want_pres
 
 
 async def compute_feature_ablation(
-    pool, field: str, column: str = "features_snapshot", days: int = 90
-) -> dict:
+    pool: Any, field: str, column: str = "features_snapshot", days: int = 90
+) -> Payload:
     """Split archived decided (TARGET_HIT/STOP_HIT), non-suppressed signals by
     presence/truthiness of one features_snapshot or sub_scores field, and
     compare precision between the "present" and "absent" groups.
@@ -1338,7 +1340,7 @@ async def compute_feature_ablation(
                 "reason": f"Feature-ablation query failed: {exc}",
             }
 
-    rows = [dict(r) for r in records]
+    rows: list[Payload] = [dict(r) for r in records]
     total = len(rows)
     present = _ablation_group_metrics(rows, column, field, True)
     absent = _ablation_group_metrics(rows, column, field, False)
@@ -1384,7 +1386,7 @@ async def compute_feature_ablation(
     }
 
 
-def _decode_json_column(raw) -> dict:
+def _decode_json_column(raw: Any) -> Payload:
     try:
         decoded = json.loads(raw) if isinstance(raw, str) else (raw or {})
     except (json.JSONDecodeError, TypeError):
@@ -1392,7 +1394,7 @@ def _decode_json_column(raw) -> dict:
     return decoded if isinstance(decoded, dict) else {}
 
 
-def _ic_encode(field: str, value) -> float | None:
+def _ic_encode(field: str, value: Any) -> float | None:
     """0/1 presence encoding for one field's raw value, feeding
     statistics_utils.pearson_r as the point-biserial x-variable. Plain
     truthiness (_ablation_field_present, already used by feature-ablation
@@ -1427,7 +1429,7 @@ def _ic_encode(field: str, value) -> float | None:
     return 1 if _ablation_field_present(value) else 0
 
 
-async def compute_feature_ic(pool, days: int = 90) -> dict:
+async def compute_feature_ic(pool: Any, days: int = 90) -> Payload:
     """Phase 13.8: per-feature Information Coefficient -- Pearson (here,
     point-biserial since every field is 0/1-encoded) correlation between
     each KNOWN_ABLATION_FIELDS(_SUB_SCORES) field's presence and the
@@ -1466,7 +1468,7 @@ async def compute_feature_ic(pool, days: int = 90) -> dict:
                 "reason": f"Feature-IC query failed: {exc}",
             }
 
-    rows = []
+    rows: list[Payload] = []
     for r in records:
         d = dict(r)
         rm = r_multiple(d.get("outcome_label"), d.get("risk_reward_ratio"))
@@ -1486,9 +1488,10 @@ async def compute_feature_ic(pool, days: int = 90) -> dict:
         + [(f, "sub_scores") for f in KNOWN_ABLATION_FIELDS_SUB_SCORES]
         + [(f, "features") for f in CONTINUOUS_IC_FIELDS]
     )
-    results = []
+    results: list[Payload] = []
     for field, column in field_specs:
-        xs, ys = [], []
+        xs: list[float] = []
+        ys: list[float] = []
         for row in rows:
             encoded = _ic_encode(field, row[column].get(field))
             if encoded is None:
@@ -1573,7 +1576,7 @@ async def compute_feature_ic(pool, days: int = 90) -> dict:
 
 
 @routes.get("/api/backtest/feature-ic")
-async def backtest_feature_ic(request):
+async def backtest_feature_ic(request: web.Request) -> web.Response:
     """GET /api/backtest/feature-ic?days=90 -- ranked Information
     Coefficient for every KNOWN_ABLATION_FIELDS(_SUB_SCORES) field against
     real R-multiple outcomes. See compute_feature_ic()."""
@@ -1584,7 +1587,7 @@ async def backtest_feature_ic(request):
 
 
 @routes.get("/api/backtest/false-break-rate")
-async def backtest_false_break_rate(request):
+async def backtest_false_break_rate(request: web.Request) -> web.Response:
     """GET /api/backtest/false-break-rate?days=90 -- EBIE EB-9 increment
     2. Real false-break rate from archived outcomes, by strategy/grade,
     plus a live check of whether EB-9 increment 1's trap_risk heuristic
@@ -1597,7 +1600,7 @@ async def backtest_false_break_rate(request):
 
 
 @routes.get("/api/backtest/label-study")
-async def backtest_label_study(request):
+async def backtest_label_study(request: web.Request) -> web.Response:
     """GET /api/backtest/label-study -- EBIE EB-15 Phase 6 item 11, the
     deferred 30/45/60-minute ATR label study. Real, on-demand report
     over every real decided signal created since EB-10's TTL widen (the
@@ -1613,7 +1616,7 @@ async def backtest_label_study(request):
 KELLY_KEY_PREFIX = "infusion:kelly:"
 
 
-async def compute_kelly_sizing(pool, redis, days: int = 180) -> dict:
+async def compute_kelly_sizing(pool: Any, redis: Any, days: int = 180) -> Payload:
     """Phase 13.10: half-Kelly position-sizing stat per strategy, computed
     from Infusion's own archived TARGET_HIT/STOP_HIT outcomes, and written
     to Redis (KELLY_KEY_PREFIX + strategy_id) for scanner/engine.py's
@@ -1669,12 +1672,12 @@ async def compute_kelly_sizing(pool, redis, days: int = 180) -> dict:
                 "reason": f"Kelly-sizing query failed: {exc}",
             }
 
-    by_strategy: dict[str, list[dict]] = {}
+    by_strategy: dict[str, list[Payload]] = {}
     for r in records:
         d = dict(r)
         by_strategy.setdefault(d["strategy"], []).append(d)
 
-    strategies: dict[str, dict] = {}
+    strategies: dict[str, Payload] = {}
     for strategy_id, rows in by_strategy.items():
         wins = [r for r in rows if r["outcome_label"] == "TARGET_HIT"]
         losses = [r for r in rows if r["outcome_label"] == "STOP_HIT"]
@@ -1686,10 +1689,13 @@ async def compute_kelly_sizing(pool, redis, days: int = 180) -> dict:
             else None
         )
         reliable = (
-            decided >= min_sample and win_rate is not None and bool(avg_win_r) and avg_win_r > 0
+            decided >= min_sample
+            and win_rate is not None
+            and avg_win_r is not None
+            and avg_win_r > 0
         )
         kelly_pct = half_kelly_pct = None
-        if reliable:
+        if reliable and win_rate is not None and avg_win_r is not None:
             kelly_pct = win_rate - (1 - win_rate) / avg_win_r
             half_kelly_pct = kelly_pct / 2
         strategies[strategy_id] = {
@@ -1730,7 +1736,7 @@ async def compute_kelly_sizing(pool, redis, days: int = 180) -> dict:
 
 
 @routes.get("/api/backtest/kelly-sizing")
-async def backtest_kelly_sizing(request):
+async def backtest_kelly_sizing(request: web.Request) -> web.Response:
     """GET /api/backtest/kelly-sizing?days=180 -- half-Kelly sizing stat
     per strategy, also written to Redis for scanner to read. See
     compute_kelly_sizing()."""
@@ -1742,7 +1748,7 @@ async def backtest_kelly_sizing(request):
 
 
 @routes.get("/api/backtest/feature-ablation")
-async def backtest_feature_ablation(request):
+async def backtest_feature_ablation(request: web.Request) -> web.Response:
     """GET /api/backtest/feature-ablation?field=X&column=features_snapshot&days=90
 
     Diagnostic-only precision comparison for one Phase 1-10 informational
@@ -1778,7 +1784,7 @@ _PROPOSAL_MIN_SCORE_DIVERGENCE = 5.0
 _PROPOSAL_MIN_RR_DIVERGENCE = 0.3
 
 
-async def _read_live_config(redis) -> dict | None:
+async def _read_live_config(redis: Any) -> Payload | None:
     if redis is None:
         return None
     raw = await redis.hgetall(LIVE_CONFIG_KEY)
@@ -1802,7 +1808,9 @@ async def _read_live_config(redis) -> dict | None:
         return None
 
 
-async def compute_optimizer_proposal(pool, redis, days: int = 120, target: float = 80.0) -> dict:
+async def compute_optimizer_proposal(
+    pool: Any, redis: Any, days: int = 120, target: float = 80.0
+) -> Payload:
     """Compare the scanner's live precision_guard config against tonight's
     walk-forward recommendation and, if they diverge beyond a conservative
     threshold, write a PROPOSAL record to Redis for a human to review.
@@ -1920,7 +1928,7 @@ async def compute_optimizer_proposal(pool, redis, days: int = 120, target: float
 
 
 @routes.get("/api/backtest/optimizer-proposal")
-async def backtest_optimizer_proposal(request):
+async def backtest_optimizer_proposal(request: web.Request) -> web.Response:
     """GET /api/backtest/optimizer-proposal?days=120&target=80
 
     Reads the scanner's live precision_guard config from Redis, runs
@@ -1944,7 +1952,7 @@ async def backtest_optimizer_proposal(request):
 
 
 @routes.get("/api/backtest/optimizer-proposal/latest")
-async def backtest_optimizer_proposal_latest(request):
+async def backtest_optimizer_proposal_latest(request: web.Request) -> web.Response:
     """GET /api/backtest/optimizer-proposal/latest -- reads the last written
     proposal from Redis without re-running the walk-forward sweep (cheap,
     for the dashboard to poll)."""
@@ -1975,7 +1983,7 @@ _PREMIUM_LOOKBACK_MIN = 10
 _PREMIUM_BATCH_LIMIT = 20
 
 
-async def capture_missing_premiums(pool, redis) -> dict:
+async def capture_missing_premiums(pool: Any, redis: Any) -> Payload:
     """Fill in entry/exit option premium for recently-fired/-resolved
     signals that don't have it yet. Called on a short interval by
     services/scheduler/src/scheduler/main.py's premium_capture_loop --
@@ -2082,7 +2090,7 @@ async def capture_missing_premiums(pool, redis) -> dict:
 
 
 @routes.post("/api/backtest/capture-premiums")
-async def backtest_capture_premiums(request):
+async def backtest_capture_premiums(request: web.Request) -> web.Response:
     """POST /api/backtest/capture-premiums -- called by scheduler's
     premium_capture_loop on a short interval, not by the dashboard.
     See capture_missing_premiums()'s docstring for what it does."""
@@ -2093,7 +2101,7 @@ async def backtest_capture_premiums(request):
 
 
 @routes.get("/api/backtest/ml-classifier")
-async def backtest_ml_classifier_train(request):
+async def backtest_ml_classifier_train(request: web.Request) -> web.Response:
     """GET /api/backtest/ml-classifier?days=400 -- (re)trains the
     classifier against real archived outcomes and caches the result.
     Real cost: ~15-20s CPU-bound (run off the event loop via
@@ -2113,7 +2121,7 @@ async def backtest_ml_classifier_train(request):
 
 
 @routes.get("/api/backtest/ml-classifier/latest")
-async def backtest_ml_classifier_latest(request):
+async def backtest_ml_classifier_latest(request: web.Request) -> web.Response:
     """GET /api/backtest/ml-classifier/latest -- reads the last-trained
     model + its held-out test metrics from Redis without retraining
     (cheap, for the dashboard to poll)."""
