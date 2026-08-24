@@ -21,6 +21,7 @@ of adapter/registry plumbing -- nothing in EB-0 calls it.
 from __future__ import annotations
 
 import time
+from typing import Any
 
 import structlog
 from infusion_streams.constants import KEY_SUBSCRIPTION_TIER_PREFIX
@@ -43,7 +44,7 @@ class SubscriptionRegistry:
     process.
     """
 
-    def __init__(self, redis, adapter):
+    def __init__(self, redis: Any, adapter: Any) -> None:
         self.redis = redis
         self.adapter = adapter
         self._tier: dict[str, str] = {}

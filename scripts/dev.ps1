@@ -8,7 +8,8 @@ param(
         "format",
         "typecheck",
         "compile-check",
-        "compose-check"
+        "compose-check",
+        "dashboard-check"
     )]
     [string]$Task = "test"
 )
@@ -19,6 +20,16 @@ $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
 $VenvPython = Join-Path $Root ".venv\Scripts\python.exe"
 $VenvRuff = Join-Path $Root ".venv\Scripts\ruff.exe"
 $VenvMypy = Join-Path $Root ".venv\Scripts\mypy.exe"
+$BundledNode = Join-Path $env:USERPROFILE ".cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe"
+$NodeExe = if (Get-Command node -ErrorAction SilentlyContinue) {
+    "node"
+}
+elseif (Test-Path $BundledNode) {
+    $BundledNode
+}
+else {
+    "node"
+}
 
 function Ensure-Venv {
     if (-not (Test-Path $VenvPython)) {
@@ -29,6 +40,20 @@ function Ensure-Venv {
 function Run-Python {
     param([string[]]$PyArgs)
     & $VenvPython @PyArgs
+    if ($LASTEXITCODE -ne 0) {
+        exit $LASTEXITCODE
+    }
+}
+
+function Run-Checked {
+    param(
+        [string]$Command,
+        [string[]]$CommandArgs
+    )
+    & $Command @CommandArgs
+    if ($LASTEXITCODE -ne 0) {
+        exit $LASTEXITCODE
+    }
 }
 
 Set-Location $Root
@@ -51,19 +76,38 @@ switch ($Task) {
         Run-Python @("-m", "pytest", "tests\integration", "-v")
     }
     "lint" {
-        & $VenvRuff check .
-        & $VenvRuff format --check .
+        Run-Checked $VenvRuff @("check", ".")
+        Run-Checked $VenvRuff @("format", "--check", ".")
     }
     "format" {
-        & $VenvRuff format .
+        Run-Checked $VenvRuff @("format", ".")
     }
     "typecheck" {
-        & $VenvMypy libs services
+        Run-Checked $VenvMypy @("libs", "services")
     }
     "compile-check" {
         Run-Python @("-m", "compileall", "-q", "libs", "services", "scripts", "tests")
     }
     "compose-check" {
         docker compose config --quiet
+        if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+        }
+    }
+    "dashboard-check" {
+        Push-Location (Join-Path $Root "services\dashboard")
+        try {
+            & $NodeExe scripts\verify-js.mjs
+            if ($LASTEXITCODE -ne 0) {
+                exit $LASTEXITCODE
+            }
+            & $NodeExe scripts\verify-shell.mjs
+            if ($LASTEXITCODE -ne 0) {
+                exit $LASTEXITCODE
+            }
+        }
+        finally {
+            Pop-Location
+        }
     }
 }

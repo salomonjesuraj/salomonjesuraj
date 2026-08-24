@@ -32,6 +32,8 @@ signal, matching every other EBIE evidence family's own governance.
 
 from __future__ import annotations
 
+from typing import Any
+
 # Candlestick patterns that specifically signal a wick REJECTION at the
 # current level -- reused from scanner/alignment.py's own vocabulary
 # (feature-engine/features/candles.py), not re-invented.
@@ -69,7 +71,7 @@ SECTOR_SUPPORTIVE = 55.0
 SECTOR_CONTRARY = 45.0
 
 
-def _check(name: str, fired: bool | None, reasons: list, indicator_name: str) -> bool | None:
+def _check(name: str, fired: bool | None, reasons: list[str], indicator_name: str) -> bool | None:
     if fired is None:
         return None
     if fired:
@@ -87,9 +89,9 @@ def compute_trap_risk(
     spread_bps: float | None,
     call_wall_state: str | None,
     put_wall_state: str | None,
-    rs_slope_20d,
+    rs_slope_20d: float | None,
     sector_strength: float | None,
-) -> dict:
+) -> dict[str, Any]:
     """Each indicator votes True (trap-risk sign present), False (no
     sign of that specific risk), or is left out of the count entirely
     when the underlying data isn't available -- an absent indicator is

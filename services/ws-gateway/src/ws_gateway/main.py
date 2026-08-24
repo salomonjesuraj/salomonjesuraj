@@ -8,6 +8,7 @@ Ports:
 import asyncio
 import json
 import uuid
+from typing import Any, cast
 
 import structlog
 from aiohttp import web
@@ -24,9 +25,10 @@ from ws_gateway.client_manager import ClientManager
 from ws_gateway.config import WSGatewaySettings
 
 logger = structlog.get_logger()
+Payload = dict[str, Any]
 
 
-async def main():
+async def main() -> None:
     config = WSGatewaySettings()
     setup_logging(config.service_name, config.log_level, config.log_format)
 
@@ -56,9 +58,9 @@ async def main():
     await tick_consumer.ensure_group()
 
     # Background: read ticks and buffer for batch delivery
-    async def tick_reader():
+    async def tick_reader() -> None:
         async for _event_type, _version, _rx_us, payload, ack in tick_consumer.consume():
-            symbol = payload.get("symbol", "")
+            symbol = str(payload.get("symbol", ""))
             await clients.buffer_tick(
                 symbol,
                 {
@@ -77,14 +79,14 @@ async def main():
             await ack()
 
     # Background: flush batched ticks every 100ms
-    async def batch_flusher():
+    async def batch_flusher() -> None:
         interval = config.price_batch_ms / 1000.0
         while True:
             await asyncio.sleep(interval)
             await clients.flush_batch()
 
     # WebSocket handler
-    async def ws_handler(request):
+    async def ws_handler(request: web.Request) -> web.WebSocketResponse:
         ws = web.WebSocketResponse()
         await ws.prepare(request)
 
@@ -95,9 +97,16 @@ async def main():
             async for msg in ws:
                 if msg.type == web.WSMsgType.TEXT:
                     try:
-                        data = json.loads(msg.data)
+                        data_raw = json.loads(msg.data)
+                        data = cast(Payload, data_raw) if isinstance(data_raw, dict) else {}
                         if data.get("type") == "subscribe":
-                            await clients.handle_subscribe(client_id, data.get("symbols", []))
+                            symbols_raw = data.get("symbols", [])
+                            symbols = (
+                                [str(symbol) for symbol in symbols_raw]
+                                if isinstance(symbols_raw, list)
+                                else []
+                            )
+                            await clients.handle_subscribe(client_id, symbols)
                     except Exception:
                         pass
                 elif msg.type == web.WSMsgType.ERROR:
@@ -108,7 +117,7 @@ async def main():
         return ws
 
     # Health endpoint
-    async def health_handler(request):
+    async def health_handler(request: web.Request) -> web.Response:
         return web.json_response(
             {
                 "status": "healthy",

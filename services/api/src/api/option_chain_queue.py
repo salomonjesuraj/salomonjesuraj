@@ -21,6 +21,7 @@ from infusion_streams.constants import KEY_EBIE_VERDICT_LITE_PREFIX
 from api.routes.market import _feature, _signal, _upstox_option_context
 
 logger = structlog.get_logger()
+Payload = dict[str, Any]
 
 # EBIE-KNOWN-GAPS.md §2.4 -- real finding from investigating the option-
 # tradeability gate's own low coverage: it isn't a per-cycle LIMIT problem
@@ -72,7 +73,7 @@ def _num(value: Any, default: float = 0.0) -> float:
         return default
 
 
-def _decode_hash(data: dict | None) -> dict:
+def _decode_hash(data: Payload | None) -> Payload:
     if not data:
         return {}
     out: dict[str, Any] = {}
@@ -86,7 +87,7 @@ def _decode_hash(data: dict | None) -> dict:
     return out
 
 
-def _infer_bias(signal: dict, features: dict) -> str:
+def _infer_bias(signal: Payload, features: Payload) -> str:
     signal_bias = str(signal.get("option_bias") or signal.get("bias") or "").upper()
     if "CE" in signal_bias:
         return "CE"
@@ -100,7 +101,7 @@ def _infer_bias(signal: dict, features: dict) -> str:
     return "WAIT"
 
 
-def _candidate_score(features: dict, prebreak: dict, signal_score: float = 0.0) -> float:
+def _candidate_score(features: Payload, prebreak: Payload, signal_score: float = 0.0) -> float:
     change_pct = abs(_num(features.get("change_pct")))
     rel_vol = _num(features.get("rel_vol_20d") or features.get("rel_vol"))
     rsi = _num(features.get("rsi_14"), 50.0)
@@ -116,7 +117,7 @@ def _candidate_score(features: dict, prebreak: dict, signal_score: float = 0.0) 
     return round(score, 2)
 
 
-async def _symbol_universe(redis) -> list[str]:
+async def _symbol_universe(redis: Any) -> list[str]:
     raw = await redis.hgetall("infusion:symbols")
     symbols: list[str] = []
     for item in raw.values():
@@ -132,9 +133,9 @@ async def _symbol_universe(redis) -> list[str]:
     return sorted(set(symbols))
 
 
-async def build_candidates(redis, limit: int) -> list[dict]:
+async def build_candidates(redis: Any, limit: int) -> list[Payload]:
     """Return ranked symbols for option-chain confirmation."""
-    ranked: dict[str, dict] = {}
+    ranked: dict[str, Payload] = {}
     symbols = await _symbol_universe(redis)
 
     active = await redis.zrevrange("infusion:signals:active", 0, max(limit - 1, 0), withscores=True)
@@ -209,7 +210,7 @@ async def build_candidates(redis, limit: int) -> list[dict]:
         pipe.hgetall(f"infusion:feature:{symbol}")
         pipe.hgetall(f"infusion:prebreak:{symbol}")
     results = await pipe.execute()
-    feature_rows: list[tuple[str, dict, dict]] = []
+    feature_rows: list[tuple[str, Payload, Payload]] = []
     for idx, symbol in enumerate(symbols):
         features = _decode_hash(results[idx * 2])
         prebreak = _decode_hash(results[idx * 2 + 1])
@@ -242,11 +243,11 @@ async def build_candidates(redis, limit: int) -> list[dict]:
     return candidates[: max(0, limit)]
 
 
-async def refresh_candidates_once(redis, *, limit: int = 28, delay_ms: int = 350) -> dict:
+async def refresh_candidates_once(redis: Any, *, limit: int = 28, delay_ms: int = 350) -> Payload:
     candidates = await build_candidates(redis, limit)
     refreshed: list[str] = []
     skipped: list[str] = []
-    failed: list[dict] = []
+    failed: list[Payload] = []
     started = datetime.now().isoformat(timespec="seconds")
 
     for row in candidates:
@@ -309,7 +310,7 @@ async def refresh_candidates_once(redis, *, limit: int = 28, delay_ms: int = 350
     return status
 
 
-async def option_chain_queue_loop(app) -> None:
+async def option_chain_queue_loop(app: Any) -> None:
     config = app["config"]
     redis = app["redis"]
     enabled = bool(getattr(config, "option_chain_auto_refresh_enabled", True))

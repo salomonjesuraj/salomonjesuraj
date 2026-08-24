@@ -27,11 +27,13 @@ discipline as options_analytics.py itself).
 
 from __future__ import annotations
 
+from typing import Any
+
 WALL_CHANGE_THRESHOLD = 0.05  # +/-5% OI change to call a strike strengthening/weakening
 TOP_N_STRIKES = 3  # track this many strikes per side for wall dynamics
 
 
-def _leg_oi(row: dict, leg_name: str) -> float:
+def _leg_oi(row: dict[str, Any], leg_name: str) -> float:
     leg = row.get(leg_name) or {}
     market = leg.get("market_data") or {}
     try:
@@ -40,7 +42,7 @@ def _leg_oi(row: dict, leg_name: str) -> float:
         return 0.0
 
 
-def compute_weighted_pcr(rows: list[dict], spot: float) -> dict | None:
+def compute_weighted_pcr(rows: list[dict[str, Any]], spot: float) -> dict[str, Any] | None:
     """PCR weighted toward near-ATM strikes, per docs/EBIE-BLUEPRINT.md
     Section 4.8.5: "weighted_PCR... the direction and rate of change
     matter more than a fixed threshold." Weight = 1 / (1 + distance_pct)
@@ -118,7 +120,9 @@ def _classify_strike_state(current_oi: float, prev_oi: float | None) -> str:
     return "stable"
 
 
-def compute_wall_dynamics(rows: list[dict], prev_snapshot: dict | None) -> dict:
+def compute_wall_dynamics(
+    rows: list[dict[str, Any]], prev_snapshot: dict[str, Any] | None
+) -> dict[str, Any]:
     """Top call-OI and put-OI strikes this sweep, each classified against
     the previous sweep's OI at that SAME strike, plus a migration flag
     if the #1 strike itself changed since last sweep -- the real upgrade
@@ -130,7 +134,7 @@ def compute_wall_dynamics(rows: list[dict], prev_snapshot: dict | None) -> dict:
     call's output straight into the next call's prev_snapshot with no
     reshaping.
     """
-    by_strike: dict[float, dict] = {}
+    by_strike: dict[float, dict[str, float]] = {}
     for row in rows:
         strike = float(row.get("strike_price") or 0)
         if strike <= 0:
@@ -144,9 +148,9 @@ def compute_wall_dynamics(rows: list[dict], prev_snapshot: dict | None) -> dict:
 
     prev_strikes = (prev_snapshot or {}).get("strikes") or {}
 
-    def _top_n(leg: str) -> list[dict]:
+    def _top_n(leg: str) -> list[dict[str, Any]]:
         ranked = sorted(by_strike.items(), key=lambda kv: kv[1][leg], reverse=True)[:TOP_N_STRIKES]
-        out = []
+        out: list[dict[str, Any]] = []
         for strike, legs in ranked:
             if legs[leg] <= 0:
                 continue

@@ -35,6 +35,7 @@ the EB-8 Unified Verdict Engine, not just an old pre-EB-8 archived row.
 from __future__ import annotations
 
 import json
+from typing import Any, cast
 
 from api.ml_classifier import read_cached_model
 from api.trap_labels import compute_false_break_stats
@@ -45,23 +46,26 @@ SYMBOL_DOMINANCE_WARN_PCT = (
     20.0  # any single symbol above this share of episodes is a real concentration flag
 )
 MIN_COMPARISON_SAMPLE = 30  # don't compare EBIE-verdict vs baseline precision on a tiny sample
+Payload = dict[str, Any]
+Row = Any
 
 
-def _decode_json(raw) -> dict:
+def _decode_json(raw: object) -> Payload:
     try:
         decoded = json.loads(raw) if isinstance(raw, str) else (raw or {})
     except (json.JSONDecodeError, TypeError):
         decoded = {}
-    return decoded if isinstance(decoded, dict) else {}
+    return cast(Payload, decoded) if isinstance(decoded, dict) else {}
 
 
 ACTIONABLE_VERDICT_BANDS = {"READY", "ARMED_CANDIDATE"}
 
 
-async def _fetch_episodes(pool):
+async def _fetch_episodes(pool: Any) -> list[Row]:
     async with pool.acquire() as conn:
-        return await conn.fetch(
-            """
+        return list(
+            await conn.fetch(
+                """
             SELECT symbol, signal_type, outcome_label, sub_scores, created_at,
                    entry_premium_ask, entry_premium_bid, exit_premium_bid
             FROM signals
@@ -70,10 +74,11 @@ async def _fetch_episodes(pool):
               AND NOT COALESCE(suppressed, false)
             ORDER BY created_at DESC
             """
+            )
         )
 
 
-def _gate_a(episode_count: int) -> dict:
+def _gate_a(episode_count: int) -> Payload:
     checklist = [
         {
             "item": "Purged walk-forward CV (no leakage across train/test split)",
@@ -109,7 +114,7 @@ def _gate_a(episode_count: int) -> dict:
     }
 
 
-def _gate_b(rows: list) -> dict:
+def _gate_b(rows: list[Row]) -> Payload:
     total = len(rows)
     sessions = {r["created_at"].date() for r in rows if r.get("created_at")}
     by_symbol: dict[str, int] = {}
@@ -119,7 +124,7 @@ def _gate_b(rows: list) -> dict:
         by_direction[r["signal_type"]] = by_direction.get(r["signal_type"], 0) + 1
 
     max_symbol_share = round(100 * max(by_symbol.values()) / total, 1) if total else 0.0
-    dominant_symbol = max(by_symbol, key=by_symbol.get) if by_symbol else None
+    dominant_symbol = max(by_symbol, key=lambda symbol: by_symbol[symbol]) if by_symbol else None
     both_directions = len([d for d in by_direction if by_direction[d] > 0]) >= 2
 
     meets_episodes = total >= GATE_B_MIN_EPISODES
@@ -148,7 +153,7 @@ def _gate_b(rows: list) -> dict:
     }
 
 
-def _precision_comparison(rows: list) -> dict:
+def _precision_comparison(rows: list[Row]) -> Payload:
     """Does EBIE's own verdict band actually correlate with a HIGHER
     real precision than the unfiltered baseline, on the exact same
     episode set? The genuine "precision@K" acceptance criterion (Section
@@ -165,7 +170,9 @@ def _precision_comparison(rows: list) -> dict:
 
     actionable = []
     for r in rows:
-        verdict = (_decode_json(r["sub_scores"]).get("verdict") or {}).get("verdict")
+        verdict_raw = _decode_json(r["sub_scores"]).get("verdict")
+        verdict_payload = cast(Payload, verdict_raw) if isinstance(verdict_raw, dict) else {}
+        verdict = verdict_payload.get("verdict")
         if verdict in ACTIONABLE_VERDICT_BANDS:
             actionable.append(r)
 
@@ -194,7 +201,7 @@ def _precision_comparison(rows: list) -> dict:
     }
 
 
-async def compute_shadow_validation_report(pool, redis, days: int = 90) -> dict:
+async def compute_shadow_validation_report(pool: Any, redis: Any, days: int = 90) -> Payload:
     if not pool:
         return {"available": False, "reason": "Postgres analytics pool is not available."}
 
@@ -209,7 +216,10 @@ async def compute_shadow_validation_report(pool, redis, days: int = 90) -> dict:
         if redis
         else {"available": False, "reason": "Redis unavailable."}
     )
-    model_calibration = cached_model.get("calibration") or {}
+    model_calibration_raw = cached_model.get("calibration")
+    model_calibration = (
+        cast(Payload, model_calibration_raw) if isinstance(model_calibration_raw, dict) else {}
+    )
 
     return {
         "available": True,

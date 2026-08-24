@@ -111,6 +111,12 @@ export function initRailV2() {
   sectionLabel?.insertAdjacentElement('afterend', perfBar);
 
   function showPane(key) {
+    if (key === 'breakout-radar') {
+      showPrimary();
+      document.getElementById('breakoutRadarV2')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
+
     const isPerf = PERFORMANCE_KEYS.has(key) || key === 'performance';
     const activeKey = isPerf && key === 'performance' ? PERFORMANCE_TABS[0].key : key;
     const row = isPerf

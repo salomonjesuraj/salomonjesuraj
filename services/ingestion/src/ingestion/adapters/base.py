@@ -3,6 +3,7 @@
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 from enum import StrEnum
+from typing import Any
 
 from infusion_models.tick import RawTickV1
 
@@ -69,6 +70,6 @@ class BrokerAdapter(ABC):
         ...
 
     @abstractmethod
-    def health(self) -> dict:
+    def health(self) -> dict[str, Any]:
         """Return health status dict."""
         ...

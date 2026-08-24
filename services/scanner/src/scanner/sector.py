@@ -25,6 +25,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
+from typing import Any
 
 import structlog
 from infusion_common.timing import now_us
@@ -157,7 +158,7 @@ class SectorEngine:
             if not raw:
                 continue
 
-            features = {}
+            features: dict[str, Any] = {}
             for k, v in raw.items():
                 kk = k.decode() if isinstance(k, bytes) else k
                 vv = v.decode() if isinstance(v, bytes) else v
@@ -198,7 +199,7 @@ class SectorEngine:
             sector_ids=sorted(self._sectors.keys()),
         )
 
-    async def update_symbol(self, symbol: str, features: dict) -> None:
+    async def update_symbol(self, symbol: str, features: dict[str, Any]) -> None:
         """Update sector metrics when a symbol's features change.
 
         This is the hot path — called on every feature tick.
@@ -241,7 +242,7 @@ class SectorEngine:
             self._recalculate_rankings()
             await self._persist_all()
 
-    def _update_index(self, features: dict) -> None:
+    def _update_index(self, features: dict[str, Any]) -> None:
         """Update market regime from NIFTY50 index features."""
         self._index_snapshot.ltp = features.get("ltp", self._index_snapshot.ltp)
         self._index_snapshot.vwap = features.get("vwap", self._index_snapshot.vwap)
@@ -534,7 +535,7 @@ class SectorEngine:
 
     def compute_cross_confirmation(
         self, sector_id: str, symbol: str, signal_type: str = "bullish"
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Dow-Theory-style multi-measure confirmation (Schannep's 2-of-3
         index rule, translated to NSE) — is this signal happening in an
         environment where multiple INDEPENDENT measures agree, or is it an
@@ -625,7 +626,7 @@ class SectorEngine:
         }
 
     @property
-    def stats(self) -> dict:
+    def stats(self) -> dict[str, Any]:
         return {
             "sector_updates": self._updates,
             "sector_rank_recalcs": self._rank_recalcs,

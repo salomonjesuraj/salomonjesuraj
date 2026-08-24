@@ -7,23 +7,26 @@ happen only in the sweep loop" convention as radar_alerts.py.
 from __future__ import annotations
 
 import json
+from typing import Any
 
 from aiohttp import web
 
 routes = web.RouteTableDef()
+Payload = dict[str, Any]
 
 
 @routes.get("/api/futures/status")
-async def futures_status(request):
+async def futures_status(request: web.Request) -> web.Response:
     redis = request.app["redis"]
     raw = await redis.get("infusion:futures-queue:status")
     if not raw:
         return web.json_response({"available": False, "reason": "No sweep has completed yet."})
-    return web.json_response(json.loads(raw))
+    text = raw.decode() if isinstance(raw, bytes) else raw
+    return web.json_response(json.loads(text))
 
 
 @routes.get("/api/futures/{symbol}")
-async def futures_for_symbol(request):
+async def futures_for_symbol(request: web.Request) -> web.Response:
     redis = request.app["redis"]
     symbol = request.match_info["symbol"].upper()
     data = await redis.hgetall(f"infusion:futures:{symbol}")
@@ -31,7 +34,7 @@ async def futures_for_symbol(request):
         return web.json_response(
             {"available": False, "reason": f"No futures data for {symbol} yet."}, status=404
         )
-    result = {"symbol": symbol, "available": True}
+    result: Payload = {"symbol": symbol, "available": True}
     for k, v in data.items():
         key = k.decode() if isinstance(k, bytes) else k
         val = v.decode() if isinstance(v, bytes) else v
@@ -39,9 +42,9 @@ async def futures_for_symbol(request):
             result[key] = None
             continue
         try:
-            result[key] = (
+            result[str(key)] = (
                 float(val) if "." in val or key in ("basis_pct", "oi_change_pct") else int(val)
             )
         except (ValueError, TypeError):
-            result[key] = val
+            result[str(key)] = val
     return web.json_response(result)

@@ -15,16 +15,17 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass
+from typing import Any
 
 
-def _num(value, default: float = 0.0) -> float:
+def _num(value: Any, default: float = 0.0) -> float:
     try:
         return float(value)
     except (TypeError, ValueError):
         return default
 
 
-def _dict(value) -> dict:
+def _dict(value: Any) -> dict[str, Any]:
     if isinstance(value, dict):
         return value
     if isinstance(value, str) and value.strip():
@@ -49,7 +50,7 @@ class DirectionZone:
     reason: str
     switch_note: str = ""
 
-    def as_dict(self) -> dict:
+    def as_dict(self) -> dict[str, Any]:
         return {
             "bias": self.bias,
             "state": self.state,
@@ -64,7 +65,9 @@ class DirectionZone:
         }
 
 
-def derive_direction_zone(payload: dict, previous_lock: dict | None = None) -> DirectionZone:
+def derive_direction_zone(
+    payload: dict[str, Any], previous_lock: dict[str, Any] | None = None
+) -> DirectionZone:
     fs = _dict(payload.get("features_snapshot"))
     primary_map = _dict(fs.get("primary_trade_map") or payload.get("primary_trade_map"))
     alternate_map = _dict(

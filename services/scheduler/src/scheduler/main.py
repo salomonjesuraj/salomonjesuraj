@@ -3,6 +3,7 @@
 import asyncio
 import contextlib
 import os
+from typing import Any, cast
 
 import aiohttp
 import redis.asyncio as aioredis
@@ -74,7 +75,7 @@ ML_CLASSIFIER_INTERVAL_SEC = 24 * 3600
 ML_CLASSIFIER_RETRY_SEC = 120
 
 
-async def run_optimizer_proposal_sweep() -> dict:
+async def run_optimizer_proposal_sweep() -> dict[str, Any]:
     """Calls the api service's walk-forward-vs-live-config comparison. This
     only ever causes api to WRITE A PROPOSAL to Redis (infusion:optimizer:
     proposal) for human review -- never changes scanner's actual config.
@@ -87,10 +88,10 @@ async def run_optimizer_proposal_sweep() -> dict:
         session.get(url, timeout=aiohttp.ClientTimeout(total=120)) as resp,
     ):
         resp.raise_for_status()
-        return await resp.json()
+        return cast(dict[str, Any], await resp.json())
 
 
-async def run_promotion_review_sweep() -> dict:
+async def run_promotion_review_sweep() -> dict[str, Any]:
     """Calls the api service's EB-14 promotion-review endpoint. This only
     ever causes api to compute the current EB-13 shadow-validation
     report and INSERT one durable snapshot row into
@@ -104,10 +105,10 @@ async def run_promotion_review_sweep() -> dict:
         session.post(url, timeout=aiohttp.ClientTimeout(total=60)) as resp,
     ):
         resp.raise_for_status()
-        return await resp.json()
+        return cast(dict[str, Any], await resp.json())
 
 
-async def run_kelly_sizing_sweep() -> dict:
+async def run_kelly_sizing_sweep() -> dict[str, Any]:
     """Calls the api service's half-Kelly sizing computation. This only
     ever writes informational stats to Redis (infusion:kelly:{strategy_id})
     for scanner/engine.py's _recommended_lots() to read alongside the
@@ -120,10 +121,10 @@ async def run_kelly_sizing_sweep() -> dict:
         session.get(url, timeout=aiohttp.ClientTimeout(total=60)) as resp,
     ):
         resp.raise_for_status()
-        return await resp.json()
+        return cast(dict[str, Any], await resp.json())
 
 
-async def run_ml_classifier_sweep() -> dict:
+async def run_ml_classifier_sweep() -> dict[str, Any]:
     """Calls the api service's ML classifier (re)train. This only ever
     writes the trained weights + held-out test metrics to Redis
     (infusion:ml-classifier:model) for scanner/ml_score.py to read and
@@ -136,10 +137,10 @@ async def run_ml_classifier_sweep() -> dict:
         session.get(url, timeout=aiohttp.ClientTimeout(total=90)) as resp,
     ):
         resp.raise_for_status()
-        return await resp.json()
+        return cast(dict[str, Any], await resp.json())
 
 
-async def run_vix_multiplier_sweep() -> dict:
+async def run_vix_multiplier_sweep() -> dict[str, Any]:
     """Calls the api service's India VIX-tiered position-size read. Only
     ever writes an informational tier/multiplier to Redis
     (infusion:vix:multiplier) for scanner/engine.py's _recommended_lots()
@@ -152,10 +153,10 @@ async def run_vix_multiplier_sweep() -> dict:
         session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp,
     ):
         resp.raise_for_status()
-        return await resp.json()
+        return cast(dict[str, Any], await resp.json())
 
 
-async def run_premium_capture() -> dict:
+async def run_premium_capture() -> dict[str, Any]:
     """Calls the api service's option-premium capture pass for signals
     that fired/resolved recently and don't have real premium data yet.
     See capture_missing_premiums() in api/routes/backtest.py -- this
@@ -168,7 +169,7 @@ async def run_premium_capture() -> dict:
         session.post(url, timeout=aiohttp.ClientTimeout(total=60)) as resp,
     ):
         resp.raise_for_status()
-        return await resp.json()
+        return cast(dict[str, Any], await resp.json())
 
 
 async def run() -> None:
@@ -183,7 +184,7 @@ async def run() -> None:
     lifecycle.on_shutdown(health.stop)
     lifecycle.on_shutdown(redis.aclose)
 
-    async def main_loop():
+    async def main_loop() -> None:
         while not lifecycle.shutdown_event.is_set():
             try:
                 result = await bootstrap_historical(redis)
@@ -198,7 +199,7 @@ async def run() -> None:
     # historical-bootstrap cadence above (different purpose, different
     # timing). Runs once shortly after startup too so a proposal exists
     # without waiting a full day on a fresh deploy.
-    async def optimizer_proposal_loop():
+    async def optimizer_proposal_loop() -> None:
         while not lifecycle.shutdown_event.is_set():
             delay = OPTIMIZER_PROPOSAL_INTERVAL_SEC
             try:
@@ -221,7 +222,7 @@ async def run() -> None:
     # every loop above. Runs once shortly after startup too (same
     # reasoning as optimizer_proposal_loop above) so a first review
     # snapshot exists immediately rather than waiting a full week.
-    async def promotion_review_loop():
+    async def promotion_review_loop() -> None:
         while not lifecycle.shutdown_event.is_set():
             delay = PROMOTION_REVIEW_INTERVAL_SEC
             try:
@@ -244,7 +245,7 @@ async def run() -> None:
     # loops above. Failures just mean "try again in 60s" -- no retry
     # backoff needed since the interval is already short and each pass
     # is cheap/bounded (LIMIT 20 per query inside capture_missing_premiums()).
-    async def premium_capture_loop():
+    async def premium_capture_loop() -> None:
         while not lifecycle.shutdown_event.is_set():
             try:
                 result = await run_premium_capture()
@@ -266,7 +267,7 @@ async def run() -> None:
     # Phase 13.10: once-daily half-Kelly sizing sweep, same shape as
     # optimizer_proposal_loop. Runs once at startup too so the Redis cache
     # is populated without waiting a full day on a fresh deploy.
-    async def kelly_sizing_loop():
+    async def kelly_sizing_loop() -> None:
         while not lifecycle.shutdown_event.is_set():
             delay = KELLY_SIZING_INTERVAL_SEC
             try:
@@ -288,7 +289,7 @@ async def run() -> None:
     # ML classifier: once-daily retrain, same shape as kelly_sizing_loop.
     # Runs once at startup too so the Redis cache is populated without
     # waiting a full day on a fresh deploy.
-    async def ml_classifier_loop():
+    async def ml_classifier_loop() -> None:
         while not lifecycle.shutdown_event.is_set():
             delay = ML_CLASSIFIER_INTERVAL_SEC
             try:
@@ -313,7 +314,7 @@ async def run() -> None:
 
     # VIX-tiered position-size multiplier: frequent (5 min) sweep, same
     # shape as kelly_sizing_loop otherwise. Runs once at startup too.
-    async def vix_multiplier_loop():
+    async def vix_multiplier_loop() -> None:
         while not lifecycle.shutdown_event.is_set():
             delay = VIX_MULTIPLIER_INTERVAL_SEC
             try:
@@ -333,7 +334,7 @@ async def run() -> None:
                     timeout=delay,
                 )
 
-    async def combined_loop():
+    async def combined_loop() -> None:
         await asyncio.gather(
             main_loop(),
             optimizer_proposal_loop(),
@@ -347,7 +348,7 @@ async def run() -> None:
     await lifecycle.run_until_shutdown(combined_loop)
 
 
-def main():
+def main() -> None:
     asyncio.run(run())
 
 

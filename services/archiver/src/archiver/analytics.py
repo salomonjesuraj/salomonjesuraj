@@ -14,6 +14,7 @@ Design:
 from __future__ import annotations
 
 from datetime import date, timedelta, timezone
+from typing import Any
 
 import asyncpg
 import structlog
@@ -21,6 +22,7 @@ import structlog
 logger = structlog.get_logger()
 
 _IST = timezone(timedelta(hours=5, minutes=30))
+Payload = dict[str, Any]
 
 
 class SignalAnalytics:
@@ -33,7 +35,7 @@ class SignalAnalytics:
     # PRECISION METRICS
     # ═══════════════════════════════════════════════
 
-    async def precision(self, trade_date: date | None = None) -> dict:
+    async def precision(self, trade_date: date | None = None) -> Payload:
         """Overall signal precision stats.
 
         Returns: total, target_hits, stop_hits, expired, precision_pct, avg_score, avg_rr
@@ -102,7 +104,7 @@ class SignalAnalytics:
             },
         }
 
-    async def precision_by_grade(self, trade_date: date | None = None) -> list[dict]:
+    async def precision_by_grade(self, trade_date: date | None = None) -> list[Payload]:
         """Precision breakdown by conviction grade."""
         where = "WHERE NOT suppressed AND outcome_tracked"
         params = []
@@ -148,7 +150,7 @@ class SignalAnalytics:
     # SECTOR ANALYTICS
     # ═══════════════════════════════════════════════
 
-    async def precision_by_sector(self, trade_date: date | None = None) -> list[dict]:
+    async def precision_by_sector(self, trade_date: date | None = None) -> list[Payload]:
         """Precision breakdown by sector."""
         where = "WHERE NOT suppressed AND outcome_tracked AND sector_id != ''"
         params = []
@@ -196,7 +198,7 @@ class SignalAnalytics:
     # SESSION ANALYTICS
     # ═══════════════════════════════════════════════
 
-    async def precision_by_session(self, trade_date: date | None = None) -> list[dict]:
+    async def precision_by_session(self, trade_date: date | None = None) -> list[Payload]:
         """Precision breakdown by market session hour."""
         where = "WHERE NOT suppressed AND outcome_tracked AND session_hour IS NOT NULL"
         params = []
@@ -247,7 +249,7 @@ class SignalAnalytics:
     # SUPPRESSION EFFECTIVENESS
     # ═══════════════════════════════════════════════
 
-    async def suppression_stats(self, trade_date: date | None = None) -> dict:
+    async def suppression_stats(self, trade_date: date | None = None) -> Payload:
         """Suppression counts and breakdown by reason."""
         where = "WHERE suppressed"
         params = []
@@ -288,7 +290,7 @@ class SignalAnalytics:
     # REGIME ANALYTICS
     # ═══════════════════════════════════════════════
 
-    async def precision_by_regime(self, trade_date: date | None = None) -> list[dict]:
+    async def precision_by_regime(self, trade_date: date | None = None) -> list[Payload]:
         """Precision breakdown by market regime."""
         where = "WHERE NOT suppressed AND outcome_tracked AND market_regime != ''"
         params = []
@@ -332,7 +334,9 @@ class SignalAnalytics:
     # RECENT OUTCOMES
     # ═══════════════════════════════════════════════
 
-    async def recent_outcomes(self, limit: int = 20, trade_date: date | None = None) -> list[dict]:
+    async def recent_outcomes(
+        self, limit: int = 20, trade_date: date | None = None
+    ) -> list[Payload]:
         """Most recent tracked signal outcomes.
 
         trade_date (Phase N7, dashboard Signal Integrity tab): optional
@@ -342,7 +346,7 @@ class SignalAnalytics:
         every existing caller.
         """
         where = "WHERE NOT suppressed AND outcome_tracked"
-        params: list = [limit]
+        params: list[Any] = [limit]
         if trade_date:
             where += " AND created_at::date = $2"
             params.append(trade_date)
@@ -397,7 +401,7 @@ class SignalAnalytics:
     # DAILY RECAP DATA
     # ═══════════════════════════════════════════════
 
-    async def daily_recap_data(self, trade_date: date | None = None) -> dict:
+    async def daily_recap_data(self, trade_date: date | None = None) -> Payload:
         """All data needed for the daily recap summary."""
         td = trade_date or date.today()
 

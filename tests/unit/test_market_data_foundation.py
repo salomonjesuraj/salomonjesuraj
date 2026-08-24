@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 from api.routes.charts import _aggregate, _merge_bars
+from api.routes.ticks import _finalize_stock_breakout_tier, _scanner_intel
 from feature_engine.bar_builder import update_bars
 from feature_engine.engine import FeatureEngine
 from feature_engine.features.volume import get_relative_volume
@@ -88,3 +89,76 @@ def test_chart_merge_deduplicates_and_aggregates_real_bars():
     assert len(merged) == 2
     aggregated = _aggregate(merged, 5)
     assert aggregated == [{"time": 0, "open": 10, "high": 14, "low": 9, "close": 13, "volume": 15}]
+
+
+def breakout_entry():
+    return {
+        "ltp": 102,
+        "change_pct": 1.2,
+        "day_high": 102,
+        "day_low": 98,
+        "prev_close": 100,
+    }
+
+
+def breakout_features(volume_profile_ready=True):
+    return {
+        "ltp": 102,
+        "change_pct": 1.2,
+        "vwap": 100,
+        "ema_5": 101.8,
+        "ema_9": 101.5,
+        "ema_20": 100.5,
+        "ema_50": 99.5,
+        "rsi_14": 58,
+        "macd": 1.2,
+        "macd_signal": 0.7,
+        "macd_hist": 0.5,
+        "rel_vol_20d": 3.0,
+        "bb_width": 0.02,
+        "spread_bps": 8,
+        "atr_trend": "BULL",
+        "atr_trail_stop": 99,
+        "squeeze_state": "BUILDING",
+        "candle_pattern": "Bullish Engulfing",
+        "atr_14": 1.0,
+        "prev_close": 100,
+        "day_high": 102,
+        "day_low": 98,
+        "volume_profile_ready": str(volume_profile_ready),
+    }
+
+
+def test_stock_breakout_score_requires_real_volume_profile_for_rvol_points():
+    ready = _scanner_intel(breakout_entry(), breakout_features(volume_profile_ready=True))
+    missing = _scanner_intel(breakout_entry(), breakout_features(volume_profile_ready=False))
+    assert ready["volume_profile_ready"] is True
+    assert missing["volume_profile_ready"] is False
+    assert ready["rel_vol"] == missing["rel_vol"] == 3.0
+    assert ready["stock_breakout_score"] - missing["stock_breakout_score"] == 25.0
+
+
+def test_option_ready_tier_only_upgrades_qualified_stock_breakouts():
+    qualified = {
+        "stock_breakout_score": 72,
+        "anti_chase_reasons": [],
+        "chase_quality": "CLEAN",
+        "chain_trade_ready": True,
+    }
+    assert _finalize_stock_breakout_tier(qualified) == "OPTION_READY"
+
+    early_watch = {
+        "stock_breakout_score": 62,
+        "anti_chase_reasons": [],
+        "chase_quality": "CLEAN",
+        "chain_trade_ready": True,
+    }
+    assert _finalize_stock_breakout_tier(early_watch) == "EARLY_WATCH"
+
+    no_contract = {
+        "stock_breakout_score": 72,
+        "anti_chase_reasons": [],
+        "chase_quality": "CLEAN",
+        "chain_trade_ready": False,
+    }
+    assert _finalize_stock_breakout_tier(no_contract) == "BREAKOUT_NOW"

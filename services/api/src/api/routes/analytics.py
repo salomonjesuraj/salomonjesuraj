@@ -22,7 +22,7 @@ from aiohttp import web
 routes = web.RouteTableDef()
 
 
-def _parse_date(request) -> date | None:
+def _parse_date(request: web.Request) -> date | None:
     """Extract optional date query param."""
     raw = request.query.get("date")
     if not raw:
@@ -34,7 +34,7 @@ def _parse_date(request) -> date | None:
 
 
 @routes.get("/api/analytics/precision")
-async def analytics_precision(request):
+async def analytics_precision(request: web.Request) -> web.Response:
     analytics = request.app["analytics"]
     td = _parse_date(request)
     data = await analytics.precision(td)
@@ -42,7 +42,7 @@ async def analytics_precision(request):
 
 
 @routes.get("/api/analytics/precision/grade")
-async def analytics_by_grade(request):
+async def analytics_by_grade(request: web.Request) -> web.Response:
     analytics = request.app["analytics"]
     td = _parse_date(request)
     data = await analytics.precision_by_grade(td)
@@ -50,7 +50,7 @@ async def analytics_by_grade(request):
 
 
 @routes.get("/api/analytics/precision/sector")
-async def analytics_by_sector(request):
+async def analytics_by_sector(request: web.Request) -> web.Response:
     analytics = request.app["analytics"]
     td = _parse_date(request)
     data = await analytics.precision_by_sector(td)
@@ -58,7 +58,7 @@ async def analytics_by_sector(request):
 
 
 @routes.get("/api/analytics/precision/session")
-async def analytics_by_session(request):
+async def analytics_by_session(request: web.Request) -> web.Response:
     analytics = request.app["analytics"]
     td = _parse_date(request)
     data = await analytics.precision_by_session(td)
@@ -66,7 +66,7 @@ async def analytics_by_session(request):
 
 
 @routes.get("/api/analytics/precision/regime")
-async def analytics_by_regime(request):
+async def analytics_by_regime(request: web.Request) -> web.Response:
     analytics = request.app["analytics"]
     td = _parse_date(request)
     data = await analytics.precision_by_regime(td)
@@ -74,7 +74,7 @@ async def analytics_by_regime(request):
 
 
 @routes.get("/api/analytics/suppression")
-async def analytics_suppression(request):
+async def analytics_suppression(request: web.Request) -> web.Response:
     analytics = request.app["analytics"]
     td = _parse_date(request)
     data = await analytics.suppression_stats(td)
@@ -82,7 +82,7 @@ async def analytics_suppression(request):
 
 
 @routes.get("/api/analytics/outcomes")
-async def analytics_outcomes(request):
+async def analytics_outcomes(request: web.Request) -> web.Response:
     analytics = request.app["analytics"]
     limit = int(request.query.get("limit", "20"))
     limit = min(max(limit, 1), 100)  # bounded 1-100
@@ -95,7 +95,7 @@ async def analytics_outcomes(request):
 
 
 @routes.get("/api/analytics/recap")
-async def analytics_recap(request):
+async def analytics_recap(request: web.Request) -> web.Response:
     analytics = request.app["analytics"]
     td = _parse_date(request)
     data = await analytics.daily_recap_data(td)

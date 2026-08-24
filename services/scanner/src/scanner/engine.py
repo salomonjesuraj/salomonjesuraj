@@ -27,6 +27,7 @@ from __future__ import annotations
 import json
 import uuid
 from datetime import datetime, timedelta, timezone
+from typing import Any, cast
 
 import structlog
 from infusion_common.sizing import compute_position_size
@@ -51,7 +52,7 @@ from scanner.portfolio_risk import compute_portfolio_fit
 from scanner.pre_breakout import PreBreakoutTracker
 from scanner.scoring import compute_conviction, compute_risk_reward, grade_conviction
 from scanner.sector import SectorEngine
-from scanner.state import StateManager
+from scanner.state import ScannerSymbolState, StateManager
 from scanner.strategies import get_strategies
 from scanner.strategies.base import SignalCandidate
 from scanner.suppression import SuppressionGate
@@ -92,7 +93,7 @@ class ScannerEngine:
         self._signals_suppressed = 0
         self._evaluations = 0
 
-    async def process_feature(self, payload: dict) -> None:
+    async def process_feature(self, payload: dict[str, Any]) -> None:
         """Process a single feature vector from the stream.
 
         This is the core hot path — called for every feature tick.
@@ -201,7 +202,7 @@ class ScannerEngine:
         invalidation_price: float,
         atr: float | None = None,
         strategy_id: str = "",
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Signal-time position-size estimate using underlying entry/stop —
         matches simple_structure_pivot_ma_plan_v6.pine's Position Sizing
         (1% Rule). This is an early estimate for the dashboard/alert to show
@@ -223,7 +224,10 @@ class ScannerEngine:
         lot_size = self._symbol_lot_sizes.get(symbol, 1)
         try:
             raw = await self.redis.get("infusion:risk:settings")
-            settings = json.loads(raw.decode() if isinstance(raw, bytes) else raw) if raw else {}
+            decoded_settings = (
+                json.loads(raw.decode() if isinstance(raw, bytes) else raw) if raw else {}
+            )
+            settings = decoded_settings if isinstance(decoded_settings, dict) else {}
         except Exception:
             settings = {}
         risk_amount = float(settings.get("risk_per_trade_amount") or 0.0)
@@ -245,7 +249,7 @@ class ScannerEngine:
             **vix,
         }
 
-    async def _read_vix_multiplier(self) -> dict:
+    async def _read_vix_multiplier(self) -> dict[str, Any]:
         """Best-effort read of the India VIX-tiered size multiplier the
         scheduler's ~5-min sweep writes (see compute_vix_multiplier() in
         api/routes/market.py, api/vix_sizing.py). Informational only,
@@ -260,6 +264,8 @@ class ScannerEngine:
                 return {}
             text = raw.decode() if isinstance(raw, bytes) else raw
             decoded = json.loads(text)
+            if not isinstance(decoded, dict):
+                return {}
             if not decoded.get("available"):
                 return {}
             return {
@@ -270,7 +276,7 @@ class ScannerEngine:
         except Exception:
             return {}
 
-    async def _read_kelly_sizing(self, strategy_id: str) -> dict:
+    async def _read_kelly_sizing(self, strategy_id: str) -> dict[str, Any]:
         """Phase 13.10: best-effort read of the half-Kelly sizing stat the
         scheduler's daily sweep writes (see compute_kelly_sizing() in
         api/routes/backtest.py) -- informational only, added alongside
@@ -282,7 +288,7 @@ class ScannerEngine:
             raw = await self.redis.hgetall(f"infusion:kelly:{strategy_id}")
             if not raw:
                 return {}
-            decoded = {}
+            decoded: dict[str, str] = {}
             for k, v in raw.items():
                 key = k.decode() if isinstance(k, bytes) else k
                 val = v.decode() if isinstance(v, bytes) else v
@@ -301,7 +307,7 @@ class ScannerEngine:
         except Exception:
             return {}
 
-    async def _fetch_mtf_cache(self, symbol: str) -> dict | None:
+    async def _fetch_mtf_cache(self, symbol: str) -> dict[str, Any] | None:
         """Best-effort read of the cached historical-MTF payload.
 
         Never raises into the hot path: any Redis/decode failure just means
@@ -313,11 +319,12 @@ class ScannerEngine:
             if not raw:
                 return None
             text = raw.decode() if isinstance(raw, bytes) else raw
-            return json.loads(text)
+            decoded = json.loads(text)
+            return decoded if isinstance(decoded, dict) else None
         except Exception:
             return None
 
-    async def _fetch_sentiment_cache(self, symbol: str) -> dict | None:
+    async def _fetch_sentiment_cache(self, symbol: str) -> dict[str, Any] | None:
         """Best-effort read of api/sentiment_queue.py's live sentiment
         summary for this symbol. Never raises into the hot path: a
         missing/stale cache (no recent news, sweep hasn't run yet, or
@@ -330,13 +337,15 @@ class ScannerEngine:
                 return None
             text = raw.decode() if isinstance(raw, bytes) else raw
             decoded = json.loads(text)
+            if not isinstance(decoded, dict):
+                return None
             if not decoded.get("available"):
                 return None
             return decoded
         except Exception:
             return None
 
-    async def _fetch_futures_cache(self, symbol: str) -> dict | None:
+    async def _fetch_futures_cache(self, symbol: str) -> dict[str, Any] | None:
         """Best-effort read of api/futures_queue.py's per-symbol futures
         hash (basis, OI/OI-delta, futures LTP) -- EBIE EB-4. Stored as a
         Redis hash (not JSON), so this does the same string->number
@@ -347,7 +356,7 @@ class ScannerEngine:
             raw = await self.redis.hgetall(f"infusion:futures:{symbol.upper()}")
             if not raw:
                 return None
-            out: dict = {}
+            out: dict[str, Any] = {}
             for k, v in raw.items():
                 key = k.decode() if isinstance(k, bytes) else k
                 val = v.decode() if isinstance(v, bytes) else v
@@ -366,7 +375,7 @@ class ScannerEngine:
         except Exception:
             return None
 
-    async def _fetch_options_dynamics_cache(self, symbol: str) -> dict | None:
+    async def _fetch_options_dynamics_cache(self, symbol: str) -> dict[str, Any] | None:
         """Best-effort read of api/options_dynamics_queue.py's per-symbol
         weighted-PCR/PCR-velocity/wall-dynamics JSON blob -- EBIE EB-5.
         Never raises into the hot path: a missing/stale cache (symbol
@@ -378,11 +387,12 @@ class ScannerEngine:
             if not raw:
                 return None
             text = raw.decode() if isinstance(raw, bytes) else raw
-            return json.loads(text)
+            decoded = json.loads(text)
+            return decoded if isinstance(decoded, dict) else None
         except Exception:
             return None
 
-    async def _fetch_market_context_cache(self, symbol: str) -> dict | None:
+    async def _fetch_market_context_cache(self, symbol: str) -> dict[str, Any] | None:
         """Best-effort read of api/ebie_state_queue.py's per-symbol raw
         market/sector-context inputs (nifty_change_pct, this symbol's
         sector average change, market breadth health) -- EBIE EB-15
@@ -398,11 +408,12 @@ class ScannerEngine:
             if not raw:
                 return None
             text = raw.decode() if isinstance(raw, bytes) else raw
-            return json.loads(text)
+            decoded = json.loads(text)
+            return decoded if isinstance(decoded, dict) else None
         except Exception:
             return None
 
-    async def _fetch_option_chain_context_cache(self, symbol: str) -> dict | None:
+    async def _fetch_option_chain_context_cache(self, symbol: str) -> dict[str, Any] | None:
         """Best-effort read of api/routes/market.py's own
         infusion:option-chain:{symbol} cache (_upstox_option_context()'s
         real execution_status/hard_blockers/gates -- the exact same data
@@ -419,11 +430,12 @@ class ScannerEngine:
             if not raw:
                 return None
             text = raw.decode() if isinstance(raw, bytes) else raw
-            return json.loads(text)
+            decoded = json.loads(text)
+            return decoded if isinstance(decoded, dict) else None
         except Exception:
             return None
 
-    async def _fetch_active_portfolio(self) -> list[dict]:
+    async def _fetch_active_portfolio(self) -> list[dict[str, Any]]:
         """Best-effort read of every currently-active signal's key
         portfolio-relevant fields -- EBIE EB-11's "current open
         portfolio" proxy (see portfolio_risk.py's own module docstring
@@ -436,9 +448,14 @@ class ScannerEngine:
             members = await self.redis.zrange(KEY_SIGNAL_ACTIVE, 0, -1)
         except Exception:
             return []
-        portfolio: list[dict] = []
+        portfolio: list[dict[str, Any]] = []
         for m in members:
-            member = m.decode() if isinstance(m, bytes) else m
+            if isinstance(m, bytes):
+                member = m.decode()
+            elif isinstance(m, str):
+                member = m
+            else:
+                continue
             if ":" not in member:
                 continue
             symbol, strategy_id = member.split(":", 1)
@@ -473,7 +490,7 @@ class ScannerEngine:
             )
         return portfolio
 
-    async def _fetch_daily_loss_budget(self) -> dict | None:
+    async def _fetch_daily_loss_budget(self) -> dict[str, Any] | None:
         """Best-effort read of api/portfolio_risk_queue.py's daily-loss-
         budget cache -- EBIE EB-11 increment 2. Never raises into the
         hot path: missing/stale cache just means portfolio_fit's
@@ -483,11 +500,11 @@ class ScannerEngine:
             if not raw:
                 return None
             decoded = json.loads(raw.decode() if isinstance(raw, bytes) else raw)
-            return decoded if decoded.get("available") else None
+            return decoded if isinstance(decoded, dict) and decoded.get("available") else None
         except Exception:
             return None
 
-    async def _fetch_consecutive_losses(self) -> dict | None:
+    async def _fetch_consecutive_losses(self) -> dict[str, Any] | None:
         """Best-effort read of api/portfolio_risk_queue.py's consecutive-
         losses cache -- EBIE EB-11 increment 2."""
         try:
@@ -495,11 +512,18 @@ class ScannerEngine:
             if not raw:
                 return None
             decoded = json.loads(raw.decode() if isinstance(raw, bytes) else raw)
-            return decoded if decoded.get("available") else None
+            return decoded if isinstance(decoded, dict) and decoded.get("available") else None
         except Exception:
             return None
 
-    async def _persist_diagnostics(self, symbol, strategy_id, features, state, candidate):
+    async def _persist_diagnostics(
+        self,
+        symbol: str,
+        strategy_id: str,
+        features: dict[str, Any],
+        state: ScannerSymbolState,
+        candidate: bool,
+    ) -> None:
         """Persist explainable gates for zero-signal investigation."""
         if strategy_id != "vol_vwap_breakout":
             return
@@ -566,13 +590,14 @@ class ScannerEngine:
     async def _process_candidate(
         self,
         candidate: SignalCandidate,
-        features: dict,
-        state,
+        features: dict[str, Any],
+        state: ScannerSymbolState,
     ) -> None:
         """Score, suppress, and publish a signal candidate."""
 
         # ── Score ──────────────────────────────────────
-        score, sub_scores = compute_conviction(candidate.features_snapshot)
+        score, numeric_sub_scores = compute_conviction(candidate.features_snapshot)
+        sub_scores: dict[str, Any] = dict(numeric_sub_scores)
 
         # ── Sector conviction adjustment ───────────────
         sector_adj, sector_explanations = self.sector.compute_sector_adjustment(
@@ -771,7 +796,10 @@ class ScannerEngine:
             await self._publish_suppressed(signal)
 
     def _enrich_explanation(
-        self, explanation: list[str], state, sector_explanations: list[str] | None = None
+        self,
+        explanation: list[str],
+        state: ScannerSymbolState,
+        sector_explanations: list[str] | None = None,
     ) -> list[str]:
         """Enrich signal explanation with pre-breakout and sector context."""
         enriched = list(explanation)  # copy to preserve determinism
@@ -788,7 +816,9 @@ class ScannerEngine:
             enriched.extend(sector_explanations)
         return enriched
 
-    async def _publish_active(self, signal: ScanSignalV2, state=None) -> None:
+    async def _publish_active(
+        self, signal: ScanSignalV2, state: ScannerSymbolState | None = None
+    ) -> None:
         """Publish confirmed signal and update active state."""
         payload = signal.model_dump()
         encoded = encode_event(EventType.SCAN_SIGNAL, payload, signal.created_at_us)
@@ -872,9 +902,9 @@ class ScannerEngine:
         legacy_signal_key = f"{KEY_SIGNAL_PREFIX}{signal.symbol}"
         await self.redis.hset(
             signal_key,
-            mapping=signal_mapping,
+            mapping=cast(Any, signal_mapping),
         )
-        await self.redis.hset(legacy_signal_key, mapping=signal_mapping)
+        await self.redis.hset(legacy_signal_key, mapping=cast(Any, signal_mapping))
         await self.redis.expire(
             signal_key,
             signal.ttl_sec,
@@ -923,7 +953,7 @@ class ScannerEngine:
             rr=signal.risk_reward_ratio,
         )
 
-    async def _auto_log_signal(self, signal: ScanSignalV2, fs: dict) -> None:
+    async def _auto_log_signal(self, signal: ScanSignalV2, fs: dict[str, Any]) -> None:
         """Write an honest journal row for every emitted signal, idempotently."""
         dedupe_id = (
             signal.signal_id or f"{signal.symbol}:{signal.strategy_id}:{signal.created_at_us}"
@@ -1049,7 +1079,12 @@ class ScannerEngine:
         """
         members = await self.redis.zrange(KEY_SIGNAL_ACTIVE, 0, -1)
         for member in members:
-            m = member.decode() if isinstance(member, bytes) else member
+            if isinstance(member, bytes):
+                m = member.decode()
+            elif isinstance(member, str):
+                m = member
+            else:
+                continue
             symbol = m.split(":")[0] if ":" in m else m
             key = f"{KEY_SIGNAL_PREFIX}{symbol}"
             exists = await self.redis.exists(key)
@@ -1057,7 +1092,7 @@ class ScannerEngine:
                 await self.redis.zrem(KEY_SIGNAL_ACTIVE, m)
 
     @property
-    def stats(self) -> dict:
+    def stats(self) -> dict[str, Any]:
         return {
             "evaluations": self._evaluations,
             "signals_emitted": self._signals_emitted,

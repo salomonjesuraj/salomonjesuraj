@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
+from typing import Any
 
 MTF_CACHE_STALE_SEC = 900  # beyond this, prefer the synthetic live proxy
 
@@ -23,14 +24,14 @@ def clamp(value: float, lo: float = 0.0, hi: float = 100.0) -> float:
     return max(lo, min(hi, value))
 
 
-def _f(features: dict, key: str, default: float = 0.0) -> float:
+def _f(features: dict[str, Any], key: str, default: float = 0.0) -> float:
     try:
         return float(features.get(key) or default)
     except (TypeError, ValueError):
         return default
 
 
-def compute_strength_meter(features: dict, bullish: bool) -> float:
+def compute_strength_meter(features: dict[str, Any], bullish: bool) -> float:
     """0-100 continuous conviction read, matching
     simple_structure_pivot_ma_plan_v6.pine's Strength Meter exactly:
     ADX level (40) + EMA-stack-spread-vs-ATR (25) + Supertrend/VWAP
@@ -121,7 +122,9 @@ def practical_option_targets(
     return t1, t2, t3, effective_risk, method
 
 
-def compute_fib_targets(ml_features: dict, *, bullish: bool, entry: float) -> dict | None:
+def compute_fib_targets(
+    ml_features: dict[str, Any], *, bullish: bool, entry: float
+) -> dict[str, Any] | None:
     """Alternate T1/T2/T3 target mode using Boroden's confluence-cluster
     extension rule (1.272 / 1.618 / 2.618 of the swing leading into the
     cluster) alongside the existing ATR-based practical_option_targets().
@@ -173,7 +176,7 @@ ROCKET_ADX_THRESHOLD = 32.0  # Pine's rocketAdxThreshold default
 ROCKET_BODY_PCT = 0.65  # Pine's rocketBodyPct default
 
 
-def compute_chaseable(features: dict, *, bullish: bool) -> bool:
+def compute_chaseable(features: dict[str, Any], *, bullish: bool) -> bool:
     """Mirrors Pine v6's "Rocket" chaseable marker: ADX >= 32, Supertrend
     and VWAP both agree with the trade direction, and the trigger candle's
     body is a strong >= 65% of its range (not a doji/indecisive bar).
@@ -221,10 +224,10 @@ class PineDecision:
     vwap_distance_atr: float
     stop_distance_atr: float
     fib_targets: (
-        dict | None
+        dict[str, Any] | None
     )  # alternate target mode, see compute_fib_targets(); None if no cluster yet
 
-    def as_snapshot(self) -> dict:
+    def as_snapshot(self) -> dict[str, Any]:
         return {
             "bull_confidence": round(self.bull_confidence, 1),
             "bear_confidence": round(self.bear_confidence, 1),
@@ -252,7 +255,7 @@ class PineDecision:
 
 
 def compute_pine_decision(
-    features: dict,
+    features: dict[str, Any],
     *,
     bullish: bool,
     entry: float,
@@ -338,7 +341,8 @@ def compute_pine_decision(
     # to the synthetic live-feature proxy below when no cache entry exists
     # yet for this symbol (e.g. it hasn't reached the priority refresh queue)
     # or the cached entry is stale.
-    mtf_cache = features.get("mtf_cache")
+    raw_mtf_cache = features.get("mtf_cache")
+    mtf_cache = raw_mtf_cache if isinstance(raw_mtf_cache, dict) else None
     cache_age = time.time() - float(mtf_cache.get("updated_at") or 0) if mtf_cache else None
     use_cache = bool(
         mtf_cache
@@ -347,7 +351,7 @@ def compute_pine_decision(
         and cache_age < MTF_CACHE_STALE_SEC
     )
 
-    if use_cache:
+    if use_cache and mtf_cache is not None:
         mtf = dict(mtf_cache.get("mtf") or {})
         dots = dict(mtf_cache.get("dots") or {})
         mtf_text = str(mtf_cache.get("mtf_text") or mtf_cache.get("alignment") or "Mixed alignment")

@@ -10,11 +10,13 @@ from __future__ import annotations
 import json
 import time
 from datetime import datetime
+from typing import Any, cast
 from zoneinfo import ZoneInfo
 
 from aiohttp import web
 
 routes = web.RouteTableDef()
+Payload = dict[str, Any]
 
 IST = ZoneInfo("Asia/Kolkata")
 JOURNAL_KEY = "infusion:journal:paper_trades"
@@ -26,21 +28,21 @@ def _now_ist() -> str:
     return datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")
 
 
-def _num(value, default: float = 0.0) -> float:
+def _num(value: object, default: float = 0.0) -> float:
     try:
-        return round(float(value), 4)
+        return round(float(cast(Any, value)), 4)
     except (TypeError, ValueError):
         return default
 
 
-def _text(value, default: str = "-") -> str:
+def _text(value: object, default: str = "-") -> str:
     if value is None:
         return default
     value = str(value).strip()
     return value or default
 
 
-def _compact_list(value, limit: int = 6) -> list[str]:
+def _compact_list(value: object, limit: int = 6) -> list[str]:
     if not isinstance(value, list):
         return []
     out: list[str] = []
@@ -51,17 +53,19 @@ def _compact_list(value, limit: int = 6) -> list[str]:
     return out
 
 
-def _normalise_trade(payload: dict) -> dict:
+def _normalise_trade(payload: Payload) -> Payload:
     symbol = _text(payload.get("symbol"), "UNKNOWN").upper()
     decision = _text(payload.get("decision") or payload.get("trade_decision"), "WAIT").upper()
-    option = (
-        payload.get("selected_option") if isinstance(payload.get("selected_option"), dict) else {}
-    )
+    option_raw = payload.get("selected_option")
+    option = cast(Payload, option_raw) if isinstance(option_raw, dict) else {}
+    event_calendar_raw = option.get("event_calendar")
     event_calendar = (
-        option.get("event_calendar") if isinstance(option.get("event_calendar"), dict) else {}
+        cast(Payload, event_calendar_raw) if isinstance(event_calendar_raw, dict) else {}
     )
-    news_edge = payload.get("news_edge") if isinstance(payload.get("news_edge"), dict) else {}
-    risk = payload.get("risk") if isinstance(payload.get("risk"), dict) else {}
+    news_edge_raw = payload.get("news_edge")
+    news_edge = cast(Payload, news_edge_raw) if isinstance(news_edge_raw, dict) else {}
+    risk_raw = payload.get("risk")
+    risk = cast(Payload, risk_raw) if isinstance(risk_raw, dict) else {}
     ts_ms = int(time.time() * 1000)
 
     entry = _num(payload.get("entry") or payload.get("entry_price_hint"))
@@ -172,20 +176,27 @@ def _normalise_trade(payload: dict) -> dict:
     }
 
 
-async def _load_rows(redis, limit: int = 80) -> list[dict]:
+async def _load_rows(redis: Any, limit: int = 80) -> list[Payload]:
     raw_rows = await redis.lrange(JOURNAL_KEY, 0, max(0, limit - 1))
-    rows: list[dict] = []
+    rows: list[Payload] = []
     for raw in raw_rows:
         try:
-            text = raw.decode() if isinstance(raw, bytes) else raw
-            rows.append(json.loads(text))
+            if isinstance(raw, bytes):
+                text = raw.decode()
+            elif isinstance(raw, str):
+                text = raw
+            else:
+                continue
+            payload = json.loads(text)
+            if isinstance(payload, dict):
+                rows.append(cast(Payload, payload))
         except Exception:
             continue
     return rows
 
 
 @routes.get("/api/journal/trades")
-async def get_journal_trades(request):
+async def get_journal_trades(request: web.Request) -> web.Response:
     redis = request.app["redis"]
     limit = int(request.query.get("limit", "80") or 80)
     limit = max(1, min(limit, MAX_JOURNAL_ROWS))
@@ -194,13 +205,14 @@ async def get_journal_trades(request):
 
 
 @routes.post("/api/journal/trades")
-async def create_journal_trade(request):
+async def create_journal_trade(request: web.Request) -> web.Response:
     redis = request.app["redis"]
     try:
-        payload = await request.json()
+        payload_raw = await request.json()
     except Exception:
-        payload = {}
-    trade = _normalise_trade(payload or {})
+        payload_raw = {}
+    payload = cast(Payload, payload_raw) if isinstance(payload_raw, dict) else {}
+    trade = _normalise_trade(payload)
     if request.query.get("dry_run") == "1":
         return web.json_response({"ok": True, "dry_run": True, "trade": trade})
     await redis.lpush(JOURNAL_KEY, json.dumps(trade))
@@ -209,7 +221,7 @@ async def create_journal_trade(request):
 
 
 @routes.post("/api/journal/signals/auto")
-async def auto_log_signal(request):
+async def auto_log_signal(request: web.Request) -> web.Response:
     """Idempotently auto-log every confirmed signal.
 
     This endpoint is intentionally Redis-backed in the current architecture so
@@ -217,10 +229,10 @@ async def auto_log_signal(request):
     """
     redis = request.app["redis"]
     try:
-        payload = await request.json()
+        payload_raw = await request.json()
     except Exception:
-        payload = {}
-    payload = payload or {}
+        payload_raw = {}
+    payload = cast(Payload, payload_raw) if isinstance(payload_raw, dict) else {}
     signal_id = _text(payload.get("signal_id"), "")
     symbol = _text(payload.get("symbol"), "UNKNOWN").upper()
     dedupe_id = (
@@ -245,19 +257,20 @@ async def auto_log_signal(request):
 
 
 @routes.post("/api/journal/trades/{trade_id}/discretion")
-async def update_journal_discretion(request):
+async def update_journal_discretion(request: web.Request) -> web.Response:
     redis = request.app["redis"]
     trade_id = request.match_info.get("trade_id")
     try:
-        payload = await request.json()
+        payload_raw = await request.json()
     except Exception:
-        payload = {}
+        payload_raw = {}
+    payload = cast(Payload, payload_raw) if isinstance(payload_raw, dict) else {}
     action = _text(payload.get("discretionary_action"), "").upper()
     if action not in {"TAKEN", "SKIPPED", "NOT_REVIEWED"}:
         return web.json_response({"ok": False, "error": "invalid_discretionary_action"}, status=400)
     rows = await _load_rows(redis, MAX_JOURNAL_ROWS)
-    updated = None
-    next_rows: list[dict] = []
+    updated: Payload | None = None
+    next_rows: list[Payload] = []
     for row in rows:
         if row.get("id") == trade_id:
             row["discretionary_action"] = action
@@ -279,16 +292,17 @@ async def update_journal_discretion(request):
 
 
 @routes.post("/api/journal/trades/{trade_id}/outcome")
-async def update_journal_outcome(request):
+async def update_journal_outcome(request: web.Request) -> web.Response:
     redis = request.app["redis"]
     trade_id = request.match_info.get("trade_id")
     try:
-        payload = await request.json()
+        payload_raw = await request.json()
     except Exception:
-        payload = {}
+        payload_raw = {}
+    payload = cast(Payload, payload_raw) if isinstance(payload_raw, dict) else {}
     rows = await _load_rows(redis, MAX_JOURNAL_ROWS)
-    updated = None
-    next_rows: list[dict] = []
+    updated: Payload | None = None
+    next_rows: list[Payload] = []
     for row in rows:
         if row.get("id") == trade_id:
             row["outcome"] = _text(payload.get("outcome"), "REVIEW").upper()
@@ -310,7 +324,7 @@ async def update_journal_outcome(request):
 
 
 @routes.get("/api/journal/stats")
-async def get_journal_stats(request):
+async def get_journal_stats(request: web.Request) -> web.Response:
     redis = request.app["redis"]
     rows = await _load_rows(redis, MAX_JOURNAL_ROWS)
     today = datetime.now(IST).strftime("%Y-%m-%d")
@@ -342,7 +356,7 @@ async def get_journal_stats(request):
 
 
 @routes.get("/api/journal/expectancy")
-async def get_journal_expectancy(request):
+async def get_journal_expectancy(request: web.Request) -> web.Response:
     """Cost-aware paper expectancy from journal rows.
 
     This is the P1 replacement headline for raw precision.  It is deliberately
@@ -369,7 +383,8 @@ async def get_journal_expectancy(request):
         risk = max(_num(row.get("risk_amount")), 1.0)
         outcome = str(row.get("outcome") or "").upper()
         rr = _num(row.get("rr1"), 1.0)
-        opt = row.get("option") if isinstance(row.get("option"), dict) else {}
+        opt_raw = row.get("option")
+        opt = cast(Payload, opt_raw) if isinstance(opt_raw, dict) else {}
         costs = _num(opt.get("total_costs"))
         cost_drag += costs
         if outcome in {"WIN", "TARGET", "T1", "T2"}:

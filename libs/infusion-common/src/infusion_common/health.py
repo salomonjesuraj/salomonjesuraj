@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import time
+from collections.abc import Callable
+from typing import Any
 
 import msgpack
 import structlog
@@ -18,7 +20,7 @@ class HealthReporter:
 
     def __init__(
         self,
-        redis,
+        redis: Any,
         service_name: str,
         interval_sec: int = 10,
         ttl_sec: int = 30,
@@ -28,29 +30,29 @@ class HealthReporter:
         self.interval_sec = interval_sec
         self.ttl_sec = ttl_sec
         self._start_time = time.time()
-        self._details_fn = None
-        self._task: asyncio.Task | None = None
+        self._details_fn: Callable[[], dict[str, Any]] | None = None
+        self._task: asyncio.Task[None] | None = None
 
-    def set_details_fn(self, fn):
+    def set_details_fn(self, fn: Callable[[], dict[str, Any]]) -> None:
         """Set a callable that returns extra health details dict."""
         self._details_fn = fn
 
-    async def start(self):
+    async def start(self) -> None:
         """Start background health reporting loop."""
         self._task = asyncio.create_task(self._loop())
         logger.info("health_reporter_started", service=self.service_name)
 
-    async def stop(self):
+    async def stop(self) -> None:
         if self._task:
             self._task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self._task
             logger.info("health_reporter_stopped", service=self.service_name)
 
-    async def _loop(self):
+    async def _loop(self) -> None:
         while True:
             try:
-                details = {}
+                details: dict[str, Any] = {}
                 if self._details_fn:
                     details = self._details_fn()
 

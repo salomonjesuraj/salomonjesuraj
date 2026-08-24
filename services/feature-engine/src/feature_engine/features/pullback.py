@@ -22,6 +22,8 @@ actually having moved against `trend_state` over that same short window
 loud," not a claim about the whole swing leg.
 """
 
+from typing import Any
+
 from feature_engine.features.volume import get_volume_sma
 from feature_engine.state import SymbolState
 
@@ -29,7 +31,7 @@ PULLBACK_LOOKBACK_BARS = 3
 DRY_UP_RATIO_THRESHOLD = 0.85  # recent volume meaningfully below the 20-bar baseline
 
 
-def pullback_dryup_snapshot(state: SymbolState, trend_state: int) -> dict:
+def pullback_dryup_snapshot(state: SymbolState, trend_state: int) -> dict[str, Any]:
     """Informational only, same "compute it, let feature-ablation earn
     its way in" governance as every other Phase 1-13.x/EB field.
     available=False (not a fabricated reading) when there isn't a clear

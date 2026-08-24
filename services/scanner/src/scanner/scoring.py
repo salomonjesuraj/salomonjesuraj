@@ -42,6 +42,8 @@ Grade mapping:
 
 from __future__ import annotations
 
+from typing import Any
+
 CHASEABLE_GRADE_CAP = 69.0  # top of B — below the 70-point A threshold
 
 _BOS_CHOCH_ALIGNED = {
@@ -50,7 +52,7 @@ _BOS_CHOCH_ALIGNED = {
 }
 
 
-def _structure_alignment_score(features: dict, bearish: bool) -> float:
+def _structure_alignment_score(features: dict[str, Any], bearish: bool) -> float:
     """0-100: does the fractal-pivot trend/BOS-CHOCH story agree with the
     signal's direction? A fresh same-direction break scores highest; an
     opposing trend scores lowest; "no structure data yet" stays neutral
@@ -76,7 +78,7 @@ def _structure_alignment_score(features: dict, bearish: bool) -> float:
     return 20.0  # trend_state actively opposes the signal direction
 
 
-def compute_conviction(features: dict) -> tuple[float, dict[str, float]]:
+def compute_conviction(features: dict[str, Any]) -> tuple[float, dict[str, float]]:
     """Compute conviction score from features.
 
     Args:

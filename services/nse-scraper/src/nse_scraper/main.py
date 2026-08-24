@@ -42,7 +42,7 @@ from nse_scraper.oauth import start_oauth_server
 logger = structlog.get_logger()
 
 
-async def store_instrument_map(redis, reverse_map: dict[str, str]) -> None:
+async def store_instrument_map(redis: aioredis.Redis, reverse_map: dict[str, str]) -> None:
     pipe = redis.pipeline()
     pipe.delete("infusion:instrument_map")
     for inst_key, symbol in reverse_map.items():
@@ -140,7 +140,7 @@ async def run() -> None:
 
     # gates live signal publishing,
     # worth refreshing more often
-    async def main_loop():
+    async def main_loop() -> None:
         refresh_counter = 0
         delivery_counter = 0
         fo_ban_counter = 0
@@ -195,7 +195,7 @@ async def run() -> None:
             await oauth_task
 
 
-def main():
+def main() -> None:
     asyncio.run(run())
 
 

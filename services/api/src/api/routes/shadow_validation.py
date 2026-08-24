@@ -30,7 +30,7 @@ VALID_DECISIONS = {"DEFERRED", "PROMOTED", "REJECTED"}
 
 
 @routes.get("/api/ebie/shadow-validation")
-async def ebie_shadow_validation(request):
+async def ebie_shadow_validation(request: web.Request) -> web.Response:
     """GET /api/ebie/shadow-validation?days=90 -- Gate A/Gate B status,
     EBIE-verdict-vs-baseline precision comparison, false-break rate, and
     calibration status, all from real archived data. See
@@ -44,7 +44,7 @@ async def ebie_shadow_validation(request):
 
 
 @routes.get("/api/ebie/verdict-calibration")
-async def ebie_verdict_calibration(request):
+async def ebie_verdict_calibration(request: web.Request) -> web.Response:
     """GET /api/ebie/verdict-calibration -- EBIE EB-15 Phase 6 item 10.
     Real, on-demand check of whether the Unified Verdict Engine's own
     directional_score can be honestly calibrated yet (the directive's
@@ -59,7 +59,7 @@ async def ebie_verdict_calibration(request):
 
 
 @routes.post("/api/ebie/promotion-review")
-async def ebie_promotion_review_create(request):
+async def ebie_promotion_review_create(request: web.Request) -> web.Response:
     """POST /api/ebie/promotion-review -- computes the current shadow-
     validation report, classifies it (NOT_READY / READY_FOR_HUMAN_REVIEW),
     and persists one durable snapshot row. Called by the scheduler's
@@ -76,7 +76,7 @@ async def ebie_promotion_review_create(request):
 
 
 @routes.get("/api/ebie/promotion-review/history")
-async def ebie_promotion_review_history(request):
+async def ebie_promotion_review_history(request: web.Request) -> web.Response:
     """GET /api/ebie/promotion-review/history?limit=20 -- recent review
     snapshots, for a human to see the real trend over time before ever
     deciding anything."""
@@ -87,7 +87,7 @@ async def ebie_promotion_review_history(request):
 
 
 @routes.post("/api/ebie/promotion-review/{review_id}/decision")
-async def ebie_promotion_review_decision(request):
+async def ebie_promotion_review_decision(request: web.Request) -> web.Response:
     """POST /api/ebie/promotion-review/{id}/decision -- lets a human
     record an explicit decision on an existing review row. Body:
     {"decision": "DEFERRED"|"PROMOTED"|"REJECTED", "note": "..."}.

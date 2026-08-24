@@ -29,13 +29,17 @@ without needing a repaint-free crossover primitive.
 
 from __future__ import annotations
 
+from typing import Any
+
+from feature_engine.state import SymbolState
+
 DEFAULT_LEFT = 2
 DEFAULT_RIGHT = 2
 BREAK_BUFFER_ATR = 0.10
 
 
 def update_structure(
-    state, left: int = DEFAULT_LEFT, right: int = DEFAULT_RIGHT, rsi: float = 50.0
+    state: SymbolState, left: int = DEFAULT_LEFT, right: int = DEFAULT_RIGHT, rsi: float = 50.0
 ) -> None:
     """Advance the fractal pivot / BOS-CHOCH state machine by one completed bar.
 
@@ -102,7 +106,7 @@ def trend_text(trend_state: int) -> str:
     return "RANGE / UNDEFINED"
 
 
-def structure_snapshot(state) -> dict:
+def structure_snapshot(state: SymbolState) -> dict[str, Any]:
     """Compact dict for FeatureVectorV1.ml_features — everything a consumer
     (scanner strategies, pine_confidence.py, dashboard) needs to render the
     same structure story TradingView shows."""

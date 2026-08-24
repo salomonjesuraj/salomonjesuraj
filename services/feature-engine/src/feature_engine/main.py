@@ -7,6 +7,7 @@ Hot state: infusion:feature:{symbol}
 
 import asyncio
 import json
+from typing import Any
 
 import structlog
 from infusion_common.health import HealthReporter
@@ -26,11 +27,12 @@ from redis.asyncio import Redis
 
 from feature_engine.config import FeatureEngineSettings
 from feature_engine.engine import FeatureEngine
+from feature_engine.state import OHLCBar
 
 logger = structlog.get_logger()
 
 
-async def main():
+async def main() -> None:
     config = FeatureEngineSettings()
     setup_logging(config.service_name, config.log_level, config.log_format)
     logger.info("feature_engine_starting")
@@ -71,28 +73,35 @@ async def main():
 
     engine.set_volume_profile_loader(load_volume_profile)
 
-    async def load_history(symbol: str) -> list[dict]:
+    async def load_history(symbol: str) -> list[dict[str, Any]]:
         raw = await redis.zrange(f"infusion:ohlc:{symbol}:history:1m", -60, -1)
-        bars = []
+        bars: list[dict[str, Any]] = []
         for value in raw:
             try:
-                value = value.decode() if isinstance(value, bytes) else value
-                bars.append(json.loads(value))
+                if isinstance(value, bytes | bytearray):
+                    decoded = value.decode()
+                elif isinstance(value, str):
+                    decoded = value
+                else:
+                    continue
+                loaded = json.loads(decoded)
+                if isinstance(loaded, dict):
+                    bars.append(loaded)
             except (TypeError, ValueError, json.JSONDecodeError):
                 continue
         return bars
 
     engine.set_history_loader(load_history)
 
-    async def load_delivery(symbol: str) -> dict | None:
+    async def load_delivery(symbol: str) -> dict[str, Any] | None:
         raw = await redis.hgetall(f"infusion:nse:delivery:{symbol}")
         if not raw:
             return None
-        out: dict = {}
+        out: dict[str, str] = {}
         for key, value in raw.items():
             k = key.decode() if isinstance(key, bytes) else key
             v = value.decode() if isinstance(value, bytes) else value
-            out[k] = v
+            out[str(k)] = str(v)
         try:
             return {
                 "delivery_pct": float(out.get("delivery_pct") or 0.0),
@@ -107,7 +116,7 @@ async def main():
 
     engine.set_delivery_loader(load_delivery)
 
-    async def on_bar(symbol, timeframe, bar):
+    async def on_bar(symbol: str, timeframe: int, bar: OHLCBar) -> None:
         """Persist every completed bar for charting and restart-safe history."""
         key = f"infusion:ohlc:{symbol}:{timeframe}m"
         ts = int(bar.bar_start_ms / 1000)
@@ -162,7 +171,7 @@ async def main():
         "clv_ready",
     )
 
-    async def on_feature(fv):
+    async def on_feature(fv: Any) -> None:
         """Callback: publish feature vector to stream + hot state."""
         payload = fv.model_dump()
         await producer.publish(

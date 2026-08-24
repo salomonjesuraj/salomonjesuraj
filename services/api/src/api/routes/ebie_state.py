@@ -13,12 +13,14 @@ that "existing tier vs EBIE state must be persisted for comparison."
 from __future__ import annotations
 
 import json
+from typing import Any, cast
 
 import msgpack
 from aiohttp import web
 from infusion_streams.constants import KEY_EBIE_VERDICT_LITE_PREFIX
 
 routes = web.RouteTableDef()
+Payload = dict[str, Any]
 
 # EBIE EB-15 Phase 3 -- verdicts genuinely worth a human glancing at.
 # NO_TRADE is deliberately excluded by default (it's the "nothing to see
@@ -40,17 +42,18 @@ _ACTIONABLE_LIGHTWEIGHT_VERDICTS = {
 
 
 @routes.get("/api/ebie/status")
-async def ebie_status(request):
+async def ebie_status(request: web.Request) -> web.Response:
     """Shadow sweep loop's own last-run status."""
     redis = request.app["redis"]
     raw = await redis.get("infusion:ebie-state-queue:status")
     if not raw:
         return web.json_response({"available": False, "reason": "No sweep has completed yet."})
-    return web.json_response(json.loads(raw))
+    text = raw.decode() if isinstance(raw, bytes) else raw
+    return web.json_response(json.loads(text))
 
 
 @routes.get("/api/ebie/transitions/recent")
-async def ebie_transitions_recent(request):
+async def ebie_transitions_recent(request: web.Request) -> web.Response:
     """Most recently logged state transitions (default 50, capped 200)."""
     pool = request.app.get("pg_pool")
     if not pool:
@@ -111,7 +114,7 @@ async def ebie_transitions_recent(request):
 
 
 @routes.get("/api/ebie/comparison")
-async def ebie_comparison(request):
+async def ebie_comparison(request: web.Request) -> web.Response:
     """Shadow-comparison view: how the new EBIE state distribution lines
     up against the legacy tier it was derived from, over a real window
     (default last 24h, capped 30 days). This is the honesty check Q3.1
@@ -166,7 +169,7 @@ async def ebie_comparison(request):
 
 
 @routes.get("/api/ebie/lightweight-verdicts")
-async def ebie_lightweight_verdicts(request):
+async def ebie_lightweight_verdicts(request: web.Request) -> web.Response:
     """GET /api/ebie/lightweight-verdicts?include_no_trade=false --
     Phase 3's universe-wide LIGHTWEIGHT verdict, one per symbol, written
     every 60s by ebie_state_queue.py's sweep (compute_lightweight_verdict()).
@@ -187,7 +190,10 @@ async def ebie_lightweight_verdicts(request):
     symbols: list[str] = []
     for meta_raw in all_symbols_raw.values():
         try:
-            meta = msgpack.unpackb(meta_raw, raw=False) if isinstance(meta_raw, bytes) else meta_raw
+            meta_raw_decoded = (
+                msgpack.unpackb(meta_raw, raw=False) if isinstance(meta_raw, bytes) else meta_raw
+            )
+            meta = cast(Payload, meta_raw_decoded) if isinstance(meta_raw_decoded, dict) else {}
             symbol = meta.get("symbol")
             if symbol:
                 symbols.append(symbol)
@@ -199,12 +205,13 @@ async def ebie_lightweight_verdicts(request):
 
     raw_values = await redis.mget([f"{KEY_EBIE_VERDICT_LITE_PREFIX}{s}" for s in symbols])
 
-    verdicts = []
+    verdicts: list[Payload] = []
     for raw in raw_values:
         if not raw:
             continue
         try:
-            v = msgpack.unpackb(raw, raw=False)
+            v_raw = msgpack.unpackb(raw, raw=False)
+            v = cast(Payload, v_raw) if isinstance(v_raw, dict) else {}
         except Exception:
             continue
         if not include_no_trade and v.get("verdict") not in _ACTIONABLE_LIGHTWEIGHT_VERDICTS:
@@ -214,7 +221,7 @@ async def ebie_lightweight_verdicts(request):
     # Rank by confidence band (VERY_HIGH first), same descending-priority
     # feel as the Radar/Command Center panels.
     band_rank = {"VERY_HIGH": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
-    verdicts.sort(key=lambda v: band_rank.get(v.get("confidence_band"), 9))
+    verdicts.sort(key=lambda v: band_rank.get(str(v.get("confidence_band") or ""), 9))
 
     return web.json_response(
         {

@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import time
 from datetime import UTC, datetime, timedelta, timezone
+from typing import Any
 
 import asyncpg
 import structlog
@@ -25,6 +26,7 @@ from archiver.config import ArchiverSettings
 logger = structlog.get_logger()
 
 _IST = timezone(timedelta(hours=5, minutes=30))
+Payload = dict[str, Any]
 
 # Session hour classification (IST)
 _SESSION_BOUNDARIES = [
@@ -80,16 +82,16 @@ class SignalWriter:
         # or auto-flush when batch is full
     """
 
-    def __init__(self, pool: asyncpg.Pool, settings: ArchiverSettings):
+    def __init__(self, pool: asyncpg.Pool, settings: ArchiverSettings) -> None:
         self._pool = pool
         self._batch_size = settings.write_batch_size
         self._flush_sec = settings.write_flush_sec
-        self._buffer: list[dict] = []
+        self._buffer: list[Payload] = []
         self._last_flush = time.monotonic()
         self._total_written = 0
         self._total_dupes = 0
 
-    def add(self, payload: dict) -> bool:
+    def add(self, payload: Payload) -> bool:
         """Add a signal payload to the write buffer.
 
         Returns True if the buffer is full and should be flushed.
@@ -188,7 +190,7 @@ class SignalWriter:
             return 0
 
     @property
-    def stats(self) -> dict:
+    def stats(self) -> Payload:
         return {
             "buffer_size": len(self._buffer),
             "total_written": self._total_written,

@@ -38,6 +38,7 @@ different, unvalidated definition.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 
 from api.trap_labels import FALSE_BREAK_FAST_STOP_MIN, classify_false_break
 
@@ -74,6 +75,8 @@ def classify_at_window(
     target_in = time_to_target_min is not None and time_to_target_min <= window_min
     stop_in = time_to_stop_min is not None and time_to_stop_min <= window_min
     if target_in and stop_in:
+        assert time_to_target_min is not None
+        assert time_to_stop_min is not None
         return "TARGET_HIT" if time_to_target_min <= time_to_stop_min else "STOP_HIT"
     if target_in:
         return "TARGET_HIT"
@@ -82,7 +85,11 @@ def classify_at_window(
     return "TIMEOUT"
 
 
-def _window_breakdown(rows: list[dict], window_min: int) -> dict:
+Row = dict[str, Any]
+Result = dict[str, Any]
+
+
+def _window_breakdown(rows: list[Row], window_min: int) -> Result:
     counts = {"TARGET_HIT": 0, "STOP_HIT": 0, "TIMEOUT": 0}
     for r in rows:
         label = classify_at_window(
@@ -102,7 +109,7 @@ def _window_breakdown(rows: list[dict], window_min: int) -> dict:
     }
 
 
-async def compute_label_study(pool) -> dict:
+async def compute_label_study(pool: Any) -> Result:
     """Real, on-demand report -- computed fresh each call (same
     "checked occasionally, not polled" shape as shadow_validation.py's
     own report), not a scheduled job. Honestly reports whatever real
@@ -131,7 +138,7 @@ async def compute_label_study(pool) -> dict:
     except Exception as exc:
         return {"available": False, "reason": f"label-study query failed: {exc}"}
 
-    rows = [dict(r) for r in records]
+    rows: list[Row] = [dict(r) for r in records]
     total = len(rows)
     sessions = {r["created_at"].date() for r in rows if r.get("created_at")}
 
@@ -168,10 +175,12 @@ async def compute_label_study(pool) -> dict:
         # longest window's (diminishing returns from waiting longer),
         # i.e. most of the "real" resolutions already happened by then.
         longest = windows[-1]
+        longest_timeout = longest["timeout_pct"]
         for w in windows:
-            if longest["timeout_pct"] is None or w["timeout_pct"] is None:
+            window_timeout = w["timeout_pct"]
+            if longest_timeout is None or window_timeout is None:
                 continue
-            if w["timeout_pct"] <= longest["timeout_pct"] + 10.0:
+            if window_timeout <= longest_timeout + 10.0:
                 recommendation = w["window_min"]
                 break
         recommendation_reason = (

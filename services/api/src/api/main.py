@@ -76,11 +76,11 @@ from api.sentiment_queue import sentiment_cache_loop
 logger = structlog.get_logger()
 
 
-async def liveness(request):
+async def liveness(request: web.Request) -> web.Response:
     return web.json_response({"status": "ok"})
 
 
-async def main():
+async def main() -> None:
     config = APISettings()
     setup_logging(config.service_name, config.log_level, config.log_format)
 

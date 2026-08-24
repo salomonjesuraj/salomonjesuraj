@@ -87,7 +87,7 @@ async def run() -> None:
     lifecycle.on_shutdown(r.aclose)
 
     # Main consume loop
-    async def main_loop():
+    async def main_loop() -> None:
         async for _event_type, _version, _rx_us, payload, ack in consumer.consume():
             if lifecycle.shutdown_event.is_set():
                 break
@@ -108,7 +108,7 @@ async def run() -> None:
     await lifecycle.run_until_shutdown(main_loop)
 
 
-def main():
+def main() -> None:
     asyncio.run(run())
 
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from aiohttp import web
@@ -18,8 +19,9 @@ routes = web.RouteTableDef()
 
 RISK_KEY = "infusion:risk:settings"
 IST = ZoneInfo("Asia/Kolkata")
+Payload = dict[str, Any]
 
-DEFAULT_RISK = {
+DEFAULT_RISK: Payload = {
     "capital": 50000.0,
     "max_daily_loss": 2500.0,
     "risk_per_trade_pct": 1.0,
@@ -39,7 +41,7 @@ DEFAULT_RISK = {
 VALID_TRADING_SIGNAL_MODES = {"precision", "opportunity", "aggressive_paper"}
 
 
-def _num(value, default: float, low: float | None = None, high: float | None = None) -> float:
+def _num(value: Any, default: float, low: float | None = None, high: float | None = None) -> float:
     try:
         out = float(value)
     except (TypeError, ValueError):
@@ -51,7 +53,7 @@ def _num(value, default: float, low: float | None = None, high: float | None = N
     return out
 
 
-def _int(value, default: int, low: int | None = None, high: int | None = None) -> int:
+def _int(value: Any, default: int, low: int | None = None, high: int | None = None) -> int:
     try:
         out = int(value)
     except (TypeError, ValueError):
@@ -63,7 +65,7 @@ def _int(value, default: int, low: int | None = None, high: int | None = None) -
     return out
 
 
-def _normalise(raw: dict | None) -> dict:
+def _normalise(raw: Payload | None) -> Payload:
     data = {**DEFAULT_RISK, **(raw or {})}
     capital = _num(data.get("capital"), DEFAULT_RISK["capital"], 1000, 100000000)
     max_daily_loss = _num(
@@ -106,7 +108,7 @@ def _normalise(raw: dict | None) -> dict:
     return out
 
 
-async def _load(redis) -> dict:
+async def _load(redis: Any) -> Payload:
     raw = await redis.get(RISK_KEY)
     if not raw:
         return _normalise(None)
@@ -118,17 +120,19 @@ async def _load(redis) -> dict:
 
 
 @routes.get("/api/risk/settings")
-async def get_risk_settings(request):
+async def get_risk_settings(request: web.Request) -> web.Response:
     redis = request.app["redis"]
     settings = await _load(redis)
     return web.json_response({"ok": True, "settings": settings})
 
 
 @routes.post("/api/risk/settings")
-async def save_risk_settings(request):
+async def save_risk_settings(request: web.Request) -> web.Response:
     redis = request.app["redis"]
     try:
         payload = await request.json()
+        if not isinstance(payload, dict):
+            payload = {}
     except Exception:
         payload = {}
     current = await _load(redis)

@@ -21,6 +21,8 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Callable
+from typing import Any
 
 import structlog
 from infusion_streams.constants import KEY_ALERT_LOG
@@ -42,9 +44,9 @@ class AlerterEngine:
         redis: Redis,
         settings: AlerterSettings,
         gate: DeliveryGate,
-        formatter_fn,
+        formatter_fn: Callable[[dict[str, Any]], str],
         telegram_client: TelegramClient,
-    ):
+    ) -> None:
         self.redis = redis
         self.settings = settings
         self.gate = gate
@@ -60,7 +62,7 @@ class AlerterEngine:
         self._by_reason: dict[str, int] = {}
         self._processed = 0
 
-    async def process_signal(self, payload: dict) -> None:
+    async def process_signal(self, payload: dict[str, Any]) -> None:
         """Process a single signal payload from the stream.
 
         This is the core hot path — called for every consumed signal.
@@ -175,7 +177,7 @@ class AlerterEngine:
                 extra=self._delivery_extra(enriched_payload, result.priority_tier),
             )
 
-    async def _enrich_option_context(self, payload: dict) -> dict:
+    async def _enrich_option_context(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Attach cached Upstox option-chain context to Telegram payload.
 
         The alerter should not invent contract data. It only includes a real
@@ -211,7 +213,7 @@ class AlerterEngine:
             return enriched
         return payload
 
-    async def _deliver_recap(self, payload: dict) -> None:
+    async def _deliver_recap(self, payload: dict[str, Any]) -> None:
         """Deliver daily recap event — bypasses gate, sends text directly."""
         recap_text = payload.get("recap_text", "")
         if not recap_text:
@@ -239,7 +241,7 @@ class AlerterEngine:
                 error=outcome.error_msg,
             )
 
-    async def _deliver_test_alert(self, payload: dict) -> None:
+    async def _deliver_test_alert(self, payload: dict[str, Any]) -> None:
         """Deliver a marked Telegram test alert without affecting cooldowns."""
         signal_id = payload.get("signal_id", "")
         symbol = payload.get("symbol", "INFUSION_TEST")
@@ -276,7 +278,9 @@ class AlerterEngine:
                 extra=self._delivery_extra(enriched_payload, "test"),
             )
 
-    async def _enrich_direction_zone(self, payload: dict, *, persist: bool = True) -> dict:
+    async def _enrich_direction_zone(
+        self, payload: dict[str, Any], *, persist: bool = True
+    ) -> dict[str, Any]:
         """Attach stable CE/PE zone fields to the outbound alert payload."""
         symbol = str(payload.get("symbol") or "").upper()
         if not symbol:
@@ -305,7 +309,7 @@ class AlerterEngine:
 
         return enriched
 
-    def _delivery_extra(self, payload: dict, priority_tier: str = "") -> dict:
+    def _delivery_extra(self, payload: dict[str, Any], priority_tier: str = "") -> dict[str, Any]:
         """Compact metadata for the dashboard Alert Log timeline."""
         fs = payload.get("features_snapshot") or {}
         if isinstance(fs, str):
@@ -351,7 +355,7 @@ class AlerterEngine:
         grade: str,
         outcome: str,
         reason: str,
-        extra: dict | None = None,
+        extra: dict[str, Any] | None = None,
     ) -> None:
         """Append delivery record to Redis log list (capped via LTRIM).
 
@@ -375,7 +379,7 @@ class AlerterEngine:
         await pipe.execute()
 
     @property
-    def stats(self) -> dict:
+    def stats(self) -> dict[str, Any]:
         """Current engine statistics."""
         return {
             "processed": self._processed,

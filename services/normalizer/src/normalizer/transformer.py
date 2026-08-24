@@ -1,13 +1,17 @@
 """Transformer — RawTick payload + SymbolInfo -> NormalizedTickV1."""
 
+from typing import Any
+
 from infusion_common.timing import now_us
 from infusion_models.tick import NormalizedTickV1
 
 from normalizer.resolver import SymbolInfo
 
+Payload = dict[str, Any]
+
 
 def transform(
-    raw_payload: dict, info: SymbolInfo, is_out_of_order: bool = False
+    raw_payload: Payload, info: SymbolInfo, is_out_of_order: bool = False
 ) -> NormalizedTickV1:
     """Transform raw tick payload + symbol info into NormalizedTick."""
     return NormalizedTickV1(

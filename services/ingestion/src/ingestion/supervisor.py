@@ -13,9 +13,12 @@ State machine:
 import asyncio
 import contextlib
 import random
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 import structlog
 from infusion_common.errors import ErrorCategory, classify_error
+from infusion_models.tick import RawTickV1
 
 from ingestion.adapters.base import BrokerAdapter, ConnectionState
 
@@ -29,13 +32,13 @@ class ConnectionSupervisor:
         self,
         adapter: BrokerAdapter,
         instruments: list[str],
-        on_tick,
-        redis=None,
+        on_tick: Callable[[RawTickV1], Awaitable[None]],
+        redis: Any = None,
         reconnect_base: float = 1.0,
         reconnect_max: float = 30.0,
         jitter_pct: float = 0.20,
         auth_failure_backoff_sec: float = 300.0,
-    ):
+    ) -> None:
         self.adapter = adapter
         self.instruments = instruments
         self.on_tick = on_tick
@@ -56,7 +59,7 @@ class ConnectionSupervisor:
         self._last_error_was_auth_failure = False
         self._running = True
 
-    async def run(self):
+    async def run(self) -> None:
         """Main supervisor loop. Runs until stopped."""
         while self._running:
             try:
@@ -118,7 +121,7 @@ class ConnectionSupervisor:
             self.reconnect_max,
         )
         jitter = delay * self.jitter_pct * (2 * random.random() - 1)
-        return max(0.1, delay + jitter)
+        return float(max(0.1, delay + jitter))
 
     async def _sleep_or_force_recheck(self, delay: float) -> None:
         """Sleep in small slices so a dashboard token save can wake us now."""
@@ -141,6 +144,6 @@ class ConnectionSupervisor:
                 return
             await asyncio.sleep(min(1.0, max(0.1, deadline - asyncio.get_running_loop().time())))
 
-    def stop(self):
+    def stop(self) -> None:
         self._running = False
         self.adapter.state = ConnectionState.DISCONNECTED

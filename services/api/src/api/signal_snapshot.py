@@ -14,10 +14,13 @@ plain redis client so it's callable from anywhere that has one.
 from __future__ import annotations
 
 import json
+from typing import Any
+
+Payload = dict[str, Any]
 
 
-def decode_hash(data: dict) -> dict:
-    out = {}
+def decode_hash(data: dict[Any, Any]) -> Payload:
+    out: Payload = {}
     for key, value in data.items():
         key = key.decode() if isinstance(key, bytes) else key
         value = value.decode() if isinstance(value, bytes) else value
@@ -34,7 +37,7 @@ def decode_hash(data: dict) -> dict:
     return out
 
 
-async def first_signal(redis, symbol: str) -> dict:
+async def first_signal(redis: Any, symbol: str) -> Payload:
     direct = await redis.hgetall(f"infusion:signal:{symbol}")
     if direct:
         return decode_hash(direct)
@@ -48,7 +51,7 @@ async def first_signal(redis, symbol: str) -> dict:
     return {}
 
 
-async def _snapshot_reads(redis, symbol: str):
+async def _snapshot_reads(redis: Any, symbol: str) -> tuple[Any, Any, Any, Any, Payload]:
     pipe = redis.pipeline()
     pipe.hgetall(f"infusion:tick:{symbol}")
     pipe.hgetall(f"infusion:feature:{symbol}")
@@ -59,7 +62,7 @@ async def _snapshot_reads(redis, symbol: str):
     return tick, feature, prebreak, regime, signal
 
 
-async def build_symbol_snapshot(redis, symbol: str) -> dict:
+async def build_symbol_snapshot(redis: Any, symbol: str) -> Payload:
     tick_raw, feature_raw, prebreak_raw, regime_raw, signal = await _snapshot_reads(redis, symbol)
     tick = decode_hash(tick_raw)
     features = decode_hash(feature_raw)

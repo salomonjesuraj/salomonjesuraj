@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import signal
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Coroutine
+from typing import Any
 
 import structlog
 
@@ -18,7 +19,7 @@ class ServiceLifecycle:
     def __init__(self, service_name: str):
         self.service_name = service_name
         self._shutdown_event = asyncio.Event()
-        self._cleanup_callbacks: list[Callable[[], Awaitable]] = []
+        self._cleanup_callbacks: list[Callable[[], Awaitable[Any] | Any]] = []
 
     @property
     def should_run(self) -> bool:
@@ -29,7 +30,7 @@ class ServiceLifecycle:
     def shutdown_event(self) -> asyncio.Event:
         return self._shutdown_event
 
-    def register_cleanup(self, callback: Callable) -> None:
+    def register_cleanup(self, callback: Callable[[], Awaitable[Any] | Any]) -> None:
         """Register a cleanup callback for graceful shutdown.
 
         Accepts both async and sync callables (sync will be awaited as-is
@@ -57,12 +58,12 @@ class ServiceLifecycle:
             with contextlib.suppress(NotImplementedError):
                 loop.add_signal_handler(sig, _handle_signal, sig)
 
-    async def run_until_shutdown(self, main_task: Callable[[], Awaitable]) -> None:
+    async def run_until_shutdown(self, main_task: Callable[[], Coroutine[Any, Any, Any]]) -> None:
         """Run the main task until shutdown is requested."""
         self.install_signal_handlers()
         logger.info("service_starting", service=self.service_name)
 
-        task = asyncio.create_task(main_task())
+        task: asyncio.Task[Any] = asyncio.create_task(main_task())
 
         # Wait for shutdown signal
         await self._shutdown_event.wait()
@@ -77,7 +78,7 @@ class ServiceLifecycle:
         # Run cleanup callbacks
         await self.cleanup()
 
-    async def cleanup(self):
+    async def cleanup(self) -> None:
         """Run all registered cleanup tasks."""
         logger.info("cleanup_start", service=self.service_name)
         for cb in reversed(self._cleanup_callbacks):

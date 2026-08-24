@@ -31,6 +31,7 @@ IC's own min_side gate) rather than reported on a handful of rows.
 from __future__ import annotations
 
 import json
+from typing import Any
 
 FALSE_BREAK_FAST_STOP_MIN = (
     15.0  # a STOP_HIT within this many minutes of firing reads as a false break
@@ -52,7 +53,10 @@ def classify_false_break(outcome_label: str | None, time_to_stop_min: float | No
     return None
 
 
-def _decode_json(raw) -> dict:
+Payload = dict[str, Any]
+
+
+def _decode_json(raw: Any) -> Payload:
     try:
         decoded = json.loads(raw) if isinstance(raw, str) else (raw or {})
     except (json.JSONDecodeError, TypeError):
@@ -74,7 +78,7 @@ def _rate(labels: list[bool]) -> float | None:
     return round(100 * sum(labels) / len(labels), 1) if labels else None
 
 
-async def compute_false_break_stats(pool, days: int = 90) -> dict:
+async def compute_false_break_stats(pool: Any, days: int = 90) -> Payload:
     if not pool:
         return {"available": False, "reason": "Postgres analytics pool is not available."}
 
@@ -94,7 +98,7 @@ async def compute_false_break_stats(pool, days: int = 90) -> dict:
         except Exception as exc:
             return {"available": False, "reason": f"false-break query failed: {exc}"}
 
-    rows = []
+    rows: list[Payload] = []
     for r in records:
         d = dict(r)
         label = classify_false_break(d.get("outcome_label"), d.get("time_to_stop_min"))
@@ -112,13 +116,18 @@ async def compute_false_break_stats(pool, days: int = 90) -> dict:
         )
 
     total_labeled = len(rows)
-    overall_rate = _rate([r["false_break"] for r in rows])
+    labels = [bool(r["false_break"]) for r in rows]
+    overall_rate = _rate(labels)
 
     by_strategy: dict[str, list[bool]] = {}
     by_grade: dict[str, list[bool]] = {}
     for r in rows:
-        by_strategy.setdefault(r["strategy_id"] or "unknown", []).append(r["false_break"])
-        by_grade.setdefault(r["conviction_grade"] or "unknown", []).append(r["false_break"])
+        by_strategy.setdefault(str(r["strategy_id"] or "unknown"), []).append(
+            bool(r["false_break"])
+        )
+        by_grade.setdefault(str(r["conviction_grade"] or "unknown"), []).append(
+            bool(r["false_break"])
+        )
 
     strategy_breakdown = [
         {
@@ -151,7 +160,7 @@ async def compute_false_break_stats(pool, days: int = 90) -> dict:
         if bucket is None:
             continue
         scored_n += 1
-        by_bucket[bucket].append(r["false_break"])
+        by_bucket[bucket].append(bool(r["false_break"]))
 
     bucket_breakdown = [
         {

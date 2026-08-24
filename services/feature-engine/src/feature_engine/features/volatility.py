@@ -5,7 +5,7 @@ import math
 from feature_engine.state import SymbolState
 
 
-def update_atr(state: SymbolState, high: float, low: float, close: float, period: int = 14):
+def update_atr(state: SymbolState, high: float, low: float, close: float, period: int = 14) -> None:
     """Average True Range -- incremental."""
     if state.atr_prev_close == 0:
         state.atr_prev_close = close
@@ -26,7 +26,7 @@ def update_atr(state: SymbolState, high: float, low: float, close: float, period
             state.atr = (state.atr * (period - 1) + tr) / period
 
 
-def update_bollinger(state: SymbolState, close: float):
+def update_bollinger(state: SymbolState, close: float) -> None:
     """Bollinger Band prices buffer."""
     state.bb_prices.append(close)
 
@@ -52,7 +52,7 @@ def get_bollinger(
 
 def update_supertrend(
     state: SymbolState, high: float, low: float, close: float, atr: float, factor: float = 3.0
-):
+) -> None:
     """ATR-band flip Supertrend — matches Pine's `ta.supertrend(factor, atrLen)`.
 
     Reuses the existing `state.atr` (same ATR the rest of the engine already

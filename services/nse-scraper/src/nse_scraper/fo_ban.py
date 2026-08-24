@@ -19,6 +19,7 @@ and returns real data with a plain GET, no cookie warmup needed at all.
 from __future__ import annotations
 
 import re
+from typing import Any
 
 import aiohttp
 import structlog
@@ -26,6 +27,7 @@ import structlog
 from nse_scraper.delivery import _HEADERS  # same realistic browser headers
 
 logger = structlog.get_logger()
+Payload = dict[str, Any]
 
 FO_BAN_URL = "https://nsearchives.nseindia.com/content/fo/fo_secban.csv"
 _DATE_RE = re.compile(r"Trade Date\s+(\d{2}-[A-Z]{3}-\d{4})", re.IGNORECASE)
@@ -55,7 +57,9 @@ def parse_fo_ban_csv(text: str) -> tuple[str | None, set[str]]:
 
 async def fetch_fo_ban(session: aiohttp.ClientSession) -> tuple[str | None, set[str]] | None:
     try:
-        async with session.get(FO_BAN_URL, headers=_HEADERS, timeout=15) as resp:
+        async with session.get(
+            FO_BAN_URL, headers=_HEADERS, timeout=aiohttp.ClientTimeout(total=15)
+        ) as resp:
             if resp.status != 200:
                 return None
             text = await resp.text()
@@ -67,7 +71,7 @@ async def fetch_fo_ban(session: aiohttp.ClientSession) -> tuple[str | None, set[
     return parse_fo_ban_csv(text)
 
 
-async def run_fo_ban_capture(redis) -> dict:
+async def run_fo_ban_capture(redis: Any) -> Payload:
     """Fetch the current F&O ban list and replace
     infusion:nse:fo_ban:symbols (a Redis SET) atomically -- always a full
     delete+recreate, not an incremental add, so a symbol that comes off

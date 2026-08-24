@@ -3,7 +3,7 @@
 from feature_engine.state import SymbolState
 
 
-def update_rsi(state: SymbolState, ltp: float, period: int = 14):
+def update_rsi(state: SymbolState, ltp: float, period: int = 14) -> None:
     """Incremental RSI using Wilder's smoothing."""
     if state.rsi_prev_close == 0:
         state.rsi_prev_close = ltp
@@ -39,7 +39,9 @@ def get_rsi(state: SymbolState) -> float:
     return 100 - (100 / (1 + rs))
 
 
-def update_macd(state: SymbolState, ltp: float, fast: int = 12, slow: int = 26, sig: int = 9):
+def update_macd(
+    state: SymbolState, ltp: float, fast: int = 12, slow: int = 26, sig: int = 9
+) -> None:
     """Incremental MACD."""
     k_fast = 2 / (fast + 1)
     k_slow = 2 / (slow + 1)
@@ -63,7 +65,7 @@ def get_macd(state: SymbolState) -> tuple[float, float, float]:
     return macd_line, state.ema_signal, macd_line - state.ema_signal
 
 
-def update_stochastic(state: SymbolState, high: float, low: float, close: float):
+def update_stochastic(state: SymbolState, high: float, low: float, close: float) -> None:
     """Stochastic %K and %D."""
     state.stoch_highs.append(high)
     state.stoch_lows.append(low)
@@ -85,7 +87,7 @@ def get_stochastic(state: SymbolState) -> tuple[float, float]:
     return k, d
 
 
-def update_cci(state: SymbolState, high: float, low: float, close: float, period: int = 20):
+def update_cci(state: SymbolState, high: float, low: float, close: float, period: int = 20) -> None:
     """Commodity Channel Index."""
     typical = (high + low + close) / 3
     state.cci_typical_prices.append(typical)
@@ -102,7 +104,7 @@ def get_cci(state: SymbolState) -> float:
     return (typical - mean) / (0.015 * mad)
 
 
-def update_adx(state: SymbolState, high: float, low: float, close: float, period: int = 14):
+def update_adx(state: SymbolState, high: float, low: float, close: float, period: int = 14) -> None:
     """ADX / DI+ / DI- using Wilder smoothing — matches Pine's ta.dmi(len, len).
 
     Used by the market-structure conviction gate (Pine's `useAdxFilter`/

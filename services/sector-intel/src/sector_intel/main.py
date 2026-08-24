@@ -24,7 +24,7 @@ async def run() -> None:
     lifecycle.on_shutdown(health.stop)
     lifecycle.on_shutdown(r.aclose)
 
-    async def main_loop():
+    async def main_loop() -> None:
         while not lifecycle.shutdown_event.is_set():
             await asyncio.sleep(5)
             logger.debug("heartbeat", service=settings.service_name)
@@ -32,7 +32,7 @@ async def run() -> None:
     await lifecycle.run_until_shutdown(main_loop)
 
 
-def main():
+def main() -> None:
     asyncio.run(run())
 
 

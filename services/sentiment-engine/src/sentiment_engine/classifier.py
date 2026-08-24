@@ -17,9 +17,12 @@ as UNKNOWN, not neutral.
 
 from __future__ import annotations
 
+from typing import Any
+
 import structlog
 
 logger = structlog.get_logger()
+Payload = dict[str, Any]
 
 MODEL_NAME = "ProsusAI/finbert"
 MODEL_VERSION = "finbert-prosusai+taxonomy-v1"
@@ -43,8 +46,8 @@ class FinbertClassifier:
 
     def __init__(self) -> None:
         self.available = False
-        self._tokenizer = None
-        self._model = None
+        self._tokenizer: Any = None
+        self._model: Any = None
         self._load_error: str | None = None
 
     def load(self) -> None:
@@ -52,8 +55,10 @@ class FinbertClassifier:
             import torch  # noqa: F401  -- import check happens together with transformers below
             from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
-            self._tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-            self._model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME)
+            tokenizer_loader: Any = AutoTokenizer
+            model_loader: Any = AutoModelForSequenceClassification
+            self._tokenizer = tokenizer_loader.from_pretrained(MODEL_NAME)
+            self._model = model_loader.from_pretrained(MODEL_NAME)
             self._model.eval()
             self.available = True
             logger.info("finbert_model_loaded", model=MODEL_NAME)
@@ -62,7 +67,7 @@ class FinbertClassifier:
             self.available = False
             logger.error("finbert_model_load_failed", error=self._load_error)
 
-    def classify_batch(self, texts: list[str]) -> list[dict | None]:
+    def classify_batch(self, texts: list[str]) -> list[Payload | None]:
         """Returns one {direction, confidence} dict per input text, in
         order, or None for any text that couldn't be classified (model
         unavailable, or an unexpected per-batch failure -- the whole
@@ -86,7 +91,7 @@ class FinbertClassifier:
                 logits = self._model(**encoded).logits
                 probs = torch.softmax(logits, dim=-1)
 
-            results: list[dict | None] = []
+            results: list[Payload | None] = []
             for row in probs:
                 values = row.tolist()
                 pairs = sorted(zip(_LABELS, values, strict=False), key=lambda p: p[1], reverse=True)

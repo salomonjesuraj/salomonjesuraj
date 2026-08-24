@@ -22,6 +22,8 @@ half the redundant fields.
 
 from __future__ import annotations
 
+from typing import Any
+
 # Per-signal weight caps, tuned so no single input can swing the score
 # more than its share -- NIFTY direction matters most (it's the whole
 # market), sector second, breadth health third (a slower-moving, more
@@ -39,7 +41,7 @@ def compute_directional_context(
     nifty_change_pct: float | None,
     sector_avg_change_pct: float | None,
     market_health_score: float | None,
-) -> dict:
+) -> dict[str, Any]:
     """All three inputs are already computed elsewhere in this codebase
     (nifty_change_pct/sector_avg_change_pct from ticks.py's own R8
     second pass, market_health_score from market_breadth.py's whole-

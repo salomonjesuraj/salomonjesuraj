@@ -1,4 +1,4 @@
-.PHONY: up down logs restart clean build test lint infra bootstrap setup-dev test-all compile-check compose-check
+.PHONY: up down logs restart clean build test lint infra bootstrap setup-dev test-all compile-check compose-check dashboard-check
 
 # ═══════════════════════════════════════════════
 # INFUSION SCREENER — Makefile
@@ -87,6 +87,9 @@ compile-check:
 
 compose-check:
 	$(COMPOSE) config --quiet
+
+dashboard-check:
+	cd services/dashboard && node scripts/verify-js.mjs && node scripts/verify-shell.mjs
 
 # ── Utility ──
 

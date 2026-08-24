@@ -20,6 +20,8 @@ single exchange-wide TOTALS (all resting buy orders vs. all resting sell
 orders across the whole book, not just the visible top-5 levels).
 """
 
+from typing import Any
+
 from feature_engine.state import SymbolState
 
 BOOK_IMBALANCE_EMA_PERIOD = 5  # short -- this is meant to track FAST book pressure shifts
@@ -54,7 +56,7 @@ def get_order_imbalance(state: SymbolState) -> float:
     return (state.total_buy_qty - state.total_sell_qty) / total
 
 
-def compute_book_imbalance(depth_levels: list[dict]) -> float | None:
+def compute_book_imbalance(depth_levels: list[dict[str, Any]]) -> float | None:
     """Weighted bid/ask quantity imbalance across up to 5 real depth
     levels, per docs/EBIE-BLUEPRINT.md Section 4.6.1 -- weight decays
     with level depth (level 1 counts most, level 5 least) rather than
@@ -76,7 +78,7 @@ def compute_book_imbalance(depth_levels: list[dict]) -> float | None:
     return (weighted_bid - weighted_ask) / total
 
 
-def compute_depth_concentration(depth_levels: list[dict]) -> float | None:
+def compute_depth_concentration(depth_levels: list[dict[str, Any]]) -> float | None:
     """Fraction of total visible bid+ask quantity sitting at level 1 --
     high concentration = thin/fragile book (a modest trade could move
     price meaningfully past the best level); low concentration = a real
@@ -95,7 +97,7 @@ def compute_depth_concentration(depth_levels: list[dict]) -> float | None:
     return l1_qty / total_qty
 
 
-def update_book_imbalance_ema(state: SymbolState, depth_levels: list[dict]) -> None:
+def update_book_imbalance_ema(state: SymbolState, depth_levels: list[dict[str, Any]]) -> None:
     """Advance the book-imbalance EMA -- "imbalance persistence" per the
     blueprint's own Section 4.6.1 wording. Call once per tick (unlike
     the completed-1m-bar-only indicators elsewhere in this file, book
@@ -112,7 +114,7 @@ def update_book_imbalance_ema(state: SymbolState, depth_levels: list[dict]) -> N
         state.book_imbalance_ema = imbalance * k + state.book_imbalance_ema * (1 - k)
 
 
-def microstructure_depth_snapshot(state: SymbolState) -> dict:
+def microstructure_depth_snapshot(state: SymbolState) -> dict[str, Any]:
     """Informational snapshot -- not wired into scoring, matches this
     codebase's "compute it, let feature-ablation earn its way in"
     governance used for every prior EBIE/Phase field."""
@@ -132,15 +134,15 @@ def microstructure_depth_snapshot(state: SymbolState) -> dict:
         depth_tier = "D5"
     else:
         depth_tier = "D30_CANDIDATE_UNCONFIRMED"
+    book_imbalance = compute_book_imbalance(depth_levels)
+    depth_concentration = compute_depth_concentration(depth_levels)
     return {
-        "book_imbalance": (
-            round(compute_book_imbalance(depth_levels), 4) if depth_levels else None
-        ),
+        "book_imbalance": round(book_imbalance, 4) if book_imbalance is not None else None,
         "book_imbalance_ema": (
             round(state.book_imbalance_ema, 4) if state.book_imbalance_ema_initialized else None
         ),
         "depth_concentration": (
-            round(compute_depth_concentration(depth_levels), 4) if depth_levels else None
+            round(depth_concentration, 4) if depth_concentration is not None else None
         ),
         "depth_levels_count": count,
         "depth_tier": depth_tier,

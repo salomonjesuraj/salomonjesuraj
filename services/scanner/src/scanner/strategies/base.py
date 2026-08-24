@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from typing import Any
 
 from scanner.state import ScannerSymbolState
 
@@ -30,7 +31,7 @@ class SignalCandidate:
     signal_type: str  # "bullish" | "bearish"
     conditions_met: dict[str, bool] = field(default_factory=dict)
     explanation: list[str] = field(default_factory=list)
-    features_snapshot: dict = field(default_factory=dict)
+    features_snapshot: dict[str, Any] = field(default_factory=dict)
 
     # Price levels (strategy-computed)
     entry_price: float = 0.0
@@ -47,7 +48,7 @@ class SignalCandidate:
     # after evaluate() returns -- same pattern as state.update_from_features()
     # already being a caller-side, post-evaluate mutation.
     episode_key: str | None = None
-    episode_snapshot: dict | None = None
+    episode_snapshot: dict[str, Any] | None = None
 
 
 class BaseStrategy(ABC):
@@ -66,7 +67,7 @@ class BaseStrategy(ABC):
     @abstractmethod
     def evaluate(
         self,
-        features: dict,
+        features: dict[str, Any],
         state: ScannerSymbolState,
     ) -> SignalCandidate | None:
         """Evaluate strategy conditions against current features.

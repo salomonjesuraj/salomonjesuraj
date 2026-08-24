@@ -32,12 +32,14 @@ fetches, dedupes, and entity-maps).
 from __future__ import annotations
 
 import hashlib
+from typing import Any
 
 import aiohttp
 
 NEWS_API_BASE = "https://api.upstox.com/v2/news"
 MAX_INSTRUMENT_KEYS_PER_REQUEST = 30
 DEFAULT_PAGE_SIZE = 100
+Payload = dict[str, Any]
 
 
 def chunk_instrument_keys(
@@ -48,7 +50,7 @@ def chunk_instrument_keys(
     return [instrument_keys[i : i + size] for i in range(0, len(instrument_keys), size)]
 
 
-def fingerprint_article(article: dict) -> str:
+def fingerprint_article(article: Payload) -> str:
     """Stable identity for a real-world article, independent of which
     symbol it's attached to (used together with symbol as the dedup
     key -- see migrations/008_news_events.sql's UNIQUE(symbol,
@@ -72,7 +74,7 @@ async def fetch_news_batch(
     instrument_keys: list[str],
     page_size: int = DEFAULT_PAGE_SIZE,
     timeout_sec: int = 10,
-) -> dict:
+) -> Payload:
     """One real HTTP call for up to 30 instrument keys. Returns the raw
     {instrument_key: [article, ...]} data dict on success, {} on any
     failure (auth missing, non-200, network error, malformed body) --
@@ -93,7 +95,10 @@ async def fetch_news_batch(
     }
     try:
         async with session.get(
-            NEWS_API_BASE, params=params, headers=headers, timeout=timeout_sec
+            NEWS_API_BASE,
+            params=params,
+            headers=headers,
+            timeout=aiohttp.ClientTimeout(total=timeout_sec),
         ) as resp:
             if resp.status != 200:
                 return {}
@@ -106,7 +111,7 @@ async def fetch_news_batch(
     return data if isinstance(data, dict) else {}
 
 
-def map_articles_to_events(raw_data: dict, inst_to_symbol: dict[str, str]) -> list[dict]:
+def map_articles_to_events(raw_data: Payload, inst_to_symbol: dict[str, str]) -> list[Payload]:
     """Flatten Upstox's {instrument_key: [article, ...]} response into
     one record per (symbol, article) pair, ready for a news_events
     insert. Entity mapping is a straight instrument_key -> symbol
@@ -114,9 +119,9 @@ def map_articles_to_events(raw_data: dict, inst_to_symbol: dict[str, str]) -> li
     other queue in this codebase already reads) -- an instrument_key
     the universe doesn't recognize is silently skipped (stale/delisted
     key echoed back by Upstox), not inserted with a null symbol."""
-    events: list[dict] = []
+    events: list[Payload] = []
     for inst_key, articles in raw_data.items():
-        symbol = inst_to_symbol.get(inst_key)
+        symbol = inst_to_symbol.get(str(inst_key))
         if not symbol or not isinstance(articles, list):
             continue
         for article in articles:
@@ -140,7 +145,7 @@ def map_articles_to_events(raw_data: dict, inst_to_symbol: dict[str, str]) -> li
     return events
 
 
-def _safe_int(value) -> int | None:
+def _safe_int(value: Any) -> int | None:
     try:
         if value is None or value == "":
             return None

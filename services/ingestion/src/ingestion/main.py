@@ -17,6 +17,7 @@ from infusion_common.logging import setup_logging
 from infusion_models.capability import ProviderCapabilityV1
 from redis.asyncio import Redis
 
+from ingestion.adapters.base import BrokerAdapter
 from ingestion.adapters.mock import MockAdapter
 from ingestion.adapters.upstox import UpstoxAdapter
 from ingestion.capability_registry import CapabilityRegistry
@@ -28,7 +29,7 @@ from ingestion.supervisor import ConnectionSupervisor
 logger = structlog.get_logger()
 
 
-def create_adapter(config: IngestionSettings, redis: Redis):
+def create_adapter(config: IngestionSettings, redis: Redis) -> BrokerAdapter:
     """Create broker adapter based on configuration.
 
     Upstox receives Redis to read access tokens stored by the OAuth callback server.
@@ -44,7 +45,7 @@ def create_adapter(config: IngestionSettings, redis: Redis):
             raise ValueError(f"Unknown broker: {other}")
 
 
-async def main():
+async def main() -> None:
     config = IngestionSettings()
     setup_logging(config.service_name, config.log_level, config.log_format)
 
@@ -70,7 +71,7 @@ async def main():
     adapter = create_adapter(config, redis)
 
     # Load instrument keys from Redis (populated by nse-scraper)
-    instruments = []
+    instruments: list[str] = []
     if config.broker_primary == "mock":
         from ingestion.adapters.mock import MOCK_SYMBOLS
 
@@ -79,7 +80,11 @@ async def main():
         # Read instrument keys from infusion:symbols hash
         # (populated by nse-scraper service on startup)
         symbol_data = await redis.hgetall("infusion:symbols")
-        instruments = [k.decode() for k in symbol_data] if symbol_data else []
+        instruments = (
+            [k.decode() if isinstance(k, bytes) else str(k) for k in symbol_data]
+            if symbol_data
+            else []
+        )
 
         if not instruments:
             logger.warning(
@@ -90,7 +95,11 @@ async def main():
             for attempt in range(5):
                 await asyncio.sleep(3)
                 symbol_data = await redis.hgetall("infusion:symbols")
-                instruments = [k.decode() for k in symbol_data] if symbol_data else []
+                instruments = (
+                    [k.decode() if isinstance(k, bytes) else str(k) for k in symbol_data]
+                    if symbol_data
+                    else []
+                )
                 if instruments:
                     logger.info(
                         "instruments_found_on_retry", attempt=attempt + 1, count=len(instruments)

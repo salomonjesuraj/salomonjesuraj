@@ -2,13 +2,11 @@
  * Dashboard-mode controller — Classic / New shell toggle.
  *
  * Applies `data-dashboard-mode="classic"|"new"` on <html>, persisted to
- * localStorage. Defaults to "classic" on first visit (never surprise a
- * daily-use live tool with a different layout on its own) -- "new" is an
- * explicit opt-in via the header toggle, kept that way until the New shell
- * has proven itself against real market conditions. Mirrors theme.js's
- * pattern exactly: a tiny module, no color/layout values live here, this
- * only ever flips the attribute that theme.css's [data-dashboard-mode]
- * blocks key off.
+ * localStorage. Defaults to "new" now that the New shell is the primary
+ * dashboard; Classic remains available as a frozen fallback during the
+ * transition window. Mirrors theme.js's pattern exactly: a tiny module, no
+ * color/layout values live here, this only ever flips the attribute that
+ * theme.css's [data-dashboard-mode] blocks key off.
  */
 
 const STORAGE_KEY = 'infusion:dashboard-mode';
@@ -18,7 +16,7 @@ function initialMode() {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved === 'classic' || saved === 'new') return saved;
   } catch (e) { /* ignore */ }
-  return 'classic';
+  return 'new';
 }
 
 export const dashboardMode = {

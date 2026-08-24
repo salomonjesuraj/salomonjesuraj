@@ -15,6 +15,7 @@ Design:
 from __future__ import annotations
 
 from datetime import date, timedelta, timezone
+from typing import Any
 
 import structlog
 from infusion_common.timing import now_us
@@ -28,6 +29,7 @@ from archiver.analytics import SignalAnalytics
 logger = structlog.get_logger()
 
 _IST = timezone(timedelta(hours=5, minutes=30))
+Payload = dict[str, Any]
 
 
 def _fmt_pct(val: float | None) -> str:
@@ -49,7 +51,7 @@ def _reason_label(reason: str) -> str:
     return labels.get(reason, reason.replace("_", " ").title())
 
 
-def _recap_verdict(active: int, suppressed: int, precision: dict) -> tuple[str, str]:
+def _recap_verdict(active: int, suppressed: int, precision: Payload) -> tuple[str, str]:
     """Return deterministic day verdict + operator note."""
     hits = int(precision.get("target_hits") or 0)
     stops = int(precision.get("stop_hits") or 0)
@@ -80,7 +82,7 @@ def _recap_verdict(active: int, suppressed: int, precision: dict) -> tuple[str, 
     )
 
 
-def format_recap(data: dict) -> str:
+def format_recap(data: Payload) -> str:
     """Format recap data into a deterministic text summary.
 
     Uses Telegram MarkdownV2 escaping for delivery via alerter.

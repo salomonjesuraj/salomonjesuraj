@@ -17,6 +17,8 @@ quality candidates can exist in the system without becoming noisy alerts.
 
 from __future__ import annotations
 
+from typing import Any
+
 from scanner.alignment import compute_signal_alignment
 from scanner.config import ScannerSettings
 from scanner.episode_manager import finalize_episode, resolve_ladder_basis
@@ -41,7 +43,7 @@ class OptionsFirstHybrid(BaseStrategy):
 
     def evaluate(
         self,
-        features: dict,
+        features: dict[str, Any],
         state: ScannerSymbolState,
     ) -> SignalCandidate | None:
         ltp = float(features.get("ltp") or 0.0)

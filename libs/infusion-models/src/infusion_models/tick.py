@@ -4,7 +4,9 @@ RawTickV1: broker-specific tick as received from ingestion adapter.
 NormalizedTickV1: universal tick after symbol resolution, dedup, throttling.
 """
 
-from pydantic import BaseModel
+from typing import Any
+
+from pydantic import BaseModel, Field
 
 
 class RawTickV1(BaseModel, frozen=True):
@@ -36,7 +38,7 @@ class RawTickV1(BaseModel, frozen=True):
     # previously discarded levels 2-5 by returning on the first repeated
     # protobuf field instead of collecting all of them. Empty list for
     # feed types that only ever carry one level (index feeds).
-    depth_levels: list = []
+    depth_levels: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class NormalizedTickV1(BaseModel, frozen=True):
@@ -69,7 +71,7 @@ class NormalizedTickV1(BaseModel, frozen=True):
     normalized_at_us: int
     # EBIE EB-6: real 5-level depth, carried through unchanged from
     # RawTickV1 -- see that model's own field comment for the full story.
-    depth_levels: list = []
+    depth_levels: list[dict[str, Any]] = Field(default_factory=list)
     # EBIE EB-0 event-time integrity: True when this tick's
     # exchange_timestamp_ms is older than the newest one already seen for
     # this symbol (see normalizer/ordering.py). Never dropped for this --

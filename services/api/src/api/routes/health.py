@@ -1,18 +1,21 @@
 """Health & diagnostics routes — service health and pipeline visibility."""
 
+from typing import Any
+
 import msgpack
 from aiohttp import web
 
 routes = web.RouteTableDef()
+Payload = dict[str, Any]
 
 
 @routes.get("/api/health")
-async def health(request):
+async def health(request: web.Request) -> web.Response:
     """Aggregated health check across all services."""
     redis = request.app["redis"]
 
     services = ["ingestion", "normalizer", "feature-engine", "ws-gateway", "api"]
-    result = {}
+    result: dict[str, Payload] = {}
 
     for svc in services:
         raw = await redis.get(f"infusion:health:{svc}")
@@ -35,7 +38,7 @@ async def health(request):
 
 
 @routes.get("/api/diagnostics")
-async def diagnostics(request):
+async def diagnostics(request: web.Request) -> web.Response:
     """Pipeline diagnostics — identify failing components instantly."""
     redis = request.app["redis"]
 

@@ -14,6 +14,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 from datetime import time as dt_time
+from typing import Any, cast
 from zoneinfo import ZoneInfo
 
 from aiohttp import web
@@ -26,6 +27,8 @@ from api.vcp import compute_vcp
 from api.wyckoff import detect_shortening_of_thrust, detect_sos_sow_bar, detect_structural_failure
 
 routes = web.RouteTableDef()
+Payload = dict[str, Any]
+Bar = dict[str, Any]
 
 # EBIE-KNOWN-GAPS.md §1.7 -- the main infusion:mtf:{symbol} cache below is
 # only ever warm for a rolling ~50/208-symbol subset (mtf_queue.py's own
@@ -71,10 +74,15 @@ class IndicatorPack:
     candle: str
 
 
-def _decode_ohlc(members: list) -> list[dict]:
-    bars: list[dict] = []
+def _decode_ohlc(members: list[object]) -> list[Bar]:
+    bars: list[Bar] = []
     for member in members:
-        val = member.decode() if isinstance(member, bytes) else member
+        if isinstance(member, bytes):
+            val = member.decode()
+        elif isinstance(member, str):
+            val = member
+        else:
+            continue
         try:
             raw = json.loads(val)
             ts = int(raw.get("t") or raw.get("time") or 0)
@@ -95,8 +103,8 @@ def _decode_ohlc(members: list) -> list[dict]:
     return bars
 
 
-def _merge_bars(*groups: list[dict]) -> list[dict]:
-    merged = {}
+def _merge_bars(*groups: list[Bar]) -> list[Bar]:
+    merged: dict[int, Bar] = {}
     for group in groups:
         for bar in group:
             if bar.get("time"):
@@ -104,10 +112,10 @@ def _merge_bars(*groups: list[dict]) -> list[dict]:
     return [merged[key] for key in sorted(merged)]
 
 
-def _aggregate(bars: list[dict], minutes: int) -> list[dict]:
+def _aggregate(bars: list[Bar], minutes: int) -> list[Bar]:
     if minutes <= 1:
         return bars
-    buckets: dict[int, dict] = {}
+    buckets: dict[int, Bar] = {}
     width = minutes * 60
     for bar in bars:
         bucket = int(bar["time"]) // width * width
@@ -163,7 +171,7 @@ def _macd(values: list[float]) -> tuple[float | None, float | None, float | None
     return line[-1], signal[-1], line[-1] - signal[-1]
 
 
-def _atr(bars: list[dict], period: int = 14) -> float | None:
+def _atr(bars: list[Bar], period: int = 14) -> float | None:
     if len(bars) <= period:
         return None
     trs: list[float] = []
@@ -176,7 +184,7 @@ def _atr(bars: list[dict], period: int = 14) -> float | None:
     return sum(recent) / period if recent else None
 
 
-def _vwap(bars: list[dict]) -> float | None:
+def _vwap(bars: list[Bar]) -> float | None:
     total_volume = sum(max(int(b.get("volume") or 0), 0) for b in bars)
     if total_volume <= 0:
         return None
@@ -187,7 +195,7 @@ def _vwap(bars: list[dict]) -> float | None:
     return pv / total_volume
 
 
-def _candle_pattern(bars: list[dict]) -> str:
+def _candle_pattern(bars: list[Bar]) -> str:
     if not bars:
         return "NA"
     cur = bars[-1]
@@ -214,7 +222,7 @@ def _candle_pattern(bars: list[dict]) -> str:
     return "Bull Candle" if c > o else "Bear Candle" if c < o else "Flat Candle"
 
 
-def _supertrend_state(bars: list[dict], period: int = 10, multiplier: float = 3.0) -> str:
+def _supertrend_state(bars: list[Bar], period: int = 10, multiplier: float = 3.0) -> str:
     """Compact Supertrend-style state using the latest ATR band.
 
     The full TradingView implementation is iterative. For scanner ranking, this
@@ -241,7 +249,7 @@ def _supertrend_state(bars: list[dict], period: int = 10, multiplier: float = 3.
     return "MIXED"
 
 
-def _indicators(bars: list[dict], include_vwap: bool) -> IndicatorPack | None:
+def _indicators(bars: list[Bar], include_vwap: bool) -> IndicatorPack | None:
     if not bars:
         return None
     closes = [float(b["close"]) for b in bars]
@@ -266,7 +274,7 @@ def _indicators(bars: list[dict], include_vwap: bool) -> IndicatorPack | None:
 
 
 def _fractal_pivots(
-    bars: list[dict], left: int = 2, right: int = 2
+    bars: list[Bar], left: int = 2, right: int = 2
 ) -> tuple[list[float], list[float]]:
     """Confirmed swing pivot highs/lows over a bar series — the same
     left/right=2 fractal rule as
@@ -292,7 +300,7 @@ def _fractal_pivots(
     return highs, lows
 
 
-def _classic_pivots(prev_high: float, prev_low: float, prev_close: float) -> dict:
+def _classic_pivots(prev_high: float, prev_low: float, prev_close: float) -> Payload:
     """Standard floor-trader pivot points (John Person / Vikram Prabhu),
     computed from the prior COMPLETE trading day's H/L/C. This is distinct
     from ticks.py's "fibo_pivot" proxy, which uses the CURRENT session's
@@ -348,7 +356,7 @@ def _classic_pivots(prev_high: float, prev_low: float, prev_close: float) -> dic
     }
 
 
-def _pivot_bias(ltp: float, pivots: dict) -> str:
+def _pivot_bias(ltp: float, pivots: Payload) -> str:
     """Price > CPR pivot -> bullish day bias; < -> bearish (Prabhu)."""
     pivot = pivots.get("pivot")
     if not pivot or ltp <= 0:
@@ -380,7 +388,7 @@ VIRGIN_CPR_MAX_AGE_DAYS = 5  # Prabhu: valid S/R for ~4-5 trading days after for
 VIRGIN_CPR_LOOKBACK_DAYS = 8  # how many recent days' CPRs are worth checking at all
 
 
-def _virgin_cpr_zones(daily_bars: list[dict], current_ltp: float) -> list[dict]:
+def _virgin_cpr_zones(daily_bars: list[Bar], current_ltp: float) -> list[Payload]:
     """CPR zones from recent sessions that no candle body (a wick touching
     is not enough -- Prabhu's own definition) has closed back through since
     formation. A virgin zone stays valid S/R for ~4-5 trading days; the
@@ -394,7 +402,7 @@ def _virgin_cpr_zones(daily_bars: list[dict], current_ltp: float) -> list[dict]:
     session (formed from daily_bars[-2]), and so on. This keeps the "age=1"
     entry consistent with `pivots` rather than silently one day behind it.
     """
-    zones: list[dict] = []
+    zones: list[Payload] = []
     n = len(daily_bars)
     if n < 2:
         return zones
@@ -465,7 +473,7 @@ def _regime_at(sma50: float | None, sma200: float | None) -> str:
     return "neutral"
 
 
-def _ma_regime(daily_bars: list[dict]) -> dict:
+def _ma_regime(daily_bars: list[Bar]) -> Payload:
     """Golden Cross / Death Cross regime + MA-stack alignment from daily
     closes. Three independent sources (Kratter, Moving Average 101, Farley)
     converge on the 50-SMA vs 200-SMA relationship as the primary
@@ -541,7 +549,7 @@ def _ma_regime(daily_bars: list[dict]) -> dict:
 DONCHIAN_PERIOD = 20  # Donchian's own original 4-week channel convention, not Turtle's later 89-day/13-day variant
 
 
-def _donchian_channel(daily_bars: list[dict], period: int = DONCHIAN_PERIOD) -> dict:
+def _donchian_channel(daily_bars: list[Bar], period: int = DONCHIAN_PERIOD) -> Payload:
     """N-day high/low channel + fresh-breakout flag (Covel, Trend
     Following, Appendix F — the Turtle system). Deliberately using
     Donchian's original ~4-week (20 trading day) window here rather than
@@ -581,7 +589,7 @@ WEEK52_TRADING_DAYS = 252  # ~52 calendar weeks of NSE trading sessions
 WEEK52_NEAR_PCT = 3.0  # within this % of the 52w extreme counts as "near"
 
 
-def _week52_stats(daily_bars: list[dict], ltp: float) -> dict:
+def _week52_stats(daily_bars: list[Bar], ltp: float) -> Payload:
     """52-week high/low distance, from the same cached daily bars every other
     daily-bar feature here already uses (`bootstrap_historical` fetches a
     370-calendar-day window specifically to cover this — see scheduler/
@@ -619,7 +627,7 @@ def _week52_stats(daily_bars: list[dict], ltp: float) -> dict:
     }
 
 
-def _major_blocker(blocker_bars: dict[str, list[dict]], ltp: float) -> dict:
+def _major_blocker(blocker_bars: dict[str, list[Bar]], ltp: float) -> Payload:
     """Nearest opposing swing pivot on the higher timeframes, between price
     and either direction's target — matches Pine's "Major Blocker" concept.
 
@@ -663,7 +671,7 @@ def _dot(state: str) -> str:
     return {"BULL": "G", "BEAR": "R", "MIXED": "Y"}.get(state, "Y")
 
 
-def _score_timeframe(tf: str, bars: list[dict], include_vwap: bool) -> dict:
+def _score_timeframe(tf: str, bars: list[Bar], include_vwap: bool) -> Payload:
     needed = 40 if tf in {"1M", "5M", "15M"} else 30 if tf in {"1H", "4H"} else 50
     pack = _indicators(bars, include_vwap)
     if not pack:
@@ -788,7 +796,7 @@ NIFTY50_DAILY_KEY = (
 )
 
 
-async def _load_bars(redis, symbol: str) -> tuple[list[dict], list[dict], list[dict]]:
+async def _load_bars(redis: Any, symbol: str) -> tuple[list[Bar], list[Bar], list[Bar]]:
     now = int(time.time())
     # Enough 1m bars for recent 4H/1H/15M context without making the endpoint heavy.
     start_intraday = now - (10 * 86400)
@@ -807,12 +815,12 @@ async def _load_bars(redis, symbol: str) -> tuple[list[dict], list[dict], list[d
     return intraday, daily_bars, nifty_bars
 
 
-async def compute_mtf(redis, symbol: str, store: bool = True) -> dict:
+async def compute_mtf(redis: Any, symbol: str, store: bool = True) -> Payload:
     symbol = symbol.upper()
     intraday, daily, nifty_daily = await _load_bars(redis, symbol)
-    timeframes: dict[str, dict] = {}
+    timeframes: dict[str, Payload] = {}
     all_warnings: list[str] = []
-    blocker_bars: dict[str, list[dict]] = {}
+    blocker_bars: dict[str, list[Bar]] = {}
 
     for tf, (kind, minutes) in TIMEFRAMES.items():
         bars = _aggregate(intraday, minutes) if kind == "intraday" else daily
@@ -1008,12 +1016,12 @@ async def compute_mtf(redis, symbol: str, store: bool = True) -> dict:
     return payload
 
 
-async def _cached_or_compute(redis, symbol: str) -> dict:
+async def _cached_or_compute(redis: Any, symbol: str) -> Payload:
     raw = await redis.get(f"infusion:mtf:{symbol.upper()}")
     if raw:
         try:
             value = raw.decode() if isinstance(raw, bytes) else raw
-            payload = json.loads(value)
+            payload = cast(Payload, json.loads(value))
             payload["cached"] = True
             return payload
         except (json.JSONDecodeError, TypeError):
@@ -1024,7 +1032,7 @@ async def _cached_or_compute(redis, symbol: str) -> dict:
 
 
 @routes.get("/api/mtf/refresh")
-async def refresh_mtf(request):
+async def refresh_mtf(request: web.Request) -> web.Response:
     """Warm MTF cache for scanner rows.
 
     Query params:
@@ -1048,7 +1056,7 @@ async def refresh_mtf(request):
         except Exception:
             continue
     refreshed = 0
-    errors: list[dict] = []
+    errors: list[Payload] = []
     for symbol in symbols[:limit]:
         try:
             await compute_mtf(redis, symbol, store=True)
@@ -1061,21 +1069,21 @@ async def refresh_mtf(request):
 
 
 @routes.get("/api/mtf/queue/status")
-async def mtf_queue_status(request):
+async def mtf_queue_status(request: web.Request) -> web.Response:
     redis = request.app["redis"]
     raw = await redis.get("infusion:mtf-queue:status")
     if not raw:
         return web.json_response({"enabled": True, "state": "waiting_for_first_cycle"})
     try:
         text = raw.decode() if isinstance(raw, bytes) else raw
-        payload = json.loads(text)
+        payload = cast(Payload, json.loads(text))
         return web.json_response(payload)
     except Exception:
         return web.json_response({"enabled": True, "error": "status_decode_failed"})
 
 
 @routes.get("/api/mtf/{symbol}")
-async def get_symbol_mtf(request):
+async def get_symbol_mtf(request: web.Request) -> web.Response:
     redis = request.app["redis"]
     symbol = request.match_info["symbol"].upper()
     payload = await _cached_or_compute(redis, symbol)

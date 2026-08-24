@@ -18,3 +18,4 @@ pydantic-settings>=2.2
 redis[hiredis]>=5.0
 structlog>=24.1
 protobuf>=4.25
+tzdata>=2025.2

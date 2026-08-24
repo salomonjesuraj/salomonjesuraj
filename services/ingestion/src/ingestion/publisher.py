@@ -1,5 +1,7 @@
 """Tick publisher — publishes RawTick to tick:raw stream."""
 
+from typing import Any
+
 import structlog
 from infusion_models.events import EventType
 from infusion_models.tick import RawTickV1
@@ -7,17 +9,18 @@ from infusion_streams.constants import MAXLEN_TICK_RAW, STREAM_TICK_RAW
 from infusion_streams.producer import StreamProducer
 
 logger = structlog.get_logger()
+Payload = dict[str, Any]
 
 
 class TickPublisher:
     """Publishes RawTick to tick:raw stream."""
 
-    def __init__(self, redis):
+    def __init__(self, redis: Any) -> None:
         self.redis = redis
         self.producer = StreamProducer(redis, STREAM_TICK_RAW, MAXLEN_TICK_RAW)
         self._malformed = 0
 
-    async def publish(self, tick: RawTickV1):
+    async def publish(self, tick: RawTickV1) -> None:
         """Publish tick to stream."""
         try:
             await self.producer.publish(
@@ -30,7 +33,7 @@ class TickPublisher:
             logger.error("tick_publish_failed", error=str(e), instrument=tick.instrument_key)
 
     @property
-    def stats(self) -> dict:
+    def stats(self) -> Payload:
         return {
             "published": self.producer.published_count,
             "publish_errors": self._malformed,

@@ -17,6 +17,7 @@ Startup sequence:
 import asyncio
 import contextlib
 import time
+from typing import Any
 
 import msgpack
 import redis.asyncio as aioredis
@@ -47,6 +48,13 @@ logger = structlog.get_logger()
 KEY_LIVE_CONFIG = "infusion:scanner:live_config"
 
 
+def _decode_symbol_meta(meta_raw: Any) -> dict[str, Any]:
+    if isinstance(meta_raw, bytes):
+        meta = msgpack.unpackb(meta_raw, raw=False)
+        return meta if isinstance(meta, dict) else {}
+    return meta_raw if isinstance(meta_raw, dict) else {}
+
+
 async def publish_live_config(redis: aioredis.Redis, settings: ScannerSettings) -> None:
     await redis.hset(
         KEY_LIVE_CONFIG,
@@ -67,7 +75,7 @@ async def load_symbol_sectors(redis: aioredis.Redis) -> dict[str, str]:
     raw = await redis.hgetall(KEY_SYMBOLS)
     for _instrument_key, meta_raw in raw.items():
         try:
-            meta = msgpack.unpackb(meta_raw, raw=False) if isinstance(meta_raw, bytes) else meta_raw
+            meta = _decode_symbol_meta(meta_raw)
             symbol = meta.get("symbol", "")
             sector = meta.get("sector_id", meta.get("sector", "UNCATEGORIZED"))
             if symbol:
@@ -86,7 +94,7 @@ async def load_symbol_lot_sizes(redis: aioredis.Redis) -> dict[str, int]:
     raw = await redis.hgetall(KEY_SYMBOLS)
     for _instrument_key, meta_raw in raw.items():
         try:
-            meta = msgpack.unpackb(meta_raw, raw=False) if isinstance(meta_raw, bytes) else meta_raw
+            meta = _decode_symbol_meta(meta_raw)
             symbol = meta.get("symbol", "")
             lot_size = int(meta.get("lot_size") or 1)
             if symbol and lot_size > 0:
@@ -160,7 +168,7 @@ async def run() -> None:
     lifecycle.on_shutdown(r.aclose)
 
     # Periodic cleanup of expired active signals
-    async def cleanup_loop():
+    async def cleanup_loop() -> None:
         while not lifecycle.shutdown_event.is_set():
             await asyncio.sleep(60)
             try:
@@ -169,7 +177,7 @@ async def run() -> None:
                 logger.warning("cleanup_error", error=str(e))
 
     # Periodic sector persistence (independent of market updates)
-    async def sector_persist_loop():
+    async def sector_persist_loop() -> None:
         while not lifecycle.shutdown_event.is_set():
             await asyncio.sleep(60)
             try:
@@ -180,7 +188,7 @@ async def run() -> None:
 
     # Periodic live-config republish (Phase 11) -- self-heals after a Redis
     # flush/restart without needing a scanner restart.
-    async def live_config_publish_loop():
+    async def live_config_publish_loop() -> None:
         while not lifecycle.shutdown_event.is_set():
             await asyncio.sleep(300)
             try:
@@ -189,7 +197,7 @@ async def run() -> None:
                 logger.warning("live_config_publish_error", error=str(e))
 
     # Main consume loop
-    async def main_loop():
+    async def main_loop() -> None:
         cleanup_task = asyncio.create_task(cleanup_loop())
         sector_task = asyncio.create_task(sector_persist_loop())
         live_config_task = asyncio.create_task(live_config_publish_loop())
@@ -221,7 +229,7 @@ async def run() -> None:
     await lifecycle.run_until_shutdown(main_loop)
 
 
-def main():
+def main() -> None:
     asyncio.run(run())
 
 

@@ -19,7 +19,7 @@ routes = web.RouteTableDef()
 
 
 @routes.get("/api/sentiment/status")
-async def sentiment_status(request):
+async def sentiment_status(request: web.Request) -> web.Response:
     redis = request.app.get("redis")
     if not redis:
         return web.json_response({"available": False})
@@ -30,7 +30,7 @@ async def sentiment_status(request):
 
 
 @routes.get("/api/sentiment/{symbol}")
-async def sentiment_for_symbol(request):
+async def sentiment_for_symbol(request: web.Request) -> web.Response:
     symbol = request.match_info["symbol"].upper()
     redis = request.app.get("redis")
     if not redis:

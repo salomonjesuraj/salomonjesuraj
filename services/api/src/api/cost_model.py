@@ -16,6 +16,7 @@ automation is enabled.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -37,7 +38,7 @@ class OptionTradeCostInput:
     assumptions: OptionCostAssumptions = OptionCostAssumptions()
 
 
-def compute(trade: OptionTradeCostInput) -> dict:
+def compute(trade: OptionTradeCostInput) -> dict[str, Any]:
     """Compute gross/net option P&L with charges and spread crossing.
 
     A flat premium move, where exit_bid equals entry_ask, must return a

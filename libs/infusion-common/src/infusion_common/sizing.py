@@ -23,6 +23,7 @@ was actually considered, so this is additive, not a signature break).
 from __future__ import annotations
 
 import math
+from typing import Any
 
 ATR_SIZING_MULTIPLIER = 2.0  # approximates Turtle's "2 x ATR" convention, expressed in price terms
 
@@ -34,7 +35,7 @@ def compute_position_size(
     max_lots: int | None = None,
     atr: float | None = None,
     atr_multiplier: float = ATR_SIZING_MULTIPLIER,
-) -> dict:
+) -> dict[str, Any]:
     """Returns {"quantity": int, "lot_count": int}, plus "sizing_method"
     ("risk_distance" | "atr_capped") when `atr` is supplied.
 
@@ -50,7 +51,8 @@ def compute_position_size(
 
     atr_active = atr is not None and atr > 0
     if atr_active:
-        qty_by_atr = math.floor(risk_amount / (atr_multiplier * atr))
+        atr_value = float(atr) if atr is not None else 0.0
+        qty_by_atr = math.floor(risk_amount / (atr_multiplier * atr_value))
         if qty_by_atr < qty_by_risk:
             qty_by_risk = qty_by_atr
             method = "atr_capped"
@@ -60,7 +62,7 @@ def compute_position_size(
         lot_count = min(lot_count, max_lots)
     lot_count = max(0, lot_count)
 
-    result = {"quantity": lot_count * lot_size, "lot_count": lot_count}
+    result: dict[str, Any] = {"quantity": lot_count * lot_size, "lot_count": lot_count}
     if atr_active:
         result["sizing_method"] = method
     return result

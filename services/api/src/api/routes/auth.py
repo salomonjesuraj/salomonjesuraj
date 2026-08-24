@@ -11,10 +11,12 @@ import base64
 import json
 import time
 from datetime import UTC, datetime, timedelta, timezone
+from typing import Any, cast
 
 from aiohttp import web
 
 routes = web.RouteTableDef()
+Payload = dict[str, Any]
 
 KEY_AUTH_UPSTOX = "infusion:auth:upstox"
 KEY_AUTH_STATUS = "infusion:auth:upstox:status"
@@ -32,35 +34,35 @@ def _jwt_expiry(token: str) -> int:
         return 0
 
 
-def _iso(ts: int, tz=UTC) -> str:
+def _iso(ts: int, tz: timezone = UTC) -> str:
     return datetime.fromtimestamp(ts, tz=UTC).astimezone(tz).isoformat() if ts else ""
 
 
 @routes.get("/api/auth/upstox/status")
-async def upstox_auth_status(request):
+async def upstox_auth_status(request: web.Request) -> web.Response:
     redis = request.app["redis"]
     health_raw = await redis.get("infusion:health:ingestion")
-    health = {}
+    health: Payload = {}
     if health_raw:
         try:
             import msgpack
 
-            health = msgpack.unpackb(health_raw, raw=False)
+            health = cast(Payload, msgpack.unpackb(health_raw, raw=False))
         except Exception:
             health = {}
 
     auth_raw = await redis.get(KEY_AUTH_UPSTOX)
-    auth_payload = {}
+    auth_payload: Payload = {}
     if auth_raw:
         try:
-            auth_payload = json.loads(
-                auth_raw.decode() if isinstance(auth_raw, bytes) else auth_raw
+            auth_payload = cast(
+                Payload, json.loads(auth_raw.decode() if isinstance(auth_raw, bytes) else auth_raw)
             )
         except Exception:
             auth_payload = {}
 
     status_raw = await redis.hgetall(KEY_AUTH_STATUS)
-    status = {}
+    status: Payload = {}
     for k, v in status_raw.items():
         kk = k.decode() if isinstance(k, bytes) else k
         vv = v.decode() if isinstance(v, bytes) else v
@@ -101,12 +103,13 @@ async def upstox_auth_status(request):
 
 
 @routes.post("/api/auth/upstox/token")
-async def save_upstox_token(request):
+async def save_upstox_token(request: web.Request) -> web.Response:
     redis = request.app["redis"]
     try:
-        body = await request.json()
+        body_raw = await request.json()
     except Exception:
         return web.json_response({"ok": False, "error": "Invalid JSON body."}, status=400)
+    body = cast(Payload, body_raw) if isinstance(body_raw, dict) else {}
 
     token = str(body.get("access_token") or "").strip()
     if not token:
@@ -168,7 +171,7 @@ async def save_upstox_token(request):
 
 
 @routes.post("/api/auth/upstox/recheck")
-async def force_upstox_recheck(request):
+async def force_upstox_recheck(request: web.Request) -> web.Response:
     redis = request.app["redis"]
     now = int(time.time())
     await redis.set(KEY_FORCE_RECHECK, str(now), ex=120)

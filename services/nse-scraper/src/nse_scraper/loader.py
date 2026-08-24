@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any, cast
 
 import aiohttp
 import msgpack
@@ -25,6 +26,8 @@ from infusion_streams.constants import KEY_SYMBOLS
 from redis.asyncio import Redis
 
 logger = structlog.get_logger()
+Payload = dict[str, Any]
+Universe = dict[str, Payload]
 
 VALID_TIERS = {"nifty50", "nifty100", "nifty200", "nifty500", "fno", "custom"}
 UPSTOX_NSE_INSTRUMENTS_URL = (
@@ -32,7 +35,7 @@ UPSTOX_NSE_INSTRUMENTS_URL = (
 )
 
 
-def load_universe(config_dir: str, tier: str) -> dict[str, dict]:
+def load_universe(config_dir: str, tier: str) -> Universe:
     """Load symbol universe for the specified tier.
 
     Args:
@@ -50,13 +53,13 @@ def load_universe(config_dir: str, tier: str) -> dict[str, dict]:
     # Load tier-specific file
     if tier == "custom":
         # Custom watchlist is loaded from Redis, not from file
-        symbols = {}
+        symbols: Universe = {}
     else:
         tier_file = config_path / f"{tier}.json"
         if not tier_file.exists():
             raise FileNotFoundError(f"Symbol universe file not found: {tier_file}")
         with open(tier_file, encoding="utf-8") as f:
-            symbols = json.load(f)
+            symbols = cast(Universe, json.load(f))
         logger.info(
             "universe_loaded",
             tier=tier,
@@ -70,7 +73,7 @@ def load_universe(config_dir: str, tier: str) -> dict[str, dict]:
     indices_file = config_path / "indices.json"
     if tier != "fno" and indices_file.exists():
         with open(indices_file, encoding="utf-8") as f:
-            indices = json.load(f)
+            indices = cast(Universe, json.load(f))
         symbols.update(indices)
         logger.info("indices_loaded", count=len(indices))
     elif tier != "fno":
@@ -79,7 +82,7 @@ def load_universe(config_dir: str, tier: str) -> dict[str, dict]:
     return symbols
 
 
-async def load_custom_watchlist(redis: Redis) -> dict[str, dict]:
+async def load_custom_watchlist(redis: Redis) -> Universe:
     """Load custom watchlist symbols from Redis set.
 
     The custom watchlist is stored as a Redis set at infusion:watchlist:custom.
@@ -95,7 +98,7 @@ async def load_custom_watchlist(redis: Redis) -> dict[str, dict]:
     return {s: {} for s in symbols}  # metadata resolved later
 
 
-async def populate_redis(redis: Redis, symbols: dict[str, dict]) -> tuple[int, dict[str, str]]:
+async def populate_redis(redis: Redis, symbols: Universe) -> tuple[int, dict[str, str]]:
     """Write symbol metadata to infusion:symbols hash.
 
     Each entry is stored as:
@@ -162,7 +165,7 @@ async def populate_redis(redis: Redis, symbols: dict[str, dict]) -> tuple[int, d
     return count, reverse_map
 
 
-async def fetch_upstox_equity_master() -> dict[str, dict]:
+async def fetch_upstox_equity_master() -> Universe:
     """Fetch current Upstox NSE equity instrument keys, with live F&O lot sizes.
 
     Upstox refreshes the instrument files daily.  Local symbol JSON is useful
@@ -184,7 +187,7 @@ async def fetch_upstox_equity_master() -> dict[str, dict]:
             session.get(
                 UPSTOX_NSE_INSTRUMENTS_URL,
                 headers={"Accept": "application/gzip, application/json"},
-                timeout=30,
+                timeout=aiohttp.ClientTimeout(total=30),
             ) as resp,
         ):
             if resp.status != 200:
@@ -199,6 +202,8 @@ async def fetch_upstox_equity_master() -> dict[str, dict]:
         import gzip
 
         rows = json.loads(gzip.decompress(payload).decode("utf-8"))
+        if not isinstance(rows, list):
+            return {}
     except Exception as exc:
         logger.warning("upstox_master_decode_error", error=str(exc))
         return {}
@@ -221,8 +226,10 @@ async def fetch_upstox_equity_master() -> dict[str, dict]:
         if prev is None or expiry < prev[0]:
             fo_lot_by_underlying[underlying] = (expiry, int(lot_size))
 
-    out = {}
+    out: Universe = {}
     for row in rows:
+        if not isinstance(row, dict):
+            continue
         if row.get("segment") != "NSE_EQ" or row.get("instrument_type") != "EQ":
             continue
         symbol = row.get("trading_symbol", "")
@@ -232,7 +239,7 @@ async def fetch_upstox_equity_master() -> dict[str, dict]:
         fo_lot = fo_lot_by_underlying.get(symbol)
         if fo_lot:
             row = {**row, "lot_size": fo_lot[1]}
-        out[symbol] = row
+        out[str(symbol)] = cast(Payload, row)
 
     logger.info(
         "upstox_equity_master_loaded",
@@ -242,7 +249,7 @@ async def fetch_upstox_equity_master() -> dict[str, dict]:
     return out
 
 
-def get_instrument_keys(symbols: dict[str, dict]) -> list[str]:
+def get_instrument_keys(symbols: Universe) -> list[str]:
     """Extract Upstox instrument keys for subscription.
 
     Returns only EQ segment keys (not INDEX — Upstox uses a different
@@ -256,7 +263,7 @@ def get_instrument_keys(symbols: dict[str, dict]) -> list[str]:
     return keys
 
 
-def get_sector_summary(symbols: dict[str, dict]) -> dict[str, int]:
+def get_sector_summary(symbols: Universe) -> dict[str, int]:
     """Summarize sector distribution for logging."""
     sectors: dict[str, int] = {}
     for meta in symbols.values():

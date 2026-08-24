@@ -21,6 +21,7 @@ import asyncio
 import contextlib
 import json
 import time
+from typing import Any
 
 import structlog
 
@@ -48,9 +49,10 @@ STATE_TTL_SEC = 300
 # tell "never computed" apart from "computed a while ago, since expired."
 LAST_SEEN_PREFIX = "infusion:options-dynamics-last-seen:"
 LAST_SEEN_TTL_SEC = 7 * 24 * 3600
+Payload = dict[str, Any]
 
 
-async def sweep_once(app) -> dict:
+async def sweep_once(app: Any) -> Payload:
     redis = app.get("redis")
     if not redis:
         return {"available": False, "reason": "Redis not available."}
@@ -120,7 +122,7 @@ async def sweep_once(app) -> dict:
     return status
 
 
-async def options_dynamics_loop(app) -> None:
+async def options_dynamics_loop(app: Any) -> None:
     redis = app.get("redis")
     if not redis:
         logger.info("options_dynamics_queue_skipped", reason="redis_unavailable")

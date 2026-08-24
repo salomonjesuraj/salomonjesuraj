@@ -27,6 +27,7 @@ from __future__ import annotations
 import datetime
 import json
 import math
+from typing import Any
 
 MODEL_KEY = "infusion:ml-classifier:model"
 GRADE_ORDER = {"D": 0.0, "C": 1.0, "B": 2.0, "A": 3.0, "A+": 4.0}
@@ -62,7 +63,7 @@ def _sigmoid(z: float) -> float:
     return ez / (1.0 + ez)
 
 
-def _ablation_field_present(value) -> bool:
+def _ablation_field_present(value: Any) -> bool:
     """Mirrors api/routes/backtest.py's _ablation_field_present exactly."""
     if value is None:
         return False
@@ -75,7 +76,7 @@ def _ablation_field_present(value) -> bool:
     return bool(value)
 
 
-def _ic_encode(field: str, value) -> float | None:
+def _ic_encode(field: str, value: Any) -> float | None:
     """Mirrors api/routes/backtest.py's _ic_encode exactly (same ma_regime
     3-way special-case, same 0/1 presence encoding otherwise)."""
     if field == "ma_regime":
@@ -87,7 +88,12 @@ def _ic_encode(field: str, value) -> float | None:
     return 1.0 if _ablation_field_present(value) else 0.0
 
 
-def _encode(core: dict, features: dict, sub_scores: dict, spec: list[dict]) -> list[float]:
+def _encode(
+    core: dict[str, Any],
+    features: dict[str, Any],
+    sub_scores: dict[str, Any],
+    spec: list[dict[str, Any]],
+) -> list[float]:
     """Mirrors api/ml_classifier.py's encode_row() exactly, field-kind by
     field-kind -- same missing-value conventions (a core categorical not
     matching any dummy is the baseline case, 0.0; a missing continuous
@@ -111,18 +117,24 @@ def _encode(core: dict, features: dict, sub_scores: dict, spec: list[dict]) -> l
             encoded = _ic_encode(f["field"], (source or {}).get(f["field"]))
             out.append(1.0 if encoded == 1.0 else 0.0)
         elif kind == "informational_continuous":
-            raw = (features or {}).get(f["field"])
-            if raw is None:
+            raw_value = (features or {}).get(f["field"])
+            if raw_value is None:
                 out.append(0.0)
             else:
                 std = f.get("std") or 0.0
-                out.append((float(raw) - f["mean"]) / std if std > 0 else 0.0)
+                out.append((float(raw_value) - f["mean"]) / std if std > 0 else 0.0)
         else:
             out.append(0.0)
     return out
 
 
-async def score_signal(redis, *, core: dict, features: dict, sub_scores: dict) -> dict:
+async def score_signal(
+    redis: Any,
+    *,
+    core: dict[str, Any],
+    features: dict[str, Any],
+    sub_scores: dict[str, Any],
+) -> dict[str, Any]:
     """Best-effort: read the cached model, encode this signal's own core
     metadata + features_snapshot/sub_scores the exact way it was trained,
     and return the probability plus the model's own honesty metrics -- or

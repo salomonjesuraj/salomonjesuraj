@@ -27,10 +27,12 @@ Expected row shape (Upstox option-chain API, one row per strike):
 
 from __future__ import annotations
 
+from typing import Any
+
 PCR_BALANCED_BAND = 0.05  # +/- around 1.0 treated as "balanced" -- see classify_pcr()
 
 
-def _leg_oi(row: dict, leg_name: str) -> float:
+def _leg_oi(row: dict[str, Any], leg_name: str) -> float:
     leg = row.get(leg_name) or {}
     market = leg.get("market_data") or {}
     try:
@@ -60,7 +62,7 @@ def classify_pcr(pcr: float) -> str:
     return "strong_bearish"
 
 
-def compute_pcr(rows: list[dict]) -> dict | None:
+def compute_pcr(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
     """Put-Call Ratio = Total Put OI / Total Call OI, summed across the
     full chain. Returns None when there's no call OI to divide by (thin/
     pre-market chain) rather than raising or returning a misleading 0."""
@@ -82,7 +84,7 @@ def compute_pcr(rows: list[dict]) -> dict | None:
     }
 
 
-def compute_oi_support_resistance(rows: list[dict]) -> dict | None:
+def compute_oi_support_resistance(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
     """Strike with the highest Call OI = resistance; strike with the
     highest Put OI = support (Upstox's own stated rule, article-1543/1018).
     """
@@ -111,7 +113,7 @@ def compute_oi_support_resistance(rows: list[dict]) -> dict | None:
     }
 
 
-def compute_max_pain(rows: list[dict]) -> dict | None:
+def compute_max_pain(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
     """Max Pain: the strike at which total payout to option holders (loss
     to option writers) is minimized, evaluated across every strike in the
     chain as a candidate expiry-close level:

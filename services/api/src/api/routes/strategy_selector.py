@@ -14,14 +14,17 @@ auth chain at module import time") -- not a new convention.
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 from aiohttp import web
 
 from api.options_strategies import build_all_strategies, rank_strategies
 
 routes = web.RouteTableDef()
+Payload = dict[str, Any]
 
 
-async def compute_strategy_selection(redis, symbol: str) -> dict:
+async def compute_strategy_selection(redis: Any, symbol: str) -> Payload:
     from api.options_analytics import compute_max_pain, compute_pcr
     from api.options_strategies import _atm_index, _row_at_strike, _sorted_strikes
     from api.routes.market import (
@@ -34,7 +37,7 @@ async def compute_strategy_selection(redis, symbol: str) -> dict:
     if not chain.get("ready"):
         return {"ready": False, "reason": chain.get("reason", "Option chain unavailable.")}
 
-    rows = chain["rows"]
+    rows = cast(list[Payload], chain["rows"])
     spot = float(chain.get("spot") or 0)
     if spot <= 0:
         return {"ready": False, "reason": "No live spot price in the option chain."}
@@ -85,7 +88,7 @@ async def compute_strategy_selection(redis, symbol: str) -> dict:
 
 
 @routes.get("/api/options/strategy-selector")
-async def strategy_selector(request):
+async def strategy_selector(request: web.Request) -> web.Response:
     """Ranked multi-leg strategy shortlist for one symbol. Advisory
     evidence only -- see module docstring. Query param: symbol (defaults
     to the same _default_symbol() fallback every other options endpoint

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import time
 from datetime import datetime, timedelta, timezone
+from typing import Any, cast
 
 import msgpack
 from aiohttp import web
@@ -17,6 +18,7 @@ RISK_KEY = "infusion:risk:settings"
 JOURNAL_KEY = "infusion:journal:paper_trades"
 STAGED_KEY = "infusion:execution:staged_tickets"
 AUTH_KEY = "infusion:auth:upstox"
+Payload = dict[str, Any]
 
 
 def _now_ist() -> datetime:
@@ -38,7 +40,7 @@ def _market_session(now: datetime) -> str:
     return "post_market"
 
 
-def _decode_json(raw, default=None):
+def _decode_json(raw: Any, default: Any = None) -> Any:
     if not raw:
         return default if default is not None else {}
     try:
@@ -48,8 +50,8 @@ def _decode_json(raw, default=None):
         return default if default is not None else {}
 
 
-async def _load_list(redis, key: str, limit: int = 200) -> list[dict]:
-    rows = []
+async def _load_list(redis: Any, key: str, limit: int = 200) -> list[Payload]:
+    rows: list[Payload] = []
     raw_rows = await redis.lrange(key, 0, max(0, limit - 1))
     for raw in raw_rows:
         row = _decode_json(raw, {})
@@ -58,17 +60,18 @@ async def _load_list(redis, key: str, limit: int = 200) -> list[dict]:
     return rows
 
 
-async def _health(redis, service: str) -> dict:
+async def _health(redis: Any, service: str) -> Payload:
     raw = await redis.get(f"infusion:health:{service}")
     if not raw:
         return {"status": "unhealthy", "reason": "no heartbeat"}
     try:
-        return msgpack.unpackb(raw, raw=False)
+        payload = msgpack.unpackb(raw, raw=False)
+        return payload if isinstance(payload, dict) else {"status": "unknown"}
     except Exception:
         return {"status": "unknown"}
 
 
-async def _kill_state(redis) -> dict:
+async def _kill_state(redis: Any) -> Payload:
     raw = await redis.get(KILL_SWITCH_KEY)
     data = _decode_json(raw, {})
     return {
@@ -79,17 +82,17 @@ async def _kill_state(redis) -> dict:
 
 
 @routes.get("/api/safety/status")
-async def safety_status(request):
+async def safety_status(request: web.Request) -> web.Response:
     redis = request.app["redis"]
     now = _now_ist()
     today = _today()
     session = _market_session(now)
 
-    auth = _decode_json(await redis.get(AUTH_KEY), {})
+    auth = cast(Payload, _decode_json(await redis.get(AUTH_KEY), {}))
     expiry_ts = int(auth.get("expiry_ts") or 0)
     token_valid = bool(expiry_ts and expiry_ts > int(time.time()))
 
-    risk = _decode_json(await redis.get(RISK_KEY), {})
+    risk = cast(Payload, _decode_json(await redis.get(RISK_KEY), {}))
     risk_updated_today = str(risk.get("updated_at_ist", "")).startswith(today)
     auto_orders_enabled = bool(risk.get("auto_orders_enabled"))
     paper_first = (
@@ -115,7 +118,8 @@ async def safety_status(request):
     blocked_tickets = [r for r in today_staged if r.get("status") == "BLOCKED"]
     physical_risk_rows = []
     for row in today_journal + today_staged:
-        option = row.get("option") if isinstance(row.get("option"), dict) else row
+        option_raw = row.get("option")
+        option = option_raw if isinstance(option_raw, dict) else row
         if row.get("status") == "CLOSED":
             continue
         expiry_days = option.get("expiry_days")
@@ -225,10 +229,12 @@ async def safety_status(request):
 
 
 @routes.post("/api/safety/kill-switch")
-async def set_kill_switch(request):
+async def set_kill_switch(request: web.Request) -> web.Response:
     redis = request.app["redis"]
     try:
         payload = await request.json()
+        if not isinstance(payload, dict):
+            payload = {}
     except Exception:
         payload = {}
     enabled = bool(payload.get("enabled"))

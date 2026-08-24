@@ -28,13 +28,17 @@ it, same governance as every other Phase 1-13.x field.
 
 from __future__ import annotations
 
+from typing import Any
+
+from feature_engine.state import SymbolState
+
 MINTICK = 0.01
 DOJI_BODY_PCT = 0.08  # same threshold candles.py uses for its own Doji
 CLEAN_WICK_TOLERANCE = 0.05  # wick <= 5% of range counts as "no opposite wick"
 TREND_STREAK_MIN = 3  # Phase 13 spec: "3+ consecutive... = continuation"
 
 
-def update_heiken_ashi(state, o: float, h: float, low: float, c: float) -> None:
+def update_heiken_ashi(state: SymbolState, o: float, h: float, low: float, c: float) -> None:
     """Advance HA state by one completed bar. Call once per completed 1m
     bar, same contract as update_body_ema/update_structure."""
     ha_close = (o + h + low + c) / 4.0
@@ -73,7 +77,7 @@ def update_heiken_ashi(state, o: float, h: float, low: float, c: float) -> None:
     state.ha_doji = body <= rng * DOJI_BODY_PCT
 
 
-def heiken_ashi_snapshot(state) -> dict:
+def heiken_ashi_snapshot(state: SymbolState) -> dict[str, Any]:
     if not state.ha_initialized:
         return {
             "ha_open": None,

@@ -37,13 +37,13 @@ class SymbolResolver:
       - _by_symbol:      RELIANCE            -> SymbolInfo
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._by_upstox_key: dict[str, SymbolInfo] = {}
         self._by_kite_key: dict[str, SymbolInfo] = {}
         self._by_symbol: dict[str, SymbolInfo] = {}
         self._config_version: str = ""
 
-    async def load(self, redis: Redis):
+    async def load(self, redis: Redis) -> None:
         """Load symbol master from Redis and build all indices."""
         raw = await redis.hgetall(KEY_SYMBOLS)
         by_upstox = {}

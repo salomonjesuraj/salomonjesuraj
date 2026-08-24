@@ -27,6 +27,10 @@ and how well-justified is it), not target sizing.
 
 from __future__ import annotations
 
+from typing import Any
+
+from feature_engine.state import SymbolState
+
 BUILDUP_TIGHT_RANGE_ATR_FRAC = 0.5  # a bar counts as "tight" if its range < this fraction of ATR -- Infusion's own calibration, source gives no exact number
 BUILDUP_MIN_BARS = 3  # minimum consecutive tight bars to call it a genuine buildup
 BUILDUP_AT_BOUNDARY_ATR_FRAC = (
@@ -34,17 +38,19 @@ BUILDUP_AT_BOUNDARY_ATR_FRAC = (
 )
 
 
-def _bar_range(bar: dict) -> float:
-    return max(0.0, bar["h"] - bar["l"])
+def _bar_range(bar: dict[str, Any]) -> float:
+    return max(0.0, float(bar["h"]) - float(bar["l"]))
 
 
-def _is_tight(bar: dict, atr: float) -> bool:
+def _is_tight(bar: dict[str, Any], atr: float) -> bool:
     if atr <= 0:
         return False
     return _bar_range(bar) < atr * BUILDUP_TIGHT_RANGE_ATR_FRAC
 
 
-def detect_buildup(bars: list[dict], boundary: float, atr: float, bullish: bool) -> dict | None:
+def detect_buildup(
+    bars: list[dict[str, Any]], boundary: float, atr: float, bullish: bool
+) -> dict[str, Any] | None:
     """Looks for a tight cluster in the bars BEFORE the most recent one
     (the cluster is the setup; the most recent bar is checked separately
     by check_entry_trigger as the potential break). Returns the buildup
@@ -92,7 +98,9 @@ def detect_buildup(bars: list[dict], boundary: float, atr: float, bullish: bool)
     }
 
 
-def check_entry_trigger(bars: list[dict], buildup: dict | None, bullish: bool) -> bool:
+def check_entry_trigger(
+    bars: list[dict[str, Any]], buildup: dict[str, Any] | None, bullish: bool
+) -> bool:
     """Has the MOST RECENT bar broken the signal bar's extreme in the
     anticipated direction — Volman's actual entry trigger (a 1-tick break,
     acted on at market, not waiting for the breaking bar's own close)."""
@@ -100,11 +108,11 @@ def check_entry_trigger(bars: list[dict], buildup: dict | None, bullish: bool) -
         return False
     current_bar = bars[-1]
     if bullish:
-        return current_bar["h"] > buildup["signal_bar_high"]
-    return current_bar["l"] < buildup["signal_bar_low"]
+        return bool(current_bar["h"] > buildup["signal_bar_high"])
+    return bool(current_bar["l"] < buildup["signal_bar_low"])
 
 
-def volman_snapshot(state) -> dict:
+def volman_snapshot(state: SymbolState) -> dict[str, Any]:
     """Checks Volman's buildup/signal-bar/trigger sequence against
     whichever of Infusion's existing zones are currently active — supply/
     demand (zones.py) and validated Order Blocks (ict.py). Returns the

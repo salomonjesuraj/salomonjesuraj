@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import structlog
 from infusion_models.events import EventType
 from redis.asyncio import Redis
@@ -23,7 +25,7 @@ class StreamProducer:
     async def publish(
         self,
         event_type: EventType,
-        payload: dict,
+        payload: dict[str, Any],
         received_at_us: int,
     ) -> str:
         """Encode and XADD to stream. Returns message ID."""
@@ -35,7 +37,7 @@ class StreamProducer:
             approximate=True,
         )
         self._count += 1
-        return msg_id
+        return msg_id.decode() if isinstance(msg_id, bytes) else msg_id
 
     async def publish_raw(self, data: bytes) -> str:
         """XADD pre-encoded bytes (for hot-path optimization)."""
@@ -46,7 +48,7 @@ class StreamProducer:
             approximate=True,
         )
         self._count += 1
-        return msg_id
+        return msg_id.decode() if isinstance(msg_id, bytes) else msg_id
 
     @property
     def published_count(self) -> int:

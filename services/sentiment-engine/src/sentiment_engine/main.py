@@ -26,6 +26,7 @@ crash-loop and never a fabricated neutral.
 from __future__ import annotations
 
 import asyncio
+from typing import Any, cast
 
 import asyncpg
 import redis.asyncio as aioredis
@@ -40,27 +41,31 @@ from sentiment_engine.event_taxonomy import classify_event_type, event_severity
 from sentiment_engine.relevance import compute_novelty, compute_relevance, source_quality
 
 logger = structlog.get_logger()
+Payload = dict[str, Any]
 
 POLL_INTERVAL_SEC = 20
 BATCH_SIZE = 16
 NOVELTY_LOOKBACK = 20  # how many of a symbol's own recent classified headlines to compare against
 
 
-async def _fetch_pending(pool, limit: int) -> list[asyncpg.Record]:
+async def _fetch_pending(pool: asyncpg.Pool, limit: int) -> list[asyncpg.Record]:
     async with pool.acquire() as conn:
-        return await conn.fetch(
-            """
+        return cast(
+            list[asyncpg.Record],
+            await conn.fetch(
+                """
             SELECT id, symbol, heading, summary, article_link, published_time_ms
             FROM news_events
             WHERE sentiment_completed_at IS NULL
             ORDER BY id ASC
             LIMIT $1
             """,
-            limit,
+                limit,
+            ),
         )
 
 
-async def _recent_headlines(pool, symbol: str, exclude_id: int) -> list[str]:
+async def _recent_headlines(pool: asyncpg.Pool, symbol: str, exclude_id: int) -> list[str]:
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             """
@@ -79,7 +84,11 @@ async def _recent_headlines(pool, symbol: str, exclude_id: int) -> list[str]:
 
 
 async def _write_result(
-    pool, article_id: int, symbol: str, result: dict, mark_complete: bool
+    pool: asyncpg.Pool,
+    article_id: int,
+    symbol: str,
+    result: Payload,
+    mark_complete: bool,
 ) -> None:
     """Upsert (not insert-only) -- a real classification must be able
     to overwrite an earlier fallback 'unknown' row from a window where
@@ -133,7 +142,9 @@ async def _write_result(
             )
 
 
-async def _process_batch(pool, classifier: FinbertClassifier, rows: list[asyncpg.Record]) -> int:
+async def _process_batch(
+    pool: asyncpg.Pool, classifier: FinbertClassifier, rows: list[asyncpg.Record]
+) -> int:
     if not rows:
         return 0
 
@@ -151,7 +162,7 @@ async def _process_batch(pool, classifier: FinbertClassifier, rows: list[asyncpg
             symbol = row["symbol"]
             event_type = classify_event_type(heading, summary)
             recent = await _recent_headlines(pool, symbol, row["id"])
-            result = {
+            result: Payload = {
                 "event_type": event_type,
                 # Unavailable model -> UNKNOWN, never a fabricated
                 # neutral/zero -- per Q4.2's authorized failure mode.
@@ -180,7 +191,7 @@ async def _process_batch(pool, classifier: FinbertClassifier, rows: list[asyncpg
     return processed
 
 
-async def sentiment_loop(pool, classifier: FinbertClassifier) -> None:
+async def sentiment_loop(pool: asyncpg.Pool, classifier: FinbertClassifier) -> None:
     logger.info(
         "sentiment_engine_loop_started",
         interval=POLL_INTERVAL_SEC,

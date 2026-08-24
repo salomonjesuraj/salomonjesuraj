@@ -33,6 +33,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass
@@ -51,12 +52,12 @@ class LadderBasis:
     invalidation_price: float
     reused: bool  # True if resolved from a still-open, valid episode
     first_seen_us: int  # preserved from the reused episode, or "now" if fresh
-    frozen_episode: dict | None  # the reused episode dict, or None if fresh
+    frozen_episode: dict[str, Any] | None  # the reused episode dict, or None if fresh
 
 
 def resolve_ladder_basis(
     *,
-    episode: dict | None,
+    episode: dict[str, Any] | None,
     now_us: int,
     ttl_us: int,
     invalidated: Callable[[float], bool],
@@ -72,10 +73,10 @@ def resolve_ladder_basis(
     differs. This function owns only the shared TTL-check / invalidation-
     check / reuse-vs-fresh sequencing, not the price math itself.
     """
-    episode_valid = bool(episode) and (
+    episode_valid = episode is not None and (
         now_us <= 0 or now_us - int(episode.get("first_seen_us") or 0) <= ttl_us
     )
-    if episode_valid:
+    if episode_valid and episode is not None:
         frozen_stop = float(episode["invalidation_price"])
         # Invalidated: price closed beyond the frozen stop without ever
         # confirming entry — the watched setup failed, not "the same
@@ -84,7 +85,7 @@ def resolve_ladder_basis(
         if invalidated(frozen_stop):
             episode_valid = False
 
-    if episode_valid:
+    if episode_valid and episode is not None:
         return LadderBasis(
             entry_price=float(episode["entry_price"]),
             invalidation_price=float(episode["invalidation_price"]),
@@ -104,8 +105,8 @@ def resolve_ladder_basis(
 
 
 def finalize_episode(
-    basis: LadderBasis, pine, chaseable: bool
-) -> tuple[bool, dict, float, float, float, float, str]:
+    basis: LadderBasis, pine: Any, chaseable: bool
+) -> tuple[bool, dict[str, Any], float, float, float, float, str]:
     """Decide suppress-vs-publish and compute the final ladder to use.
 
     Returns (suppress, snapshot, target, target2, target3, effective_risk,
@@ -119,6 +120,8 @@ def finalize_episode(
     """
     if basis.reused:
         episode = basis.frozen_episode
+        if episode is None:
+            raise ValueError("reused ladder basis must include a frozen episode")
         target = float(episode["target_price"])
         target2 = float(episode["target2_price"])
         target3 = float(episode["target3_price"])

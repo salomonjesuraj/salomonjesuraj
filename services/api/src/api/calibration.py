@@ -34,11 +34,13 @@ model.
 from __future__ import annotations
 
 import math
+from typing import Any
 
 MIN_CALIBRATION_SAMPLE = 60  # needs enough rows on each side of the fit/validate split to be honest
 MIN_RELIABILITY_BUCKET = (
     5  # a reliability-curve bucket with fewer real rows than this is too noisy to show
 )
+Payload = dict[str, Any]
 
 
 def _sigmoid(z: float) -> float:
@@ -48,7 +50,7 @@ def _sigmoid(z: float) -> float:
     return ez / (1.0 + ez)
 
 
-def fit_platt_scaling(scores: list[float], labels: list[float]) -> dict:
+def fit_platt_scaling(scores: list[float], labels: list[float]) -> Payload:
     """Platt scaling: P(y=1|s) = sigmoid(w*s + b), fit via the SAME
     logistic-regression trainer ml_classifier.py already uses and has
     already been verified with -- calibration is just a 1-feature
@@ -61,11 +63,11 @@ def fit_platt_scaling(scores: list[float], labels: list[float]) -> dict:
     return {"weight": weights[0], "bias": bias}
 
 
-def apply_platt(score: float, params: dict) -> float:
-    return _sigmoid(params["weight"] * score + params["bias"])
+def apply_platt(score: float, params: Payload) -> float:
+    return _sigmoid(float(params["weight"]) * score + float(params["bias"]))
 
 
-def fit_isotonic_regression(scores: list[float], labels: list[float]) -> list[dict]:
+def fit_isotonic_regression(scores: list[float], labels: list[float]) -> list[Payload]:
     """Pool Adjacent Violators Algorithm (PAVA) -- fits a monotonically
     non-decreasing step function mapping raw score -> calibrated
     probability. Returns a list of {score, value} breakpoints, sorted
@@ -104,7 +106,7 @@ def fit_isotonic_regression(scores: list[float], labels: list[float]) -> list[di
     return [{"score": b["score"], "value": b["mean"]} for b in blocks]
 
 
-def apply_isotonic(score: float, breakpoints: list[dict]) -> float:
+def apply_isotonic(score: float, breakpoints: list[Payload]) -> float:
     """Step-function lookup: the calibrated value for `score` is the
     value of the last breakpoint whose own score is <= it (the
     fitted function is a right-continuous step, per PAVA's own
@@ -113,14 +115,14 @@ def apply_isotonic(score: float, breakpoints: list[dict]) -> float:
     if not breakpoints:
         return 0.5
     if score <= breakpoints[0]["score"]:
-        return breakpoints[0]["value"]
+        return float(breakpoints[0]["value"])
     if score >= breakpoints[-1]["score"]:
-        return breakpoints[-1]["value"]
-    value = breakpoints[0]["value"]
+        return float(breakpoints[-1]["value"])
+    value = float(breakpoints[0]["value"])
     for bp in breakpoints:
         if bp["score"] > score:
             break
-        value = bp["value"]
+        value = float(bp["value"])
     return value
 
 
@@ -152,7 +154,7 @@ def compute_ece(probs: list[float], labels: list[float], n_bins: int = 10) -> fl
 
 def compute_reliability_curve(
     probs: list[float], labels: list[float], n_bins: int = 10
-) -> list[dict]:
+) -> list[Payload]:
     """The probability-bucket-outcome table Q2.6 explicitly requires:
     for each confidence bucket, how many rows landed there, the average
     predicted probability, and the REAL observed outcome rate. A bucket
@@ -163,7 +165,7 @@ def compute_reliability_curve(
     for p, y in zip(probs, labels, strict=False):
         idx = min(int(p * n_bins), n_bins - 1)
         bins[idx].append((p, y))
-    curve = []
+    curve: list[Payload] = []
     for i, bucket in enumerate(bins):
         lo, hi = i / n_bins, (i + 1) / n_bins
         if not bucket:
@@ -191,7 +193,7 @@ def compute_reliability_curve(
     return curve
 
 
-def calibrate_and_validate(scores: list[float], labels: list[float]) -> dict:
+def calibrate_and_validate(scores: list[float], labels: list[float]) -> Payload:
     """Splits (scores, labels) -- already the classifier's own held-out
     TEST set, itself out-of-sample from training -- chronologically in
     half: first half fits both Platt and isotonic, second half validates
@@ -252,7 +254,7 @@ def calibrate_and_validate(scores: list[float], labels: list[float]) -> dict:
         "raw_score_brier": round(raw_brier, 4) if raw_brier is not None else None,
         "raw_score_ece": round(raw_ece, 4) if raw_ece is not None else None,
         "platt": {
-            "params": {k: round(v, 6) for k, v in platt_params.items()},
+            "params": {k: round(float(v), 6) for k, v in platt_params.items()},
             "brier": round(platt_brier, 4) if platt_brier is not None else None,
             "ece": round(platt_ece, 4) if platt_ece is not None else None,
         },

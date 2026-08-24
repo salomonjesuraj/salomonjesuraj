@@ -15,7 +15,7 @@ routes = web.RouteTableDef()
 
 
 @routes.get("/api/options-dynamics/status")
-async def options_dynamics_status(request):
+async def options_dynamics_status(request: web.Request) -> web.Response:
     redis = request.app["redis"]
     raw = await redis.get("infusion:options-dynamics-queue:status")
     if not raw:
@@ -24,7 +24,7 @@ async def options_dynamics_status(request):
 
 
 @routes.get("/api/options-dynamics/{symbol}")
-async def options_dynamics_for_symbol(request):
+async def options_dynamics_for_symbol(request: web.Request) -> web.Response:
     redis = request.app["redis"]
     symbol = request.match_info["symbol"].upper()
     raw = await redis.get(f"infusion:options-dynamics:{symbol}")

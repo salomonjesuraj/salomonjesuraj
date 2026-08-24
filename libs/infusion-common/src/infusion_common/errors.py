@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
+from typing import Any
 
 
 class ErrorCategory(StrEnum):
@@ -37,11 +38,11 @@ class InfusionError:
     source: ErrorSource
     message: str
     original_exception: Exception | None = None
-    context: dict | None = field(default=None)
+    context: dict[str, Any] | None = field(default=None)
 
-    def to_log_dict(self) -> dict:
+    def to_log_dict(self) -> dict[str, Any]:
         """Fields to include in structured log output."""
-        d: dict = {
+        d: dict[str, Any] = {
             "error_category": self.category.value,
             "error_source": self.source.value,
             "error_message": self.message,

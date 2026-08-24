@@ -6,6 +6,7 @@ import asyncio
 import json
 from collections import defaultdict
 from datetime import date, datetime, timedelta
+from typing import Any, cast
 from urllib.parse import quote
 
 import aiohttp
@@ -50,7 +51,7 @@ _BENCHMARK_READY_MIN_BARS = 200
 _BENCHMARK_DEGRADED_MIN_BARS = 1
 
 
-def _bar(raw: list) -> tuple[int, dict] | None:
+def _bar(raw: list[Any]) -> tuple[int, dict[str, int | float]] | None:
     if len(raw) < 6:
         return None
     try:
@@ -68,7 +69,7 @@ def _bar(raw: list) -> tuple[int, dict] | None:
         return None
 
 
-async def _universe(redis) -> dict[str, str]:
+async def _universe(redis: Any) -> dict[str, str]:
     symbols_raw = await redis.hgetall("infusion:symbols")
     result: dict[str, str] = {}
     for key, value in symbols_raw.items():
@@ -90,7 +91,7 @@ async def _universe(redis) -> dict[str, str]:
     return result
 
 
-async def _benchmark_status(redis) -> dict[str, str]:
+async def _benchmark_status(redis: Any) -> dict[str, str]:
     """READY / DEGRADED(n_bars) / UNAVAILABLE per benchmark index, from a
     real ZCARD count -- never inferred, never assumed present. Folded into
     bootstrap_historical()'s own return dict so the scheduler's existing
@@ -121,19 +122,21 @@ async def _fetch_historical(
     interval: int,
     start: date,
     end: date,
-) -> list:
+) -> list[list[Any]]:
     encoded_key = quote(instrument_key, safe="")
     url = (
         f"{UPSTOX_API_BASE}/historical-candle/{encoded_key}/"
         f"{unit}/{interval}/{end.isoformat()}/{start.isoformat()}"
     )
-    async with session.get(url, headers={"Accept": "application/json"}, timeout=30) as response:
-        payload = await response.json()
+    async with session.get(
+        url, headers={"Accept": "application/json"}, timeout=aiohttp.ClientTimeout(total=30)
+    ) as response:
+        payload = cast(dict[str, Any], await response.json())
         if response.status == 429:
             raise RuntimeError("upstox_rate_limited")
         if response.status != 200 or payload.get("status") != "success":
             raise RuntimeError(payload.get("message", f"upstox_http_{response.status}"))
-        return payload.get("data", {}).get("candles", [])
+        return cast(list[list[Any]], payload.get("data", {}).get("candles", []))
 
 
 async def _fetch_intraday(
@@ -141,20 +144,22 @@ async def _fetch_intraday(
     instrument_key: str,
     unit: str = "minutes",
     interval: int = 1,
-) -> list:
+) -> list[list[Any]]:
     encoded_key = quote(instrument_key, safe="")
     url = f"{UPSTOX_API_BASE}/historical-candle/intraday/{encoded_key}/{unit}/{interval}"
-    async with session.get(url, headers={"Accept": "application/json"}, timeout=30) as response:
-        payload = await response.json()
+    async with session.get(
+        url, headers={"Accept": "application/json"}, timeout=aiohttp.ClientTimeout(total=30)
+    ) as response:
+        payload = cast(dict[str, Any], await response.json())
         if response.status == 429:
             raise RuntimeError("upstox_rate_limited")
         if response.status != 200 or payload.get("status") != "success":
             raise RuntimeError(payload.get("message", f"upstox_http_{response.status}"))
-        return payload.get("data", {}).get("candles", [])
+        return cast(list[list[Any]], payload.get("data", {}).get("candles", []))
 
 
-async def _store_zset(redis, key: str, rows: list, ttl: int) -> None:
-    mapping = {}
+async def _store_zset(redis: Any, key: str, rows: list[list[Any]], ttl: int) -> None:
+    mapping: dict[str, int] = {}
     for raw in rows:
         parsed = _bar(raw)
         if parsed:
@@ -168,7 +173,7 @@ async def _store_zset(redis, key: str, rows: list, ttl: int) -> None:
         await pipe.execute()
 
 
-async def _store_volume_profile(redis, symbol: str, rows: list) -> None:
+async def _store_volume_profile(redis: Any, symbol: str, rows: list[list[Any]]) -> None:
     sessions: dict[str, list[tuple[int, int]]] = defaultdict(list)
     for raw in rows:
         try:
@@ -194,7 +199,7 @@ async def _store_volume_profile(redis, symbol: str, rows: list) -> None:
         await pipe.execute()
 
 
-async def bootstrap_historical(redis) -> dict:
+async def bootstrap_historical(redis: Any) -> dict[str, Any]:
     instruments = await _universe(redis)
     if not instruments:
         return {"status": "waiting_for_symbols", "symbols": 0}

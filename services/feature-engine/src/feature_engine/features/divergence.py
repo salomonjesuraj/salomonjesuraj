@@ -21,8 +21,13 @@ Standard definitions (unchanged from any TA reference):
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+from typing import Any
 
-def detect_rsi_divergence(rsi_swing_points) -> dict:
+
+def detect_rsi_divergence(
+    rsi_swing_points: Iterable[tuple[float, str, int, float]],
+) -> dict[str, Any]:
     points = list(rsi_swing_points)
     highs = [(price, rsi) for price, kind, _bar_idx, rsi in points if kind == "high"]
     lows = [(price, rsi) for price, kind, _bar_idx, rsi in points if kind == "low"]

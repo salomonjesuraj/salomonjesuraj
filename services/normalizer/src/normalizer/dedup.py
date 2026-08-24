@@ -11,7 +11,7 @@ class TickDedup:
 
     def __init__(self, ring_size: int = 20):
         self._ring_size = ring_size
-        self._rings: dict[str, deque] = {}
+        self._rings: dict[str, deque[int]] = {}
         self._dupes = 0
 
     def is_duplicate(self, symbol: str, exchange_timestamp_ms: int) -> bool:

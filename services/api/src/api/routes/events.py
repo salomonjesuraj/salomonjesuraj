@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta, timezone
+from typing import Any, cast
 
 from aiohttp import web
 
@@ -11,22 +12,23 @@ from api.event_calendar import EVENT_KEY_PREFIX, get_event_risk
 
 routes = web.RouteTableDef()
 IST = timezone(timedelta(hours=5, minutes=30))
+Payload = dict[str, Any]
 
 
 @routes.get("/api/events/stock")
-async def stock_event(request):
+async def stock_event(request: web.Request) -> web.Response:
     redis = request.app["redis"]
     symbol = str(request.query.get("symbol") or "").upper().strip()
     return web.json_response(await get_event_risk(redis, symbol))
 
 
 @routes.get("/api/events/stocks")
-async def stock_events(request):
+async def stock_events(request: web.Request) -> web.Response:
     redis = request.app["redis"]
     limit = int(request.query.get("limit", "300") or 300)
     limit = max(1, min(limit, 1000))
     cursor = 0
-    rows: list[dict] = []
+    rows: list[Payload] = []
     while True:
         cursor, keys = await redis.scan(cursor=cursor, match=f"{EVENT_KEY_PREFIX}*", count=200)
         for key in keys:
@@ -37,7 +39,8 @@ async def stock_events(request):
                 continue
             try:
                 text = raw.decode() if isinstance(raw, bytes) else raw
-                item = json.loads(text)
+                item_raw = json.loads(text)
+                item = cast(Payload, item_raw) if isinstance(item_raw, dict) else {}
                 symbol = str(item.get("symbol") or "").upper().strip()
                 if symbol:
                     rows.append(await get_event_risk(redis, symbol))
@@ -52,12 +55,13 @@ async def stock_events(request):
 
 
 @routes.post("/api/events/stock")
-async def save_stock_event(request):
+async def save_stock_event(request: web.Request) -> web.Response:
     redis = request.app["redis"]
     try:
-        payload = await request.json()
+        payload_raw = await request.json()
     except Exception:
-        payload = {}
+        payload_raw = {}
+    payload = cast(Payload, payload_raw) if isinstance(payload_raw, dict) else {}
     symbol = str(payload.get("symbol") or "").upper().strip()
     if not symbol:
         return web.json_response({"ok": False, "error": "symbol_required"}, status=400)
@@ -80,7 +84,7 @@ async def save_stock_event(request):
 
 
 @routes.delete("/api/events/stock/{symbol}")
-async def delete_stock_event(request):
+async def delete_stock_event(request: web.Request) -> web.Response:
     redis = request.app["redis"]
     symbol = str(request.match_info.get("symbol") or "").upper().strip()
     if not symbol:

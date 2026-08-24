@@ -11,6 +11,7 @@ import contextlib
 import json
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
+from typing import Any, cast
 from urllib.parse import quote_plus
 
 from aiohttp import web
@@ -18,6 +19,7 @@ from aiohttp import web
 routes = web.RouteTableDef()
 NEWS_EDGE_KEY_PREFIX = "infusion:news-edge:"
 IST = timezone(timedelta(hours=5, minutes=30))
+Payload = dict[str, Any]
 
 POSITIVE_WORDS = {
     "profit",
@@ -100,7 +102,7 @@ EVENT_RISK_WORDS = {
 }
 
 
-def _headline_score(title: str, tone) -> tuple[float, list[str], list[str]]:
+def _headline_score(title: str, tone: object) -> tuple[float, list[str], list[str]]:
     text = f" {str(title or '').lower()} "
     score = 0.0
     tags: list[str] = []
@@ -118,7 +120,7 @@ def _headline_score(title: str, tone) -> tuple[float, list[str], list[str]]:
             risks.append(word)
             score -= 0.25
     try:
-        t = float(tone)
+        t = float(cast(Any, tone))
         if t > 1.5:
             score += 0.5
             tags.append("positive tone")
@@ -130,7 +132,7 @@ def _headline_score(title: str, tone) -> tuple[float, list[str], list[str]]:
     return score, tags[:4], risks[:4]
 
 
-def _news_edge(items: list[dict]) -> dict:
+def _news_edge(items: list[Payload]) -> Payload:
     if not items:
         return {
             "stance": "NO_NEWS",
@@ -148,16 +150,17 @@ def _news_edge(items: list[dict]) -> dict:
     blockers: list[str] = []
     total = 0.0
     for item in items[:8]:
-        score, tags, risks = _headline_score(item.get("title", ""), item.get("tone"))
+        title = str(item.get("title") or "")
+        score, tags, risks = _headline_score(title, item.get("tone"))
         item["headline_score"] = round(score, 2)
         item["tags"] = tags
         item["event_risks"] = risks
         scored.append(score)
         total += score
         if score > 0.5:
-            boosters.append(item.get("title", "")[:110])
+            boosters.append(title[:110])
         elif score < -0.5:
-            blockers.append(item.get("title", "")[:110])
+            blockers.append(title[:110])
         risk_hits.extend(risks)
 
     avg = total / max(len(scored), 1)
@@ -193,7 +196,7 @@ def _news_edge(items: list[dict]) -> dict:
     }
 
 
-def _compact_article(item: dict) -> dict:
+def _compact_article(item: Payload) -> Payload:
     return {
         "title": item.get("title") or "",
         "url": item.get("url") or "",
@@ -208,7 +211,12 @@ def _compact_article(item: dict) -> dict:
 
 
 async def _cache_news_edge(
-    request, symbol: str, sector: str, source: str, edge: dict, items: list[dict]
+    request: web.Request,
+    symbol: str,
+    sector: str,
+    source: str,
+    edge: Payload,
+    items: list[Payload],
 ) -> None:
     if not symbol:
         return
@@ -231,12 +239,12 @@ async def _cache_news_edge(
         )
 
 
-def _rss_items(xml_text: str) -> list[dict]:
+def _rss_items(xml_text: str) -> list[Payload]:
     try:
         root = ET.fromstring(xml_text)
     except Exception:
         return []
-    out = []
+    out: list[Payload] = []
     for item in root.findall(".//item")[:8]:
         title = item.findtext("title") or ""
         link = item.findtext("link") or ""
@@ -256,7 +264,7 @@ def _rss_items(xml_text: str) -> list[dict]:
     return out
 
 
-async def _google_news_fallback(session, query: str) -> list[dict]:
+async def _google_news_fallback(session: Any, query: str) -> list[Payload]:
     url = f"https://news.google.com/rss/search?q={quote_plus(query)}&hl=en-IN&gl=IN&ceid=IN:en"
     try:
         async with session.get(url, timeout=12, headers={"User-Agent": "Mozilla/5.0"}) as resp:
@@ -268,14 +276,14 @@ async def _google_news_fallback(session, query: str) -> list[dict]:
 
 
 @routes.get("/api/news/market")
-async def market_news(request):
+async def market_news(request: web.Request) -> web.Response:
     session = request.app.get("http_session")
     symbol = str(request.query.get("symbol") or "").upper().strip()
     sector = str(request.query.get("sector") or "").upper().strip()
     if not session:
         return web.json_response({"ok": False, "items": [], "note": "HTTP session unavailable"})
 
-    query_parts = []
+    query_parts: list[str] = []
     if symbol:
         query_parts.append(f'"{symbol}"')
     if sector:
@@ -341,8 +349,13 @@ async def market_news(request):
             }
         )
 
-    articles = data.get("articles") if isinstance(data, dict) else []
-    items = [_compact_article(x) for x in (articles or []) if x.get("title") and x.get("url")]
+    articles_raw = data.get("articles") if isinstance(data, dict) else []
+    article_payloads = [
+        cast(Payload, item) for item in (articles_raw or []) if isinstance(item, dict)
+    ]
+    items = [
+        _compact_article(item) for item in article_payloads if item.get("title") and item.get("url")
+    ]
     edge = _news_edge(items)
     await _cache_news_edge(request, symbol, sector, "GDELT", edge, items)
     return web.json_response(

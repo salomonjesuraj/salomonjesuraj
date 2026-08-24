@@ -21,7 +21,7 @@ class OutOfOrderDetector:
     """Tracks the newest exchange_timestamp_ms seen per symbol and flags
     any tick that arrives with an older one."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._last_ts: dict[str, int] = {}
         self._out_of_order_count = 0
 

@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import structlog
 
 logger = structlog.get_logger()
 
 
-async def log_consumer_lag(redis, stream: str, group: str) -> int:
+async def log_consumer_lag(redis: Any, stream: str, group: str) -> int:
     """Check and log consumer group lag. Returns pending count."""
     try:
         groups = await redis.xinfo_groups(stream)
@@ -19,7 +21,7 @@ async def log_consumer_lag(redis, stream: str, group: str) -> int:
                     logger.warning("consumer_lag_high", stream=stream, group=group, pending=pending)
                 elif pending > 0:
                     logger.debug("consumer_lag", stream=stream, group=group, pending=pending)
-                return pending
+                return int(pending)
     except Exception as e:
         logger.warning("consumer_lag_check_failed", stream=stream, group=group, error=str(e))
     return 0

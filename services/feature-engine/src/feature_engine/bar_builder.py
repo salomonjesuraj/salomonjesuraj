@@ -3,12 +3,14 @@
 from feature_engine.state import OHLCBar, SymbolState
 
 
-def update_bars(state: SymbolState, ltp: float, volume_delta: int, exchange_ms: int):
+def update_bars(
+    state: SymbolState, ltp: float, volume_delta: int, exchange_ms: int
+) -> list[tuple[int, OHLCBar]]:
     """
     Update 1m/5m/15m bar builders with new tick.
     Returns list of completed bars (timeframe_minutes, bar) when a bar closes.
     """
-    completed = []
+    completed: list[tuple[int, OHLCBar]] = []
 
     for tf_minutes, bar_attr in [(1, "bar_1m"), (5, "bar_5m"), (15, "bar_15m")]:
         bar: OHLCBar = getattr(state, bar_attr)

@@ -1,7 +1,9 @@
 """Feature engine orchestrator — micro-batch processing of normalized ticks."""
 
 import asyncio
+from collections.abc import Awaitable, Callable, Iterable
 from datetime import UTC, datetime, timedelta, timezone
+from typing import Any
 
 import structlog
 from infusion_common.timing import now_us
@@ -56,8 +58,15 @@ from feature_engine.state import OHLCBar, SymbolState
 
 logger = structlog.get_logger()
 
+TickPayload = dict[str, Any]
+FeatureCallback = Callable[[FeatureVectorV1], Awaitable[None]]
+BarCallback = Callable[[str, int, OHLCBar], Awaitable[None]]
+ProfileLoader = Callable[[str], Awaitable[dict[int, float]]]
+HistoryLoader = Callable[[str], Awaitable[list[dict[str, Any]]]]
+DeliveryLoader = Callable[[str], Awaitable[dict[str, Any] | None]]
 
-def _bar_dict(bar) -> dict:
+
+def _bar_dict(bar: OHLCBar) -> dict[str, Any]:
     """Compact dict used for lightweight pattern checks."""
     return {
         "o": float(bar.open),
@@ -68,15 +77,15 @@ def _bar_dict(bar) -> dict:
     }
 
 
-def _range(bar: dict) -> float:
+def _range(bar: dict[str, Any]) -> float:
     return max(0.0, float(bar.get("h", 0.0)) - float(bar.get("l", 0.0)))
 
 
-def _body(bar: dict) -> float:
+def _body(bar: dict[str, Any]) -> float:
     return abs(float(bar.get("c", 0.0)) - float(bar.get("o", 0.0)))
 
 
-def _detect_nr_pattern(bars) -> str:
+def _detect_nr_pattern(bars: Iterable[dict[str, Any]]) -> str:
     """Detect NR4/NR7 style range contraction on the latest 1m bar."""
     items = list(bars)
     if len(items) < 4:
@@ -172,41 +181,41 @@ class FeatureEngine:
       5. Emit FeatureVector
     """
 
-    def __init__(self, config):
+    def __init__(self, config: Any) -> None:
         self.config = config
         self._states: dict[str, SymbolState] = {}
-        self._buffer: list[dict] = []
+        self._buffer: list[TickPayload] = []
         self._lock = asyncio.Lock()
-        self._on_feature = None  # callback
-        self._on_bar = None
-        self._profile_loader = None
-        self._history_loader = None
-        self._delivery_loader = None
+        self._on_feature: FeatureCallback | None = None
+        self._on_bar: BarCallback | None = None
+        self._profile_loader: ProfileLoader | None = None
+        self._history_loader: HistoryLoader | None = None
+        self._delivery_loader: DeliveryLoader | None = None
         self._processed = 0
 
-    def set_callback(self, fn):
+    def set_callback(self, fn: FeatureCallback) -> None:
         """Set callback for emitting feature vectors."""
         self._on_feature = fn
 
-    def set_bar_callback(self, fn):
+    def set_bar_callback(self, fn: BarCallback) -> None:
         self._on_bar = fn
 
-    def set_volume_profile_loader(self, fn):
+    def set_volume_profile_loader(self, fn: ProfileLoader) -> None:
         self._profile_loader = fn
 
-    def set_history_loader(self, fn):
+    def set_history_loader(self, fn: HistoryLoader) -> None:
         self._history_loader = fn
 
-    def set_delivery_loader(self, fn):
+    def set_delivery_loader(self, fn: DeliveryLoader) -> None:
         self._delivery_loader = fn
 
-    async def ingest(self, payload: dict):
+    async def ingest(self, payload: TickPayload) -> None:
         """Buffer a normalized tick for batch processing."""
         self._buffer.append(payload)
         if len(self._buffer) >= self.config.batch_max_ticks:
             await self._flush()
 
-    async def flush_timer(self):
+    async def flush_timer(self) -> None:
         """Background timer that flushes buffer every batch_timer_ms."""
         interval = self.config.batch_timer_ms / 1000.0
         while True:
@@ -214,7 +223,7 @@ class FeatureEngine:
             if self._buffer:
                 await self._flush()
 
-    async def _flush(self):
+    async def _flush(self) -> None:
         """Process buffered ticks."""
         async with self._lock:
             if not self._buffer:
@@ -224,7 +233,7 @@ class FeatureEngine:
             self._buffer = []
 
         # Deduplicate: keep only latest tick per symbol
-        latest_by_symbol: dict[str, dict] = {}
+        latest_by_symbol: dict[str, TickPayload] = {}
         for tick in batch:
             symbol = tick.get("symbol", "")
             latest_by_symbol[symbol] = tick
@@ -324,16 +333,18 @@ class FeatureEngine:
                 state.delivery_trade_date = delivery.get("trade_date", "")
         return state
 
-    def _compute(self, state: SymbolState, tick: dict) -> tuple[FeatureVectorV1 | None, list]:
+    def _compute(
+        self, state: SymbolState, tick: TickPayload
+    ) -> tuple[FeatureVectorV1 | None, list[tuple[int, OHLCBar]]]:
         """Run all feature computations for a symbol."""
-        ltp = tick.get("ltp", 0.0)
+        ltp = float(tick.get("ltp") or 0.0)
         if ltp <= 0:
             return None, []
 
-        volume = tick.get("volume", 0)
+        volume = int(tick.get("volume") or 0)
         tick.get("high", ltp)
         tick.get("low", ltp)
-        close = tick.get("close", ltp)  # prev day close
+        close = float(tick.get("close") or ltp)  # prev day close
 
         exchange_ms = int(tick.get("exchange_timestamp_ms", 0) or 0)
         if exchange_ms <= 0:
@@ -375,7 +386,7 @@ class FeatureEngine:
             state.vwap_sq_numerator = 0.0
             state.day_high = 0.0
             state.day_low = float("inf")
-            state.day_open = tick.get("open", ltp) or ltp
+            state.day_open = float(tick.get("open") or ltp)
             state.bar_1m = OHLCBar()
             state.bar_5m = OHLCBar()
             state.bar_15m = OHLCBar()
@@ -409,17 +420,17 @@ class FeatureEngine:
         # Update state from tick
         state.ltp = ltp
         state.volume = volume
-        state.oi = tick.get("oi", 0)
-        state.best_bid = tick.get("best_bid", 0.0)
-        state.best_ask = tick.get("best_ask", 0.0)
+        state.oi = int(tick.get("oi") or 0)
+        state.best_bid = float(tick.get("best_bid") or 0.0)
+        state.best_ask = float(tick.get("best_ask") or 0.0)
         # EBIE EB-15 Phase 1 item 2 fix: these were reading best_bid_qty/
         # best_ask_qty (level-1 depth only) -- a naming bug that silently
         # made get_order_imbalance() a level-1-only read despite its
         # exchange-wide-sounding field names. NormalizedTickV1 now carries
         # the real Upstox tbq/tsq (see transformer.py/tick.py), so this
         # reads the genuine exchange-wide aggregate quantities instead.
-        state.total_buy_qty = tick.get("total_buy_qty", 0)
-        state.total_sell_qty = tick.get("total_sell_qty", 0)
+        state.total_buy_qty = int(tick.get("total_buy_qty") or 0)
+        state.total_sell_qty = int(tick.get("total_sell_qty") or 0)
         # EBIE EB-6: real 5-level depth (see upstox_codec.py's depth-codec
         # fix) -- overwritten each tick, not accumulated. Advance the book-
         # imbalance EMA every tick (not gated to completed-1m-bar) since
@@ -431,7 +442,7 @@ class FeatureEngine:
         if state.prev_close == 0 and close > 0:
             state.prev_close = close
         if state.day_open == 0:
-            state.day_open = tick.get("open", ltp)
+            state.day_open = float(tick.get("open") or ltp)
 
         # VWAP/day state remains live. Technical indicators advance only from
         # completed 1-minute OHLCV bars so tick rate cannot distort them.
@@ -486,7 +497,7 @@ class FeatureEngine:
             ema20=state.ema.get(20, ltp),
             macd_hist=macd_hist,
         )
-        ml_features = {
+        ml_features: dict[str, Any] = {
             **structure_snapshot(state),
             **zone_snapshot(state),
             **fib_snapshot(state, ltp),
@@ -571,7 +582,7 @@ class FeatureEngine:
         ), completed
 
     @property
-    def stats(self) -> dict:
+    def stats(self) -> dict[str, int]:
         return {
             "symbols_tracked": len(self._states),
             "features_computed": self._processed,

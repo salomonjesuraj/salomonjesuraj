@@ -48,12 +48,14 @@ import asyncio
 import contextlib
 import json
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import structlog
 
 from api.routes.ticks import _build_ticks
 
 logger = structlog.get_logger()
+Payload = dict[str, Any]
 
 # Ordered weakest -> strongest, mirrors ticks.py's own tier vocabulary.
 TIER_RANK = {
@@ -78,7 +80,7 @@ def _rank(tier: str | None) -> int:
     return TIER_RANK.get(str(tier or "").upper(), -1)
 
 
-async def _read_tier_state(redis, symbols: list[str]) -> dict[str, str]:
+async def _read_tier_state(redis: Any, symbols: list[str]) -> dict[str, str]:
     if not symbols:
         return {}
     keys = [f"{TIER_STATE_PREFIX}{s}" for s in symbols]
@@ -86,11 +88,11 @@ async def _read_tier_state(redis, symbols: list[str]) -> dict[str, str]:
     result: dict[str, str] = {}
     for symbol, raw in zip(symbols, values, strict=False):
         if raw:
-            result[symbol] = raw.decode() if isinstance(raw, bytes) else raw
+            result[symbol] = raw.decode() if isinstance(raw, bytes) else str(raw)
     return result
 
 
-async def _write_tier_state(redis, updates: dict[str, str]) -> None:
+async def _write_tier_state(redis: Any, updates: dict[str, str]) -> None:
     if not updates:
         return
     pipe = redis.pipeline(transaction=False)
@@ -99,7 +101,7 @@ async def _write_tier_state(redis, updates: dict[str, str]) -> None:
     await pipe.execute()
 
 
-async def sweep_once(app) -> dict:
+async def sweep_once(app: Payload) -> Payload:
     """One detection + outcome-tracking pass. Called every
     SWEEP_INTERVAL_SEC by radar_alert_loop(); also callable directly
     (e.g. from a test script) since it only needs `app`'s redis/pg_pool.
@@ -110,7 +112,8 @@ async def sweep_once(app) -> dict:
         return {"available": False, "reason": "Redis or Postgres pool not available."}
 
     ticks = await _build_ticks(redis)
-    symbols = [t["symbol"] for t in ticks if t.get("symbol")]
+    tick_rows = [t for t in ticks if isinstance(t, dict)]
+    symbols = [str(t["symbol"]) for t in tick_rows if t.get("symbol")]
     prev_tiers = await _read_tier_state(redis, symbols)
 
     new_alerts = 0
@@ -119,7 +122,7 @@ async def sweep_once(app) -> dict:
     tier_updates: dict[str, str] = {}
 
     async with pool.acquire() as conn:
-        for entry in ticks:
+        for entry in tick_rows:
             symbol = entry.get("symbol")
             if not symbol:
                 continue
@@ -245,7 +248,7 @@ async def sweep_once(app) -> dict:
     return status
 
 
-async def radar_alert_loop(app) -> None:
+async def radar_alert_loop(app: Any) -> None:
     redis = app.get("redis")
     pool = app.get("pg_pool")
     if not redis or not pool:

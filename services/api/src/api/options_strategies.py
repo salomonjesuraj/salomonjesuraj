@@ -41,23 +41,35 @@ strike out" that means the same thing for every symbol.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import Any
+
 DEFAULT_WING_STEPS = 2  # spreads: how many strike-steps the short/far leg sits from ATM
 DEFAULT_CONDOR_SHORT_STEPS = 2  # iron condor: short strikes this many steps from ATM
 DEFAULT_CONDOR_WING_STEPS = 4  # iron condor: protective long strikes this many steps from ATM
 DEFAULT_STRANGLE_STEPS = 2  # long strangle: OTM leg steps from ATM
 
 
-def _leg_market(row: dict, leg_name: str) -> dict:
+ChainRow = dict[str, Any]
+StrategyResult = dict[str, Any]
+StrategyBuilder = Callable[[list[ChainRow], float], StrategyResult]
+
+
+def _leg_market(row: ChainRow | None, leg_name: str) -> dict[str, Any]:
+    if row is None:
+        return {}
     leg = row.get(leg_name) or {}
     return leg.get("market_data") or {}
 
 
-def _leg_greeks(row: dict, leg_name: str) -> dict:
+def _leg_greeks(row: ChainRow | None, leg_name: str) -> dict[str, Any]:
+    if row is None:
+        return {}
     leg = row.get(leg_name) or {}
     return leg.get("option_greeks") or {}
 
 
-def buy_price(row: dict, leg_name: str) -> float:
+def buy_price(row: ChainRow | None, leg_name: str) -> float:
     """What it actually costs to BUY this leg right now -- ask, falling
     back to ltp when no live ask is quoted (thin book), same convention
     market.py's _score_option_leg already uses for a single leg."""
@@ -67,7 +79,7 @@ def buy_price(row: dict, leg_name: str) -> float:
     return ask if ask > 0 else ltp
 
 
-def sell_price(row: dict, leg_name: str) -> float:
+def sell_price(row: ChainRow | None, leg_name: str) -> float:
     """What you actually receive SELLING this leg right now -- bid,
     falling back to ltp."""
     market = _leg_market(row, leg_name)
@@ -76,7 +88,7 @@ def sell_price(row: dict, leg_name: str) -> float:
     return bid if bid > 0 else ltp
 
 
-def _sorted_strikes(rows: list[dict]) -> list[float]:
+def _sorted_strikes(rows: list[ChainRow]) -> list[float]:
     strikes = sorted(
         {float(r.get("strike_price") or 0) for r in rows if float(r.get("strike_price") or 0) > 0}
     )
@@ -89,7 +101,7 @@ def _atm_index(strikes: list[float], spot: float) -> int | None:
     return min(range(len(strikes)), key=lambda i: abs(strikes[i] - spot))
 
 
-def _row_at_strike(rows: list[dict], strike: float) -> dict | None:
+def _row_at_strike(rows: list[ChainRow], strike: float) -> ChainRow | None:
     for row in rows:
         if float(row.get("strike_price") or 0) == strike:
             return row
@@ -110,7 +122,7 @@ def _strike_at_offset(strikes: list[float], atm_idx: int, steps: int) -> float |
 
 def _leg(
     action: str, opt_type: str, strike: float, premium: float, iv: float, delta: float
-) -> dict:
+) -> StrategyResult:
     return {
         "action": action,
         "type": opt_type,
@@ -121,15 +133,17 @@ def _leg(
     }
 
 
-def _ready_result(strategy: str, **kwargs) -> dict:
+def _ready_result(strategy: str, **kwargs: Any) -> StrategyResult:
     return {"strategy": strategy, "ready": True, **kwargs}
 
 
-def _not_ready(strategy: str, reason: str) -> dict:
+def _not_ready(strategy: str, reason: str) -> StrategyResult:
     return {"strategy": strategy, "ready": False, "reason": reason}
 
 
-def bull_call_spread(rows: list[dict], spot: float, wing_steps: int = DEFAULT_WING_STEPS) -> dict:
+def bull_call_spread(
+    rows: list[ChainRow], spot: float, wing_steps: int = DEFAULT_WING_STEPS
+) -> StrategyResult:
     """Buy ATM/near-ATM call, sell a further-OTM call to fund it. Defined
     risk (the net debit paid), defined reward (strike width - net debit)."""
     strikes = _sorted_strikes(rows)
@@ -180,7 +194,9 @@ def bull_call_spread(rows: list[dict], spot: float, wing_steps: int = DEFAULT_WI
     )
 
 
-def bear_put_spread(rows: list[dict], spot: float, wing_steps: int = DEFAULT_WING_STEPS) -> dict:
+def bear_put_spread(
+    rows: list[ChainRow], spot: float, wing_steps: int = DEFAULT_WING_STEPS
+) -> StrategyResult:
     """Buy ATM/near-ATM put, sell a further-OTM put to fund it. Mirror of
     bull_call_spread for a bearish view."""
     strikes = _sorted_strikes(rows)
@@ -232,11 +248,11 @@ def bear_put_spread(rows: list[dict], spot: float, wing_steps: int = DEFAULT_WIN
 
 
 def iron_condor(
-    rows: list[dict],
+    rows: list[ChainRow],
     spot: float,
     short_steps: int = DEFAULT_CONDOR_SHORT_STEPS,
     wing_steps: int = DEFAULT_CONDOR_WING_STEPS,
-) -> dict:
+) -> StrategyResult:
     """Sell an OTM put + OTM call (collect premium), buy further-OTM put +
     call as protection on each side. Net credit, defined risk both
     directions -- a range-bound / high-theta view, the opposite read from
@@ -252,7 +268,7 @@ def iron_condor(
     long_put_k = _strike_at_offset(strikes, atm_idx, -wing_steps)
     short_call_k = _strike_at_offset(strikes, atm_idx, short_steps)
     long_call_k = _strike_at_offset(strikes, atm_idx, wing_steps)
-    if None in (short_put_k, long_put_k, short_call_k, long_call_k):
+    if short_put_k is None or long_put_k is None or short_call_k is None or long_call_k is None:
         return _not_ready("iron_condor", "Chain too thin for both condor wings.")
 
     short_put_row = _row_at_strike(rows, short_put_k)
@@ -323,7 +339,7 @@ def iron_condor(
     )
 
 
-def long_straddle(rows: list[dict], spot: float) -> dict:
+def long_straddle(rows: list[ChainRow], spot: float) -> StrategyResult:
     """Buy the ATM call and ATM put at the SAME strike. Unlimited-ish
     upside on a big move either direction; max loss is the combined
     premium paid if the underlying pins the strike at expiry."""
@@ -367,7 +383,9 @@ def long_straddle(rows: list[dict], spot: float) -> dict:
     )
 
 
-def long_strangle(rows: list[dict], spot: float, wing_steps: int = DEFAULT_STRANGLE_STEPS) -> dict:
+def long_strangle(
+    rows: list[ChainRow], spot: float, wing_steps: int = DEFAULT_STRANGLE_STEPS
+) -> StrategyResult:
     """Buy an OTM call and an OTM put -- cheaper than a straddle for the
     same "big move either direction" view, at the cost of needing a
     bigger move to reach breakeven."""
@@ -416,7 +434,9 @@ def long_strangle(rows: list[dict], spot: float, wing_steps: int = DEFAULT_STRAN
     )
 
 
-def covered_call(rows: list[dict], spot: float, wing_steps: int = DEFAULT_WING_STEPS) -> dict:
+def covered_call(
+    rows: list[ChainRow], spot: float, wing_steps: int = DEFAULT_WING_STEPS
+) -> StrategyResult:
     """Sell an OTM call against a hypothetical equity holding bought at
     today's spot. Infusion tracks no actual equity portfolio -- this is
     presented as "if you held/bought at spot right now", the same
@@ -468,7 +488,7 @@ def covered_call(rows: list[dict], spot: float, wing_steps: int = DEFAULT_WING_S
     )
 
 
-CATALOG = {
+CATALOG: dict[str, StrategyBuilder] = {
     "bull_call_spread": bull_call_spread,
     "bear_put_spread": bear_put_spread,
     "iron_condor": iron_condor,
@@ -478,7 +498,7 @@ CATALOG = {
 }
 
 
-def build_all_strategies(rows: list[dict], spot: float) -> dict[str, dict]:
+def build_all_strategies(rows: list[ChainRow], spot: float) -> dict[str, StrategyResult]:
     """Every catalog strategy for one chain snapshot, keyed by name. Each
     value carries its own "ready" flag -- callers must check it per
     strategy (a thin chain can starve one strategy's wings while another
@@ -592,13 +612,13 @@ def _max_pain_fit(strategy: str, spot: float, max_pain_strike: float | None) -> 
 
 
 def rank_strategies(
-    built: dict[str, dict],
+    built: dict[str, StrategyResult],
     trade_bias: str,
     iv_rank: float | None,
     pcr_sentiment: str | None,
     spot: float,
     max_pain_strike: float | None,
-) -> list[dict]:
+) -> list[StrategyResult]:
     """Score and rank every READY strategy in `built` (as returned by
     build_all_strategies). Returns a list sorted best-fit-first, each entry
     carrying its total score (0-100), the 4 component scores, and a
@@ -606,7 +626,7 @@ def rank_strategies(
     ranked where it did, not just trust a number. Never picks one FOR the
     user; this is a ranked shortlist, not a decision.
     """
-    ranked = []
+    ranked: list[StrategyResult] = []
     for name, result in built.items():
         if not result.get("ready"):
             continue

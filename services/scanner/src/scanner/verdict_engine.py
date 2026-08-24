@@ -129,6 +129,9 @@ a rejection) -- never fabricates tradeability from absence.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import Any
+
 from scanner.alignment import compute_signal_alignment
 
 # Per Q6.3's authorized temporary shadow bands -- NOT yet calibrated
@@ -220,7 +223,7 @@ def _direction_label(score_diff: float, threshold: float = 0.0) -> bool | None:
     return None
 
 
-def _accumulation_family(ml: dict) -> bool | None:
+def _accumulation_family(ml: dict[str, Any]) -> bool | None:
     """CLV (EB-2) -- persistent close-location pressure.
 
     EB-15 Phase 4 item 7 note: despite the family's name/key
@@ -241,7 +244,7 @@ def _accumulation_family(ml: dict) -> bool | None:
     return _direction_label(clv, CLV_THRESHOLD)
 
 
-def _compression_family(mtf_cache: dict) -> bool | None:
+def _compression_family(mtf_cache: dict[str, Any]) -> bool | None:
     """VCP (Phase 13.12) -- Minervini Stage-2 base quality. Inherently
     long-side by construction (a "good base" only argues FOR a bullish
     thesis, never for a bearish one) -- disclosed asymmetry: this
@@ -255,7 +258,7 @@ def _compression_family(mtf_cache: dict) -> bool | None:
     return True if score >= VCP_MIN_SCORE else None
 
 
-def _relative_strength_family(mtf_cache: dict) -> bool | None:
+def _relative_strength_family(mtf_cache: dict[str, Any]) -> bool | None:
     """Multi-timeframe RS (EB-3) -- outperformance AND accelerating,
     not just a snapshot level."""
     rs = mtf_cache.get("multi_timeframe_rs") or {}
@@ -271,7 +274,7 @@ def _relative_strength_family(mtf_cache: dict) -> bool | None:
     return None  # outperforming-but-fading / underperforming-but-improving -- genuinely mixed
 
 
-def _microstructure_family(ml: dict) -> bool | None:
+def _microstructure_family(ml: dict[str, Any]) -> bool | None:
     """Book-imbalance EMA (EB-6) -- persistent order-book pressure."""
     depth = ml.get("microstructure_depth") or {}
     imbalance = depth.get("book_imbalance_ema")
@@ -280,7 +283,7 @@ def _microstructure_family(ml: dict) -> bool | None:
     return _direction_label(imbalance, MICROSTRUCTURE_THRESHOLD)
 
 
-def _futures_positioning_family(futures_cache: dict) -> bool | None:
+def _futures_positioning_family(futures_cache: dict[str, Any]) -> bool | None:
     """EB-4 -- rising OI + rising premium (basis) reads as long
     buildup; rising OI + falling premium reads as short buildup. Flat/
     falling OI has no clear buildup interpretation either way."""
@@ -295,7 +298,7 @@ def _futures_positioning_family(futures_cache: dict) -> bool | None:
     return None
 
 
-def _options_positioning_family(options_dynamics_cache: dict) -> bool | None:
+def _options_positioning_family(options_dynamics_cache: dict[str, Any]) -> bool | None:
     """EB-5 -- wall STATE changes and migration only, never PCR level
     or "highest OI = hard support/resistance" (both explicitly excluded
     by Q3.4). Put wall strengthening or call wall weakening reads
@@ -318,7 +321,7 @@ def _options_positioning_family(options_dynamics_cache: dict) -> bool | None:
     return None
 
 
-def _sentiment_family(sentiment_cache: dict) -> bool | None:
+def _sentiment_family(sentiment_cache: dict[str, Any]) -> bool | None:
     """EB-7's own already-composited, decay-weighted label -- reused
     as-is, not re-derived."""
     label = sentiment_cache.get("sentiment")
@@ -329,7 +332,7 @@ def _sentiment_family(sentiment_cache: dict) -> bool | None:
     return None
 
 
-def _volume_family(rel_vol_20d) -> bool | None:
+def _volume_family(rel_vol_20d: Any) -> bool | None:
     """EB-15 Phase 4 item 6 -- RVOL, already computed by ticks.py/
     features_snapshot for every candidate but never wired into a
     verdict family before now. Deliberately one-sided: real volume
@@ -387,7 +390,7 @@ def _compute_directional_context(
     return round(max(0.0, min(100.0, score)), 1)
 
 
-def _market_context_family(market_context_cache: dict, bullish: bool) -> bool | None:
+def _market_context_family(market_context_cache: dict[str, Any], bullish: bool) -> bool | None:
     """EB-15 Phase 4 item 5 -- market/sector/breadth context, read
     against THIS candidate's own posited direction (bullish param),
     never a separately-cached, potentially-mismatched bias -- see
@@ -412,7 +415,7 @@ def _market_context_family(market_context_cache: dict, bullish: bool) -> bool | 
     return None
 
 
-NEW_FAMILY_SCORERS = {
+NEW_FAMILY_SCORERS: dict[str, Callable[[dict[str, Any]], bool | None]] = {
     "accumulation": lambda ctx: _accumulation_family(ctx["ml"]),
     "compression": lambda ctx: _compression_family(ctx["mtf_cache"]),
     "relative_strength": lambda ctx: _relative_strength_family(ctx["mtf_cache"]),
@@ -453,12 +456,12 @@ FAMILY_DESCRIPTIONS = {
 def _hard_gates(
     *,
     fo_banned: bool,
-    data_quality_score,
-    entry_price,
-    invalidation_price,
-    tick_lag_ms,
-    session_gap_ms,
-    option_chain_context,
+    data_quality_score: float | None,
+    entry_price: float,
+    invalidation_price: float,
+    tick_lag_ms: float | None,
+    session_gap_ms: float | None,
+    option_chain_context: dict[str, Any] | None,
 ) -> list[str]:
     """Per docs/EBIE-IMPLEMENTATION-ANSWERS.md Q6.1's authorized hard-
     gate list. EB-15 Phase 5 item 9 closes the one gap that list's own
@@ -530,27 +533,27 @@ def _family_weights(available_families: list[str]) -> dict[str, float]:
 def compute_verdict(
     *,
     bullish: bool,
-    ml: dict,
-    mtf_cache: dict,
-    sentiment_cache: dict,
-    futures_cache: dict,
-    options_dynamics_cache: dict,
-    market_context_cache: dict,
-    rel_vol_20d,
-    option_chain_context: dict,
-    ma_regime: dict | None,
-    donchian: dict | None,
-    wyckoff_sos_sow: dict | None,
+    ml: dict[str, Any],
+    mtf_cache: dict[str, Any],
+    sentiment_cache: dict[str, Any],
+    futures_cache: dict[str, Any],
+    options_dynamics_cache: dict[str, Any],
+    market_context_cache: dict[str, Any],
+    rel_vol_20d: Any,
+    option_chain_context: dict[str, Any],
+    ma_regime: dict[str, Any] | None,
+    donchian: dict[str, Any] | None,
+    wyckoff_sos_sow: dict[str, Any] | None,
     atr_trend: str,
     candle_pattern: str,
     entry_price: float,
     invalidation_price: float,
     fo_banned: bool,
-    data_quality_score,
-    tick_lag_ms,
-    session_gap_ms,
+    data_quality_score: float | None,
+    tick_lag_ms: float | None,
+    session_gap_ms: float | None,
     chaseable: bool,
-) -> dict:
+) -> dict[str, Any]:
     """The Unified Verdict for one candidate. `bullish` is the
     candidate's OWN posited direction (BUY CE vs BUY PE) -- bull_score/
     bear_score are computed independently of it (so a genuinely

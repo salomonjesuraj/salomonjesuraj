@@ -21,6 +21,8 @@ Design:
 
 from __future__ import annotations
 
+from typing import Any
+
 from scanner.alignment import compute_signal_alignment
 from scanner.config import ScannerSettings
 from scanner.episode_manager import finalize_episode, resolve_ladder_basis
@@ -41,7 +43,7 @@ class VolVwapBreakout(BaseStrategy):
 
     def evaluate(
         self,
-        features: dict,
+        features: dict[str, Any],
         state: ScannerSymbolState,
     ) -> SignalCandidate | None:
         """Evaluate all 7 sub-conditions. Returns candidate only if ALL pass."""
@@ -157,7 +159,7 @@ class VolVwapBreakout(BaseStrategy):
         ttl_us = self._s.options_hybrid_watch_ttl_min * 60 * 1_000_000
 
         def _invalidated(frozen_stop: float) -> bool:
-            return ltp < frozen_stop  # invalidated, not "still the same setup, just later"
+            return bool(ltp < frozen_stop)  # invalidated, not "still the same setup, just later"
 
         def _fresh_entry_invalidation() -> tuple[float, float]:
             entry = ltp

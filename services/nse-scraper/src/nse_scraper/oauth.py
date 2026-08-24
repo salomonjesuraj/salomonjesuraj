@@ -14,6 +14,7 @@ import asyncio
 import base64
 import json
 from datetime import UTC, datetime
+from typing import Any
 from urllib.parse import quote
 
 import aiohttp
@@ -24,6 +25,13 @@ from redis.asyncio import Redis
 logger = structlog.get_logger()
 
 KEY_AUTH_UPSTOX = "infusion:auth:upstox"
+Payload = dict[str, Any]
+
+
+def _redis_text(value: bytes | str | None) -> str:
+    if isinstance(value, bytes):
+        return value.decode()
+    return value or ""
 
 
 def _jwt_expiry(token: str) -> int:
@@ -36,7 +44,7 @@ def _jwt_expiry(token: str) -> int:
         return 0
 
 
-async def start_oauth_server(redis: Redis, settings) -> None:
+async def start_oauth_server(redis: Redis, settings: Any) -> None:
     """Start the OAuth callback HTTP server."""
     app = web.Application()
     app["redis"] = redis
@@ -77,17 +85,14 @@ async def _upstox_credentials(request: web.Request) -> tuple[str, str, str]:
     settings = request.app["settings"]
     redis: Redis = request.app["redis"]
 
-    api_key = (
-        getattr(settings, "upstox_api_key", "")
-        or (await redis.get("infusion:config:upstox_api_key") or b"").decode()
+    api_key = getattr(settings, "upstox_api_key", "") or _redis_text(
+        await redis.get("infusion:config:upstox_api_key")
     )
-    api_secret = (
-        getattr(settings, "upstox_api_secret", "")
-        or (await redis.get("infusion:config:upstox_api_secret") or b"").decode()
+    api_secret = getattr(settings, "upstox_api_secret", "") or _redis_text(
+        await redis.get("infusion:config:upstox_api_secret")
     )
-    redirect_uri = (
-        getattr(settings, "upstox_redirect_uri", "")
-        or (await redis.get("infusion:config:upstox_redirect_uri") or b"").decode()
+    redirect_uri = getattr(settings, "upstox_redirect_uri", "") or _redis_text(
+        await redis.get("infusion:config:upstox_redirect_uri")
     )
     return api_key, api_secret, redirect_uri
 

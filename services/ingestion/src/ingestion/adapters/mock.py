@@ -3,14 +3,18 @@
 import asyncio
 import random
 import time
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 import structlog
 from infusion_common.timing import now_us
 from infusion_models.tick import RawTickV1
 
 from ingestion.adapters.base import BrokerAdapter, ConnectionState
+from ingestion.config import IngestionSettings
 
 logger = structlog.get_logger()
+Payload = dict[str, Any]
 
 # 5 representative instruments for initial testing
 MOCK_SYMBOLS = [
@@ -27,7 +31,7 @@ class MockAdapter(BrokerAdapter):
 
     name = "mock"
 
-    def __init__(self, config):
+    def __init__(self, config: IngestionSettings) -> None:
         self.config = config
         self.state = ConnectionState.INIT
         self._prices: dict[str, float] = {}
@@ -60,7 +64,7 @@ class MockAdapter(BrokerAdapter):
     async def change_mode(self, instrument_keys: list[str], mode: str) -> None:
         logger.info("mock_mode_changed", count=len(instrument_keys), mode=mode)
 
-    async def start_streaming(self, on_tick) -> None:
+    async def start_streaming(self, on_tick: Callable[[RawTickV1], Awaitable[None]]) -> None:
         self.state = ConnectionState.STREAMING
         interval = 1.0 / max(self.config.mock_tick_rate_hz, 1)
 
@@ -112,7 +116,7 @@ class MockAdapter(BrokerAdapter):
         self.state = ConnectionState.DISCONNECTED
         logger.info("mock_disconnected", total_ticks=self._tick_count)
 
-    def health(self) -> dict:
+    def health(self) -> Payload:
         return {
             "broker": "mock",
             "state": self.state.value,

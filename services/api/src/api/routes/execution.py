@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import time
 from datetime import datetime
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from aiohttp import web
@@ -24,36 +25,40 @@ routes = web.RouteTableDef()
 IST = ZoneInfo("Asia/Kolkata")
 STAGED_KEY = "infusion:execution:staged_tickets"
 MAX_STAGED_ROWS = 200
+Payload = dict[str, Any]
 
 
 def _now_ist() -> str:
     return datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")
 
 
-def _num(value, default: float = 0.0) -> float:
+def _num(value: Any, default: float = 0.0) -> float:
     try:
         return round(float(value), 4)
     except (TypeError, ValueError):
         return default
 
 
-def _text(value, default: str = "-") -> str:
+def _text(value: Any, default: str = "-") -> str:
     if value is None:
         return default
     value = str(value).strip()
     return value or default
 
 
-def _list(value) -> list[str]:
+def _list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
     return [str(x) for x in value if str(x).strip()]
 
 
-def _build_ticket(payload: dict, max_lots: int = DEFAULT_RISK["max_lots"]) -> dict:
-    trade = payload.get("trade") if isinstance(payload.get("trade"), dict) else payload
-    option = trade.get("option") if isinstance(trade.get("option"), dict) else {}
-    news = trade.get("news_edge") if isinstance(trade.get("news_edge"), dict) else {}
+def _build_ticket(payload: Payload, max_lots: int = 5) -> Payload:
+    trade_raw = payload.get("trade")
+    trade: Payload = trade_raw if isinstance(trade_raw, dict) else payload
+    option_raw = trade.get("option")
+    option: Payload = option_raw if isinstance(option_raw, dict) else {}
+    news_raw = trade.get("news_edge")
+    news: Payload = news_raw if isinstance(news_raw, dict) else {}
     ts_ms = int(time.time() * 1000)
 
     symbol = _text(trade.get("symbol"), "UNKNOWN").upper()
@@ -67,9 +72,8 @@ def _build_ticket(payload: dict, max_lots: int = DEFAULT_RISK["max_lots"]) -> di
     spread_pct = _num(option.get("spread_pct"))
     liquidity_ok = option.get("liquidity_whitelist_pass")
     physical_settlement_block = bool(option.get("physical_settlement_block"))
-    event_calendar = (
-        option.get("event_calendar") if isinstance(option.get("event_calendar"), dict) else {}
-    )
+    event_calendar_raw = option.get("event_calendar")
+    event_calendar: Payload = event_calendar_raw if isinstance(event_calendar_raw, dict) else {}
     risk_amount = _num(trade.get("risk_amount"))
     lot_size = int(_num(option.get("lot_size"), 0) or 0)
     instrument_key = _text(option.get("instrument_key"), "")
@@ -192,34 +196,40 @@ def _build_ticket(payload: dict, max_lots: int = DEFAULT_RISK["max_lots"]) -> di
     }
 
 
-async def _load_rows(redis, limit: int = 80) -> list[dict]:
+async def _load_rows(redis: Any, limit: int = 80) -> list[Payload]:
     raw_rows = await redis.lrange(STAGED_KEY, 0, max(0, limit - 1))
-    rows: list[dict] = []
+    rows: list[Payload] = []
     for raw in raw_rows:
         try:
             text = raw.decode() if isinstance(raw, bytes) else raw
-            rows.append(json.loads(text))
+            payload = json.loads(text)
+            if isinstance(payload, dict):
+                rows.append(payload)
         except Exception:
             continue
     return rows
 
 
-async def _current_max_lots(redis) -> int:
+async def _current_max_lots(redis: Any) -> int:
     try:
         raw = await redis.get("infusion:risk:settings")
         if not raw:
-            return DEFAULT_RISK["max_lots"]
+            return int(DEFAULT_RISK["max_lots"])
         text = raw.decode() if isinstance(raw, bytes) else raw
-        return int(json.loads(text).get("max_lots") or DEFAULT_RISK["max_lots"])
+        payload = json.loads(text)
+        max_lots = payload.get("max_lots") if isinstance(payload, dict) else None
+        return int(max_lots or DEFAULT_RISK["max_lots"])
     except Exception:
-        return DEFAULT_RISK["max_lots"]
+        return int(DEFAULT_RISK["max_lots"])
 
 
 @routes.post("/api/execution/stage")
-async def stage_execution_ticket(request):
+async def stage_execution_ticket(request: web.Request) -> web.Response:
     redis = request.app["redis"]
     try:
         payload = await request.json()
+        if not isinstance(payload, dict):
+            payload = {}
     except Exception:
         payload = {}
     max_lots = await _current_max_lots(redis)
@@ -232,7 +242,7 @@ async def stage_execution_ticket(request):
 
 
 @routes.get("/api/execution/staged")
-async def get_staged_tickets(request):
+async def get_staged_tickets(request: web.Request) -> web.Response:
     redis = request.app["redis"]
     limit = int(request.query.get("limit", "60") or 60)
     limit = max(1, min(limit, MAX_STAGED_ROWS))

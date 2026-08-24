@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from typing import Any
 
 import msgpack
 import structlog
@@ -34,20 +35,20 @@ class CapabilityRegistry:
 
     def __init__(
         self,
-        redis,
+        redis: Any,
         capability: ProviderCapabilityV1,
-        subscription_registry,
-        adapter,
+        subscription_registry: Any,
+        adapter: Any,
         interval_sec: int = 60,
         ttl_sec: int = 180,
-    ):
+    ) -> None:
         self.redis = redis
         self.capability = capability
         self.subscription_registry = subscription_registry
         self.adapter = adapter
         self.interval_sec = interval_sec
         self.ttl_sec = ttl_sec
-        self._task: asyncio.Task | None = None
+        self._task: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
         self._task = asyncio.create_task(self._loop())

@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+from typing import Any
 
 import structlog
 
@@ -22,9 +23,10 @@ STATUS_KEY = "infusion:portfolio-risk-queue:status"
 DAILY_LOSS_KEY = "infusion:portfolio-risk:daily-loss"
 CONSECUTIVE_LOSSES_KEY = "infusion:portfolio-risk:consecutive-losses"
 CACHE_TTL_SEC = 10 * 60
+Payload = dict[str, Any]
 
 
-async def sweep_once(app) -> dict:
+async def sweep_once(app: Any) -> Payload:
     redis = app.get("redis")
     pool = app.get("pg_pool")
     if not redis or not pool:
@@ -47,7 +49,7 @@ async def sweep_once(app) -> dict:
     return status
 
 
-async def portfolio_risk_loop(app) -> None:
+async def portfolio_risk_loop(app: Any) -> None:
     redis = app.get("redis")
     pool = app.get("pg_pool")
     if not redis or not pool:

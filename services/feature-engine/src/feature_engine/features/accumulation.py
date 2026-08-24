@@ -16,6 +16,8 @@ volume divided by a 20-session average at the SAME minute-of-day, not a
 naive full-day average). Genuine reuse, not a duplicate build.
 """
 
+from typing import Any
+
 from feature_engine.state import SymbolState
 
 CLV_EMA_PERIOD = 14
@@ -57,7 +59,7 @@ def update_clv(state: SymbolState, high: float, low: float, close: float, volume
         state.clv_lower_quartile_count += 1
 
 
-def clv_snapshot(state: SymbolState) -> dict:
+def clv_snapshot(state: SymbolState) -> dict[str, Any]:
     """Informational snapshot -- not wired into scoring, matches this
     codebase's "compute it, let feature-ablation earn its way in"
     governance already applied to every Phase 1-13.x field. `_ready`

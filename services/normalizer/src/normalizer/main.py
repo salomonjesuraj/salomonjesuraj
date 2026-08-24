@@ -33,7 +33,7 @@ from normalizer.transformer import transform
 logger = structlog.get_logger()
 
 
-async def main():
+async def main() -> None:
     config = NormalizerSettings()
     setup_logging(config.service_name, config.log_level, config.log_format)
     logger.info("normalizer_starting")

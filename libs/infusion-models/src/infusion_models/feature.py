@@ -4,7 +4,9 @@ FeatureVectorV1: computed features for a single symbol at a point in time.
 All features are incrementally updated on each tick — no batch recomputation.
 """
 
-from pydantic import BaseModel
+from typing import Any
+
+from pydantic import BaseModel, Field
 
 
 class FeatureVectorV1(BaseModel, frozen=True):
@@ -34,7 +36,7 @@ class FeatureVectorV1(BaseModel, frozen=True):
     # eligibility on it is deferred until real DQ distributions have been
     # observed, per the authorization's own explicit sequencing.
     data_quality_score: int = 100
-    data_quality_reasons: list[str] = []
+    data_quality_reasons: list[str] = Field(default_factory=list)
 
     # Price
     ltp: float
@@ -88,4 +90,4 @@ class FeatureVectorV1(BaseModel, frozen=True):
     delivery_pct: float = 0.0  # from NSE data (when available)
 
     # ML features (free-form, for future model iteration)
-    ml_features: dict = {}
+    ml_features: dict[str, Any] = Field(default_factory=dict)

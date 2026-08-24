@@ -38,6 +38,8 @@ cached to Redis, same pattern as VIX multiplier/Kelly sizing).
 
 from __future__ import annotations
 
+from typing import Any
+
 # Thresholds are v1 judgment calls, not yet calibrated against real
 # outcome data (same disclosed-heuristic status as every EBIE
 # threshold this session has shipped without a validated backtest --
@@ -58,8 +60,8 @@ def compute_portfolio_fit(
     candidate_direction: str,  # "bullish" | "bearish"
     candidate_strategy_id: str,
     candidate_risk_amount: float,
-    active_portfolio: list[dict],
-) -> dict:
+    active_portfolio: list[dict[str, Any]],
+) -> dict[str, Any]:
     """active_portfolio: one dict per currently-active signal, each
     {symbol, strategy_id, sector_id, direction, risk_amount}. Computes
     what the portfolio would look like WITH this candidate added,

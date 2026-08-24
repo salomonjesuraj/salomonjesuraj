@@ -36,6 +36,8 @@ NOT implemented this pass, deferred with reason:
 
 from __future__ import annotations
 
+from typing import Any
+
 STRUCTURAL_TOUCH_TOLERANCE_PCT = 5.0  # same convention as chart_patterns.py's peak-similarity rule
 FAILURE_APPROACH_TOLERANCE_PCT = 3.0  # how close a swing must get to an extreme to count as "reaching" it -- Infusion's own calibration, source gives no exact number
 SOT_MIN_LEGS = 3
@@ -55,7 +57,7 @@ def _similar(a: float, b: float, tolerance_pct: float) -> bool:
 
 def detect_structural_failure(
     pivots: list[tuple[float, str, int]], lookback: int = PATTERN_LOOKBACK_PIVOTS
-) -> dict | None:
+) -> dict[str, Any] | None:
     """A validated range (>=2 touches each side, same clustering rule as
     chart_patterns.detect_rectangle) where the most recent swing clearly
     moved toward one extreme from a confirmed touch of the other, but
@@ -121,7 +123,7 @@ def detect_structural_failure(
 
 def detect_shortening_of_thrust(
     pivots: list[tuple[float, str, int]], lookback: int = PATTERN_LOOKBACK_PIVOTS
-) -> dict | None:
+) -> dict[str, Any] | None:
     """>= 3 consecutive same-direction legs, each shorter than the last.
     Up-legs (low->high moves) shrinking = possible upside exhaustion;
     down-legs shrinking = possible downside exhaustion. No volume
@@ -166,7 +168,9 @@ def detect_shortening_of_thrust(
     return None
 
 
-def detect_sos_sow_bar(daily_bars: list[dict], lookback: int = SOS_SOW_LOOKBACK) -> dict | None:
+def detect_sos_sow_bar(
+    daily_bars: list[dict[str, Any]], lookback: int = SOS_SOW_LOOKBACK
+) -> dict[str, Any] | None:
     """Sign of Strength / Sign of Weakness trigger bar: wide range,
     above-average volume, closing in the upper (SOS) or lower (SOW) third
     of its own range -- Wyckoff 2.0's actual entry trigger."""

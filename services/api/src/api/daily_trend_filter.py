@@ -35,6 +35,8 @@ before it's ever allowed to move a live score.
 
 from __future__ import annotations
 
+from typing import Any
+
 # The 14 conditions, verbatim from the Chartink screen (each entry's own
 # comment is the exact filter text as shown on the screener):
 #  1. Daily Ema(close,5)              Greater than  Daily Sma(close,20)
@@ -126,7 +128,9 @@ def _macd(values: list[float]) -> tuple[float | None, float | None, float | None
     return line[-1], signal[-1], line[-1] - signal[-1]
 
 
-def _adx_di(bars: list[dict], period: int = 14) -> tuple[float | None, float | None, float | None]:
+def _adx_di(
+    bars: list[dict[str, Any]], period: int = 14
+) -> tuple[float | None, float | None, float | None]:
     """Wilder DI+/DI-/ADX, batch equivalent of feature-engine's incremental
     update_adx/get_adx (services/feature-engine/.../features/momentum.py) --
     same Wilder smoothing, just computed fresh over the full daily-bar
@@ -177,7 +181,7 @@ def _adx_di(bars: list[dict], period: int = 14) -> tuple[float | None, float | N
     return di_plus, di_minus, adx
 
 
-def compute_daily_trend_filter(daily_bars: list[dict]) -> dict:
+def compute_daily_trend_filter(daily_bars: list[dict[str, Any]]) -> dict[str, Any]:
     """Pure function: real daily OHLCV bars in, Chartink-replica verdict out.
 
     Returns pass/fail per condition (not just one collapsed boolean) so a

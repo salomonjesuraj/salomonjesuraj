@@ -21,6 +21,8 @@ absent family is not evidence against the trade, it's simply silent.
 
 from __future__ import annotations
 
+from typing import Any
+
 BULLISH_CANDLES = {
     "Bullish Engulfing",
     "Hammer",
@@ -52,13 +54,13 @@ BEARISH_CANDLES = {
 def compute_signal_alignment(
     *,
     bullish: bool,
-    ml: dict,
-    ma_regime: dict | None,
-    donchian: dict | None,
-    wyckoff_sos_sow: dict | None,
+    ml: dict[str, Any],
+    ma_regime: dict[str, Any] | None,
+    donchian: dict[str, Any] | None,
+    wyckoff_sos_sow: dict[str, Any] | None,
     atr_trend: str,
     candle_pattern: str,
-) -> dict:
+) -> dict[str, Any]:
     """8 independent families: market structure, candlestick pattern,
     supply/demand zone, ICT (FVG/order-block/liquidity-sweep combined),
     ATR/Supertrend regime, daily MA regime (Golden/Death Cross), Donchian

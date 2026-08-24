@@ -19,6 +19,8 @@ check whether these thresholds actually track real forward moves.
 
 from __future__ import annotations
 
+from typing import Any
+
 DECAY_HALF_LIFE_HOURS = 24.0
 
 # bullish=+1 / bearish=-1 -- direction is a genuine directional edge.
@@ -29,7 +31,13 @@ DECAY_HALF_LIFE_HOURS = 24.0
 # aggregate -- an UNKNOWN article is excluded from influencing the
 # average, not silently counted as a "neutral" data point that would
 # drag it toward zero.
-DIRECTION_SIGN = {"bullish": 1.0, "bearish": -1.0, "neutral": 0.0, "ambiguous": 0.0, "unknown": 0.0}
+DIRECTION_SIGN: dict[str, float] = {
+    "bullish": 1.0,
+    "bearish": -1.0,
+    "neutral": 0.0,
+    "ambiguous": 0.0,
+    "unknown": 0.0,
+}
 
 # Below this |weighted_impact|, report NEUTRAL rather than a directional
 # label -- real observed data (EB-7 increment 2's live verification)
@@ -48,7 +56,7 @@ def compute_age_decay(published_time_ms: int | None, now_ms: int) -> float:
     if not published_time_ms:
         return 0.0
     age_hours = max(0.0, (now_ms - published_time_ms) / 3_600_000.0)
-    return 0.5 ** (age_hours / DECAY_HALF_LIFE_HOURS)
+    return float(0.5 ** (age_hours / DECAY_HALF_LIFE_HOURS))
 
 
 def compute_sentiment_impact(
@@ -68,7 +76,7 @@ def compute_sentiment_impact(
     return sign * confidence * severity * relevance * novelty * source_quality * age_decay
 
 
-def summarize_symbol_sentiment(rows: list[dict], now_ms: int) -> dict:
+def summarize_symbol_sentiment(rows: list[dict[str, Any]], now_ms: int) -> dict[str, Any]:
     """rows: each a dict with direction/confidence/severity/relevance/
     novelty/source_quality/published_time_ms/heading/event_type (the
     shape a news_events JOIN sentiment_scores query naturally produces).
@@ -80,7 +88,7 @@ def summarize_symbol_sentiment(rows: list[dict], now_ms: int) -> dict:
     if not rows:
         return {"available": False, "reason": "No recent news for this symbol.", "article_count": 0}
 
-    scored = []
+    scored: list[dict[str, Any]] = []
     for r in rows:
         decay = compute_age_decay(r.get("published_time_ms"), now_ms)
         impact = compute_sentiment_impact(

@@ -11,6 +11,7 @@ import json
 import os
 import time
 from datetime import date
+from typing import Any, cast
 from urllib.parse import urlencode
 
 import aiohttp
@@ -24,6 +25,8 @@ from api.options_analytics import compute_max_pain, compute_oi_support_resistanc
 from api.vix_sizing import vix_position_multiplier
 
 routes = web.RouteTableDef()
+Payload = dict[str, Any]
+OptionRows = list[Payload]
 
 UPSTOX_API_BASE = "https://api.upstox.com/v3"
 UPSTOX_API_V2_BASE = "https://api.upstox.com/v2"
@@ -41,7 +44,7 @@ UPSTOX_INDEX_MAP = {
 INDEX_SYMBOLS = {"NIFTY", "NIFTY50", "BANKNIFTY", "NIFTYBANK", "FINNIFTY", "MIDCPNIFTY"}
 
 
-def _upstox_error_reason(payload: dict, status: int) -> str:
+def _upstox_error_reason(payload: Payload, status: int) -> str:
     """Extract a real failure reason from an Upstox error response.
 
     Phase 13.2 audit fix: every call site here previously read
@@ -61,7 +64,7 @@ def _upstox_error_reason(payload: dict, status: int) -> str:
         return "Upstox token invalid or expired (401) -- login again at http://localhost:5100/auth/login."
     errors = payload.get("errors") if isinstance(payload, dict) else None
     if isinstance(errors, list) and errors:
-        first = errors[0] if isinstance(errors[0], dict) else {}
+        first = cast(Payload, errors[0]) if isinstance(errors[0], dict) else {}
         code = first.get("errorCode", "")
         msg = first.get("message", "")
         if code or msg:
@@ -74,7 +77,7 @@ def _upstox_error_reason(payload: dict, status: int) -> str:
     return f"Upstox error HTTP {status}"
 
 
-def _liquidity_thresholds() -> dict:
+def _liquidity_thresholds() -> Payload:
     return {
         "min_oi": float(os.getenv("INFUSION_OPTION_MIN_OI", "100")),
         "min_volume": float(os.getenv("INFUSION_OPTION_MIN_VOLUME", "1")),
@@ -82,8 +85,8 @@ def _liquidity_thresholds() -> dict:
     }
 
 
-def _decode_hash(data: dict) -> dict:
-    result = {}
+def _decode_hash(data: Payload) -> Payload:
+    result: Payload = {}
     for k, v in data.items():
         key = k.decode() if isinstance(k, bytes) else k
         val = v.decode() if isinstance(v, bytes) else v
@@ -94,7 +97,7 @@ def _decode_hash(data: dict) -> dict:
     return result
 
 
-async def _tick(redis, symbol: str) -> dict | None:
+async def _tick(redis: Any, symbol: str) -> Payload | None:
     data = await redis.hgetall(f"infusion:tick:{symbol}")
     if not data:
         return None
@@ -103,17 +106,17 @@ async def _tick(redis, symbol: str) -> dict | None:
     return out
 
 
-async def _feature(redis, symbol: str) -> dict:
+async def _feature(redis: Any, symbol: str) -> Payload:
     data = await redis.hgetall(f"infusion:feature:{symbol}")
     return _decode_hash(data) if data else {}
 
 
-async def _signal(redis, symbol: str) -> dict:
+async def _signal(redis: Any, symbol: str) -> Payload:
     data = await redis.hgetall(f"infusion:signal:{symbol}")
     return _decode_hash(data) if data else {}
 
 
-async def _instrument_key_for_symbol(redis, symbol: str) -> str:
+async def _instrument_key_for_symbol(redis: Any, symbol: str) -> str:
     raw = await redis.hgetall("infusion:symbols")
     for key, value in raw.items():
         instrument_key = key.decode() if isinstance(key, bytes) else key
@@ -121,19 +124,22 @@ async def _instrument_key_for_symbol(redis, symbol: str) -> str:
             payload = msgpack.unpackb(value, raw=False) if isinstance(value, bytes) else value
         except Exception:
             continue
+        if not isinstance(payload, dict):
+            continue
         if str(payload.get("symbol", "")).upper() == symbol.upper():
-            return instrument_key
+            return str(instrument_key)
     return ""
 
 
-async def _upstox_access_token(redis) -> str:
+async def _upstox_access_token(redis: Any) -> str:
     auth_raw = await redis.get("infusion:auth:upstox")
     if auth_raw:
         try:
             auth_text = auth_raw.decode() if isinstance(auth_raw, bytes) else auth_raw
-            token = json.loads(auth_text).get("access_token", "")
+            auth_payload = json.loads(auth_text)
+            token = auth_payload.get("access_token", "") if isinstance(auth_payload, dict) else ""
             if token:
-                return token
+                return str(token)
         except Exception:
             pass
     # Fallback for the local Docker setup where ingestion gets the token via
@@ -143,13 +149,13 @@ async def _upstox_access_token(redis) -> str:
     return os.getenv("INFUSION_UPSTOX_ACCESS_TOKEN", "")
 
 
-async def _upstox_index_quotes(request, symbols: list[str]) -> dict[str, dict]:
+async def _upstox_index_quotes(request: web.Request, symbols: list[str]) -> dict[str, Payload]:
     """Fetch index quotes from Upstox REST as a fallback when WS index ticks are absent."""
     app = request.app
     now = time.time()
     cache = app.setdefault("_upstox_index_quote_cache", {"ts": 0.0, "data": {}})
     if now - float(cache.get("ts", 0) or 0) < 5:
-        return cache.get("data", {})
+        return cast(dict[str, Payload], cache.get("data", {}))
 
     redis = app["redis"]
     access_token = await _upstox_access_token(redis)
@@ -170,7 +176,9 @@ async def _upstox_index_quotes(request, symbols: list[str]) -> dict[str, dict]:
         async with (
             aiohttp.ClientSession() as session,
             session.get(
-                f"{UPSTOX_API_BASE}/market-quote/ltp?{query}", headers=headers, timeout=5
+                f"{UPSTOX_API_BASE}/market-quote/ltp?{query}",
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=5),
             ) as resp,
         ):
             if resp.status != 200:
@@ -179,7 +187,7 @@ async def _upstox_index_quotes(request, symbols: list[str]) -> dict[str, dict]:
     except Exception:
         return {}
 
-    out = {}
+    out: dict[str, Payload] = {}
     data = payload.get("data", {}) if isinstance(payload, dict) else {}
     reverse = {v: k for k, v in UPSTOX_INDEX_MAP.items()}
     for _, quote in data.items():
@@ -187,15 +195,16 @@ async def _upstox_index_quotes(request, symbols: list[str]) -> dict[str, dict]:
         symbol = reverse.get(token)
         if not symbol or not isinstance(quote, dict):
             continue
-        ltp = float(quote.get("last_price") or quote.get("ltp") or 0)
-        close = float(quote.get("cp") or 0)
+        quote_payload = cast(Payload, quote)
+        ltp = float(quote_payload.get("last_price") or quote_payload.get("ltp") or 0)
+        close = float(quote_payload.get("cp") or 0)
         change_pct = ((ltp - close) / close * 100) if ltp and close else 0.0
         out[symbol] = {
             "symbol": symbol,
             "ltp": ltp,
             "change_pct": round(change_pct, 4),
-            "volume": float(quote.get("volume") or 0),
-            "exchange_ts": quote.get("last_trade_time") or quote.get("ltt") or "",
+            "volume": float(quote_payload.get("volume") or 0),
+            "exchange_ts": quote_payload.get("last_trade_time") or quote_payload.get("ltt") or "",
             "source": "upstox_quote_fallback",
         }
 
@@ -207,7 +216,7 @@ async def _upstox_index_quotes(request, symbols: list[str]) -> dict[str, dict]:
 VIX_MULTIPLIER_KEY = "infusion:vix:multiplier"
 
 
-async def compute_vix_multiplier(request) -> dict:
+async def compute_vix_multiplier(request: web.Request) -> Payload:
     """India VIX level -> position-size tier (see api/vix_sizing.py), fetched
     via the same Upstox REST fallback every other index quote here uses (VIX
     isn't in ingestion's live WS subscription list -- it's checked every few
@@ -228,7 +237,7 @@ async def compute_vix_multiplier(request) -> dict:
     return result
 
 
-def _underlying_score(features: dict) -> tuple[float | None, dict]:
+def _underlying_score(features: Payload) -> tuple[float | None, Payload]:
     if not features:
         return None, {
             "trend": None,
@@ -324,14 +333,14 @@ def _execution_score_cap(
     return score, "", ""
 
 
-def _num(value, default: float = 0.0) -> float:
+def _num(value: object, default: float = 0.0) -> float:
     try:
-        return float(value)
+        return float(cast(Any, value))
     except (TypeError, ValueError):
         return default
 
 
-async def _iv_rank(redis, contract_key: str, current_iv: float) -> tuple[float | None, int]:
+async def _iv_rank(redis: Any, contract_key: str, current_iv: float) -> tuple[float | None, int]:
     """Return rolling IV rank when at least 60 stored observations exist.
 
     The approval request requires no guessing.  Until history is available the
@@ -364,7 +373,7 @@ async def _iv_rank(redis, contract_key: str, current_iv: float) -> tuple[float |
     return round(max(0.0, min(100.0, rank)), 2), len(vals)
 
 
-def _underlying_levels(features: dict, signal: dict, bias: str, spot: float) -> dict:
+def _underlying_levels(features: Payload, signal: Payload, bias: str, spot: float) -> Payload:
     atr = _num(features.get("atr_14"), max(spot * 0.006, 0.05))
     atr = atr if atr > 0 else max(spot * 0.006, 0.05)
     entry = _num(signal.get("entry_price") or signal.get("entry") or spot, spot)
@@ -396,20 +405,23 @@ def _underlying_levels(features: dict, signal: dict, bias: str, spot: float) -> 
 
 
 def _score_option_leg(
-    row: dict,
+    row: Payload,
     leg_name: str,
     spot: float,
     bias: str,
     expiry_days: int | None = None,
-    levels: dict | None = None,
+    levels: Payload | None = None,
     iv_rank: float | None = None,
     iv_history_count: int = 0,
     symbol: str = "",
-    event_risk: dict | None = None,
-) -> tuple[float | None, dict, str, dict, list[str], list[str], list[str]]:
-    leg = row.get(leg_name) or {}
-    market = leg.get("market_data") or {}
-    greeks = leg.get("option_greeks") or {}
+    event_risk: Payload | None = None,
+) -> tuple[float | None, Payload, str, Payload, list[str], list[str], list[str]]:
+    leg_raw = row.get(leg_name)
+    leg = cast(Payload, leg_raw) if isinstance(leg_raw, dict) else {}
+    market_raw = leg.get("market_data")
+    market = cast(Payload, market_raw) if isinstance(market_raw, dict) else {}
+    greeks_raw = leg.get("option_greeks")
+    greeks = cast(Payload, greeks_raw) if isinstance(greeks_raw, dict) else {}
     ltp = float(market.get("ltp") or 0)
     bid = float(market.get("bid_price") or 0)
     ask = float(market.get("ask_price") or 0)
@@ -611,7 +623,9 @@ def _score_option_leg(
     return score, gates, contract, metrics, reasons, blockers, hard_blockers
 
 
-async def _resolve_upstox_expiry(session, headers: dict, instrument_key: str) -> tuple[str, str]:
+async def _resolve_upstox_expiry(
+    session: aiohttp.ClientSession, headers: Payload, instrument_key: str
+) -> tuple[str, str]:
     """Resolve relative expiry to a concrete YYYY-MM-DD date.
 
     Index options often have current-week contracts. Many stock options are
@@ -624,7 +638,7 @@ async def _resolve_upstox_expiry(session, headers: dict, instrument_key: str) ->
                 f"{UPSTOX_API_V2_BASE}/option/contract",
                 headers=headers,
                 params={"instrument_key": instrument_key, "expiry_date": relative},
-                timeout=8,
+                timeout=aiohttp.ClientTimeout(total=8),
             ) as resp:
                 payload = await resp.json()
                 if resp.status != 200 or payload.get("status") != "success":
@@ -648,7 +662,7 @@ async def _resolve_upstox_expiry(session, headers: dict, instrument_key: str) ->
     return "", last_error or "Unable to resolve Upstox option expiry."
 
 
-async def _fetch_full_option_chain(redis, symbol: str) -> dict:
+async def _fetch_full_option_chain(redis: Any, symbol: str) -> Payload:
     """Fetch the FULL Upstox option chain (every strike, both call and put
     OI) for chain-wide analytics (PCR, OI-based S/R, Max Pain) -- separate
     from _upstox_option_context()'s near-ATM-only (+/-6%), bias-filtered
@@ -671,7 +685,9 @@ async def _fetch_full_option_chain(redis, symbol: str) -> dict:
     cached = await redis.get(cache_key)
     if cached:
         try:
-            payload = json.loads(cached.decode() if isinstance(cached, bytes) else cached)
+            payload = cast(
+                Payload, json.loads(cached.decode() if isinstance(cached, bytes) else cached)
+            )
             payload["cached"] = True
             return payload
         except Exception:
@@ -694,7 +710,7 @@ async def _fetch_full_option_chain(redis, symbol: str) -> dict:
                 f"{UPSTOX_API_V2_BASE}/option/chain",
                 headers=headers,
                 params={"instrument_key": instrument_key, "expiry_date": expiry},
-                timeout=8,
+                timeout=aiohttp.ClientTimeout(total=8),
             ) as resp:
                 data = await resp.json()
                 if resp.status != 200 or data.get("status") != "success":
@@ -705,7 +721,7 @@ async def _fetch_full_option_chain(redis, symbol: str) -> dict:
     except Exception as exc:
         return {"ready": False, "reason": f"Upstox option chain error: {exc}"}
 
-    rows = data.get("data") or []
+    rows = [cast(Payload, row) for row in (data.get("data") or []) if isinstance(row, dict)]
     if not rows:
         return {"ready": False, "reason": "Upstox option chain returned no rows."}
 
@@ -716,7 +732,7 @@ async def _fetch_full_option_chain(redis, symbol: str) -> dict:
     return result
 
 
-async def compute_options_chain_analytics(redis, symbol: str) -> dict:
+async def compute_options_chain_analytics(redis: Any, symbol: str) -> Payload:
     """PCR + OI-based support/resistance + Max Pain for one symbol, off
     the full option chain. See api/options_analytics.py for the sourced
     formulas (Upstox's own learning-center methodology)."""
@@ -724,7 +740,7 @@ async def compute_options_chain_analytics(redis, symbol: str) -> dict:
     if not chain.get("ready"):
         return {"ready": False, "reason": chain.get("reason", "Option chain unavailable.")}
 
-    rows = chain["rows"]
+    rows = cast(OptionRows, chain["rows"])
     pcr = compute_pcr(rows)
     oi_sr = compute_oi_support_resistance(rows)
     max_pain = compute_max_pain(rows)
@@ -743,8 +759,12 @@ async def compute_options_chain_analytics(redis, symbol: str) -> dict:
 
 
 async def _upstox_option_context(
-    redis, symbol: str, bias: str, features: dict | None = None, signal: dict | None = None
-) -> dict:
+    redis: Any,
+    symbol: str,
+    bias: str,
+    features: Payload | None = None,
+    signal: Payload | None = None,
+) -> Payload:
     if bias not in {"CE", "PE"}:
         return {"ready": False, "reason": "Option chain waits until scanner has CE/PE bias."}
 
@@ -763,7 +783,9 @@ async def _upstox_option_context(
     cached = await redis.get(cache_key)
     if cached:
         try:
-            payload = json.loads(cached.decode() if isinstance(cached, bytes) else cached)
+            payload = cast(
+                Payload, json.loads(cached.decode() if isinstance(cached, bytes) else cached)
+            )
             payload["cached"] = True
             return payload
         except Exception:
@@ -787,7 +809,7 @@ async def _upstox_option_context(
                 f"{UPSTOX_API_V2_BASE}/option/chain",
                 headers=headers,
                 params={"instrument_key": instrument_key, "expiry_date": expiry},
-                timeout=8,
+                timeout=aiohttp.ClientTimeout(total=8),
             ) as resp:
                 payload = await resp.json()
                 if resp.status != 200 or payload.get("status") != "success":
@@ -798,7 +820,7 @@ async def _upstox_option_context(
     except Exception as exc:
         return {"ready": False, "reason": f"Upstox option chain error: {exc}"}
 
-    rows = payload.get("data") or []
+    rows = [cast(Payload, row) for row in (payload.get("data") or []) if isinstance(row, dict)]
     if not rows:
         return {"ready": False, "reason": "Upstox option chain returned no rows."}
 
@@ -815,9 +837,10 @@ async def _upstox_option_context(
         if strike <= 0 or abs(strike - spot) / spot * 100 > 6:
             continue
         row_expiry = str(row.get("expiry") or row.get("expiry_date") or expiry)
-        leg = row.get(leg_name) or {}
-        greeks = leg.get("option_greeks") or {}
-        leg.get("market_data") or {}
+        leg_raw = row.get(leg_name)
+        leg = cast(Payload, leg_raw) if isinstance(leg_raw, dict) else {}
+        greeks_raw = leg.get("option_greeks")
+        greeks = cast(Payload, greeks_raw) if isinstance(greeks_raw, dict) else {}
         contract_key = str(leg.get("instrument_key") or "")
         current_iv = float(greeks.get("iv") or 0)
         iv_rank, iv_history_count = await _iv_rank(redis, contract_key, current_iv)
@@ -910,7 +933,7 @@ async def _upstox_option_context(
     return result
 
 
-async def _capture_option_premium(redis, symbol: str, bias: str) -> dict | None:
+async def _capture_option_premium(redis: Any, symbol: str, bias: str) -> Payload | None:
     """Phase 13.4: the one place a real option premium (ask/bid) gets
     resolved for archival, so services/scheduler's premium_capture_loop
     has something simple to call. Deliberately just wraps
@@ -925,7 +948,8 @@ async def _capture_option_premium(redis, symbol: str, bias: str) -> dict | None:
     ctx = await _upstox_option_context(redis, symbol, bias)
     if not ctx.get("ready"):
         return None
-    metrics = ctx.get("metrics") or {}
+    metrics_raw = ctx.get("metrics")
+    metrics = cast(Payload, metrics_raw) if isinstance(metrics_raw, dict) else {}
     ask = metrics.get("entry_fill")
     bid = metrics.get("exit_fill_reference")
     if not ask or not bid:
@@ -940,11 +964,11 @@ async def _capture_option_premium(redis, symbol: str, bias: str) -> dict | None:
     }
 
 
-async def _default_symbol(redis) -> str:
+async def _default_symbol(redis: Any) -> str:
     members = await redis.zrevrange("infusion:signals:active", 0, 0)
     if members:
         member = members[0].decode() if isinstance(members[0], bytes) else members[0]
-        return member.split(":")[0]
+        return str(member).split(":")[0]
 
     cursor = 0
     best_symbol = ""
@@ -967,7 +991,7 @@ async def _default_symbol(redis) -> str:
 
 
 @routes.get("/api/market/indices")
-async def market_indices(request):
+async def market_indices(request: web.Request) -> web.Response:
     """Return top index ticks for the dashboard ticker strip."""
     redis = request.app["redis"]
     wanted = [
@@ -977,9 +1001,9 @@ async def market_indices(request):
         ("GIFTNIFTY", "GIFT NIFTY"),
     ]
 
-    indices = []
-    seen = set()
-    missing_symbols = []
+    indices: list[Payload] = []
+    seen: set[str] = set()
+    missing_symbols: list[str] = []
     for symbol, label in wanted:
         if label in seen:
             continue
@@ -995,17 +1019,17 @@ async def market_indices(request):
     if missing_symbols:
         fallback = await _upstox_index_quotes(request, missing_symbols)
         for idx, item in enumerate(indices):
-            symbol = item.get("symbol")
-            if item.get("error") and symbol in fallback:
-                fixed = fallback[symbol]
-                fixed["label"] = item.get("label", symbol)
+            item_symbol = str(item.get("symbol") or "")
+            if item.get("error") and item_symbol in fallback:
+                fixed = fallback[item_symbol]
+                fixed["label"] = item.get("label", item_symbol)
                 indices[idx] = fixed
 
     return web.json_response({"count": len(indices), "indices": indices})
 
 
 @routes.get("/api/market/vix-multiplier")
-async def market_vix_multiplier(request):
+async def market_vix_multiplier(request: web.Request) -> web.Response:
     """GET /api/market/vix-multiplier -- India VIX-tiered position-size
     read (see api/vix_sizing.py). Cheap: one Upstox REST call, already
     de-duped by _upstox_index_quotes' own 5s cache. Computes fresh and
@@ -1017,7 +1041,7 @@ async def market_vix_multiplier(request):
 
 
 @routes.get("/api/options/chain-analytics")
-async def options_chain_analytics(request):
+async def options_chain_analytics(request: web.Request) -> web.Response:
     """PCR + OI-based support/resistance + Max Pain for one symbol.
 
     Sourced from Upstox's own learning-center methodology (the actual
@@ -1038,7 +1062,7 @@ async def options_chain_analytics(request):
 
 
 @routes.get("/api/options/summary")
-async def options_summary(request):
+async def options_summary(request: web.Request) -> web.Response:
     """Option-trading readiness summary.
 
     Current phase uses underlying features and exposes option-chain gates as
@@ -1163,21 +1187,22 @@ async def options_summary(request):
 
 
 @routes.get("/api/options/queue/status")
-async def options_queue_status(request):
+async def options_queue_status(request: web.Request) -> web.Response:
     """Inspect the smart option-chain refresh queue."""
     redis = request.app["redis"]
     raw = await redis.get("infusion:option-chain-queue:status")
     if raw:
         try:
             text = raw.decode() if isinstance(raw, bytes) else raw
-            status = json.loads(text)
+            decoded = json.loads(text)
+            status = cast(Payload, decoded) if isinstance(decoded, dict) else {}
         except Exception:
             status = {"enabled": True, "error": "status_decode_failed"}
     else:
         status = {"enabled": True, "state": "waiting_for_first_cycle"}
 
     cursor = 0
-    recent = []
+    recent: list[Payload] = []
     while True:
         cursor, keys = await redis.scan(
             cursor=cursor, match="infusion:option-chain-last-refresh:*", count=100
@@ -1192,7 +1217,7 @@ async def options_queue_status(request):
                     text = raw_row.decode() if isinstance(raw_row, bytes) else raw_row
                     payload = json.loads(text)
                     if isinstance(payload, dict):
-                        recent.append(payload)
+                        recent.append(cast(Payload, payload))
                 except Exception:
                     continue
         if cursor == 0:

@@ -27,15 +27,14 @@
       }
     })();
     // Same anti-FOUC reasoning as the theme script above, mirrors
-    // dashboard-mode.js's initialMode() exactly -- classic is the default
-    // so a returning visitor never sees a flash of the new layout unless
-    // they explicitly opted into it last time.
+    // dashboard-mode.js's initialMode() exactly. New is now the primary
+    // dashboard; Classic remains a one-click fallback for the freeze window.
     (function () {
       try {
         var saved = localStorage.getItem('infusion:dashboard-mode');
-        document.documentElement.setAttribute('data-dashboard-mode', saved === 'new' ? 'new' : 'classic');
+        document.documentElement.setAttribute('data-dashboard-mode', saved === 'classic' ? 'classic' : 'new');
       } catch (e) {
-        document.documentElement.setAttribute('data-dashboard-mode', 'classic');
+        document.documentElement.setAttribute('data-dashboard-mode', 'new');
       }
     })();
   </script>
@@ -45,7 +44,7 @@
        or #newShell, since [data-dashboard-mode="new"] hides .dashboard
        entirely and this is the only way back out of New mode. See
        dashboard-mode.js / mode-switch.js. -->
-  <button type="button" id="dashboardModeSwitch" class="ifx-mode-switch" title="Switch between the Classic and New dashboard"></button>
+  <button type="button" id="dashboardModeSwitch" class="ifx-mode-switch" title="Switch between the New and Classic dashboard"></button>
 
   <div class="dashboard hybrid-dashboard pro-terminal screener-pro-v4">
     <!-- v2 rebuild: header/ticker/market-health/nav/footer are now styled
@@ -281,6 +280,9 @@
           <div class="ifx-section-label" style="margin-top:16px">Pre-Breakout Watchers — building, not yet triggered<span class="ifx-section-rule"></span><span class="ifx-section-count" id="watchCountV2"></span></div>
           <div id="watchStripV2"></div>
 
+          <div class="ifx-section-label" style="margin-top:16px">Stock Breakout Radar — underlying evidence first<span class="ifx-section-rule"></span></div>
+          <div id="breakoutRadarV2"></div>
+
           <div class="ifx-section-label" style="margin-top:16px">F&amp;O Screener — ranked by strength × conviction<span class="ifx-section-rule"></span></div>
           <div id="scannerV2"></div>
         </div>
@@ -292,7 +294,6 @@
             <span class="ifx-section-rule"></span>
           </div>
 
-          <div data-pane-v2="breakout-radar"><div class="ifx-pane-title">Stock Breakout Radar — ranked by underlying evidence, independent of option-chain readiness</div><div id="breakoutRadarV2"></div></div>
           <div data-pane-v2="ebie-verdict"><div class="ifx-pane-title">EBIE Verdict — bull/bear evidence, trap risk, and portfolio fit for every candidate, fired or rejected</div><div id="ebieVerdictV2"></div></div>
           <div data-pane-v2="watchlist"><div class="ifx-pane-title">Pre-Breakout Watch</div><div id="watchlistBodyV2"></div></div>
           <!-- Clean Sweep LC-3: Option Basis is now the "Scrip Info"-style

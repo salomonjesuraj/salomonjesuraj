@@ -1,6 +1,7 @@
 """Price features — VWAP, EMAs, gap%, change%."""
 
 import math
+from typing import Any
 
 from feature_engine.state import SymbolState
 
@@ -12,7 +13,7 @@ from feature_engine.state import SymbolState
 VWAP_SD_MIN_BARS = 5
 
 
-def update_price_features(state: SymbolState, ltp: float, volume: int):
+def update_price_features(state: SymbolState, ltp: float, volume: int) -> None:
     """Update live session price features (day range and VWAP)."""
 
     # Day high/low
@@ -30,7 +31,7 @@ def update_price_features(state: SymbolState, ltp: float, volume: int):
         state.vwap_denominator = volume
 
 
-def update_ema_features(state: SymbolState, close: float):
+def update_ema_features(state: SymbolState, close: float) -> None:
     """Advance EMAs once per completed candle."""
     for period in [5, 9, 20, 50]:
         if not state.ema_initialized.get(period, False):
@@ -47,7 +48,7 @@ def get_vwap(state: SymbolState) -> float:
     return state.ltp
 
 
-def get_vwap_sd_bands(state: SymbolState) -> dict:
+def get_vwap_sd_bands(state: SymbolState) -> dict[str, Any]:
     """Session VWAP +/- 1 and 2 standard-deviation bands (volume-weighted
     variance, not a simple price stdev) -- explicit mean-reversion targets
     for vol_vwap_breakout and any strategy currently only checking

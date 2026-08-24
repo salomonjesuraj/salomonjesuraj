@@ -31,6 +31,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from datetime import time as dt_time
+from typing import Any
 from zoneinfo import ZoneInfo
 
 import structlog
@@ -86,7 +87,7 @@ class SuppressionResult:
 
     __slots__ = ("gate", "passed", "reason")
 
-    def __init__(self, passed: bool, reason: str = "", gate: str = ""):
+    def __init__(self, passed: bool, reason: str = "", gate: str = "") -> None:
         self.passed = passed
         self.reason = reason
         self.gate = gate
@@ -107,7 +108,7 @@ class SuppressionGate:
             # signal suppressed — result.reason explains why
     """
 
-    def __init__(self, redis: Redis, settings):
+    def __init__(self, redis: Redis, settings: Any) -> None:
         self.redis = redis
         self._min_conviction = settings.min_conviction_score
         self._min_sector_strength = settings.min_sector_strength

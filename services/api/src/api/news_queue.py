@@ -21,6 +21,7 @@ import asyncio
 import contextlib
 import json
 import time
+from typing import Any
 
 import aiohttp
 import msgpack
@@ -38,9 +39,10 @@ HEADLINES_CACHE_TTL_SEC = (
     3 * 3600
 )  # a few sweep intervals of grace, same order as other queue caches
 HEADLINES_CACHE_MAX = 10  # most recent N headlines per symbol, dashboard-read-speed only
+Payload = dict[str, Any]
 
 
-async def _load_universe(redis) -> dict[str, str]:
+async def _load_universe(redis: Any) -> dict[str, str]:
     """instrument_key (NSE_EQ|...) -> symbol, from the live universe --
     same shape/source as futures_queue.py's _load_underlyings()."""
     all_symbols = await redis.hgetall("infusion:symbols")
@@ -57,7 +59,7 @@ async def _load_universe(redis) -> dict[str, str]:
     return result
 
 
-async def _persist_events(pool, events: list[dict]) -> int:
+async def _persist_events(pool: Any, events: list[Payload]) -> int:
     """Insert new (symbol, article) rows, ON CONFLICT DO NOTHING on the
     (symbol, article_fingerprint) unique constraint -- the actual dedupe
     mechanism. Returns how many rows were genuinely new this sweep."""
@@ -91,13 +93,13 @@ async def _persist_events(pool, events: list[dict]) -> int:
     return inserted
 
 
-async def _update_headline_cache(redis, events: list[dict]) -> None:
+async def _update_headline_cache(redis: Any, events: list[Payload]) -> None:
     """Best-effort, short-TTL per-symbol headline cache for cheap
     dashboard reads -- never the source of truth (Postgres is), so a
     failure here doesn't lose data, just read-freshness."""
     if not events:
         return
-    by_symbol: dict[str, list[dict]] = {}
+    by_symbol: dict[str, list[Payload]] = {}
     for ev in events:
         by_symbol.setdefault(ev["symbol"], []).append(ev)
     pipe = redis.pipeline(transaction=False)
@@ -126,7 +128,7 @@ async def _update_headline_cache(redis, events: list[dict]) -> None:
     await pipe.execute()
 
 
-async def sweep_once(app) -> dict:
+async def sweep_once(app: Any) -> Payload:
     """One full-universe news sweep. Called every SWEEP_INTERVAL_SEC by
     news_queue_loop(); also directly callable (e.g. from a verify
     script) since it only needs `app`'s redis/pg_pool."""
@@ -176,7 +178,7 @@ async def sweep_once(app) -> dict:
     return status
 
 
-async def news_queue_loop(app) -> None:
+async def news_queue_loop(app: Any) -> None:
     redis = app.get("redis")
     pool = app.get("pg_pool")
     if not redis or not pool:

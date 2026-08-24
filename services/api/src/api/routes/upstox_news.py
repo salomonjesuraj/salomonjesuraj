@@ -27,14 +27,16 @@ read-only. No sentiment/classification fields yet (EB-7 increment 2).
 from __future__ import annotations
 
 import json
+from typing import Any
 
 from aiohttp import web
 
 routes = web.RouteTableDef()
+Payload = dict[str, Any]
 
 
 @routes.get("/api/upstox-news/status")
-async def upstox_news_status(request):
+async def upstox_news_status(request: web.Request) -> web.Response:
     redis = request.app.get("redis")
     if not redis:
         return web.json_response({"available": False})
@@ -45,7 +47,7 @@ async def upstox_news_status(request):
     return web.json_response(payload)
 
 
-def _row_to_article(row) -> dict:
+def _row_to_article(row: Any) -> Payload:
     return {
         "heading": row["heading"],
         "summary": row["summary"],
@@ -57,7 +59,7 @@ def _row_to_article(row) -> dict:
 
 
 @routes.get("/api/upstox-news/{symbol}")
-async def upstox_news_for_symbol(request):
+async def upstox_news_for_symbol(request: web.Request) -> web.Response:
     symbol = request.match_info["symbol"].upper()
     limit = min(max(int(request.query.get("limit", "10") or 10), 1), 50)
     redis = request.app.get("redis")

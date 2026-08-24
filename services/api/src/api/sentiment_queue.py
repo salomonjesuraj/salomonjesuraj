@@ -19,6 +19,7 @@ import asyncio
 import contextlib
 import json
 import time
+from typing import Any
 
 import structlog
 
@@ -31,9 +32,10 @@ STATUS_KEY = "infusion:sentiment-queue:status"
 CACHE_PREFIX = "infusion:sentiment:"
 CACHE_TTL_SEC = 10 * 60  # a few sweep intervals of grace, same order as other queue caches
 MAX_ARTICLES_PER_SYMBOL = 50
+Payload = dict[str, Any]
 
 
-async def _covered_symbols(pool, cutoff_ms: int) -> list[str]:
+async def _covered_symbols(pool: Any, cutoff_ms: int) -> list[str]:
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             """
@@ -47,7 +49,7 @@ async def _covered_symbols(pool, cutoff_ms: int) -> list[str]:
     return [r["symbol"] for r in rows]
 
 
-async def _symbol_rows(pool, symbol: str, cutoff_ms: int) -> list[dict]:
+async def _symbol_rows(pool: Any, symbol: str, cutoff_ms: int) -> list[Payload]:
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             """
@@ -67,7 +69,7 @@ async def _symbol_rows(pool, symbol: str, cutoff_ms: int) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-async def sweep_once(app) -> dict:
+async def sweep_once(app: Any) -> Payload:
     redis = app.get("redis")
     pool = app.get("pg_pool")
     if not redis or not pool:
@@ -95,7 +97,7 @@ async def sweep_once(app) -> dict:
     return status
 
 
-async def sentiment_cache_loop(app) -> None:
+async def sentiment_cache_loop(app: Any) -> None:
     redis = app.get("redis")
     pool = app.get("pg_pool")
     if not redis or not pool:

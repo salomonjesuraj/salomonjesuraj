@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import time
 import uuid
+from typing import Any
 
 from aiohttp import web
 from infusion_models.events import EventType
@@ -20,10 +21,11 @@ routes = web.RouteTableDef()
 
 KEY_TRIGGERS = "infusion:price-triggers"
 KEY_TRIGGER_ALERT_PREFIX = "infusion:price-trigger-alert:"
+Payload = dict[str, Any]
 
 
-def _decode_hash(data: dict) -> dict:
-    out = {}
+def _decode_hash(data: Payload) -> Payload:
+    out: Payload = {}
     for k, v in data.items():
         kk = k.decode() if isinstance(k, bytes) else k
         vv = v.decode() if isinstance(v, bytes) else v
@@ -34,16 +36,16 @@ def _decode_hash(data: dict) -> dict:
     return out
 
 
-def _num(value, default=0.0) -> float:
+def _num(value: Any, default: float = 0.0) -> float:
     try:
         return float(value)
     except (TypeError, ValueError):
-        return default
+        return float(default)
 
 
-async def _hash(redis, key: str) -> dict:
+async def _hash(redis: Any, key: str) -> Payload:
     data = await redis.hgetall(key)
-    out = {}
+    out: Payload = {}
     for k, v in data.items():
         kk = k.decode() if isinstance(k, bytes) else k
         vv = v.decode() if isinstance(v, bytes) else v
@@ -54,14 +56,14 @@ async def _hash(redis, key: str) -> dict:
     return out
 
 
-async def _scanner_snapshot(redis, symbol: str) -> dict:
+async def _scanner_snapshot(redis: Any, symbol: str) -> Payload:
     tick = await _hash(redis, f"infusion:tick:{symbol}")
     feature = await _hash(redis, f"infusion:feature:{symbol}")
     signal = await _hash(redis, f"infusion:signal:{symbol}")
     return {**feature, **tick, **signal}
 
 
-def _trigger_state(trigger: dict, snap: dict) -> dict:
+def _trigger_state(trigger: Payload, snap: Payload) -> Payload:
     symbol = trigger["symbol"]
     trigger_price = _num(trigger.get("trigger_price"))
     direction = str(trigger.get("direction") or "above").lower()
@@ -114,7 +116,7 @@ def _trigger_state(trigger: dict, snap: dict) -> dict:
     }
 
 
-async def _emit_trigger_alert(redis, evaluated: dict) -> bool:
+async def _emit_trigger_alert(redis: Any, evaluated: Payload) -> bool:
     trigger_id = evaluated["trigger_id"]
     if evaluated.get("state") != "TRIGGERED" or not evaluated.get("telegram", True):
         return False
@@ -179,10 +181,10 @@ async def _emit_trigger_alert(redis, evaluated: dict) -> bool:
 
 
 @routes.get("/api/triggers")
-async def list_triggers(request):
+async def list_triggers(request: web.Request) -> web.Response:
     redis = request.app["redis"]
     raw = _decode_hash(await redis.hgetall(KEY_TRIGGERS))
-    out = []
+    out: list[Payload] = []
     for trigger in raw.values():
         if isinstance(trigger, dict) and trigger.get("enabled", True):
             snap = await _scanner_snapshot(redis, trigger.get("symbol", ""))
@@ -194,9 +196,9 @@ async def list_triggers(request):
 
 
 @routes.post("/api/triggers")
-async def create_trigger(request):
+async def create_trigger(request: web.Request) -> web.Response:
     redis = request.app["redis"]
-    body = await request.json()
+    body: Payload = await request.json()
     symbol = str(body.get("symbol") or "").upper().strip()
     trigger_price = _num(body.get("trigger_price"))
     if not symbol or trigger_price <= 0:
@@ -205,7 +207,7 @@ async def create_trigger(request):
     if direction not in {"above", "below"}:
         return web.json_response({"error": "direction must be above or below"}, status=400)
     trigger_id = body.get("trigger_id") or uuid.uuid4().hex[:10]
-    payload = {
+    payload: Payload = {
         "trigger_id": trigger_id,
         "symbol": symbol,
         "trigger_price": trigger_price,
@@ -226,7 +228,7 @@ async def create_trigger(request):
 
 
 @routes.delete("/api/triggers/{trigger_id}")
-async def delete_trigger(request):
+async def delete_trigger(request: web.Request) -> web.Response:
     redis = request.app["redis"]
     trigger_id = request.match_info["trigger_id"]
     removed = await redis.hdel(KEY_TRIGGERS, trigger_id)

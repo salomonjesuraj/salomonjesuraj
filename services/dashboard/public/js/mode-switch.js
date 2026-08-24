@@ -10,7 +10,7 @@ import { dashboardMode } from './dashboard-mode.js';
 
 function paint(btn) {
   const tryingNew = dashboardMode.current === 'classic';
-  btn.textContent = tryingNew ? '✨ Try New Dashboard' : '← Back to Classic';
+  btn.textContent = tryingNew ? 'Open New Dashboard' : 'Classic Fallback';
 }
 
 export function initModeSwitch() {

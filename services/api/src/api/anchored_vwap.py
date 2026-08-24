@@ -28,8 +28,11 @@ here.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta, timezone
+from typing import Any
 
 IST = timezone(timedelta(hours=5, minutes=30))
+Bar = dict[str, Any]
+AnchorResult = dict[str, Any]
 
 # ~2 trading sessions of 1m bars — enough window for a "latest significant
 # swing" to be genuinely recent, not an anchor from a week ago.
@@ -41,7 +44,7 @@ def _session_date_ist(ts: int) -> str:
     return datetime.fromtimestamp(ts, tz=UTC).astimezone(IST).date().isoformat()
 
 
-def _anchored_vwap(bars: list[dict], anchor_ts: int, current_price: float) -> dict | None:
+def _anchored_vwap(bars: list[Bar], anchor_ts: int, current_price: float) -> AnchorResult | None:
     """Volume-weighted average close from anchor_ts (inclusive) to the
     latest bar. None if no bars fall on/after the anchor -- never a
     fabricated 0.0 for "we don't actually have this anchor's history"."""
@@ -67,8 +70,8 @@ def _anchored_vwap(bars: list[dict], anchor_ts: int, current_price: float) -> di
 
 
 def _latest_swing_anchors(
-    bars: list[dict], current_price: float
-) -> tuple[dict | None, dict | None]:
+    bars: list[Bar], current_price: float
+) -> tuple[AnchorResult | None, AnchorResult | None]:
     """Simple fractal pivot (N bars either side) over the most recent
     ~2 sessions, searched newest-first so "latest" really means latest.
     This is deliberately independent of feature-engine's own in-memory
@@ -113,7 +116,7 @@ def _latest_swing_anchors(
     return swing_high, swing_low
 
 
-def compute_anchored_vwaps(bars: list[dict], current_price: float) -> dict:
+def compute_anchored_vwaps(bars: list[Bar], current_price: float) -> dict[str, AnchorResult | None]:
     """bars: merged multi-day 1m intraday bars (oldest-first, the exact
     shape `api/routes/mtf.py`'s `_load_bars()` already produces -- keys
     time/open/high/low/close/volume). Returns one sub-dict per anchor,
@@ -121,7 +124,7 @@ def compute_anchored_vwaps(bars: list[dict], current_price: float) -> dict:
     fresh symbol with no prior-day history cached yet) -- never a
     fabricated number standing in for missing history.
     """
-    empty = {
+    empty: dict[str, AnchorResult | None] = {
         "prev_close": None,
         "prev_high": None,
         "prev_low": None,
@@ -132,7 +135,7 @@ def compute_anchored_vwaps(bars: list[dict], current_price: float) -> dict:
     if not bars or current_price <= 0:
         return empty
 
-    sessions: dict[str, list[dict]] = {}
+    sessions: dict[str, list[Bar]] = {}
     for bar in bars:
         ts = int(bar.get("time") or 0)
         if ts <= 0:
@@ -145,7 +148,7 @@ def compute_anchored_vwaps(bars: list[dict], current_price: float) -> dict:
     today = session_dates[-1]
     prev_sessions = [d for d in session_dates if d != today]
 
-    result = dict(empty)
+    result: dict[str, AnchorResult | None] = dict(empty)
     if prev_sessions:
         prev_bars = sessions[prev_sessions[-1]]
         prev_close_ts = int(prev_bars[-1].get("time") or 0)

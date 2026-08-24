@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import Any
 
+Payload = dict[str, Any]
+
 
 def _num(value: Any, default: float = 0.0) -> float:
     try:
@@ -56,7 +58,7 @@ def _state_label(decision: str, horizon: str, chase: str) -> str:
     return f"{side} watch"
 
 
-def _as_list(value: Any) -> list:
+def _as_list(value: Any) -> list[Any]:
     if isinstance(value, list):
         return value
     if isinstance(value, tuple):
@@ -70,7 +72,7 @@ def _level_text(value: float) -> str:
     return f"{value:.2f}" if value else "-"
 
 
-def _dominance_label(entry: dict, decision: str) -> tuple[str, str]:
+def _dominance_label(entry: Payload, decision: str) -> tuple[str, str]:
     ce = _num(entry.get("ce_score") or entry.get("bull_confidence"))
     pe = _num(entry.get("pe_score") or entry.get("bear_confidence"))
     vwap = str(entry.get("vwap_state") or "").upper()
@@ -88,7 +90,7 @@ def _dominance_label(entry: dict, decision: str) -> tuple[str, str]:
     return "MIXED", f"No clean domination yet: CE {ce:.0f} vs PE {pe:.0f}. Wait for level break."
 
 
-def _index_drag_label(entry: dict, sector: float) -> tuple[str, str]:
+def _index_drag_label(entry: Payload, sector: float) -> tuple[str, str]:
     # Some rows may not yet carry live index-change fields. Keep this honest.
     nifty = entry.get("nifty_change_pct")
     bank = entry.get("banknifty_change_pct") or entry.get("bank_nifty_change_pct")
@@ -131,11 +133,11 @@ def _index_drag_label(entry: dict, sector: float) -> tuple[str, str]:
 
 def _build_command_center(
     *,
-    entry: dict,
-    features: dict,
-    option_summary: dict,
-    news_confirmation: dict,
-    event_risk: dict,
+    entry: Payload,
+    features: Payload,
+    option_summary: Payload,
+    news_confirmation: Payload,
+    event_risk: Payload,
     decision: str,
     intelligence_horizon: str,
     action_quality: str,
@@ -144,7 +146,7 @@ def _build_command_center(
     primary_reason: str,
     sector: float,
     anti_chase_ok: bool,
-) -> dict:
+) -> Payload:
     above = _num(entry.get("positive_above"))
     below = _num(entry.get("negative_below"))
     entry_hint = _num(entry.get("entry_price_hint") or entry.get("ltp"))
@@ -179,9 +181,8 @@ def _build_command_center(
     dominance, dominance_reason = _dominance_label(entry, decision)
     index_state, index_note = _index_drag_label(entry, sector)
     chain_ready = bool(option_summary.get("option_chain_ready") or option_summary.get("ready"))
-    metrics = (
-        option_summary.get("metrics") if isinstance(option_summary.get("metrics"), dict) else {}
-    )
+    metrics_raw = option_summary.get("metrics")
+    metrics: Payload = metrics_raw if isinstance(metrics_raw, dict) else {}
     spread = _num(metrics.get("spread_pct") or entry.get("chain_spread_pct"))
     oi = _num(metrics.get("oi") or entry.get("chain_oi"))
     iv = _num(metrics.get("iv") or entry.get("chain_iv"))
@@ -258,12 +259,12 @@ def _build_command_center(
 
 
 def build_intelligence_layer(
-    entry: dict,
-    features: dict | None = None,
-    option_summary: dict | None = None,
-    news_edge: dict | None = None,
-    event_risk: dict | None = None,
-) -> dict:
+    entry: Payload,
+    features: Payload | None = None,
+    option_summary: Payload | None = None,
+    news_edge: Payload | None = None,
+    event_risk: Payload | None = None,
+) -> Payload:
     """Build a stable dashboard-facing intelligence snapshot."""
     features = features or {}
     option_summary = option_summary or {}
@@ -283,11 +284,13 @@ def build_intelligence_layer(
     horizon = str(entry.get("trade_horizon") or "INTRADAY").upper()
     chase = str(entry.get("chase_quality") or "WATCH_ONLY").upper()
     anti_chase_ok = entry.get("anti_chase_ok") is not False
-    rejection_reasons = (
-        entry.get("rejection_reasons") if isinstance(entry.get("rejection_reasons"), list) else []
+    rejection_reasons_raw = entry.get("rejection_reasons")
+    rejection_reasons: list[Any] = (
+        rejection_reasons_raw if isinstance(rejection_reasons_raw, list) else []
     )
-    strength_reasons = (
-        entry.get("strength_reasons") if isinstance(entry.get("strength_reasons"), list) else []
+    strength_reasons_raw = entry.get("strength_reasons")
+    strength_reasons: list[Any] = (
+        strength_reasons_raw if isinstance(strength_reasons_raw, list) else []
     )
 
     news_confirmation = build_news_confirmation(entry, features, news_edge)
@@ -304,10 +307,9 @@ def build_intelligence_layer(
         )
     option_source = "upstox_option_chain" if chain_ready else "proxy_underlying_until_chain"
     option_status = str(option_summary.get("execution_status") or "").upper()
-    option_hard_blockers = (
-        option_summary.get("hard_blockers")
-        if isinstance(option_summary.get("hard_blockers"), list)
-        else []
+    option_hard_blockers_raw = option_summary.get("hard_blockers")
+    option_hard_blockers: list[Any] = (
+        option_hard_blockers_raw if isinstance(option_hard_blockers_raw, list) else []
     )
     option_trade_ready = bool(option_summary.get("trade_ready"))
     event_entry_allowed = event_risk.get("entry_allowed", True) is not False
@@ -507,8 +509,8 @@ def build_intelligence_layer(
 
 
 def build_news_confirmation(
-    entry: dict, features: dict | None = None, news_edge: dict | None = None
-) -> dict:
+    entry: Payload, features: Payload | None = None, news_edge: Payload | None = None
+) -> Payload:
     """Confirm public-news stance only when price and volume agree.
 
     Public feeds can be slow or noisy. For options, news becomes useful only

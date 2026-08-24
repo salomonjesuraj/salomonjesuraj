@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import math
 from statistics import NormalDist
+from typing import Any
 
 _EULER_MASCHERONI = 0.5772156649015329
 _NORMAL = NormalDist()
@@ -39,7 +40,7 @@ def r_multiple(outcome_label: str | None, risk_reward_ratio: float | None) -> fl
     return None
 
 
-def sharpe_stats(r_multiples: list[float]) -> dict:
+def sharpe_stats(r_multiples: list[float]) -> dict[str, Any]:
     """Sample mean/std/Sharpe/skewness/(non-excess) kurtosis of a list of
     R-multiples. kurtosis here is the raw (not excess) fourth standardized
     moment -- a normal distribution has kurtosis 3, matching the

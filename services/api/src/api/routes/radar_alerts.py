@@ -20,13 +20,15 @@ are read-only.
 from __future__ import annotations
 
 import json
+from typing import Any
 
 from aiohttp import web
 
 routes = web.RouteTableDef()
+Payload = dict[str, Any]
 
 
-def _row_to_dict(row) -> dict:
+def _row_to_dict(row: Any) -> Payload:
     d = dict(row)
     for key in ("fired_at", "best_tier_reached_at", "resolved_at", "last_checked_at"):
         if d.get(key) is not None:
@@ -38,7 +40,7 @@ def _row_to_dict(row) -> dict:
 
 
 @routes.get("/api/radar-alerts/recent")
-async def radar_alerts_recent(request):
+async def radar_alerts_recent(request: web.Request) -> web.Response:
     pool = request.app.get("pg_pool")
     if not pool:
         return web.json_response({"available": False, "alerts": []})
@@ -52,7 +54,7 @@ async def radar_alerts_recent(request):
 
 
 @routes.get("/api/radar-alerts/status")
-async def radar_alerts_status(request):
+async def radar_alerts_status(request: web.Request) -> web.Response:
     redis = request.app.get("redis")
     if not redis:
         return web.json_response({"available": False})
@@ -64,7 +66,7 @@ async def radar_alerts_status(request):
 
 
 @routes.get("/api/radar-alerts/stats")
-async def radar_alerts_stats(request):
+async def radar_alerts_stats(request: web.Request) -> web.Response:
     """Precision view over the last `days` days (default 7): how often a
     dashboard-only early alert actually graduated into real breakout
     evidence vs faded back vs expired unresolved -- the concrete answer

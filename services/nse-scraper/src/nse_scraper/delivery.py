@@ -29,11 +29,14 @@ import csv
 import io
 import json
 from datetime import date, timedelta
+from typing import Any
 
 import aiohttp
 import structlog
 
 logger = structlog.get_logger()
+Payload = dict[str, Any]
+DeliveryRows = dict[str, Payload]
 
 NSE_HOME = "https://www.nseindia.com/"
 NSE_ARCHIVES_BASE = "https://nsearchives.nseindia.com"
@@ -64,7 +67,7 @@ async def _nse_cookies(session: aiohttp.ClientSession) -> None:
     archive fetch, which is confirmed to work independently.
     """
     try:
-        async with session.get(NSE_HOME, headers=_HEADERS, timeout=15):
+        async with session.get(NSE_HOME, headers=_HEADERS, timeout=aiohttp.ClientTimeout(total=15)):
             pass
     except Exception as exc:
         logger.info("nse_cookie_warmup_skipped", error=str(exc))
@@ -73,7 +76,9 @@ async def _nse_cookies(session: aiohttp.ClientSession) -> None:
 async def _fetch_bhavdata_csv(session: aiohttp.ClientSession, trade_date: date) -> str | None:
     url = f"{NSE_ARCHIVES_BASE}/products/content/sec_bhavdata_full_{trade_date.strftime('%d%m%Y')}.csv"
     try:
-        async with session.get(url, headers=_HEADERS, timeout=20) as resp:
+        async with session.get(
+            url, headers=_HEADERS, timeout=aiohttp.ClientTimeout(total=20)
+        ) as resp:
             if resp.status != 200:
                 return None
             text = await resp.text()
@@ -91,7 +96,7 @@ async def _fetch_bhavdata_csv(session: aiohttp.ClientSession, trade_date: date) 
         return None
 
 
-def _parse_delivery_csv(csv_text: str) -> dict[str, dict]:
+def _parse_delivery_csv(csv_text: str) -> DeliveryRows:
     """SYMBOL -> {delivery_qty, delivery_pct}, EQ series only. NSE's CSV
     columns carry leading spaces (" DELIV_QTY", " DELIV_PER" etc.) -- this
     is a documented quirk of this specific file, not a parsing bug."""
@@ -107,7 +112,7 @@ def _parse_delivery_csv(csv_text: str) -> dict[str, dict]:
         logger.warning("nse_bhavdata_unexpected_columns", columns=list(fields))
         return {}
 
-    out: dict[str, dict] = {}
+    out: DeliveryRows = {}
     for row in reader:
         series = (row.get(series_col) or "").strip()
         if series != "EQ":
@@ -129,7 +134,7 @@ def _parse_delivery_csv(csv_text: str) -> dict[str, dict]:
 
 async def fetch_latest_delivery(
     session: aiohttp.ClientSession,
-) -> tuple[date, dict[str, dict]] | None:
+) -> tuple[date, DeliveryRows] | None:
     """Walks back from today over weekends/holidays/not-yet-published days
     until a real bhavcopy is found. Returns (the session date the data is
     for, {symbol: {delivery_qty, delivery_pct}}), or None if nothing in the
@@ -151,7 +156,7 @@ async def fetch_latest_delivery(
 
 
 async def _rolling_avg(
-    redis, symbol: str, trade_date: date, pct: float
+    redis: Any, symbol: str, trade_date: date, pct: float
 ) -> tuple[float | None, int]:
     """Append today's delivery_pct to the symbol's rolling history (capped
     at DELIVERY_HISTORY_MAX_DAYS entries) and return (average, sample_count).
@@ -186,7 +191,7 @@ async def _rolling_avg(
     return (round(sum(values) / len(values), 2) if values else None), len(values)
 
 
-async def run_delivery_capture(redis, universe_symbols: set[str]) -> dict:
+async def run_delivery_capture(redis: Any, universe_symbols: set[str]) -> Payload:
     """Fetch the latest available NSE delivery bhavcopy, store per-symbol
     delivery_qty/delivery_pct/avg_delivery_pct_20d for every symbol in
     Infusion's active universe (skips the ~2000 other NSE symbols the

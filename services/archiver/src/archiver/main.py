@@ -19,6 +19,7 @@ Architecture:
 
 import asyncio
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 import asyncpg
 import redis.asyncio as aioredis
@@ -43,6 +44,7 @@ from archiver.tracker import OutcomeTracker
 from archiver.writer import SignalWriter
 
 logger = structlog.get_logger()
+Payload = dict[str, Any]
 
 
 async def _backfill(
@@ -72,11 +74,15 @@ async def _backfill(
             break
 
         for msg_id, fields in msgs:
-            mid = msg_id.decode() if isinstance(msg_id, bytes) else msg_id
-            raw_data = fields.get(b"data")
+            mid = msg_id.decode() if isinstance(msg_id, bytes) else str(msg_id)
+            if fields is None:
+                continue
+            raw_data = fields.get(b"data") or fields.get("data")
             if not raw_data:
                 continue
             try:
+                if isinstance(raw_data, str):
+                    raw_data = raw_data.encode()
                 _, _, _, _, payload = decode_event(raw_data)
                 should_flush = writer.add(payload)
                 if should_flush:
@@ -242,7 +248,7 @@ async def run() -> None:
     logger.info("analytics_engine_ready")
 
     # Health reporter
-    def _combined_stats():
+    def _combined_stats() -> Payload:
         return {**writer.stats, **tracker.stats}
 
     health = HealthReporter(r, settings.service_name)
@@ -257,7 +263,7 @@ async def run() -> None:
     lifecycle.on_shutdown(r.aclose)
 
     # Main loop — consumers + flush + recap scheduler concurrently
-    async def main_loop():
+    async def main_loop() -> None:
         await asyncio.gather(
             _consume_stream(consumer_signals, writer, lifecycle, "signals"),
             _consume_stream(consumer_suppressed, writer, lifecycle, "suppressed"),
@@ -268,7 +274,7 @@ async def run() -> None:
     await lifecycle.run_until_shutdown(main_loop)
 
 
-def main():
+def main() -> None:
     asyncio.run(run())
 
 

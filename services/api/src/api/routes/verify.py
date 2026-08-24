@@ -4,14 +4,24 @@ GET /api/verify/{symbol} returns: ltp from features, tick, chart API, scanner ro
 """
 
 import time
+from typing import Any
 
 from aiohttp import web
 
 routes = web.RouteTableDef()
+Payload = dict[str, Any]
+
+
+def _decode_redis_value(value: Any) -> Any:
+    return value.decode() if isinstance(value, bytes) else value
+
+
+def _decode_redis_hash(data: Payload) -> Payload:
+    return {_decode_redis_value(k): _decode_redis_value(v) for k, v in data.items()}
 
 
 @routes.get("/api/verify/{symbol}")
-async def verify_symbol(request):
+async def verify_symbol(request: web.Request) -> web.Response:
     """
     CRITICAL ISSUE 6 — Real data verification.
     Returns evidence that chart, signal, scanner, watchlist all use same live data source.
@@ -20,48 +30,41 @@ async def verify_symbol(request):
     redis = request.app["redis"]
     now_us = int(time.time() * 1_000_000)
 
-    result = {
+    result: Payload = {
         "symbol": symbol,
         "timestamp": now_us,
         "verified": True,
         "sources": {},
     }
+    sources: Payload = result["sources"]
 
     # 1. Tick data (ingestion stream → Redis)
     tick_raw = await redis.hgetall(f"infusion:tick:{symbol}")
     if tick_raw:
-
-        def _d(v):
-            return v.decode() if isinstance(v, bytes) else v
-
-        tick = {_d(k): _d(v) for k, v in tick_raw.items()}
+        tick = _decode_redis_hash(tick_raw)
         try:
             ltp_tick = float(tick.get("ltp", 0))
         except (TypeError, ValueError):
             ltp_tick = 0
-        result["sources"]["tick"] = {
+        sources["tick"] = {
             "ltp": ltp_tick,
             "volume": float(tick.get("volume", 0)),
             "change_pct": float(tick.get("change_pct", 0)),
             "exchange_ts": float(tick.get("exchange_ts", 0)),
         }
     else:
-        result["sources"]["tick"] = {"error": "No tick data for symbol"}
+        sources["tick"] = {"error": "No tick data for symbol"}
         result["verified"] = False
 
     # 2. Feature vector (feature-engine → Redis)
     feat_raw = await redis.hgetall(f"infusion:feature:{symbol}")
     if feat_raw:
-
-        def _d(v):
-            return v.decode() if isinstance(v, bytes) else v
-
-        feat = {_d(k): _d(v) for k, v in feat_raw.items()}
+        feat = _decode_redis_hash(feat_raw)
         try:
             ltp_feat = float(feat.get("ltp", 0))
         except (TypeError, ValueError):
             ltp_feat = 0
-        result["sources"]["features"] = {
+        sources["features"] = {
             "ltp": ltp_feat,
             "vwap": float(feat.get("vwap", 0)),
             "ema_20": float(feat.get("ema_20", 0)),
@@ -74,22 +77,18 @@ async def verify_symbol(request):
             "age_ms": round((now_us - float(feat.get("timestamp_us", now_us))) / 1000, 1),
         }
     else:
-        result["sources"]["features"] = {"error": "No feature data for symbol"}
+        sources["features"] = {"error": "No feature data for symbol"}
         result["verified"] = False
 
     # 3. Scanner row (scanner → Redis)
     scan_raw = await redis.hgetall(f"infusion:scanner:{symbol}")
     if scan_raw:
-
-        def _d(v):
-            return v.decode() if isinstance(v, bytes) else v
-
-        scan = {_d(k): _d(v) for k, v in scan_raw.items()}
+        scan = _decode_redis_hash(scan_raw)
         try:
             ltp_scan = float(scan.get("ltp", 0))
         except (TypeError, ValueError):
             ltp_scan = 0
-        result["sources"]["scanner"] = {
+        sources["scanner"] = {
             "ltp": ltp_scan,
             "sector_id": scan.get("sector_id", ""),
             "state": scan.get("state", ""),
@@ -97,17 +96,13 @@ async def verify_symbol(request):
         }
     else:
         # Not all symbols have a scanner row — that's OK
-        result["sources"]["scanner"] = {"note": "No dedicated scanner hash (uses feature data)"}
+        sources["scanner"] = {"note": "No dedicated scanner hash (uses feature data)"}
 
     # 4. Pre-breakout watchlist state
     wb_raw = await redis.hgetall(f"infusion:prebreak:{symbol}")
     if wb_raw:
-
-        def _d(v):
-            return v.decode() if isinstance(v, bytes) else v
-
-        wb = {_d(k): _d(v) for k, v in wb_raw.items()}
-        result["sources"]["watchlist"] = {
+        wb = _decode_redis_hash(wb_raw)
+        sources["watchlist"] = {
             "state": wb.get("state", ""),
             "readiness": float(wb.get("readiness_score", 0)),
             "bb_width": float(wb.get("bb_width", 0)),
@@ -115,28 +110,26 @@ async def verify_symbol(request):
             "duration_sec": float(wb.get("duration_sec", 0)),
         }
     else:
-        result["sources"]["watchlist"] = {"note": "Symbol not in pre-breakout state"}
+        sources["watchlist"] = {"note": "Symbol not in pre-breakout state"}
 
     # 5. Signal (if active)
     sig_raw = await redis.hgetall(f"infusion:signal:{symbol}")
     if sig_raw:
-
-        def _d(v):
-            return v.decode() if isinstance(v, bytes) else v
-
-        sig = {_d(k): _d(v) for k, v in sig_raw.items()}
-        result["sources"]["signal"] = {
+        sig = _decode_redis_hash(sig_raw)
+        sources["signal"] = {
             "signal_type": sig.get("signal_type", ""),
             "conviction": float(sig.get("conviction_score", 0)),
             "entry_price": float(sig.get("entry_price", 0)),
             "lifecycle": sig.get("lifecycle", ""),
         }
     else:
-        result["sources"]["signal"] = {"note": "No active signal for symbol"}
+        sources["signal"] = {"note": "No active signal for symbol"}
 
     # Cross-check: tick LTP vs feature LTP should match within 0.5%
-    tick_ltp = result["sources"].get("tick", {}).get("ltp", 0)
-    feat_ltp = result["sources"].get("features", {}).get("ltp", 0)
+    tick_source = sources.get("tick", {})
+    feat_source = sources.get("features", {})
+    tick_ltp = tick_source.get("ltp", 0) if isinstance(tick_source, dict) else 0
+    feat_ltp = feat_source.get("ltp", 0) if isinstance(feat_source, dict) else 0
     if tick_ltp > 0 and feat_ltp > 0:
         drift_pct = abs(tick_ltp - feat_ltp) / tick_ltp * 100
         result["price_drift_pct"] = round(drift_pct, 3)

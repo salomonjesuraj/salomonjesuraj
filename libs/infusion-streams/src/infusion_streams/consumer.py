@@ -14,11 +14,13 @@ import asyncio
 import base64
 import time
 import traceback
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from typing import Any, cast
 
 import msgpack
 import structlog
 from infusion_common.errors import ErrorCategory, classify_error
+from infusion_models.events import EventType
 from redis.asyncio import Redis
 
 from infusion_streams.codec import decode_event
@@ -58,7 +60,7 @@ class StreamConsumer:
         self._processed = 0
         self._errors = 0
 
-    async def ensure_group(self):
+    async def ensure_group(self) -> None:
         """Create consumer group if it doesn't exist."""
         try:
             await self.redis.xgroup_create(self.stream, self.group, id="0", mkstream=True)
@@ -69,7 +71,9 @@ class StreamConsumer:
             else:
                 raise
 
-    async def consume(self):
+    async def consume(
+        self,
+    ) -> AsyncIterator[tuple[EventType, int, int, dict[str, Any], Callable[[], Awaitable[None]]]]:
         """
         Async generator yielding (event_type, version, rx_us, payload, ack_fn).
 
@@ -94,7 +98,9 @@ class StreamConsumer:
             if not messages:
                 continue
 
-            for _stream_name, entries in messages:
+            for _stream_name, entries in cast(
+                list[tuple[Any, list[tuple[Any, dict[Any, Any]]]]], messages
+            ):
                 for msg_id, fields in entries:
                     raw_data = fields.get(b"data") or fields.get("data")
                     if raw_data is None:
@@ -112,7 +118,7 @@ class StreamConsumer:
                         self._errors += 1
                         continue
 
-                    async def make_ack(mid=msg_id):
+                    async def make_ack(mid: Any = msg_id) -> None:
                         await self.redis.xack(self.stream, self.group, mid)
                         self._processed += 1
 
@@ -122,7 +128,7 @@ class StreamConsumer:
         self,
         msg_id: str,
         raw_data: bytes,
-        handler: Callable,
+        handler: Callable[[bytes], Awaitable[Any]],
     ) -> bool:
         """Process message with retry + DLQ. Returns True on success."""
         try:
@@ -148,17 +154,20 @@ class StreamConsumer:
             self._errors += 1
             return False
 
-    async def _send_to_dlq(self, msg_id, raw_data: bytes, category: str, reason: str):
+    async def _send_to_dlq(
+        self, msg_id: str | bytes, raw_data: bytes, category: str, reason: str
+    ) -> None:
         """Move poison message to dead letter stream."""
+        retry_key = msg_id if isinstance(msg_id, str) else msg_id.decode()
         dlq_entry = {
             "original_stream": self.stream,
-            "original_id": msg_id if isinstance(msg_id, str) else msg_id.decode(),
+            "original_id": retry_key,
             "original_payload": base64.b64encode(raw_data).decode() if raw_data else "",
             "consumer_group": self.group,
             "consumer_name": self.consumer_name,
             "failure_category": category,
             "failure_reason": reason,
-            "retry_count": self._retry_counts.get(msg_id, 0),
+            "retry_count": self._retry_counts.get(retry_key, 0),
             "failed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "stack_trace": traceback.format_exc(),
         }
@@ -184,7 +193,7 @@ class StreamConsumer:
             )
 
     @property
-    def stats(self) -> dict:
+    def stats(self) -> dict[str, int]:
         return {
             "processed": self._processed,
             "errors": self._errors,

@@ -15,7 +15,7 @@ routes = web.RouteTableDef()
 
 
 @routes.get("/api/portfolio-risk/status")
-async def portfolio_risk_status(request):
+async def portfolio_risk_status(request: web.Request) -> web.Response:
     redis = request.app.get("redis")
     if not redis:
         return web.json_response({"available": False})
@@ -26,7 +26,7 @@ async def portfolio_risk_status(request):
 
 
 @routes.get("/api/portfolio-risk/daily-loss")
-async def portfolio_risk_daily_loss(request):
+async def portfolio_risk_daily_loss(request: web.Request) -> web.Response:
     redis = request.app.get("redis")
     if not redis:
         return web.json_response({"available": False})
@@ -37,7 +37,7 @@ async def portfolio_risk_daily_loss(request):
 
 
 @routes.get("/api/portfolio-risk/consecutive-losses")
-async def portfolio_risk_consecutive_losses(request):
+async def portfolio_risk_consecutive_losses(request: web.Request) -> web.Response:
     redis = request.app.get("redis")
     if not redis:
         return web.json_response({"available": False})

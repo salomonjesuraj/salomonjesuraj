@@ -11,10 +11,16 @@ back through it.
 
 from __future__ import annotations
 
+from typing import Any
+
+from feature_engine.state import SymbolState
+
 ZONE_SIZE_MULTIPLIER = 1.8  # Pine's zoneSizeMultiplier default
 
 
-def update_zones(state, bar_start_ms: int, multiplier: float = ZONE_SIZE_MULTIPLIER) -> None:
+def update_zones(
+    state: SymbolState, bar_start_ms: int, multiplier: float = ZONE_SIZE_MULTIPLIER
+) -> None:
     """Advance supply/demand zone state by one completed bar. Reads the last
     two bars from `state.recent_1m_bars`; no-ops until at least 2 exist."""
     items = list(state.recent_1m_bars)
@@ -43,7 +49,7 @@ def update_zones(state, bar_start_ms: int, multiplier: float = ZONE_SIZE_MULTIPL
         state.demand_zone = None
 
 
-def zone_snapshot(state) -> dict:
+def zone_snapshot(state: SymbolState) -> dict[str, Any]:
     """Compact dict for FeatureVectorV1.ml_features."""
     supply = state.supply_zone
     demand = state.demand_zone

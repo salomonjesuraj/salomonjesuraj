@@ -15,6 +15,10 @@ one is worth trading is left to the caller (pine_confidence.py / scoring.py).
 
 from __future__ import annotations
 
+from typing import Any
+
+from feature_engine.state import SymbolState
+
 RETRACEMENT_RATIOS = (0.236, 0.382, 0.5, 0.618, 0.786)
 EXTENSION_RATIOS = (1.272, 1.618, 2.618)
 PROJECTION_RATIOS = (1.0, 1.618)  # 1.0 = "symmetry" / measured move
@@ -82,7 +86,7 @@ def _all_levels(swing_points: list[tuple[float, str, int]]) -> list[tuple[float,
     return levels
 
 
-def _summarize_cluster(bucket: list[tuple[float, str]]) -> dict:
+def _summarize_cluster(bucket: list[tuple[float, str]]) -> dict[str, Any]:
     prices = [p for p, _ in bucket]
     return {
         "center": round(sum(prices) / len(prices), 2),
@@ -98,7 +102,7 @@ def find_confluence_clusters(
     current_price: float,
     atr: float,
     tolerance_atr_frac: float = CLUSTER_TOLERANCE_ATR_FRAC,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Scan all pairwise/triplet Fibonacci levels from recent confirmed swings
     and group ones within `tolerance_atr_frac` of an ATR of each other.
     Returns clusters with >= CLUSTER_MIN_HITS independent levels, nearest to
@@ -120,7 +124,7 @@ def find_confluence_clusters(
 
     levels.sort(key=lambda x: x[0])
 
-    clusters: list[dict] = []
+    clusters: list[dict[str, Any]] = []
     bucket = [levels[0]]
     for lvl, src in levels[1:]:
         ref = bucket[0][0]
@@ -137,7 +141,7 @@ def find_confluence_clusters(
     return clusters[:MAX_CLUSTERS_RETURNED]
 
 
-def fib_snapshot(state, ltp: float) -> dict:
+def fib_snapshot(state: SymbolState, ltp: float) -> dict[str, Any]:
     """Compact dict for FeatureVectorV1.ml_features — the nearest confluence
     cluster to current price, or empty/None fields when none is found yet
     (thin swing history, or no genuine convergence)."""

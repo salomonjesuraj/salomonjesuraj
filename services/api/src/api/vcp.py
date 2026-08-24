@@ -23,6 +23,7 @@ feature-ic before it's ever allowed to move a live score.
 from __future__ import annotations
 
 import itertools
+from typing import Any
 
 from api.chart_patterns import fractal_pivots_indexed
 
@@ -46,6 +47,8 @@ RS_MIN_LOOKBACK_DAYS = 20
 BASE_LOOKBACK_DAYS = 90  # how far back to look for the current base's contraction legs
 MIN_CONTRACTIONS = 2  # Minervini's own stated minimum for a "VCP" label (2-4 typical)
 CONTRACTION_TOLERANCE = 0.80  # each leg's depth should be <= this fraction of the prior leg's (Minervini's ~0.75 heuristic, with slack)
+Bar = dict[str, Any]
+Component = dict[str, Any]
 
 
 def _sma(values: list[float], period: int) -> float | None:
@@ -54,7 +57,7 @@ def _sma(values: list[float], period: int) -> float | None:
     return sum(values[-period:]) / period
 
 
-def _trend_template(daily_bars: list[dict], ltp: float) -> dict:
+def _trend_template(daily_bars: list[Bar], ltp: float) -> Component:
     """Minervini's 7-point Stage-2 trend test, decomposed into 9 finer
     boolean checks (his own point 1 is really "price > 150-SMA AND price >
     200-SMA" -- split here for a more granular partial-credit score, not a
@@ -117,13 +120,13 @@ def _trend_template(daily_bars: list[dict], ltp: float) -> dict:
     }
 
 
-def _avg_volume(daily_bars: list[dict], start_idx: int, end_idx: int) -> float:
+def _avg_volume(daily_bars: list[Bar], start_idx: int, end_idx: int) -> float:
     span = daily_bars[start_idx : end_idx + 1]
     vols = [float(b.get("volume") or 0) for b in span]
     return sum(vols) / len(vols) if vols else 0.0
 
 
-def _contraction_legs(daily_bars: list[dict], lookback: int = BASE_LOOKBACK_DAYS) -> list[dict]:
+def _contraction_legs(daily_bars: list[Bar], lookback: int = BASE_LOOKBACK_DAYS) -> list[Component]:
     """Sequential high->low pullback legs within the recent lookback window,
     oldest first -- the unit VCP's "successive pullbacks tightening" language
     is built on. Uses the same fractal pivot rule (and the same
@@ -133,7 +136,7 @@ def _contraction_legs(daily_bars: list[dict], lookback: int = BASE_LOOKBACK_DAYS
     window = daily_bars[-lookback:] if len(daily_bars) > lookback else daily_bars
     offset = len(daily_bars) - len(window)
     pivots = fractal_pivots_indexed(window)
-    legs: list[dict] = []
+    legs: list[Component] = []
     for i in range(len(pivots) - 1):
         price_a, kind_a, idx_a = pivots[i]
         price_b, kind_b, idx_b = pivots[i + 1]
@@ -150,7 +153,7 @@ def _contraction_legs(daily_bars: list[dict], lookback: int = BASE_LOOKBACK_DAYS
     return legs
 
 
-def _contraction_quality(legs: list[dict]) -> dict:
+def _contraction_quality(legs: list[Component]) -> Component:
     if len(legs) < MIN_CONTRACTIONS:
         return {
             "available": False,
@@ -176,7 +179,7 @@ def _contraction_quality(legs: list[dict]) -> dict:
     }
 
 
-def _volume_dryup(legs: list[dict]) -> dict:
+def _volume_dryup(legs: list[Component]) -> Component:
     if len(legs) < MIN_CONTRACTIONS:
         return {
             "available": False,
@@ -207,7 +210,7 @@ def _volume_dryup(legs: list[dict]) -> dict:
     }
 
 
-def _pivot_proximity(legs: list[dict], ltp: float) -> dict:
+def _pivot_proximity(legs: list[Component], ltp: float) -> Component:
     if not legs or ltp <= 0:
         return {"available": False, "score": 0.0, "reason": "No base pivot identified yet"}
     pivot = max(leg["high"] for leg in legs)
@@ -231,7 +234,7 @@ def _pivot_proximity(legs: list[dict], ltp: float) -> dict:
     }
 
 
-def _relative_strength(daily_bars: list[dict], nifty_bars: list[dict] | None) -> dict:
+def _relative_strength(daily_bars: list[Bar], nifty_bars: list[Bar] | None) -> Component:
     if not nifty_bars:
         return {"available": False, "score": 0.0, "reason": "Nifty 50 daily history not cached"}
     stock_closes = [float(b["close"]) for b in daily_bars if b.get("close")]
@@ -259,7 +262,7 @@ def _relative_strength(daily_bars: list[dict], nifty_bars: list[dict] | None) ->
     }
 
 
-def compute_vcp(daily_bars: list[dict], nifty_bars: list[dict] | None, ltp: float) -> dict:
+def compute_vcp(daily_bars: list[Bar], nifty_bars: list[Bar] | None, ltp: float) -> Component:
     """Composite 0-100 VCP score across the 5 weighted components above.
 
     `reliable` is True only when every component was actually computable

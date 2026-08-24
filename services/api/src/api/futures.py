@@ -45,6 +45,7 @@ from __future__ import annotations
 import contextlib
 import gzip
 import json
+from typing import Any, cast
 
 import aiohttp
 import structlog
@@ -58,9 +59,12 @@ QUOTE_BATCH_SIZE = 500  # Upstox's own documented cap per Full Market Quote call
 MASTER_CACHE_KEY = "infusion:futures:master"
 MASTER_CACHE_TTL_SEC = 20 * 3600  # contract listings/rollovers don't change intraday
 FUTURES_STATE_PREFIX = "infusion:futures:"  # + {symbol} -> HASH
+Payload = dict[str, Any]
 
 
-async def fetch_futures_master(session: aiohttp.ClientSession, redis) -> dict[str, list[dict]]:
+async def fetch_futures_master(
+    session: aiohttp.ClientSession, redis: Any
+) -> dict[str, list[Payload]]:
     """Download + parse the NSE instruments master file, filtered to
     futures contracts, grouped by underlying_key and sorted by expiry
     (nearest first). Cached in Redis (20h TTL) since this is a large
@@ -70,7 +74,8 @@ async def fetch_futures_master(session: aiohttp.ClientSession, redis) -> dict[st
     cached = await redis.get(MASTER_CACHE_KEY)
     if cached:
         try:
-            return json.loads(cached.decode() if isinstance(cached, bytes) else cached)
+            cached_payload = json.loads(cached.decode() if isinstance(cached, bytes) else cached)
+            return cast(dict[str, list[Payload]], cached_payload)
         except Exception:
             pass
 
@@ -85,9 +90,14 @@ async def fetch_futures_master(session: aiohttp.ClientSession, redis) -> dict[st
     except Exception as exc:
         logger.warning("futures_master_parse_failed", error=str(exc))
         return {}
+    if not isinstance(records, list):
+        logger.warning("futures_master_parse_failed", error="records_not_list")
+        return {}
 
-    by_underlying: dict[str, list[dict]] = {}
+    by_underlying: dict[str, list[Payload]] = {}
     for rec in records:
+        if not isinstance(rec, dict):
+            continue
         if rec.get("segment") != "NSE_FO" or rec.get("instrument_type") != "FUT":
             continue
         underlying_key = rec.get("underlying_key") or ""
@@ -111,7 +121,7 @@ async def fetch_futures_master(session: aiohttp.ClientSession, redis) -> dict[st
     return by_underlying
 
 
-def current_month_contract(contracts: list[dict]) -> dict | None:
+def current_month_contract(contracts: list[Payload]) -> Payload | None:
     """Nearest, non-expired contract -- "current month" per the
     authorized subscription policy. Contracts list is already
     expiry-sorted ascending by fetch_futures_master(); the day-boundary
@@ -123,7 +133,7 @@ def current_month_contract(contracts: list[dict]) -> dict | None:
     return contracts[0] if contracts else None
 
 
-def compute_basis(spot_ltp: float, futures_ltp: float) -> dict:
+def compute_basis(spot_ltp: float, futures_ltp: float) -> Payload:
     """basis = futures - spot, and basis% -- immediate, no history needed."""
     if spot_ltp <= 0 or futures_ltp <= 0:
         return {"basis": None, "basis_pct": None}
@@ -131,7 +141,7 @@ def compute_basis(spot_ltp: float, futures_ltp: float) -> dict:
     return {"basis": round(basis, 2), "basis_pct": round(basis / spot_ltp * 100, 3)}
 
 
-def compute_oi_delta(current_oi: int, prev_oi: int | None) -> dict:
+def compute_oi_delta(current_oi: int, prev_oi: int | None) -> Payload:
     """Single-sweep-interval OI change. prev_oi=None (first sweep since
     restart, or a symbol seen for the first time) -> None, not a
     fabricated 0 that would misread as "no change."
@@ -144,13 +154,13 @@ def compute_oi_delta(current_oi: int, prev_oi: int | None) -> dict:
 
 
 async def fetch_quotes(
-    session: aiohttp.ClientSession, headers: dict, instrument_keys: list[str]
-) -> dict[str, dict]:
+    session: aiohttp.ClientSession, headers: dict[str, str], instrument_keys: list[str]
+) -> dict[str, Payload]:
     """Batched Full Market Quote fetch, chunked to Upstox's documented
     500-key cap (208 F&O symbols today fits in one call, but this stays
     correct if the universe grows past 500).
     """
-    result: dict[str, dict] = {}
+    result: dict[str, Payload] = {}
     for i in range(0, len(instrument_keys), QUOTE_BATCH_SIZE):
         batch = instrument_keys[i : i + QUOTE_BATCH_SIZE]
         try:
@@ -166,7 +176,9 @@ async def fetch_quotes(
                         "futures_quote_fetch_failed", status=resp.status, batch_size=len(batch)
                     )
                     continue
-                result.update(data.get("data") or {})
+                quote_data = data.get("data") or {}
+                if isinstance(quote_data, dict):
+                    result.update(cast(dict[str, Payload], quote_data))
         except Exception as exc:
             logger.warning("futures_quote_fetch_error", error=str(exc))
     return result

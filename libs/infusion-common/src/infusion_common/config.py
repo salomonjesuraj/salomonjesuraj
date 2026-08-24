@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
 from pydantic_settings import BaseSettings
 
@@ -37,6 +38,6 @@ class InfusionSettings(BaseSettings):
         "extra": "ignore",
     }
 
-    def model_post_init(self, __context) -> None:
+    def model_post_init(self, __context: Any) -> None:
         if not self.instance_id:
             self.instance_id = f"{self.service_name}-{uuid.uuid4().hex[:8]}"

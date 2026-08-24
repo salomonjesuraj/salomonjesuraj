@@ -14,6 +14,7 @@ Designed for 500-symbol production load:
 import json
 from datetime import date, datetime
 from datetime import time as dt_time
+from typing import Any
 from zoneinfo import ZoneInfo
 
 import msgpack
@@ -27,6 +28,7 @@ from api.market_context import compute_directional_context
 
 routes = web.RouteTableDef()
 logger = structlog.get_logger()
+Payload = dict[str, Any]
 
 TRADE_HORIZON_LABELS = {
     "INTRADAY": "Intraday",
@@ -60,7 +62,7 @@ def _trade_horizon_label(trade_horizon: str) -> str:
 NEWS_EDGE_KEY_PREFIX = "infusion:news-edge:"
 
 
-def _classify_oi_buildup(oi_change_pct, price_change_pct) -> dict:
+def _classify_oi_buildup(oi_change_pct: Any, price_change_pct: Any) -> Payload:
     """Standard 4-way OI interpretation: does open interest agree with price
     direction (fresh positioning) or oppose it (positions closing)?
 
@@ -97,8 +99,8 @@ def _classify_oi_buildup(oi_change_pct, price_change_pct) -> dict:
     return {"label": "LONG UNWINDING", "bias": "BEARISH"}
 
 
-def _index_snapshot_from_hash(symbol: str, label: str, data: dict) -> dict:
-    snap = {"symbol": symbol, "label": label, "available": False}
+def _index_snapshot_from_hash(symbol: str, label: str, data: Payload) -> Payload:
+    snap: Payload = {"symbol": symbol, "label": label, "available": False}
     if not data:
         return snap
     decoded = _decode_hash(data)
@@ -113,7 +115,7 @@ def _index_snapshot_from_hash(symbol: str, label: str, data: dict) -> dict:
     return snap
 
 
-async def _scanner_index_context(redis) -> dict:
+async def _scanner_index_context(redis: Any) -> Payload:
     """Read live index context from hot Redis ticks for every scanner row."""
     pipe = redis.pipeline()
     pipe.hgetall("infusion:tick:NIFTY50")
@@ -148,7 +150,7 @@ async def _scanner_index_context(redis) -> dict:
     }
 
 
-def _apply_index_context(entry: dict, context: dict) -> None:
+def _apply_index_context(entry: Payload, context: Payload) -> None:
     nifty = context.get("nifty") or {}
     bank = context.get("banknifty") or {}
     gift = context.get("gift_nifty") or {}
@@ -162,7 +164,7 @@ def _apply_index_context(entry: dict, context: dict) -> None:
     entry["market_index_regime"] = context.get("market_index_regime")
 
 
-async def _fo_ban_context(redis) -> dict:
+async def _fo_ban_context(redis: Any) -> Payload:
     """F&O ban list (Phase 13.13) for the scanner table -- same source
     scanner/suppression.py's real Gate 1 reads (infusion:nse:fo_ban:symbols,
     captured by nse_scraper/fo_ban.py from NSE's daily MWPL>=95% list), just
@@ -183,12 +185,12 @@ async def _fo_ban_context(redis) -> dict:
     return {"symbols": symbols, "trade_date": trade_date}
 
 
-def _apply_fo_ban_context(entry: dict, symbol: str, context: dict) -> None:
+def _apply_fo_ban_context(entry: Payload, symbol: str, context: Payload) -> None:
     entry["fo_banned"] = symbol in context.get("symbols", set())
     entry["fo_ban_trade_date"] = context.get("trade_date")
 
 
-async def _vwap_state_context(redis, symbols: list[str]) -> dict:
+async def _vwap_state_context(redis: Any, symbols: list[str]) -> dict[str, str]:
     """Phase R2 -- previous poll's VWAP state per symbol, needed to tell a
     genuine reclaim (was BELOW, now ABOVE) apart from a sustained
     continuation (was already ABOVE). One bulk MGET across every symbol
@@ -199,14 +201,14 @@ async def _vwap_state_context(redis, symbols: list[str]) -> dict:
         return {}
     keys = [f"infusion:vwap-state:{s}" for s in symbols]
     values = await redis.mget(keys)
-    result = {}
+    result: dict[str, str] = {}
     for symbol, raw in zip(symbols, values, strict=False):
         if raw:
             result[symbol] = raw.decode() if isinstance(raw, bytes) else raw
     return result
 
 
-async def _write_vwap_state_context(redis, updates: dict) -> None:
+async def _write_vwap_state_context(redis: Any, updates: dict[str, str]) -> None:
     """Batched write-back of this request's VWAP states, for the *next*
     request to diff against -- one pipeline for up to 208 symbols, not
     208 round trips. Every key carries its own EXPIRE: this is a small
@@ -244,7 +246,7 @@ def _today_or_window_bounds() -> tuple[int, int, str] | None:
     return int(start.timestamp()), int(end.timestamp()), now.date().isoformat()
 
 
-def _decode_or_bars(members: list) -> tuple[list[float], list[float]]:
+def _decode_or_bars(members: list[Any]) -> tuple[list[float], list[float]]:
     highs: list[float] = []
     lows: list[float] = []
     for member in members or []:
@@ -262,7 +264,7 @@ def _decode_or_bars(members: list) -> tuple[list[float], list[float]]:
     return highs, lows
 
 
-async def _opening_range_context(redis, symbols: list[str]) -> dict:
+async def _opening_range_context(redis: Any, symbols: list[str]) -> dict[str, Payload]:
     """Phase R8 -- per-symbol Opening Range (09:15-09:30 IST) high/low,
     for the Opening Range Break breakout type. The range is fixed for the
     rest of the day once the window closes, so this is computed once per
@@ -277,7 +279,7 @@ async def _opening_range_context(redis, symbols: list[str]) -> dict:
     today = datetime.now(_IST).date().isoformat()
     keys = [f"infusion:or-range:{s}" for s in symbols]
     cached_raw = await redis.mget(keys)
-    result: dict[str, dict] = {}
+    result: dict[str, Payload] = {}
     missing: list[str] = []
     for symbol, raw in zip(symbols, cached_raw, strict=False):
         if raw:
@@ -325,12 +327,33 @@ async def _opening_range_context(redis, symbols: list[str]) -> dict:
     return result
 
 
-def _apply_or_context(entry: dict, or_data: dict) -> None:
+def _apply_or_context(entry: Payload, or_data: Payload) -> None:
     entry["or_high"] = or_data.get("or_high")
     entry["or_low"] = or_data.get("or_low")
 
 
-def _classify_breakout_type(entry: dict, prev_vwap_state: str | None) -> str | None:
+def _finalize_stock_breakout_tier(entry: Payload) -> str:
+    """Assign the final stock breakout tier after all score components exist."""
+    score = float(entry.get("stock_breakout_score") or 0)
+    anti_chase_reasons = entry.get("anti_chase_reasons") or []
+    chase_quality = entry.get("chase_quality")
+    if score >= 70.0:
+        tier = (
+            "BREAKOUT_NOW"
+            if (not anti_chase_reasons and chase_quality in {"HIGHLY_CHASEABLE", "CLEAN"})
+            else "RETEST_ENTRY"
+        )
+    elif score >= 55.0:
+        tier = "EARLY_WATCH"
+    else:
+        tier = "NO_CHASE"
+    if tier in {"BREAKOUT_NOW", "RETEST_ENTRY"} and entry.get("chain_trade_ready"):
+        tier = "OPTION_READY"
+    entry["stock_breakout_tier"] = tier
+    return tier
+
+
+def _classify_breakout_type(entry: Payload, prev_vwap_state: str | None) -> str | None:
     """Phase R2 -- one breakout-type label per row, priority-ordered
     (most specific / most transitional wins). Every input is already on
     `entry` by the time this runs (from _scanner_intel, plus the
@@ -397,8 +420,8 @@ def _classify_breakout_type(entry: dict, prev_vwap_state: str | None) -> str | N
     return None
 
 
-def _decode_hash(data: dict) -> dict:
-    result = {}
+def _decode_hash(data: Payload) -> Payload:
+    result: Payload = {}
     for k, v in data.items():
         key = k.decode() if isinstance(k, bytes) else k
         val = v.decode() if isinstance(v, bytes) else v
@@ -441,7 +464,7 @@ def _options_level_plan(
     fibo_s2: float,
     option_score: float,
     anti_chase: bool,
-) -> dict:
+) -> Payload:
     """Build realistic stock-option underlying levels.
 
     A one-rupee target can look valid mathematically, but it is usually not
@@ -524,7 +547,7 @@ def _side_trade_map(
     source: str,
     reason: str,
     atr: float = 0.0,
-) -> dict:
+) -> Payload:
     """Create a standalone CE/PE underlying map without borrowing the other side's levels."""
     side = str(side or "WATCH").upper()
     entry = float(entry or 0.0)
@@ -568,8 +591,11 @@ def _side_trade_map(
 
 
 def _scanner_intel(
-    entry: dict, features: dict, prebreak: dict | None = None, sector_strength: float = 50.0
-) -> dict:
+    entry: Payload,
+    features: Payload,
+    prebreak: Payload | None = None,
+    sector_strength: float = 50.0,
+) -> Payload:
     """Compute compact scanner intelligence from currently available intraday features.
 
     This is intentionally deterministic and lightweight. Deeper 1D/1H trend can be
@@ -1261,7 +1287,7 @@ def _scanner_intel(
     }
 
 
-def _decode_mtf_cache(raw) -> dict:
+def _decode_mtf_cache(raw: Any) -> Payload:
     if not raw:
         return {}
     try:
@@ -1301,7 +1327,7 @@ def _decode_mtf_cache(raw) -> dict:
         return {}
 
 
-def _decode_news_cache(raw) -> dict:
+def _decode_news_cache(raw: Any) -> Payload:
     if not raw:
         return {}
     try:
@@ -1320,28 +1346,32 @@ def _decode_news_cache(raw) -> dict:
     return {}
 
 
-def _avg_tf_score(timeframes: dict, names: tuple[str, ...], default: float = 50.0) -> float:
-    vals = []
+def _avg_tf_score(timeframes: Any, names: tuple[str, ...], default: float = 50.0) -> float:
+    vals: list[float] = []
     for name in names:
         row = timeframes.get(name) if isinstance(timeframes, dict) else {}
+        if not isinstance(row, dict):
+            continue
         try:
-            vals.append(float((row or {}).get("score")))
+            score = row.get("score")
+            if score is not None:
+                vals.append(float(score))
         except (TypeError, ValueError):
             continue
     return sum(vals) / len(vals) if vals else default
 
 
-def _apply_historical_mtf_overlay(entry: dict) -> dict:
+def _apply_historical_mtf_overlay(entry: Payload) -> Payload:
     """Promote true historical MTF into horizon/score decisions.
 
     `_scanner_intel` can run even when historical candles are missing.  When the
     MTF cache exists, this overlay makes the row much more useful for the user:
     fast TFs decide intraday chaseability; 1H/4H/1D decide swing/carry quality.
     """
-    mtf = entry.get("mtf") if isinstance(entry.get("mtf"), dict) else {}
-    timeframes = (
-        entry.get("mtf_timeframes") if isinstance(entry.get("mtf_timeframes"), dict) else {}
-    )
+    mtf_raw = entry.get("mtf")
+    timeframes_raw = entry.get("mtf_timeframes")
+    mtf: Payload = mtf_raw if isinstance(mtf_raw, dict) else {}
+    timeframes: Payload = timeframes_raw if isinstance(timeframes_raw, dict) else {}
     if not mtf and not timeframes:
         return entry
     source = str(entry.get("mtf_source") or "").lower()
@@ -1481,7 +1511,7 @@ def _apply_historical_mtf_overlay(entry: dict) -> dict:
     return entry
 
 
-def _decode_option_cache(raw) -> dict:
+def _decode_option_cache(raw: Any) -> Payload:
     if not raw:
         return {}
     try:
@@ -1502,7 +1532,7 @@ def _days_to_event(event_date: str) -> int | None:
         return None
 
 
-def _event_risk_from_raw(symbol: str, raw) -> dict:
+def _event_risk_from_raw(symbol: str, raw: Any) -> Payload:
     symbol = str(symbol or "").upper().strip()
     if not raw:
         return {
@@ -1537,7 +1567,7 @@ def _event_risk_from_raw(symbol: str, raw) -> dict:
     }
 
 
-def _as_list(value) -> list:
+def _as_list(value: Any) -> list[Any]:
     if value is None:
         return []
     if isinstance(value, list):
@@ -1550,7 +1580,7 @@ def _as_list(value) -> list:
 
 
 @routes.get("/api/ticks/{symbol}")
-async def get_tick(request):
+async def get_tick(request: web.Request) -> web.Response:
     """Get latest tick data for a symbol."""
     symbol = request.match_info["symbol"].upper()
     redis = request.app["redis"]
@@ -1559,7 +1589,7 @@ async def get_tick(request):
     if not data:
         return web.json_response({"error": f"No tick data for {symbol}"}, status=404)
 
-    result = {"symbol": symbol}
+    result: Payload = {"symbol": symbol}
     for k, v in data.items():
         key = k.decode() if isinstance(k, bytes) else k
         val = v.decode() if isinstance(v, bytes) else v
@@ -1571,7 +1601,7 @@ async def get_tick(request):
     return web.json_response(result)
 
 
-async def _build_ticks(redis, sector_filter: str = "", tier_filter: str = "") -> list[dict]:
+async def _build_ticks(redis: Any, sector_filter: str = "", tier_filter: str = "") -> list[Payload]:
     """The real work behind GET /api/ticks -- pulled out to a plain
     function (Phase R9) so the radar-alert sweep (api/radar_alert_queue.py)
     can call the exact same tier/score computation the dashboard sees,
@@ -1589,8 +1619,8 @@ async def _build_ticks(redis, sector_filter: str = "", tier_filter: str = "") ->
         return []
 
     # Parse symbol metadata and apply filters
-    symbols_to_fetch = []
-    symbol_meta = {}
+    symbols_to_fetch: list[str] = []
+    symbol_meta: dict[str, Payload] = {}
 
     for _inst_key, meta_raw in all_symbols.items():
         try:
@@ -1823,11 +1853,15 @@ async def _build_ticks(redis, sector_filter: str = "", tier_filter: str = "") ->
     # whole universe to rank against. Percentile = % of the (rs_20d-
     # available) universe this row's RS beats or ties -- None (not a
     # fabricated number) for a row whose own rs_20d isn't available yet.
-    rs20_values = sorted(
-        float((e.get("multi_timeframe_rs") or {}).get("rs_20d"))
-        for e in ticks
-        if (e.get("multi_timeframe_rs") or {}).get("rs_20d") is not None
-    )
+    rs20_values: list[float] = []
+    for e in ticks:
+        rs_payload = e.get("multi_timeframe_rs")
+        if not isinstance(rs_payload, dict):
+            continue
+        rs_value = rs_payload.get("rs_20d")
+        if rs_value is not None:
+            rs20_values.append(float(rs_value))
+    rs20_values.sort()
     rs20_n = len(rs20_values)
     for entry in ticks:
         rs20 = (entry.get("multi_timeframe_rs") or {}).get("rs_20d")
@@ -1918,22 +1952,7 @@ async def _build_ticks(redis, sector_filter: str = "", tier_filter: str = "") ->
         # against the old 90-point max, a scaling no longer needed now the
         # score is genuinely out of 100. OPTION_READY is a strictly-earned
         # upgrade on top of an already-qualifying tier, applied last.
-        score = entry["stock_breakout_score"]
-        anti_chase_reasons = entry.get("anti_chase_reasons") or []
-        chase_quality = entry.get("chase_quality")
-        if score >= 70.0:
-            tier = (
-                "BREAKOUT_NOW"
-                if (not anti_chase_reasons and chase_quality in {"HIGHLY_CHASEABLE", "CLEAN"})
-                else "RETEST_ENTRY"
-            )
-        elif score >= 55.0:
-            tier = "EARLY_WATCH"
-        else:
-            tier = "NO_CHASE"
-        if tier in {"BREAKOUT_NOW", "RETEST_ENTRY"} and entry.get("chain_trade_ready"):
-            tier = "OPTION_READY"
-        entry["stock_breakout_tier"] = tier
+        _finalize_stock_breakout_tier(entry)
 
     await _write_vwap_state_context(redis, vwap_state_updates)
 
@@ -1941,7 +1960,7 @@ async def _build_ticks(redis, sector_filter: str = "", tier_filter: str = "") ->
 
 
 @routes.get("/api/ticks")
-async def list_ticks(request):
+async def list_ticks(request: web.Request) -> web.Response:
     """Bulk tick data for all tracked symbols. See _build_ticks() above
     for the real work -- this just parses query params and wraps the
     result.
@@ -1958,7 +1977,7 @@ async def list_ticks(request):
 
 
 @routes.get("/api/ticks/snapshot")
-async def snapshot(request):
+async def snapshot(request: web.Request) -> web.Response:
     """Full dashboard snapshot — ticks + features in one request.
 
     Used for initial dashboard load. Returns tick and feature data
@@ -1972,7 +1991,7 @@ async def snapshot(request):
     if not all_symbols:
         return web.json_response({"count": 0, "snapshot": []})
 
-    symbols = []
+    symbols: list[tuple[str, Payload]] = []
     for _inst_key, meta_raw in all_symbols.items():
         try:
             meta = msgpack.unpackb(meta_raw, raw=False) if isinstance(meta_raw, bytes) else meta_raw
@@ -1989,7 +2008,7 @@ async def snapshot(request):
         pipe.hgetall(f"infusion:feature:{sym}")
     results = await pipe.execute()
 
-    snapshot = []
+    snapshot_rows: list[Payload] = []
     for i, (sym, meta) in enumerate(symbols):
         tick_data = results[i * 2]
         feature_data = results[i * 2 + 1]
@@ -2021,13 +2040,13 @@ async def snapshot(request):
                     except (ValueError, TypeError):
                         entry[f"f_{key}"] = val
 
-        snapshot.append(entry)
+        snapshot_rows.append(entry)
 
-    return web.json_response({"count": len(snapshot), "snapshot": snapshot})
+    return web.json_response({"count": len(snapshot_rows), "snapshot": snapshot_rows})
 
 
 @routes.get("/api/symbols")
-async def list_symbols(request):
+async def list_symbols(request: web.Request) -> web.Response:
     """List all loaded symbols with metadata.
 
     Returns the symbol universe currently in Redis.
@@ -2040,7 +2059,7 @@ async def list_symbols(request):
     tier_filter = request.query.get("tier", "").upper()
 
     all_symbols = await redis.hgetall("infusion:symbols")
-    symbols = []
+    symbols: list[Payload] = []
 
     for _inst_key, meta_raw in all_symbols.items():
         try:

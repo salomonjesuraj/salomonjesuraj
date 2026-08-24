@@ -33,6 +33,8 @@ over double) or the higher Bulkowski hit rate.
 
 from __future__ import annotations
 
+from typing import Any
+
 PEAK_SIMILARITY_PCT = 5.0  # Bulkowski's own stated tolerance for double-bottom valleys; extended here to peaks and triple variants for consistency
 PATTERN_LOOKBACK_PIVOTS = (
     8  # how many recent pivots are worth checking for a live, still-relevant pattern
@@ -46,7 +48,7 @@ def _similar(a: float, b: float, tolerance_pct: float = PEAK_SIMILARITY_PCT) -> 
 
 
 def fractal_pivots_indexed(
-    bars: list[dict], left: int = 2, right: int = 2
+    bars: list[dict[str, Any]], left: int = 2, right: int = 2
 ) -> list[tuple[float, str, int]]:
     """Chronological (price, 'high'|'low', bar_index) pivot list — the same
     fractal left/right rule as api.routes.mtf._fractal_pivots, but indexed
@@ -78,7 +80,9 @@ def _recent(
     return pivots[-n:] if len(pivots) > n else pivots
 
 
-def detect_double_top(pivots: list[tuple[float, str, int]], current_price: float) -> dict | None:
+def detect_double_top(
+    pivots: list[tuple[float, str, int]], current_price: float
+) -> dict[str, Any] | None:
     """high -> low -> high, the two highs similar. Confirmed on a close
     below the intervening low (Bulkowski's confirmation rule). Target uses
     HALF the pattern height off the confirmation line: Bulkowski found the
@@ -112,7 +116,9 @@ def detect_double_top(pivots: list[tuple[float, str, int]], current_price: float
     return None
 
 
-def detect_double_bottom(pivots: list[tuple[float, str, int]], current_price: float) -> dict | None:
+def detect_double_bottom(
+    pivots: list[tuple[float, str, int]], current_price: float
+) -> dict[str, Any] | None:
     """Mirror of detect_double_top: low -> high -> low, the two lows
     similar. Confirmed on a close above the intervening peak."""
     recent = _recent(pivots)
@@ -142,7 +148,9 @@ def detect_double_bottom(pivots: list[tuple[float, str, int]], current_price: fl
     return None
 
 
-def detect_triple_top(pivots: list[tuple[float, str, int]], current_price: float) -> dict | None:
+def detect_triple_top(
+    pivots: list[tuple[float, str, int]], current_price: float
+) -> dict[str, Any] | None:
     """high -> low -> high -> low -> high, all three highs similar.
     Confirmed on a close below the lower of the two intervening valleys.
     Target uses the FULL pattern height (Bulkowski gives no half-height
@@ -178,7 +186,9 @@ def detect_triple_top(pivots: list[tuple[float, str, int]], current_price: float
     return None
 
 
-def detect_triple_bottom(pivots: list[tuple[float, str, int]], current_price: float) -> dict | None:
+def detect_triple_bottom(
+    pivots: list[tuple[float, str, int]], current_price: float
+) -> dict[str, Any] | None:
     """Mirror of detect_triple_top: low -> high -> low -> high -> low, all
     three lows similar. Confirmed on a close above the higher of the two
     intervening peaks."""
@@ -213,7 +223,9 @@ def detect_triple_bottom(pivots: list[tuple[float, str, int]], current_price: fl
     return None
 
 
-def detect_rectangle(pivots: list[tuple[float, str, int]], current_price: float) -> dict | None:
+def detect_rectangle(
+    pivots: list[tuple[float, str, int]], current_price: float
+) -> dict[str, Any] | None:
     """>= 2 highs clustering near one level AND >= 2 lows clustering near
     another, over the same recent window — a horizontal trading channel.
     Target is the full channel height applied from whichever line breaks.
@@ -268,10 +280,12 @@ PATTERN_DETECTORS = (
 )
 
 
-def detect_chart_patterns(pivots: list[tuple[float, str, int]], current_price: float) -> list[dict]:
+def detect_chart_patterns(
+    pivots: list[tuple[float, str, int]], current_price: float
+) -> list[dict[str, Any]]:
     """Run every implemented detector, return whichever currently match.
     See the module docstring for the known double/triple overlap."""
-    results = []
+    results: list[dict[str, Any]] = []
     for detector in PATTERN_DETECTORS:
         match = detector(pivots, current_price)
         if match:

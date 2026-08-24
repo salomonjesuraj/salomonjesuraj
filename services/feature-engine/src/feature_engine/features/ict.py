@@ -44,10 +44,14 @@ NOT implemented this pass — deferred, not silently skipped:
 
 from __future__ import annotations
 
+from typing import Any
+
+from feature_engine.state import SymbolState
+
 FVG_REBALANCE_TOUCHES = 3  # ICT: 3rd touch/pass-through = fully rebalanced
 
 
-def update_ict(state) -> None:
+def update_ict(state: SymbolState) -> None:
     """Advance FVG / liquidity-sweep / Order-Block state by one completed
     bar. Reads state.recent_1m_bars (last 3, for the FVG's 3-candle check)
     and state.swing_high_1 / state.swing_low_1 (the liquidity-sweep
@@ -155,7 +159,7 @@ def update_ict(state) -> None:
                 state.order_block_bearish = None
 
 
-def ict_snapshot(state) -> dict:
+def ict_snapshot(state: SymbolState) -> dict[str, Any]:
     """Compact dict for FeatureVectorV1.ml_features."""
     fb, fr = state.fvg_bullish, state.fvg_bearish
     obb, obr = state.order_block_bullish, state.order_block_bearish

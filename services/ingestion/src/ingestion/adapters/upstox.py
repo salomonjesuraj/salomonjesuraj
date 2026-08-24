@@ -7,7 +7,9 @@ import base64
 import gzip
 import json
 import time
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta, timezone
+from typing import Any, cast
 
 import aiohttp
 import structlog
@@ -15,10 +17,12 @@ from infusion_common.timing import now_us
 from infusion_models.tick import RawTickV1
 
 from ingestion.adapters.base import BrokerAdapter, ConnectionState
-from ingestion.adapters.upstox_codec import ProtoDecodeError, decode_feed_response
+from ingestion.adapters.upstox_codec import DecodedFeed, ProtoDecodeError, decode_feed_response
+from ingestion.config import IngestionSettings
 
 logger = structlog.get_logger()
 IST = timezone(timedelta(hours=5, minutes=30))
+Payload = dict[str, Any]
 
 
 class UpstoxAdapter(BrokerAdapter):
@@ -26,7 +30,7 @@ class UpstoxAdapter(BrokerAdapter):
 
     name = "upstox"
 
-    def __init__(self, config):
+    def __init__(self, config: IngestionSettings) -> None:
         self.config = config
         self.state = ConnectionState.INIT
         self._session: aiohttp.ClientSession | None = None
@@ -35,7 +39,7 @@ class UpstoxAdapter(BrokerAdapter):
         self._tick_count = 0
         self._last_tick_time = 0.0
         self._reconnect_count = 0
-        self._redis = None
+        self._redis: Any = None
         self._last_auth_error = ""
         self._token_source = ""
         self._token_expiry_ts = 0
@@ -50,7 +54,7 @@ class UpstoxAdapter(BrokerAdapter):
         self._last_gap_ms: int = 0
         self._cumulative_gap_ms: int = 0
 
-    def set_redis(self, redis):
+    def set_redis(self, redis: Any) -> None:
         """Provide Redis for OAuth token lookup."""
         self._redis = redis
 
@@ -73,7 +77,8 @@ class UpstoxAdapter(BrokerAdapter):
         auth_text = auth_raw.decode() if isinstance(auth_raw, bytes) else auth_raw
         try:
             auth_data = json.loads(auth_text)
-            return auth_data.get("access_token", "")
+            token = auth_data.get("access_token", "") if isinstance(auth_data, dict) else ""
+            return str(token)
         except Exception:
             return ""
 
@@ -167,7 +172,7 @@ class UpstoxAdapter(BrokerAdapter):
                 raise RuntimeError(f"Upstox WS auth failed: {resp.status} {body[:200]}")
             data = await resp.json()
 
-        payload = data.get("data", {}) if isinstance(data, dict) else {}
+        payload = cast(Payload, data.get("data", {})) if isinstance(data, dict) else {}
         ws_uri = (
             payload.get("authorized_redirect_uri") or payload.get("authorizedRedirectUri") or ""
         )
@@ -266,7 +271,7 @@ class UpstoxAdapter(BrokerAdapter):
             )
             await asyncio.sleep(self.config.subscribe_batch_delay_ms / 1000)
 
-    async def start_streaming(self, on_tick) -> None:
+    async def start_streaming(self, on_tick: Callable[[RawTickV1], Awaitable[None]]) -> None:
         """Read WS frames, decode protobuf, invoke callback."""
         assert self._ws is not None
         self.state = ConnectionState.STREAMING
@@ -304,7 +309,7 @@ class UpstoxAdapter(BrokerAdapter):
                 logger.warning("upstox_ws_closed", close_code=msg.data)
                 break
 
-    def _to_raw_tick(self, decoded, received_at_us: int) -> RawTickV1:
+    def _to_raw_tick(self, decoded: DecodedFeed, received_at_us: int) -> RawTickV1:
         exchange, segment = self._split_instrument_key(decoded.instrument_key)
         return RawTickV1(
             broker="upstox",
@@ -346,7 +351,7 @@ class UpstoxAdapter(BrokerAdapter):
             await self._session.close()
         logger.info("upstox_disconnected", total_ticks=self._tick_count)
 
-    def health(self) -> dict:
+    def health(self) -> Payload:
         return {
             "broker": self.name,
             "state": self.state.value,

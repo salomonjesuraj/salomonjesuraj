@@ -8,11 +8,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+from typing import Any, cast
 
 import aiohttp
 import structlog
 
 logger = structlog.get_logger()
+Payload = dict[str, Any]
 
 OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
 
@@ -111,7 +113,7 @@ Rules:
 """
 
 
-def snapshot_digest(snapshot: dict, mode: str) -> str:
+def snapshot_digest(snapshot: Payload, mode: str) -> str:
     raw = json.dumps(
         {"mode": mode, "snapshot": snapshot},
         sort_keys=True,
@@ -129,7 +131,7 @@ class OpenAIAdvisor:
         model: str,
         timeout_sec: int,
         session: aiohttp.ClientSession,
-    ):
+    ) -> None:
         self.api_key = api_key.strip()
         self.model = model.strip() or "gpt-5.4-mini"
         self.timeout_sec = timeout_sec
@@ -139,7 +141,7 @@ class OpenAIAdvisor:
     def enabled(self) -> bool:
         return bool(self.api_key)
 
-    async def analyze(self, snapshot: dict, mode: str) -> dict:
+    async def analyze(self, snapshot: Payload, mode: str) -> Payload:
         mode_instruction = {
             "risk": (
                 "Perform a strict pre-trade risk review. Prefer WATCH or AVOID "
@@ -200,7 +202,7 @@ class OpenAIAdvisor:
                     raise RuntimeError(f"OpenAI {response.status}: {message}")
 
             text = _output_text(body)
-            result = json.loads(text)
+            result = cast(Payload, json.loads(text))
             result["source"] = "openai"
             result["model"] = body.get("model", self.model)
             result["response_id"] = body.get("id", "")
@@ -210,8 +212,8 @@ class OpenAIAdvisor:
             raise
 
     async def answer_query(
-        self, question: str, facts: list[dict], deterministic_answer: str
-    ) -> dict:
+        self, question: str, facts: list[Payload], deterministic_answer: str
+    ) -> Payload:
         """Phase 12: rephrase a pre-fetched `facts` bundle into a
         conversational answer. `deterministic_answer` (from
         api.ai_query.format_facts_as_text) is included in the prompt as a
@@ -268,7 +270,7 @@ class OpenAIAdvisor:
                     raise RuntimeError(f"OpenAI {response.status}: {message}")
 
             text = _output_text(body)
-            result = json.loads(text)
+            result = cast(Payload, json.loads(text))
             result["source"] = "openai"
             result["model"] = body.get("model", self.model)
             result["response_id"] = body.get("id", "")
@@ -278,11 +280,11 @@ class OpenAIAdvisor:
             raise
 
 
-def _output_text(body: dict) -> str:
+def _output_text(body: Payload) -> str:
     for item in body.get("output", []):
         if item.get("type") != "message":
             continue
         for content in item.get("content", []):
             if content.get("type") == "output_text" and content.get("text"):
-                return content["text"]
+                return str(content["text"])
     raise RuntimeError("OpenAI response contained no output_text")

@@ -4,7 +4,9 @@ ScanSignalV2: full-lifecycle signal with scoring, suppression, and explanation.
 ScanSignalV1: deprecated — kept for backward compatibility during schema migration.
 """
 
-from pydantic import BaseModel
+from typing import Any
+
+from pydantic import BaseModel, Field
 
 
 class ScanSignalV1(BaseModel, frozen=True):
@@ -16,7 +18,7 @@ class ScanSignalV1(BaseModel, frozen=True):
     strength: float = 0.0
     price_at_signal: float = 0.0
     volume_at_signal: int = 0
-    features_snapshot: dict = {}
+    features_snapshot: dict[str, Any] = Field(default_factory=dict)
     exchange_timestamp_ms: int = 0
 
 
@@ -43,7 +45,7 @@ class ScanSignalV2(BaseModel, frozen=True):
     # Scoring
     conviction_score: float = 0.0  # 0-100 composite score
     conviction_grade: str = ""  # A+, A, B, C, D
-    sub_scores: dict = {}  # { "volume": 25, "vwap": 20, ... }
+    sub_scores: dict[str, float] = Field(default_factory=dict)  # { "volume": 25, "vwap": 20, ... }
 
     # Price context
     price_at_signal: float = 0.0
@@ -53,7 +55,9 @@ class ScanSignalV2(BaseModel, frozen=True):
     risk_reward_ratio: float = 0.0
 
     # Feature snapshot
-    features_snapshot: dict = {}  # frozen FeatureVector at signal time
+    features_snapshot: dict[str, Any] = Field(
+        default_factory=dict
+    )  # frozen FeatureVector at signal time
 
     # Context
     sector_id: str = ""
@@ -67,5 +71,5 @@ class ScanSignalV2(BaseModel, frozen=True):
     suppression_reason: str = ""  # "cooldown", "sector_weak", etc.
 
     # Explanation
-    explanation: list[str] = []  # human-readable signal reasons
-    conditions_met: dict = {}  # { "vol_expansion": true, ... }
+    explanation: list[str] = Field(default_factory=list)  # human-readable signal reasons
+    conditions_met: dict[str, bool] = Field(default_factory=dict)  # { "vol_expansion": true, ... }

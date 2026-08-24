@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from typing import Any, cast
 
 from aiohttp import web
 
@@ -16,6 +17,7 @@ from api.ai_advisor import snapshot_digest
 from api.signal_snapshot import build_symbol_snapshot, decode_hash
 
 routes = web.RouteTableDef()
+Payload = dict[str, Any]
 
 # Kept as thin aliases -- this module's own route handlers below were
 # written against these names before the Phase 12 extraction into
@@ -24,11 +26,11 @@ routes = web.RouteTableDef()
 _decode_hash = decode_hash
 
 
-async def _snapshot(request: web.Request, symbol: str) -> dict:
+async def _snapshot(request: web.Request, symbol: str) -> Payload:
     return await build_symbol_snapshot(request.app["redis"], symbol)
 
 
-def _fallback(snapshot: dict, reason: str = "") -> dict:
+def _fallback(snapshot: Payload, reason: str = "") -> Payload:
     scanner = snapshot["scanner"]
     technical = snapshot["technical"]
     execution = snapshot["option_execution"]
@@ -86,7 +88,7 @@ def _fallback(snapshot: dict, reason: str = "") -> dict:
 
 
 @routes.get("/api/ai/status")
-async def ai_status(request):
+async def ai_status(request: web.Request) -> web.Response:
     advisor = request.app["openai_advisor"]
     return web.json_response(
         {
@@ -99,14 +101,15 @@ async def ai_status(request):
 
 
 @routes.post("/api/ai/analyze/{symbol}")
-async def analyze_symbol(request):
+async def analyze_symbol(request: web.Request) -> web.Response:
     symbol = request.match_info["symbol"].upper().strip()
     if not symbol:
         return web.json_response({"error": "symbol_required"}, status=400)
     try:
-        body = await request.json()
+        body_raw = await request.json()
     except (json.JSONDecodeError, web.HTTPBadRequest):
-        body = {}
+        body_raw = {}
+    body = cast(Payload, body_raw) if isinstance(body_raw, dict) else {}
     mode = str(body.get("mode") or "explain").lower()
     if mode not in {"explain", "risk"}:
         return web.json_response({"error": "mode_must_be_explain_or_risk"}, status=400)
@@ -122,7 +125,7 @@ async def analyze_symbol(request):
     cache_key = f"infusion:ai:{symbol}:{mode}"
     cached = await request.app["redis"].get(cache_key)
     if cached:
-        data = json.loads(cached.decode() if isinstance(cached, bytes) else cached)
+        data = cast(Payload, json.loads(cached.decode() if isinstance(cached, bytes) else cached))
         data["cached"] = True
         return web.json_response(data)
 
@@ -152,7 +155,7 @@ async def analyze_symbol(request):
 
 
 @routes.post("/api/ai/query")
-async def ai_query_route(request):
+async def ai_query_route(request: web.Request) -> web.Response:
     """Phase 12: free-text question -> grounded answer over live Infusion
     state. See api/ai_query.py for the intent router + fact gathering and
     api/ai_advisor.py's answer_query() for the optional LLM phrasing pass.
@@ -160,9 +163,10 @@ async def ai_query_route(request):
     directly (source: "deterministic"), same degrade path as /api/ai/analyze.
     """
     try:
-        body = await request.json()
+        body_raw = await request.json()
     except (json.JSONDecodeError, web.HTTPBadRequest):
-        body = {}
+        body_raw = {}
+    body = cast(Payload, body_raw) if isinstance(body_raw, dict) else {}
     question = str(body.get("question") or "").strip()
     if not question:
         return web.json_response({"error": "question_required"}, status=400)
@@ -176,7 +180,7 @@ async def ai_query_route(request):
     cache_key = f"infusion:ai:query:{digest}"
     cached = await redis.get(cache_key)
     if cached:
-        data = json.loads(cached.decode() if isinstance(cached, bytes) else cached)
+        data = cast(Payload, json.loads(cached.decode() if isinstance(cached, bytes) else cached))
         data["cached"] = True
         return web.json_response(data)
 
@@ -199,7 +203,7 @@ async def ai_query_route(request):
 
     advisor = request.app["openai_advisor"]
     if not intents or not advisor.enabled:
-        result = {
+        result: Payload = {
             "answer": deterministic_answer,
             "data_sources_used": intent_types,
             "caveats": [] if intents else ["No matching data source found for this question."],

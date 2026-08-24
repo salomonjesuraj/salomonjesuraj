@@ -2,6 +2,7 @@
 
 from collections import deque
 from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass
@@ -74,20 +75,20 @@ class SymbolState:
     macd_initialized: bool = False
 
     # ATR state
-    atr_values: deque = field(default_factory=lambda: deque(maxlen=14))
+    atr_values: deque[float] = field(default_factory=lambda: deque(maxlen=14))
     atr: float = 0.0
     atr_prev_close: float = 0.0
 
     # Bollinger
-    bb_prices: deque = field(default_factory=lambda: deque(maxlen=20))
+    bb_prices: deque[float] = field(default_factory=lambda: deque(maxlen=20))
 
     # Stochastic
-    stoch_highs: deque = field(default_factory=lambda: deque(maxlen=14))
-    stoch_lows: deque = field(default_factory=lambda: deque(maxlen=14))
-    stoch_k_values: deque = field(default_factory=lambda: deque(maxlen=3))
+    stoch_highs: deque[float] = field(default_factory=lambda: deque(maxlen=14))
+    stoch_lows: deque[float] = field(default_factory=lambda: deque(maxlen=14))
+    stoch_k_values: deque[float] = field(default_factory=lambda: deque(maxlen=3))
 
     # CCI
-    cci_typical_prices: deque = field(default_factory=lambda: deque(maxlen=20))
+    cci_typical_prices: deque[float] = field(default_factory=lambda: deque(maxlen=20))
 
     # ADX / DI+ / DI- (Wilder smoothing, matches Pine's ta.dmi)
     adx_prev_high: float = 0.0
@@ -96,7 +97,7 @@ class SymbolState:
     adx_tr_smooth: float = 0.0
     adx_plus_dm_smooth: float = 0.0
     adx_minus_dm_smooth: float = 0.0
-    adx_dx_values: list = field(default_factory=list)
+    adx_dx_values: list[float] = field(default_factory=list)
     adx_value: float = 0.0
     adx_warmup_count: int = 0
     adx_initialized: bool = False
@@ -113,7 +114,7 @@ class SymbolState:
     obv_prev_close: float = 0.0
 
     # Volume tracking
-    volume_history: deque = field(default_factory=lambda: deque(maxlen=20))
+    volume_history: deque[int] = field(default_factory=lambda: deque(maxlen=20))
     volume_profile: dict[int, float] = field(default_factory=dict)
     volume_profile_ready: bool = False
     volume_profile_checked_us: int = 0
@@ -148,7 +149,7 @@ class SymbolState:
     bar_1m: OHLCBar = field(default_factory=OHLCBar)
     bar_5m: OHLCBar = field(default_factory=OHLCBar)
     bar_15m: OHLCBar = field(default_factory=OHLCBar)
-    recent_1m_bars: deque = field(default_factory=lambda: deque(maxlen=20))
+    recent_1m_bars: deque[dict[str, Any]] = field(default_factory=lambda: deque(maxlen=20))
     completed_1m_bars: int = 0
     last_completed_1m_ms: int = 0
 
@@ -172,7 +173,7 @@ class SymbolState:
     # confirmed swings to find where independent levels cluster, so this is
     # tracked separately rather than widening swing_high_1/2. Each entry is
     # (price, "high"|"low", completed_1m_bars index at confirmation).
-    swing_points: deque = field(default_factory=lambda: deque(maxlen=10))
+    swing_points: deque[tuple[float, str, int]] = field(default_factory=lambda: deque(maxlen=10))
 
     # RSI paired with each confirmed swing point (Phase 13.11 -- regular/
     # hidden RSI divergence, features/divergence.py). Deliberately a
@@ -182,7 +183,9 @@ class SymbolState:
     # the exact same confirmation event in features/structure.py, so this
     # is never out of sync with swing_points -- same real pivots, just
     # also carrying the RSI value structure.py doesn't otherwise see.
-    rsi_swing_points: deque = field(default_factory=lambda: deque(maxlen=10))
+    rsi_swing_points: deque[tuple[float, str, int, float]] = field(
+        default_factory=lambda: deque(maxlen=10)
+    )
 
     # Candlestick pattern sizing baseline (EMA of body size, matches Pine v6's
     # bodyAvgEma — used by Marubozu / Three Soldiers-Crows thresholds).
@@ -236,6 +239,6 @@ class SymbolState:
     # depth-codec fix. Not session-reset (unlike CLV above): book depth
     # is a point-in-time read, not something that accumulates across a
     # session, so it just gets overwritten each tick.
-    latest_depth_levels: list = field(default_factory=list)
+    latest_depth_levels: list[dict[str, Any]] = field(default_factory=list)
     book_imbalance_ema: float = 0.0
     book_imbalance_ema_initialized: bool = False

@@ -3,6 +3,7 @@
 import json as _json
 import time
 import uuid
+from typing import Any
 
 from aiohttp import web
 from infusion_models.events import EventType
@@ -12,6 +13,7 @@ from infusion_streams.constants import MAXLEN_SIGNALS, STREAM_SCAN_SIGNALS, STRE
 from api.market_breadth import compute_market_breadth
 
 routes = web.RouteTableDef()
+Payload = dict[str, Any]
 
 PREBREAK_PREFIX = "infusion:prebreak:"
 SIGNAL_PREFIX = "infusion:signal:"
@@ -60,7 +62,7 @@ _STRING_FIELDS = {
 }
 
 
-def _test_alert_payload(body: dict | None = None) -> tuple[dict, int]:
+def _test_alert_payload(body: Payload | None = None) -> tuple[Payload, int]:
     body = body if isinstance(body, dict) else {}
     symbol = str(body.get("symbol") or "INFUSION_TEST").upper().strip()[:24] or "INFUSION_TEST"
     now_us = int(time.time() * 1_000_000)
@@ -120,7 +122,7 @@ def _test_alert_payload(body: dict | None = None) -> tuple[dict, int]:
     }, now_us
 
 
-def _test_alert_preview(payload: dict) -> dict:
+def _test_alert_preview(payload: Payload) -> Payload:
     fs = payload.get("features_snapshot") or {}
     trade_map = fs.get("primary_trade_map") or {}
     return {
@@ -142,12 +144,12 @@ def _test_alert_preview(payload: dict) -> dict:
 
 
 @routes.get("/api/signal-diagnostics/{symbol}")
-async def get_signal_diagnostics(request):
+async def get_signal_diagnostics(request: web.Request) -> web.Response:
     symbol = request.match_info["symbol"].upper()
     data = await request.app["redis"].hgetall(f"infusion:signal-diagnostics:{symbol}")
     if not data:
         return web.json_response({"error": "No completed-candle evaluation yet"}, status=404)
-    decoded = {}
+    decoded: Payload = {}
     for key, value in data.items():
         key = key.decode() if isinstance(key, bytes) else key
         value = value.decode() if isinstance(value, bytes) else value
@@ -160,14 +162,14 @@ async def get_signal_diagnostics(request):
     return web.json_response(decoded)
 
 
-def _decode_hash(data: dict) -> dict:
+def _decode_hash(data: Payload) -> Payload:
     """Decode Redis hash bytes to typed Python dict.
 
     - JSON fields → parsed dict/list
     - Numeric strings → float
     - Everything else → str
     """
-    result = {}
+    result: Payload = {}
     for k, v in data.items():
         kk = k.decode() if isinstance(k, bytes) else k
         vv = v.decode() if isinstance(v, bytes) else v
@@ -175,7 +177,7 @@ def _decode_hash(data: dict) -> dict:
             try:
                 result[kk] = _json.loads(vv)
             except (_json.JSONDecodeError, TypeError):
-                result[kk] = {}
+                result[kk] = [] if kk.endswith("_reasons") else {}
         elif kk not in _STRING_FIELDS:
             try:
                 result[kk] = float(vv)
@@ -187,13 +189,13 @@ def _decode_hash(data: dict) -> dict:
 
 
 @routes.get("/api/signals")
-async def get_signals(request):
+async def get_signals(request: web.Request) -> web.Response:
     """List active signals from the active ZSET, ordered by conviction."""
     redis = request.app["redis"]
 
     # Get all active signal members (symbol:strategy) scored by conviction
     members = await redis.zrevrange(SIGNAL_ACTIVE_KEY, 0, -1, withscores=True)
-    signals = []
+    signals: list[Payload] = []
     for member, score in members:
         m = member.decode() if isinstance(member, bytes) else member
         symbol = m.split(":")[0] if ":" in m else m
@@ -210,7 +212,7 @@ async def get_signals(request):
     return web.json_response({"count": len(signals), "signals": signals})
 
 
-def _compact_suppressed(payload: dict, stream_id: str = "") -> dict:
+def _compact_suppressed(payload: Payload, stream_id: str = "") -> Payload:
     """Compact suppressed signal payload for dashboard diagnostics."""
     fs = payload.get("features_snapshot") or {}
     if not isinstance(fs, dict):
@@ -257,7 +259,7 @@ def _compact_suppressed(payload: dict, stream_id: str = "") -> dict:
     }
 
 
-def _trading_mode_profile(mode: str) -> dict:
+def _trading_mode_profile(mode: str) -> Payload:
     mode = str(mode or "precision")
     profiles = {
         "precision": {
@@ -285,7 +287,7 @@ def _trading_mode_profile(mode: str) -> dict:
     return profiles.get(mode, profiles["precision"])
 
 
-def _candidate_action(row: dict, profile: dict) -> dict:
+def _candidate_action(row: Payload, profile: Payload) -> Payload:
     score = float(row.get("score") or 0)
     rr = float(row.get("rr") or 0)
     reason = str(row.get("reason") or "")
@@ -329,7 +331,7 @@ def _candidate_action(row: dict, profile: dict) -> dict:
     return {"action": "AVOID", "tone": "block", "why": "Below selected-mode opportunity threshold."}
 
 
-async def _load_trading_mode(redis) -> str:
+async def _load_trading_mode(redis: Any) -> str:
     raw = await redis.get(RISK_KEY)
     if not raw:
         return "precision"
@@ -343,7 +345,7 @@ async def _load_trading_mode(redis) -> str:
 
 
 @routes.get("/api/signals/suppressed")
-async def get_suppressed_signals(request):
+async def get_suppressed_signals(request: web.Request) -> web.Response:
     """Recent suppressed scanner candidates for zero-signal investigation."""
     redis = request.app["redis"]
     try:
@@ -354,7 +356,7 @@ async def get_suppressed_signals(request):
     mode = await _load_trading_mode(redis)
     profile = _trading_mode_profile(mode)
     raw_entries = await redis.xrevrange(STREAM_SCAN_SUPPRESSED, count=limit)
-    rows = []
+    rows: list[Payload] = []
     reason_counts: dict[str, int] = {}
     strategy_counts: dict[str, int] = {}
     for stream_id, fields in raw_entries:
@@ -387,7 +389,7 @@ async def get_suppressed_signals(request):
 
 
 @routes.get("/api/signals/{symbol}")
-async def get_signal(request):
+async def get_signal(request: web.Request) -> web.Response:
     """Get latest signal for a specific symbol."""
     symbol = request.match_info["symbol"].upper()
     redis = request.app["redis"]
@@ -402,7 +404,7 @@ async def get_signal(request):
 
 
 @routes.get("/api/prebreakout")
-async def get_prebreakout(request):
+async def get_prebreakout(request: web.Request) -> web.Response:
     """List symbols in pre-breakout states (watchlist).
 
     Returns only COMPRESSING, ACCUMULATING, COILED symbols.
@@ -412,7 +414,7 @@ async def get_prebreakout(request):
 
     # SCAN for prebreak keys
     cursor = 0
-    watchlist = []
+    watchlist: list[Payload] = []
     while True:
         cursor, keys = await redis.scan(cursor=cursor, match=f"{PREBREAK_PREFIX}*", count=100)
         for key in keys:
@@ -444,7 +446,7 @@ async def get_prebreakout(request):
             break
 
     # Sort by readiness_score descending
-    watchlist.sort(key=lambda x: x.get("readiness_score", 0), reverse=True)
+    watchlist.sort(key=lambda x: float(x.get("readiness_score") or 0), reverse=True)
 
     return web.json_response(
         {
@@ -454,29 +456,8 @@ async def get_prebreakout(request):
     )
 
 
-def _decode_hash(data: dict) -> dict:
-    """Decode Redis hash bytes to typed dict with JSON and numeric conversion."""
-    result = {}
-    for k, v in data.items():
-        kk = k.decode() if isinstance(k, bytes) else k
-        vv = v.decode() if isinstance(v, bytes) else v
-        if kk in _JSON_FIELDS:
-            try:
-                result[kk] = _json.loads(vv)
-            except (_json.JSONDecodeError, TypeError):
-                result[kk] = [] if kk.endswith("_reasons") else {}
-        elif kk not in _STRING_FIELDS:
-            try:
-                result[kk] = float(vv)
-            except (ValueError, TypeError):
-                result[kk] = vv
-        else:
-            result[kk] = vv
-    return result
-
-
 @routes.get("/api/sectors")
-async def get_sectors(request):
+async def get_sectors(request: web.Request) -> web.Response:
     """List sector rankings with breadth, strength, and trend.
 
     Returns sectors ordered by rank (1 = strongest).
@@ -484,7 +465,7 @@ async def get_sectors(request):
     redis = request.app["redis"]
 
     cursor = 0
-    sectors = []
+    sectors: list[Payload] = []
     while True:
         cursor, keys = await redis.scan(cursor=cursor, match=f"{SECTOR_PREFIX}*", count=100)
         for key in keys:
@@ -498,7 +479,7 @@ async def get_sectors(request):
             break
 
     # Sort by rank ascending (1 = strongest)
-    sectors.sort(key=lambda x: x.get("rank", 999))
+    sectors.sort(key=lambda x: float(x.get("rank") or 999))
 
     return web.json_response(
         {
@@ -509,7 +490,7 @@ async def get_sectors(request):
 
 
 @routes.get("/api/regime")
-async def get_regime(request):
+async def get_regime(request: web.Request) -> web.Response:
     """Get current market regime state."""
     redis = request.app["redis"]
 
@@ -529,7 +510,7 @@ MARKET_BREADTH_KEY = "infusion:market-breadth:health"
 
 
 @routes.get("/api/market/breadth-health")
-async def market_breadth_health(request):
+async def market_breadth_health(request: web.Request) -> web.Response:
     """GET /api/market/breadth-health -- 5-component breadth regime read
     across Infusion's tracked F&O universe (see api/market_breadth.py for
     the real "does this need a new data feed" finding: it doesn't, every
@@ -547,13 +528,13 @@ async def market_breadth_health(request):
 
 
 @routes.get("/api/alerts/log")
-async def get_alert_log(request):
+async def get_alert_log(request: web.Request) -> web.Response:
     """Get recent delivery log entries (last 50)."""
     redis = request.app["redis"]
     import json
 
     raw = await redis.lrange(ALERT_LOG_KEY, 0, 49)
-    entries = []
+    entries: list[Payload] = []
     for item in raw:
         val = item.decode() if isinstance(item, bytes) else item
         try:
@@ -565,7 +546,7 @@ async def get_alert_log(request):
 
 
 @routes.post("/api/alerts/test")
-async def send_test_alert(request):
+async def send_test_alert(request: web.Request) -> web.Response:
     """Publish a safe Telegram test alert.
 
     This deliberately uses signal_type=test_alert so the alerter can bypass
@@ -600,7 +581,7 @@ async def send_test_alert(request):
 
 
 @routes.get("/api/alerts/test/preview")
-async def preview_test_alert(request):
+async def preview_test_alert(request: web.Request) -> web.Response:
     """Preview the safe Telegram test alert without sending anything."""
     payload, _ = _test_alert_payload({})
     return web.json_response(
@@ -614,7 +595,7 @@ async def preview_test_alert(request):
 
 
 @routes.get("/api/alerts/stats")
-async def get_alert_stats(request):
+async def get_alert_stats(request: web.Request) -> web.Response:
     """Get delivery stats: rate, burst counters."""
     redis = request.app["redis"]
 
@@ -639,15 +620,15 @@ async def get_alert_stats(request):
 
 
 @routes.get("/api/alerts/mute")
-async def get_muted(request):
+async def get_muted(request: web.Request) -> web.Response:
     """List muted symbols and strategies."""
     redis = request.app["redis"]
 
     symbols = await redis.smembers(ALERT_MUTE_SYMBOLS_KEY)
     strategies = await redis.smembers(ALERT_MUTE_STRATEGIES_KEY)
 
-    def decode(s):
-        return {(x.decode() if isinstance(x, bytes) else x) for x in s}
+    def decode(values: set[Any]) -> set[str]:
+        return {str(x.decode() if isinstance(x, bytes) else x) for x in values}
 
     return web.json_response(
         {
@@ -658,7 +639,7 @@ async def get_muted(request):
 
 
 @routes.post("/api/alerts/mute/{symbol}")
-async def mute_symbol(request):
+async def mute_symbol(request: web.Request) -> web.Response:
     """Mute a symbol from receiving Telegram alerts."""
     symbol = request.match_info["symbol"].upper()
     redis = request.app["redis"]
@@ -667,7 +648,7 @@ async def mute_symbol(request):
 
 
 @routes.delete("/api/alerts/mute/{symbol}")
-async def unmute_symbol(request):
+async def unmute_symbol(request: web.Request) -> web.Response:
     """Unmute a symbol to resume receiving Telegram alerts."""
     symbol = request.match_info["symbol"].upper()
     redis = request.app["redis"]

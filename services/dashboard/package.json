@@ -1,0 +1,10 @@
+{
+  "name": "infusion-dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "lint": "node scripts/verify-js.mjs",
+    "check": "node scripts/verify-js.mjs && node scripts/verify-shell.mjs"
+  }
+}

@@ -10,6 +10,7 @@ Design principles:
 """
 
 from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass
@@ -34,7 +35,7 @@ class ScannerSymbolState:
     # contract explicitly forbids mutating state) -- engine.py writes it
     # back after evaluate() returns, the same caller-writes-after pattern
     # already used for update_from_features() below.
-    watch_episodes: dict[str, dict] = field(default_factory=dict)
+    watch_episodes: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     # Previous feature values (for crossover detection)
     prev_ltp: float = 0.0
@@ -56,7 +57,7 @@ class ScannerSymbolState:
     bb_width_declining_count: int = 0
     ticks_in_pre_breakout: int = 0
 
-    def update_from_features(self, features: dict) -> None:
+    def update_from_features(self, features: dict[str, Any]) -> None:
         """Snapshot current values as 'previous' and update from new features.
 
         Called AFTER strategy evaluation so that prev_* values reflect
@@ -75,7 +76,7 @@ class ScannerSymbolState:
 class StateManager:
     """Manages per-symbol scanner state with bounded lifecycle."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._states: dict[str, ScannerSymbolState] = {}
 
     def get_or_create(self, symbol: str) -> ScannerSymbolState:
@@ -91,7 +92,7 @@ class StateManager:
         return len(self._states)
 
     @property
-    def stats(self) -> dict:
+    def stats(self) -> dict[str, int]:
         return {
             "symbols_tracked": len(self._states),
             "total_ticks": sum(s.tick_count for s in self._states.values()),

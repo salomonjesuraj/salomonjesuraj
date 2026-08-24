@@ -42,6 +42,7 @@ import asyncio
 import contextlib
 import json
 from datetime import UTC, datetime
+from typing import Any
 
 import msgpack
 import structlog
@@ -63,6 +64,7 @@ EBIE_VERDICT_LITE_TTL_SEC = 24 * 3600
 MARKET_CONTEXT_TTL_SEC = 24 * 3600
 SWEEP_INTERVAL_SEC = 60
 STATUS_KEY = "infusion:ebie-state-queue:status"
+Payload = dict[str, Any]
 
 CANONICAL_STATES = (
     "IDLE",
@@ -121,7 +123,7 @@ CONFIDENCE_BANDS = (
 )
 
 
-def _confidence_band(score) -> str:
+def _confidence_band(score: Any) -> str:
     if not isinstance(score, (int, float)):
         return "LOW"
     for threshold, label in CONFIDENCE_BANDS:
@@ -131,12 +133,12 @@ def _confidence_band(score) -> str:
 
 
 def compute_lightweight_verdict(
-    entry: dict,
+    entry: Payload,
     state: str,
     direction: str,
-    market_context: dict | None = None,
-    futures: dict | None = None,
-) -> dict:
+    market_context: Payload | None = None,
+    futures: Payload | None = None,
+) -> Payload:
     """Phase 3 -- one lightweight verdict per (symbol, direction) per
     sweep. Pure function, no I/O, same testability shape as
     map_ebie_state() above -- takes the already-mapped canonical `state`
@@ -268,7 +270,7 @@ def compute_lightweight_verdict(
     }
 
 
-def map_ebie_state(entry: dict, has_active_signal: bool) -> tuple[str, str, str]:
+def map_ebie_state(entry: Payload, has_active_signal: bool) -> tuple[str, str, str]:
     """Derive (state, direction, reason) for one /api/ticks row.
 
     Pure function, no I/O -- easy to unit-test and to keep in sync with
@@ -309,7 +311,7 @@ def map_ebie_state(entry: dict, has_active_signal: bool) -> tuple[str, str, str]
     return "IDLE", direction, "no active evidence"
 
 
-async def _read_prev_states(redis, keys: list[str]) -> dict[str, str]:
+async def _read_prev_states(redis: Any, keys: list[str]) -> dict[str, str]:
     if not keys:
         return {}
     values = await redis.mget([f"{KEY_EBIE_STATE_PREFIX}{k}" for k in keys])
@@ -320,7 +322,7 @@ async def _read_prev_states(redis, keys: list[str]) -> dict[str, str]:
     return result
 
 
-async def _write_states(redis, updates: dict[str, str]) -> None:
+async def _write_states(redis: Any, updates: dict[str, str]) -> None:
     if not updates:
         return
     pipe = redis.pipeline(transaction=False)
@@ -329,7 +331,7 @@ async def _write_states(redis, updates: dict[str, str]) -> None:
     await pipe.execute()
 
 
-async def sweep_once(app) -> dict:
+async def sweep_once(app: Any) -> Payload:
     """One shadow-state-machine pass. Called every SWEEP_INTERVAL_SEC by
     ebie_state_loop(); also directly callable (e.g. from a verification
     script) since it only needs `app`'s redis/pg_pool.
@@ -366,7 +368,9 @@ async def sweep_once(app) -> dict:
 
     transitions = 0
     state_updates: dict[str, str] = {}
-    by_entry = {e.get("symbol"): e for e in ticks if e.get("symbol")}
+    by_entry: dict[str, Payload] = {
+        str(e.get("symbol")): e for e in ticks if isinstance(e.get("symbol"), str)
+    }
 
     async with pool.acquire() as conn:
         for symbol, (state, direction, reason) in mapped.items():
@@ -432,7 +436,7 @@ async def sweep_once(app) -> dict:
     # others, and a total Redis failure just means every symbol's
     # lightweight verdict gets futures_context=None this sweep, same
     # "never a silent fabricated number" convention as everywhere else.
-    futures_map: dict[str, dict] = {}
+    futures_map: dict[str, Payload] = {}
     try:
         futures_pipe = redis.pipeline(transaction=False)
         for symbol in symbols:
@@ -441,7 +445,7 @@ async def sweep_once(app) -> dict:
         for symbol, raw in zip(symbols, futures_results, strict=False):
             if not raw:
                 continue
-            decoded: dict = {}
+            decoded: Payload = {}
             for k, v in raw.items():
                 key = k.decode() if isinstance(k, bytes) else k
                 val = v.decode() if isinstance(v, bytes) else v
@@ -525,7 +529,7 @@ async def sweep_once(app) -> dict:
     return status
 
 
-async def ebie_state_loop(app) -> None:
+async def ebie_state_loop(app: Any) -> None:
     redis = app.get("redis")
     pool = app.get("pg_pool")
     if not redis or not pool:

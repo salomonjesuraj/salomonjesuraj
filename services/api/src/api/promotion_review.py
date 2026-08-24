@@ -31,9 +31,12 @@ the CORRECT behavior, not a bug to work around.
 from __future__ import annotations
 
 import json
+from typing import Any
+
+Payload = dict[str, Any]
 
 
-def evaluate_promotion_readiness(report: dict) -> dict:
+def evaluate_promotion_readiness(report: Payload) -> Payload:
     """Pure function: classifies an already-computed shadow-validation
     report (api/shadow_validation.py's compute_shadow_validation_report()
     output) into a readiness bucket + the real reasons behind it."""
@@ -117,7 +120,7 @@ def evaluate_promotion_readiness(report: dict) -> dict:
     }
 
 
-async def record_promotion_review(pool, report: dict) -> dict:
+async def record_promotion_review(pool: Any, report: Payload) -> Payload:
     """Persists one weekly review snapshot. Never writes human_decision
     -- that column stays NULL until a person explicitly sets it via a
     separate, deliberate action outside this automated path."""
@@ -159,7 +162,7 @@ async def record_promotion_review(pool, report: dict) -> dict:
     }
 
 
-async def fetch_promotion_review_history(pool, limit: int = 20) -> dict:
+async def fetch_promotion_review_history(pool: Any, limit: int = 20) -> Payload:
     if not pool:
         return {
             "available": False,

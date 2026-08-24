@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from datetime import UTC, datetime, timedelta, timezone
+from typing import Any
 
 import asyncpg
 import structlog
@@ -31,6 +32,7 @@ from archiver.config import ArchiverSettings
 logger = structlog.get_logger()
 
 _IST = timezone(timedelta(hours=5, minutes=30))
+Payload = dict[str, Any]
 
 _FETCH_UNTRACKED_SQL = """
 SELECT id, signal_id, symbol, signal_type, entry_price, invalidation_price,
@@ -87,7 +89,7 @@ class OutcomeTracker:
         self._signal_ttl_min = settings.signal_ttl_min
         self._market_open = (settings.market_open_hour, settings.market_open_min)
         self._market_close = (settings.market_close_hour, settings.market_close_min)
-        self._task: asyncio.Task | None = None
+        self._task: asyncio.Task[None] | None = None
         self._running = False
 
         # Stats
@@ -272,7 +274,7 @@ class OutcomeTracker:
         logger.info("outcome_tracker_stopped")
 
     @property
-    def stats(self) -> dict:
+    def stats(self) -> Payload:
         return {
             "tracker_cycles": self._cycles,
             "target_hits": self._target_hits,

@@ -31,6 +31,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Any
 
 import structlog
 from infusion_common.timing import now_us
@@ -94,7 +95,7 @@ class PreBreakoutTracker:
     async def update(
         self,
         symbol: str,
-        features: dict,
+        features: dict[str, Any],
         state: ScannerSymbolState,
     ) -> PreBreakoutSnapshot | None:
         """Evaluate pre-breakout state transition for a symbol.
@@ -428,5 +429,5 @@ class PreBreakoutTracker:
         state.ticks_in_pre_breakout = 0
 
     @property
-    def stats(self) -> dict:
+    def stats(self) -> dict[str, int]:
         return {"prebreak_transitions": self._transitions}

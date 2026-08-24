@@ -15,6 +15,7 @@ import asyncio
 import contextlib
 import json
 import time
+from typing import Any
 
 import aiohttp
 import msgpack
@@ -35,9 +36,10 @@ logger = structlog.get_logger()
 SWEEP_INTERVAL_SEC = 60
 STATUS_KEY = "infusion:futures-queue:status"
 STATE_TTL_SEC = 300  # a few sweep intervals of grace, same order as other queues' caches
+Payload = dict[str, Any]
 
 
-async def _load_underlyings(redis) -> dict[str, str]:
+async def _load_underlyings(redis: Any) -> dict[str, str]:
     """instrument_key (NSE_EQ|...) -> symbol, from the live universe."""
     all_symbols = await redis.hgetall("infusion:symbols")
     result: dict[str, str] = {}
@@ -53,7 +55,7 @@ async def _load_underlyings(redis) -> dict[str, str]:
     return result
 
 
-async def sweep_once(app) -> dict:
+async def sweep_once(app: Any) -> Payload:
     redis = app.get("redis")
     if not redis:
         return {"available": False, "reason": "Redis not available."}
@@ -80,7 +82,7 @@ async def sweep_once(app) -> dict:
         if not master:
             return {"available": False, "reason": "Futures instrument master unavailable."}
 
-        symbol_to_contract: dict[str, dict] = {}
+        symbol_to_contract: dict[str, Payload] = {}
         contract_keys: list[str] = []
         for underlying_key, symbol in underlyings.items():
             contracts = master.get(underlying_key)
@@ -158,7 +160,7 @@ async def sweep_once(app) -> dict:
     return status
 
 
-async def futures_queue_loop(app) -> None:
+async def futures_queue_loop(app: Any) -> None:
     redis = app.get("redis")
     if not redis:
         logger.info("futures_queue_skipped", reason="redis_unavailable")

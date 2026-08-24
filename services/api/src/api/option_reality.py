@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 
 def derive_option_sl(
     entry_underlying: float,
     sl_underlying: float,
     entry_premium_ask: float,
     delta: float,
-) -> dict:
+) -> dict[str, Any]:
     """Derive option stop from underlying risk and option delta.
 
     This replaces the old fixed-percentage premium stop.  For stock options,
@@ -53,7 +55,7 @@ def breakeven_gate(
     daily_atr_pct: float,
     expected_holding_days: float,
     underlying_t1: float,
-) -> dict:
+) -> dict[str, Any]:
     """Check whether expected underlying move can pay for the option."""
     bias = str(bias or "").upper()
     spot = max(float(spot or 0.0), 0.0)
@@ -108,7 +110,7 @@ def breakeven_gate(
     }
 
 
-def delta_band_gate(delta: float) -> dict:
+def delta_band_gate(delta: float) -> dict[str, Any]:
     delta = float(delta or 0.0)
     ok = 0.35 <= abs(delta) <= 0.60
     return {
@@ -117,7 +119,7 @@ def delta_band_gate(delta: float) -> dict:
     }
 
 
-def iv_rank_gate(iv_rank: float | None) -> dict:
+def iv_rank_gate(iv_rank: float | None) -> dict[str, Any]:
     if iv_rank is None:
         return {
             "iv_rank_pass": None,

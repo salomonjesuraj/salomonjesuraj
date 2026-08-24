@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime, timedelta, timezone
+from typing import Any
 
 _IST = timezone(timedelta(hours=5, minutes=30))
 
@@ -29,7 +30,7 @@ DEFAULT_MAX_DAILY_LOSS = 2500.0
 CONSECUTIVE_LOOKBACK = 20  # how many recent decided signals to scan for a losing streak
 
 
-def _decode_json(raw) -> dict:
+def _decode_json(raw: Any) -> dict[str, Any]:
     try:
         decoded = json.loads(raw) if isinstance(raw, str) else (raw or {})
     except (json.JSONDecodeError, TypeError):
@@ -50,7 +51,7 @@ def _streak(labels: list[str]) -> int:
     return streak
 
 
-async def _read_max_daily_loss(redis) -> float:
+async def _read_max_daily_loss(redis: Any) -> float:
     if not redis:
         return DEFAULT_MAX_DAILY_LOSS
     try:
@@ -63,7 +64,7 @@ async def _read_max_daily_loss(redis) -> float:
         return DEFAULT_MAX_DAILY_LOSS
 
 
-async def compute_daily_loss_budget(pool, redis) -> dict:
+async def compute_daily_loss_budget(pool: Any, redis: Any) -> dict[str, Any]:
     """Realized loss today = sum of risk_amount (position_sizing sub_score)
     across today's (IST trading day) real STOP_HIT signals -- each stop-out
     is treated as having realized its own at-risk amount, the same rupee
@@ -113,7 +114,7 @@ async def compute_daily_loss_budget(pool, redis) -> dict:
     }
 
 
-async def compute_consecutive_losses(pool) -> dict:
+async def compute_consecutive_losses(pool: Any) -> dict[str, Any]:
     """Overall + per-strategy: scanning back from the most recent decided
     signal, how many in a row are STOP_HIT before the first TARGET_HIT
     (or history runs out)? A real, simple momentum-of-losses read, not a

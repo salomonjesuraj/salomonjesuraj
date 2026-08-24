@@ -12,19 +12,27 @@ Data sources:
 import asyncio
 import json
 import time
+from typing import Any, cast
 
 from aiohttp import web
 
 routes = web.RouteTableDef()
+Payload = dict[str, Any]
+Bar = dict[str, Any]
 
 
-def _decode_ohlc(members: list) -> list[dict]:
+def _decode_ohlc(members: list[object]) -> list[Bar]:
     """Decode ZSET members into OHLC bar dicts for TradingView."""
-    bars = []
+    bars: list[Bar] = []
     for member in members:
-        val = member.decode() if isinstance(member, bytes) else member
+        if isinstance(member, bytes):
+            val = member.decode()
+        elif isinstance(member, str):
+            val = member
+        else:
+            continue
         try:
-            bar = json.loads(val)
+            bar = cast(Payload, json.loads(val))
             bars.append(
                 {
                     "time": int(bar.get("t", 0)),  # Unix timestamp
@@ -40,8 +48,8 @@ def _decode_ohlc(members: list) -> list[dict]:
     return bars
 
 
-def _merge_bars(*groups: list[dict]) -> list[dict]:
-    by_time = {}
+def _merge_bars(*groups: list[Bar]) -> list[Bar]:
+    by_time: dict[int, Bar] = {}
     for group in groups:
         for bar in group:
             if bar.get("time"):
@@ -49,10 +57,10 @@ def _merge_bars(*groups: list[dict]) -> list[dict]:
     return [by_time[key] for key in sorted(by_time)]
 
 
-def _aggregate(bars: list[dict], minutes: int) -> list[dict]:
+def _aggregate(bars: list[Bar], minutes: int) -> list[Bar]:
     if minutes <= 1:
         return bars
-    buckets = {}
+    buckets: dict[int, Bar] = {}
     width = minutes * 60
     for bar in bars:
         bucket = int(bar["time"]) // width * width
@@ -68,7 +76,7 @@ def _aggregate(bars: list[dict], minutes: int) -> list[dict]:
 
 
 @routes.get("/api/chart/{symbol}/intraday")
-async def get_intraday_chart(request):
+async def get_intraday_chart(request: web.Request) -> web.Response:
     """Get intraday 1-min OHLC bars.
 
     Built by the feature-engine bar_builder from live tick aggregation.
@@ -86,8 +94,8 @@ async def get_intraday_chart(request):
     to_ts = request.query.get("to", str(int(time.time())))
 
     try:
-        from_ts = float(from_ts)
-        to_ts = float(to_ts)
+        from_score = float(from_ts)
+        to_score = float(to_ts)
     except ValueError:
         return web.json_response({"error": "Invalid timestamp"}, status=400)
 
@@ -98,8 +106,8 @@ async def get_intraday_chart(request):
 
     # ZRANGEBYSCORE to get bars in time range
     history, live = await asyncio.gather(
-        redis.zrangebyscore(f"infusion:ohlc:{symbol}:history:1m", from_ts, to_ts),
-        redis.zrangebyscore(f"infusion:ohlc:{symbol}:1m", from_ts, to_ts),
+        redis.zrangebyscore(f"infusion:ohlc:{symbol}:history:1m", from_score, to_score),
+        redis.zrangebyscore(f"infusion:ohlc:{symbol}:1m", from_score, to_score),
     )
     bars = _aggregate(_merge_bars(_decode_ohlc(history), _decode_ohlc(live)), interval_minutes)
 
@@ -114,7 +122,7 @@ async def get_intraday_chart(request):
 
 
 @routes.get("/api/chart/{symbol}/daily")
-async def get_daily_chart(request):
+async def get_daily_chart(request: web.Request) -> web.Response:
     """Get daily OHLC bars.
 
     Data source priority:

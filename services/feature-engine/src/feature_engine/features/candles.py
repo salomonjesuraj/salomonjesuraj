@@ -11,6 +11,11 @@ Shooting Star with flat range-ratio thresholds.
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
+from typing import Any
+
+from feature_engine.state import SymbolState
+
 MINTICK = 0.01
 STRONG_BODY_PCT = 0.65  # Pine's candleBodyPct
 DOJI_BODY_PCT = 0.08  # Pine's dojiBodyPct
@@ -31,7 +36,10 @@ PIN_BAR_BODY_PCT = 0.33  # body <= this fraction of total range
 PIN_BAR_OPPOSITE_WICK_PCT = 0.15  # opposite wick must stay small
 
 
-def body_pct(bars) -> float:
+BarLike = Mapping[str, Any]
+
+
+def body_pct(bars: Iterable[BarLike]) -> float:
     """Latest bar's body/range ratio — matches Pine's `bodyPct`. Used by the
     strength meter's candle-body component (see scanner/pine_confidence.py)."""
     items = list(bars)
@@ -43,7 +51,7 @@ def body_pct(bars) -> float:
     return abs(c - o) / rng
 
 
-def update_body_ema(state, open_: float, close: float) -> None:
+def update_body_ema(state: SymbolState, open_: float, close: float) -> None:
     """Advance the EMA(14)-of-body-size baseline. Call once per completed bar,
     same contract as the other update_* functions."""
     body = abs(close - open_)
@@ -55,7 +63,7 @@ def update_body_ema(state, open_: float, close: float) -> None:
         state.body_size_ema = body * k + state.body_size_ema * (1 - k)
 
 
-def detect_candle_pattern(bars, body_size_ema: float = 0.0) -> str:
+def detect_candle_pattern(bars: Iterable[BarLike], body_size_ema: float = 0.0) -> str:
     """Return the single most-significant pattern name for the latest bar,
     or "" if none. `bars` is the recent completed-1m-bar window (o/h/l/c
     dicts, newest last — same shape the engine already maintains).
@@ -76,7 +84,7 @@ def detect_candle_pattern(bars, body_size_ema: float = 0.0) -> str:
     prev = items[-2] if len(items) >= 2 else None
     prev2 = items[-3] if len(items) >= 3 else None
 
-    def bo(bar):
+    def bo(bar: BarLike) -> tuple[float, float]:
         return float(bar["o"]), float(bar["c"])
 
     bull_engulf = bear_engulf = piercing = dark_cloud = False

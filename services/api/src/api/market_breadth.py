@@ -59,6 +59,7 @@ wired into scanner suppression, scoring, or position sizing.
 from __future__ import annotations
 
 import json
+from typing import Any
 
 import msgpack
 
@@ -76,7 +77,11 @@ def _grade(score: float) -> str:
     return "weak"
 
 
-async def _load_universe(redis) -> list[str]:
+DecodedHash = dict[str, float | str]
+Result = dict[str, Any]
+
+
+async def _load_universe(redis: Any) -> list[str]:
     raw = await redis.hgetall("infusion:symbols")
     symbols: list[str] = []
     for _, meta_raw in raw.items():
@@ -90,8 +95,8 @@ async def _load_universe(redis) -> list[str]:
     return symbols
 
 
-def _decode_feature_hash(data: dict) -> dict:
-    out = {}
+def _decode_feature_hash(data: dict[Any, Any] | None) -> DecodedHash:
+    out: DecodedHash = {}
     for k, v in (data or {}).items():
         key = k.decode() if isinstance(k, bytes) else k
         val = v.decode() if isinstance(v, bytes) else v
@@ -102,7 +107,7 @@ def _decode_feature_hash(data: dict) -> dict:
     return out
 
 
-def _decode_mtf(raw) -> dict | None:
+def _decode_mtf(raw: Any) -> Result | None:
     if not raw:
         return None
     try:
@@ -128,7 +133,7 @@ def build_breadth_result(
     week52_covered: int,
     week52_near_high: int,
     week52_near_low: int,
-) -> dict:
+) -> Result:
     """Pure aggregation -> result dict. Split out from compute_market_breadth()
     (which does the actual Redis pipeline read) specifically so the scoring
     math is unit-testable without a live Redis connection.
@@ -151,7 +156,7 @@ def build_breadth_result(
             50.0 + (week52_near_high - week52_near_low) / week52_covered * 50.0, 1
         )
 
-    components = {
+    components: dict[str, Result] = {
         "advance_decline": {
             "available": advance_decline_pct is not None,
             "score": advance_decline_pct,
@@ -193,7 +198,9 @@ def build_breadth_result(
         },
     }
 
-    active_scores = [c["score"] for c in components.values() if c["available"]]
+    active_scores = [
+        c["score"] for c in components.values() if c["available"] and isinstance(c["score"], float)
+    ]
     health_score = round(sum(active_scores) / len(active_scores), 1) if active_scores else None
 
     return {
@@ -208,7 +215,7 @@ def build_breadth_result(
     }
 
 
-async def compute_market_breadth(redis) -> dict:
+async def compute_market_breadth(redis: Any) -> Result:
     if not redis:
         return {"available": False, "reason": "Redis not available."}
 

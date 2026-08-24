@@ -34,20 +34,24 @@ built now since there is nothing yet to schedule.
 from __future__ import annotations
 
 import json
+from collections.abc import Awaitable, Callable
+from typing import Any, cast
 
 from api.calibration import calibrate_and_validate
 from api.shadow_validation import GATE_B_MIN_EPISODES, GATE_B_MIN_SESSIONS, _fetch_episodes, _gate_b
 
+Payload = dict[str, Any]
 
-def _decode_json(raw) -> dict:
+
+def _decode_json(raw: object) -> Payload:
     try:
         decoded = json.loads(raw) if isinstance(raw, str) else (raw or {})
     except (json.JSONDecodeError, TypeError):
         decoded = {}
-    return decoded if isinstance(decoded, dict) else {}
+    return cast(Payload, decoded) if isinstance(decoded, dict) else {}
 
 
-async def compute_verdict_calibration(pool) -> dict:
+async def compute_verdict_calibration(pool: Any) -> Payload:
     """Real, honest answer to "is the Verdict Engine's own directional_score
     calibratable yet?" -- against the directive's own literal 300-episode/
     25-session gate, not a softer proxy. Returns available=False with the
@@ -59,7 +63,8 @@ async def compute_verdict_calibration(pool) -> dict:
         return {"available": False, "reason": "Postgres analytics pool is not available."}
 
     try:
-        rows = await _fetch_episodes(pool)
+        fetch_episodes = cast(Callable[[Any], Awaitable[Any]], _fetch_episodes)
+        rows = await fetch_episodes(pool)
     except Exception as exc:
         return {"available": False, "reason": f"episode query failed: {exc}"}
 

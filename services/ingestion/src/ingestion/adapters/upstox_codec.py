@@ -9,11 +9,17 @@ depth, OHLC, volume, OI and top-level feed instrument keys.
 from __future__ import annotations
 
 import struct
+from collections.abc import Iterator
 from dataclasses import dataclass
+from typing import Any
 
 
 class ProtoDecodeError(ValueError):
     """Raised when a protobuf frame cannot be decoded."""
+
+
+Payload = dict[str, Any]
+FieldValue = int | bytes
 
 
 @dataclass(slots=True)
@@ -36,7 +42,7 @@ class DecodedFeed:
     # EBIE EB-6: up to 5 {bidP,bidQ,askP,askQ} levels, best-first. Empty
     # for feed types that only ever carry one level (index feeds, the
     # FirstLevelWithGreeks options message type) -- never fabricated.
-    depth_levels: list | None = None
+    depth_levels: list[Payload] | None = None
 
 
 def _read_varint(data: bytes, pos: int) -> tuple[int, int]:
@@ -54,7 +60,7 @@ def _read_varint(data: bytes, pos: int) -> tuple[int, int]:
     raise ProtoDecodeError("invalid_varint")
 
 
-def _fields(data: bytes):
+def _fields(data: bytes) -> Iterator[tuple[int, int, FieldValue]]:
     pos = 0
     size = len(data)
     while pos < size:
@@ -85,16 +91,16 @@ def _fields(data: bytes):
             raise ProtoDecodeError(f"unsupported_wire_type_{wire_type}")
 
 
-def _double(value) -> float:
+def _double(value: object) -> float:
     return float(struct.unpack("<d", value)[0]) if isinstance(value, bytes) else 0.0
 
 
-def _text(value) -> str:
+def _text(value: object) -> str:
     return value.decode("utf-8", errors="replace") if isinstance(value, bytes) else ""
 
 
-def _parse_ltpc(data: bytes) -> dict:
-    out = {"ltp": 0.0, "ltt": 0, "ltq": 0, "cp": 0.0}
+def _parse_ltpc(data: bytes) -> Payload:
+    out: Payload = {"ltp": 0.0, "ltt": 0, "ltq": 0, "cp": 0.0}
     for field_no, _, value in _fields(data):
         if field_no == 1:
             out["ltp"] = _double(value)
@@ -107,8 +113,8 @@ def _parse_ltpc(data: bytes) -> dict:
     return out
 
 
-def _parse_quote(data: bytes) -> dict:
-    out = {"bidQ": 0, "bidP": 0.0, "askQ": 0, "askP": 0.0}
+def _parse_quote(data: bytes) -> Payload:
+    out: Payload = {"bidQ": 0, "bidP": 0.0, "askQ": 0, "askP": 0.0}
     for field_no, _, value in _fields(data):
         if field_no == 1:
             out["bidQ"] = int(value)
@@ -121,7 +127,7 @@ def _parse_quote(data: bytes) -> dict:
     return out
 
 
-def _parse_market_level(data: bytes) -> list[dict]:
+def _parse_market_level(data: bytes) -> list[Payload]:
     """Parse EVERY depth level in a MarketLevel message.
 
     EBIE EB-6 fix: Upstox's real MarketLevel message has a REPEATED
@@ -134,15 +140,23 @@ def _parse_market_level(data: bytes) -> list[dict]:
     or Upstox Plus entitlement to unlock. See docs/EBIE-BLUEPRINT.md
     Section 4.6 / the authorized D5-baseline decision.
     """
-    levels: list[dict] = []
+    levels: list[Payload] = []
     for field_no, _, value in _fields(data):
         if field_no == 1 and isinstance(value, bytes):
             levels.append(_parse_quote(value))
     return levels
 
 
-def _parse_ohlc(data: bytes) -> dict:
-    out = {"interval": "", "open": 0.0, "high": 0.0, "low": 0.0, "close": 0.0, "vol": 0, "ts": 0}
+def _parse_ohlc(data: bytes) -> Payload:
+    out: Payload = {
+        "interval": "",
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 0.0,
+        "vol": 0,
+        "ts": 0,
+    }
     for field_no, _, value in _fields(data):
         if field_no == 1:
             out["interval"] = _text(value)
@@ -161,9 +175,9 @@ def _parse_ohlc(data: bytes) -> dict:
     return out
 
 
-def _parse_market_ohlc(data: bytes) -> dict:
-    latest = {}
-    daily = {}
+def _parse_market_ohlc(data: bytes) -> Payload:
+    latest: Payload = {}
+    daily: Payload = {}
     for field_no, _, value in _fields(data):
         if field_no != 1 or not isinstance(value, bytes):
             continue
@@ -176,8 +190,8 @@ def _parse_market_ohlc(data: bytes) -> dict:
     return daily or latest
 
 
-def _parse_market_full_feed(data: bytes) -> dict:
-    out: dict = {}
+def _parse_market_full_feed(data: bytes) -> Payload:
+    out: Payload = {}
     for field_no, _, value in _fields(data):
         if field_no == 1 and isinstance(value, bytes):
             out["ltpc"] = _parse_ltpc(value)
@@ -201,8 +215,8 @@ def _parse_market_full_feed(data: bytes) -> dict:
     return out
 
 
-def _parse_index_full_feed(data: bytes) -> dict:
-    out: dict = {}
+def _parse_index_full_feed(data: bytes) -> Payload:
+    out: Payload = {}
     for field_no, _, value in _fields(data):
         if field_no == 1 and isinstance(value, bytes):
             out["ltpc"] = _parse_ltpc(value)
@@ -211,7 +225,7 @@ def _parse_index_full_feed(data: bytes) -> dict:
     return out
 
 
-def _parse_full_feed(data: bytes) -> dict:
+def _parse_full_feed(data: bytes) -> Payload:
     for field_no, _, value in _fields(data):
         if field_no == 1 and isinstance(value, bytes):
             return _parse_market_full_feed(value)
@@ -220,8 +234,8 @@ def _parse_full_feed(data: bytes) -> dict:
     return {}
 
 
-def _parse_first_level_with_greeks(data: bytes) -> dict:
-    out: dict = {}
+def _parse_first_level_with_greeks(data: bytes) -> Payload:
+    out: Payload = {}
     for field_no, _, value in _fields(data):
         if field_no == 1 and isinstance(value, bytes):
             out["ltpc"] = _parse_ltpc(value)
@@ -234,7 +248,7 @@ def _parse_first_level_with_greeks(data: bytes) -> dict:
     return out
 
 
-def _parse_feed(data: bytes) -> dict:
+def _parse_feed(data: bytes) -> Payload:
     for field_no, _, value in _fields(data):
         if field_no == 1 and isinstance(value, bytes):
             return {"ltpc": _parse_ltpc(value)}
@@ -245,9 +259,9 @@ def _parse_feed(data: bytes) -> dict:
     return {}
 
 
-def _parse_feed_map_entry(data: bytes) -> tuple[str, dict] | None:
+def _parse_feed_map_entry(data: bytes) -> tuple[str, Payload] | None:
     key = ""
-    feed = {}
+    feed: Payload = {}
     for field_no, _, value in _fields(data):
         if field_no == 1:
             key = _text(value)
@@ -258,7 +272,7 @@ def _parse_feed_map_entry(data: bytes) -> tuple[str, dict] | None:
     return key, feed
 
 
-def _to_decoded_feed(instrument_key: str, feed: dict, current_ts: int) -> DecodedFeed | None:
+def _to_decoded_feed(instrument_key: str, feed: Payload, current_ts: int) -> DecodedFeed | None:
     ltpc = feed.get("ltpc") or {}
     ltp = float(ltpc.get("ltp") or 0)
     if ltp <= 0:
@@ -290,7 +304,7 @@ def _to_decoded_feed(instrument_key: str, feed: dict, current_ts: int) -> Decode
 def decode_feed_response(data: bytes) -> list[DecodedFeed]:
     """Decode a Market Data Feed V3 ``FeedResponse`` frame."""
     current_ts = 0
-    raw_feeds: list[tuple[str, dict]] = []
+    raw_feeds: list[tuple[str, Payload]] = []
     for field_no, _, value in _fields(data):
         if field_no == 2 and isinstance(value, bytes):
             entry = _parse_feed_map_entry(value)

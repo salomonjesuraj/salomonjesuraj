@@ -3,7 +3,7 @@
 from feature_engine.state import SymbolState
 
 
-def update_obv(state: SymbolState, close: float, volume: int):
+def update_obv(state: SymbolState, close: float, volume: int) -> None:
     """On-Balance Volume -- incremental."""
     if state.obv_prev_close == 0:
         state.obv_prev_close = close

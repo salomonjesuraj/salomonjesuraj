@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import re
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 _IST = timezone(timedelta(hours=5, minutes=30))
 _MD_SPECIAL = re.compile(r"([_*\[\]()~`>#+\-=|{}.!\\])")
@@ -27,25 +28,25 @@ def _escape_md(text: str) -> str:
     return _MD_SPECIAL.sub(r"\\\1", str(text))
 
 
-def _num(value, default: float = 0.0) -> float:
+def _num(value: Any, default: float = 0.0) -> float:
     try:
         return float(value)
     except (TypeError, ValueError):
         return default
 
 
-def _format_price(price) -> str:
+def _format_price(price: Any) -> str:
     price = _num(price)
     if price <= 0:
         return "-"
     return f"Rs {price:,.2f}"
 
 
-def _fmt_score(value) -> str:
+def _fmt_score(value: Any) -> str:
     return f"{_num(value):.0f}"
 
 
-def _features(payload: dict) -> dict:
+def _features(payload: dict[str, Any]) -> dict[str, Any]:
     fs = payload.get("features_snapshot") or {}
     if isinstance(fs, dict):
         return fs
@@ -58,7 +59,7 @@ def _features(payload: dict) -> dict:
     return {}
 
 
-def _sub_scores(payload: dict) -> dict:
+def _sub_scores(payload: dict[str, Any]) -> dict[str, Any]:
     sub = payload.get("sub_scores") or {}
     if isinstance(sub, dict):
         return sub
@@ -71,21 +72,21 @@ def _sub_scores(payload: dict) -> dict:
     return {}
 
 
-def _mtf_dots(fs: dict) -> str:
+def _mtf_dots(fs: dict[str, Any]) -> str:
     dots = fs.get("mtf_dots") or {}
     if not isinstance(dots, dict):
         dots = {}
     return "".join(_MTF_ICON.get(str(dots.get(tf) or "Y"), "🟡") for tf in _MTF_ORDER)
 
 
-def _sizing_text(sub_scores: dict) -> str:
+def _sizing_text(sub_scores: dict[str, Any]) -> str:
     sizing = sub_scores.get("position_sizing")
     if not isinstance(sizing, dict) or not sizing.get("lot_count"):
         return "Sizing: below risk budget for this lot size - check manually"
     return f"Sizing: {sizing.get('lot_count')} lot(s) = {sizing.get('quantity')} qty"
 
 
-def format_signal(payload: dict) -> str:
+def format_signal(payload: dict[str, Any]) -> str:
     symbol = payload.get("symbol", "???")
     strategy_name = payload.get("strategy_id", "unknown")
     signal_type = str(payload.get("signal_type", "")).lower()

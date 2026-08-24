@@ -15,7 +15,7 @@ routes = web.RouteTableDef()
 
 
 @routes.get("/api/system/capability")
-async def capability(request):
+async def capability(request: web.Request) -> web.Response:
     """Provider capability registry + live subscription/reconnect status."""
     redis = request.app["redis"]
 

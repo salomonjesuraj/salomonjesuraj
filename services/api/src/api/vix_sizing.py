@@ -31,6 +31,8 @@ whether to actually size down in a high-VIX regime.
 
 from __future__ import annotations
 
+from typing import Any
+
 # (ceiling_exclusive, size_multiplier, tier_label) -- first tier whose
 # ceiling the level falls under wins. The last tier's ceiling is +inf so
 # every level matches something.
@@ -42,7 +44,7 @@ VIX_TIERS: list[tuple[float, float, str]] = [
 ]
 
 
-def vix_position_multiplier(vix_level: float | None) -> dict:
+def vix_position_multiplier(vix_level: float | None) -> dict[str, Any]:
     """Pure function: India VIX level -> size-multiplier tier. No I/O."""
     if vix_level is None or vix_level <= 0:
         return {"available": False, "reason": "No India VIX level available."}

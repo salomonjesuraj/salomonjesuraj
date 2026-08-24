@@ -33,6 +33,8 @@ rather than here.
 
 from __future__ import annotations
 
+from typing import Any
+
 RS_WINDOWS = {"rs_5d": 5, "rs_20d": 20, "rs_60d": 60}
 RS_SLOPE_WINDOW = 20
 RS_SLOPE_SHIFT_DAYS = 10
@@ -47,14 +49,16 @@ def _pct_return(closes: list[float], lookback: int) -> float | None:
     return (closes[-1] / base - 1.0) * 100.0
 
 
-def compute_multi_timeframe_rs(daily_bars: list[dict], nifty_bars: list[dict]) -> dict:
+def compute_multi_timeframe_rs(
+    daily_bars: list[dict[str, Any]], nifty_bars: list[dict[str, Any]]
+) -> dict[str, Any]:
     """daily_bars/nifty_bars: the same oldest-first daily bar lists
     (keys open/high/low/close/volume) api/routes/mtf.py's _load_bars()
     already produces. Every rs_* value is (stock_return - nifty_return)
     in percentage points over that window; None (never a fabricated 0.0)
     when there isn't enough overlapping history for that window yet.
     """
-    result: dict = {key: None for key in RS_WINDOWS}
+    result: dict[str, Any] = {key: None for key in RS_WINDOWS}
     result["rs_slope_20d"] = None
     result["rs_available"] = False
 
@@ -85,7 +89,12 @@ def compute_multi_timeframe_rs(daily_bars: list[dict], nifty_bars: list[dict]) -
         cur_nifty_ret = _pct_return(nifty_closes, window)
         past_stock_ret = _pct_return(stock_closes[:-shift], window)
         past_nifty_ret = _pct_return(nifty_closes[:-shift], window)
-        if None not in (cur_stock_ret, cur_nifty_ret, past_stock_ret, past_nifty_ret):
+        if (
+            cur_stock_ret is not None
+            and cur_nifty_ret is not None
+            and past_stock_ret is not None
+            and past_nifty_ret is not None
+        ):
             cur_rs = cur_stock_ret - cur_nifty_ret
             past_rs = past_stock_ret - past_nifty_ret
             result["rs_slope_20d"] = round(cur_rs - past_rs, 2)

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from datetime import date
+from typing import Any
 
 EVENT_KEY_PREFIX = "infusion:event-calendar:"
 
@@ -20,7 +21,7 @@ def _days_to_event(event_date: str) -> int | None:
         return None
 
 
-async def get_event_risk(redis, symbol: str) -> dict:
+async def get_event_risk(redis: Any, symbol: str) -> dict[str, Any]:
     symbol = str(symbol or "").upper().strip()
     if not symbol:
         return {"symbol": "", "entry_allowed": True, "event_type": "NONE"}

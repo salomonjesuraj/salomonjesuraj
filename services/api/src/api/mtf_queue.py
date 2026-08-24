@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import json
 from datetime import datetime
+from typing import Any
 
 import structlog
 
@@ -15,13 +16,14 @@ from api.routes.mtf import compute_mtf
 logger = structlog.get_logger()
 
 STATUS_KEY = "infusion:mtf-queue:status"
+Payload = dict[str, Any]
 
 
-async def refresh_mtf_candidates_once(redis, *, limit: int = 60) -> dict:
+async def refresh_mtf_candidates_once(redis: Any, *, limit: int = 60) -> Payload:
     started = datetime.now().isoformat(timespec="seconds")
     candidates = await build_candidates(redis, limit)
     refreshed: list[str] = []
-    failed: list[dict] = []
+    failed: list[Payload] = []
     for row in candidates:
         symbol = str(row.get("symbol") or "").upper().strip()
         if not symbol:
@@ -47,7 +49,7 @@ async def refresh_mtf_candidates_once(redis, *, limit: int = 60) -> dict:
     return status
 
 
-async def mtf_queue_loop(app) -> None:
+async def mtf_queue_loop(app: Any) -> None:
     config = app["config"]
     redis = app["redis"]
     enabled = bool(getattr(config, "mtf_auto_refresh_enabled", True))
