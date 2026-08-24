@@ -32,12 +32,14 @@ from __future__ import annotations
 import json
 import time
 from datetime import datetime
+from typing import Any
 
 import msgpack
 from aiohttp import web
 from infusion_streams.constants import KEY_EBIE_VERDICT_LITE_PREFIX
 
 routes = web.RouteTableDef()
+Payload = dict[str, Any]
 
 # EBIE-KNOWN-GAPS.md §1.7 -- the three rolling-subset caches this route
 # already reads from (mtf/options-dynamics/option-chain) only cover a
@@ -65,7 +67,7 @@ _FRESHNESS_SOURCES = {
 }
 
 
-def _decode_json(raw) -> dict:
+def _decode_json(raw: Any) -> Payload:
     try:
         decoded = json.loads(raw) if isinstance(raw, str) else (raw or {})
     except (json.JSONDecodeError, TypeError):
@@ -73,7 +75,7 @@ def _decode_json(raw) -> dict:
     return decoded if isinstance(decoded, dict) else {}
 
 
-def _num(v) -> float | None:
+def _num(v: Any) -> float | None:
     """asyncpg returns NUMERIC columns as Decimal, which the stdlib json
     module can't serialize -- convert to float (JSON has no decimal
     type anyway, same precision loss every other route in this codebase
@@ -88,7 +90,7 @@ def _num(v) -> float | None:
 # computes no new number -- data_quality_score already exists in
 # features_snapshot (EB-0); this just labels it consistently with the
 # gate that already acts on it.
-def _dq_status(score) -> str:
+def _dq_status(score: Any) -> str:
     if score is None:
         return "UNKNOWN"
     if score < 80:
@@ -98,7 +100,7 @@ def _dq_status(score) -> str:
     return "READY"
 
 
-def _parse_last_seen_age_sec(raw, kind: str, now: float) -> float | None:
+def _parse_last_seen_age_sec(raw: Any, kind: str, now: float) -> float | None:
     """Best-effort age (seconds) from a last-seen marker's raw redis value.
     `raw` is bytes or None. Returns None (never a guessed 0) on absence or
     any decode failure -- a garbled marker is treated the same as no
@@ -121,7 +123,7 @@ def _parse_last_seen_age_sec(raw, kind: str, now: float) -> float | None:
     return None
 
 
-def _freshness_status(live_present: bool, last_seen_age_sec: float | None) -> dict:
+def _freshness_status(live_present: bool, last_seen_age_sec: float | None) -> Payload:
     """EBIE-KNOWN-GAPS.md §1.7's own suggested fix: distinguish "never
     cached" from "cached but stale" for the three rolling-subset caches,
     rather than leaving both look identical as a bare absence.
@@ -152,7 +154,7 @@ def _freshness_status(live_present: bool, last_seen_age_sec: float | None) -> di
 # whole purpose) and not inventing a fabricated "agreement score" (same
 # discipline as §7.2's drift-monitor: a real state<->state comparison,
 # nothing dressed up as a number that doesn't exist yet).
-def _direction_agreement(full_direction, lite_direction) -> str:
+def _direction_agreement(full_direction: Any, lite_direction: Any) -> str:
     full = str(full_direction or "").strip().lower()
     lite = str(lite_direction or "").strip().lower()
     if full not in ("bullish", "bearish") or lite not in ("bullish", "bearish"):
@@ -161,12 +163,12 @@ def _direction_agreement(full_direction, lite_direction) -> str:
 
 
 def _row_to_candidate(
-    r,
-    market_ctx: dict | None = None,
-    opt_ctx: dict | None = None,
-    cache_freshness: dict | None = None,
-    lite_verdict: dict | None = None,
-) -> dict:
+    r: Any,
+    market_ctx: Payload | None = None,
+    opt_ctx: Payload | None = None,
+    cache_freshness: Payload | None = None,
+    lite_verdict: Payload | None = None,
+) -> Payload:
     d = dict(r)
     sub_scores = _decode_json(d.get("sub_scores"))
     features = _decode_json(d.get("features"))
@@ -309,7 +311,7 @@ def _row_to_candidate(
 
 
 @routes.get("/api/ebie/candidates")
-async def ebie_candidates(request):
+async def ebie_candidates(request: web.Request) -> web.Response:
     """GET /api/ebie/candidates?limit=30&suppressed=true|false|all --
     ranked-by-recency candidate list with full Why-Now/Why-Not evidence.
     `suppressed` defaults to 'all' (both fired and rejected candidates,
@@ -328,7 +330,7 @@ async def ebie_candidates(request):
     suppressed_filter = str(request.query.get("suppressed", "all")).lower()
 
     where = ""
-    params: list = [limit]
+    params: list[Any] = [limit]
     if suppressed_filter == "true":
         where = "WHERE suppressed"
     elif suppressed_filter == "false":
@@ -361,11 +363,11 @@ async def ebie_candidates(request):
     # any read failure) just gets None -- the existing "never a silent
     # number" convention, not a hidden zero.
     redis = request.app.get("redis")
-    market_ctx_map: dict[str, dict] = {}
-    opt_ctx_map: dict[str, dict] = {}
+    market_ctx_map: dict[str, Payload] = {}
+    opt_ctx_map: dict[str, Payload] = {}
     symbols = sorted({r["symbol"] for r in rows if r.get("symbol")})
 
-    def _decode_cache_json(raw) -> dict:
+    def _decode_cache_json(raw: Any) -> Payload:
         # Redis client here is decode_responses=False (main.py), so `raw`
         # is bytes, not str -- _decode_json() above only special-cases
         # str (it's built for asyncpg's JSONB-as-str columns) and would
@@ -403,7 +405,7 @@ async def ebie_candidates(request):
     # api's own routes, unlike the JSON caches above which scanner also
     # reads), same encoding ebie_state.py's own lightweight-verdicts
     # route already unpacks.
-    lite_verdict_map: dict[str, dict] = {}
+    lite_verdict_map: dict[str, Payload] = {}
     if redis and symbols:
         try:
             lite_raw = await redis.mget([f"{KEY_EBIE_VERDICT_LITE_PREFIX}{s}" for s in symbols])
@@ -426,7 +428,7 @@ async def ebie_candidates(request):
     # caches (mtf/options-dynamics) plus all three last-seen markers need
     # fresh mgets. Six mgets total (2 already done above + 4 here) for up
     # to 100 symbols -- six round trips, not up to 600.
-    freshness_map: dict[str, dict] = {s: {} for s in symbols}
+    freshness_map: dict[str, Payload] = {s: {} for s in symbols}
     now = time.time()
     if redis and symbols:
         for family, (live_prefix, last_seen_prefix, kind) in _FRESHNESS_SOURCES.items():
