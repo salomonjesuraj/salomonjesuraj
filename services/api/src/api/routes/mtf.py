@@ -121,12 +121,20 @@ def _aggregate(bars: list[Bar], minutes: int) -> list[Bar]:
         bucket = int(bar["time"]) // width * width
         current = buckets.get(bucket)
         if current is None:
-            buckets[bucket] = {**bar, "time": bucket}
+            # Pipeline audit fix B2: "_n1m" counts the real, closed 1m
+            # bars actually folded into this bucket so far -- lets
+            # _score_timeframe() tell a genuinely-complete HTF candle
+            # apart from one still assembling (e.g. minute 1 of a
+            # forming 15M window) without a second pass over the raw
+            # 1m series. Internal bookkeeping key, not part of the
+            # public bar shape any existing consumer reads.
+            buckets[bucket] = {**bar, "time": bucket, "_n1m": 1}
         else:
             current["high"] = max(current["high"], bar["high"])
             current["low"] = min(current["low"], bar["low"])
             current["close"] = bar["close"]
             current["volume"] += int(bar.get("volume") or 0)
+            current["_n1m"] = int(current.get("_n1m") or 0) + 1
     return [buckets[key] for key in sorted(buckets)]
 
 
@@ -671,7 +679,24 @@ def _dot(state: str) -> str:
     return {"BULL": "G", "BEAR": "R", "MIXED": "Y"}.get(state, "Y")
 
 
-def _score_timeframe(tf: str, bars: list[Bar], include_vwap: bool) -> Payload:
+def _completion_ratio(bars: list[Bar], minutes: int) -> float:
+    """Pipeline audit fix B2: how complete the LAST bucket in `bars` is,
+    as a fraction of the 1m bars a fully-closed bucket of this timeframe
+    would contain. 1.0 for timeframes _aggregate() never touches (native
+    1m bars, and daily bars which bypass _aggregate() entirely in
+    compute_mtf()) -- there's no "still forming from finer data" concept
+    for either, so nothing to discount. Only the LAST bucket can ever be
+    incomplete; every earlier one closed by definition once a later
+    bucket exists."""
+    if minutes <= 1 or not bars:
+        return 1.0
+    n1m = bars[-1].get("_n1m")
+    if n1m is None:
+        return 1.0
+    return min(1.0, float(n1m) / float(minutes))
+
+
+def _score_timeframe(tf: str, bars: list[Bar], include_vwap: bool, minutes: int = 1) -> Payload:
     needed = 40 if tf in {"1M", "5M", "15M"} else 30 if tf in {"1H", "4H"} else 50
     pack = _indicators(bars, include_vwap)
     if not pack:
@@ -681,6 +706,7 @@ def _score_timeframe(tf: str, bars: list[Bar], include_vwap: bool) -> Payload:
             "score": 50,
             "bars": 0,
             "quality": "missing",
+            "completion_ratio": 1.0,
             "reasons": ["No historical candles cached"],
             "warnings": ["History missing"],
         }
@@ -770,12 +796,28 @@ def _score_timeframe(tf: str, bars: list[Bar], include_vwap: bool) -> Payload:
     if bars_count < needed:
         warnings.append(f"Only {bars_count}/{needed} bars")
 
-    bounded = round(min(max(score, 0), 100), 1)
-    state = _state_from_score(bounded)
+    # Pipeline audit fix B2: the LAST bucket for an intraday timeframe
+    # may still be forming (e.g. minute 1 of a 15M window has only 1 of
+    # 15 constituent 1m bars closed) -- every earlier bucket in `bars`
+    # is, by construction, fully closed already. Scale this bucket's
+    # deviation from the neutral midpoint (50) by how complete it is,
+    # so a forming bucket's still-thin evidence pulls the state toward
+    # MIXED rather than carrying full BULL/BEAR conviction on the same
+    # footing as a confirmed candle. A fully-closed bucket (ratio 1.0)
+    # is completely unaffected -- this only softens genuinely-forming
+    # data, never a real closed bar.
+    completion_ratio = _completion_ratio(bars, minutes)
+    raw_bounded = round(min(max(score, 0), 100), 1)
+    damped = round(50 + (raw_bounded - 50) * completion_ratio, 1)
+    if completion_ratio < 1.0:
+        warnings.append(f"Forming bar {completion_ratio * 100:.0f}% complete -- confidence damped")
+    state = _state_from_score(damped)
     return {
         "state": state,
         "dot": _dot(state),
-        "score": bounded,
+        "score": damped,
+        "raw_score": raw_bounded,
+        "completion_ratio": completion_ratio,
         "bars": bars_count,
         "quality": "ok" if bars_count >= needed else "limited",
         "close": round(pack.close, 2),
@@ -826,7 +868,9 @@ async def compute_mtf(redis: Any, symbol: str, store: bool = True) -> Payload:
         bars = _aggregate(intraday, minutes) if kind == "intraday" else daily
         # Keep last 260 bars to prevent bloated JSON while preserving indicator context.
         recent_bars = bars[-260:]
-        scored = _score_timeframe(tf, recent_bars, include_vwap=(kind == "intraday"))
+        scored = _score_timeframe(
+            tf, recent_bars, include_vwap=(kind == "intraday"), minutes=minutes
+        )
         timeframes[tf] = scored
         all_warnings.extend([f"{tf}: {w}" for w in scored.get("warnings", [])])
         if tf in ("1H", "1D"):
