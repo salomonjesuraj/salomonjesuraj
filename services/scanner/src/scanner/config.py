@@ -26,6 +26,21 @@ class ScannerSettings(InfusionSettings):
     min_conviction_score: float = 80.0  # optimizer v4.4.1: below this → suppressed
     min_sector_strength: float = 30.0  # below this → sector_weak
 
+    # ─── Pipeline audit fix B3: late-session theta cutoff ───
+    # New entries into option-buying strategies after this IST time are
+    # suppressed -- rapid intraday theta decay plus broker/exchange
+    # square-off pressure erodes an option buyer's edge late in the
+    # session, and nothing in the pipeline previously modeled that
+    # (the existing precision_guard_sessions allow-list below still
+    # permits the whole "closing" session, 14:00-15:15, straight through
+    # this exact window). Separate, dedicated gate rather than folding
+    # into precision_guard: that mechanism is an optimizer-tunable
+    # precision/session allow-list, not a hard theta-decay safety rail,
+    # and the two should be free to evolve independently.
+    theta_cutoff_enabled: bool = True
+    theta_cutoff_time: str = "14:30"  # HH:MM, IST
+    theta_cutoff_strategy_ids: str = "options_first_hybrid,vol_vwap_breakout"
+
     # ─── Phase 5.1 precision guard ───────────────────
     # Re-backtested 2026-08-07 against 90 days of live outcomes at score >= 80, R:R >= 1.2:
     #   closing      81.0% precision (358 decided, ~4.0/day)

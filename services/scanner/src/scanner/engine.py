@@ -786,6 +786,9 @@ class ScannerEngine:
             tier=state.tier,
             suppressed=not result.passed,
             suppression_reason=result.reason if not result.passed else "",
+            # Pipeline audit fix B5 -- stable code alongside the reason
+            # above, "" when this gate has no matching taxonomy member.
+            suppression_code=(result.code.value if not result.passed and result.code else ""),
             explanation=self._enrich_explanation(candidate.explanation, state, sector_explanations),
             conditions_met=candidate.conditions_met,
         )

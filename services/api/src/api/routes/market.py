@@ -17,6 +17,7 @@ from urllib.parse import urlencode
 import aiohttp
 import msgpack
 from aiohttp import web
+from infusion_models.rejection import RejectionCode
 
 from api.cost_model import estimate_entry_costs_per_unit
 from api.event_calendar import get_event_risk
@@ -78,10 +79,15 @@ def _upstox_error_reason(payload: Payload, status: int) -> str:
 
 
 def _liquidity_thresholds() -> Payload:
+    """Pipeline audit fix B4: defaults raised from min_oi=100/
+    min_volume=1/max_spread_pct=3.0 -- the old min_volume=1 in
+    particular did not meaningfully "guarantee exit liquidity during a
+    sharp adverse move" the way the option-basis filter is meant to.
+    Still fully env-overridable, same as before."""
     return {
-        "min_oi": float(os.getenv("INFUSION_OPTION_MIN_OI", "100")),
-        "min_volume": float(os.getenv("INFUSION_OPTION_MIN_VOLUME", "1")),
-        "max_spread_pct": float(os.getenv("INFUSION_OPTION_MAX_SPREAD_PCT", "3.0")),
+        "min_oi": float(os.getenv("INFUSION_OPTION_MIN_OI", "1000")),
+        "min_volume": float(os.getenv("INFUSION_OPTION_MIN_VOLUME", "500")),
+        "max_spread_pct": float(os.getenv("INFUSION_OPTION_MAX_SPREAD_PCT", "1.5")),
     }
 
 
@@ -481,6 +487,16 @@ def _score_option_leg(
     delta_model = delta_band_gate(delta)
     iv_rank_model = iv_rank_gate(iv_rank)
 
+    # Pipeline audit fix B4 (bonus finding): gates["spread"] used to be a
+    # hardcoded 3.0/6.0 split, entirely independent of
+    # thresholds["max_spread_pct"] above -- which meant lowering
+    # INFUSION_OPTION_MAX_SPREAD_PCT tightened liquidity_pass's hard
+    # block but left this scoring gate's own "Spread X% -- PASS" reason
+    # unchanged at the old 3.0% ceiling, a real inconsistency the two
+    # thresholds could silently disagree on. Both now driven by the one
+    # configurable threshold; the "acceptable but not ideal" soft band
+    # keeps the original config's own 2x ratio (3.0/6.0), just rescaled.
+    max_spread = thresholds["max_spread_pct"]
     gates = {
         "premium": ltp > 0,
         "volume": volume >= 1,
@@ -488,7 +504,7 @@ def _score_option_leg(
         "liquidity_whitelist": liquidity_pass,
         "iv": 5 <= iv <= 80,
         "iv_rank": iv_rank_model.get("iv_rank_pass"),
-        "spread": spread_pct <= 3.0,
+        "spread": spread_pct <= max_spread,
         "delta": delta_model["delta_band_pass"],
         "strike": near_or_itm and delta_model["delta_band_pass"],
         "premium_sl": not sl_model["hard_blockers"],
@@ -500,6 +516,13 @@ def _score_option_leg(
     reasons: list[str] = []
     blockers: list[str] = []
     hard_blockers: list[str] = []
+    # Pipeline audit fix B5: stable codes alongside the free-text
+    # blockers above, for the same specific checks the taxonomy names
+    # (spread/liquidity/IV-crush/delta-band). Not every hard_blocker has
+    # a matching code (premium/SL/breakeven/physical-settlement/event-
+    # calendar don't) -- this list holds only the ones that do, in the
+    # order they were found, not a 1:1 index pairing with hard_blockers.
+    hard_blocker_codes: list[str] = []
     if gates["premium"]:
         reasons.append(f"Premium live {ltp:.2f}")
     else:
@@ -507,11 +530,12 @@ def _score_option_leg(
         hard_blockers.append("No live option premium")
     if gates["spread"]:
         reasons.append(f"Spread {spread_pct:.1f}%")
-    elif spread_pct <= 6.0:
+    elif spread_pct <= max_spread * 2:
         blockers.append(f"Spread acceptable but not ideal {spread_pct:.1f}%")
     else:
         blockers.append(f"Wide spread {spread_pct:.1f}%")
         hard_blockers.append(f"Wide spread {spread_pct:.1f}%")
+        hard_blocker_codes.append(RejectionCode.REJECTED_OPTION_SPREAD.value)
     if gates["oi"]:
         reasons.append(f"OI {oi:,.0f} ({oi_change:+.1f}%)")
     else:
@@ -522,6 +546,7 @@ def _score_option_leg(
         reason = "below liquidity whitelist"
         blockers.append(reason)
         hard_blockers.append(reason)
+        hard_blocker_codes.append(RejectionCode.REJECTED_LIQUIDITY.value)
     if gates["iv"]:
         reasons.append(f"IV {iv:.1f}")
     elif iv > 0:
@@ -535,12 +560,14 @@ def _score_option_leg(
     elif iv_rank_model["status"] == "AVOID_CONTRACT":
         blockers.append(iv_rank_model["reason"])
         hard_blockers.append(iv_rank_model["reason"])
+        hard_blocker_codes.append(RejectionCode.REJECTED_IV_CRUSH.value)
     if gates["strike"]:
         reasons.append(f"Strike near executable zone ({moneyness_pct:.1f}% from spot)")
     else:
         reason = delta_model["reason"] or "Strike too far / poor delta"
         blockers.append(reason)
         hard_blockers.append(reason)
+        hard_blocker_codes.append(RejectionCode.REJECTED_DELTA_BAND.value)
     for reason in sl_model["hard_blockers"]:
         blockers.append(reason)
         hard_blockers.append(reason)
@@ -619,6 +646,9 @@ def _score_option_leg(
         **be_model,
         "quality_grade": _quality_grade(score, hard_blockers),
         "hard_blockers": hard_blockers,
+        # Pipeline audit fix B5 -- see hard_blocker_codes' own comment
+        # above for why this isn't index-paired with hard_blockers.
+        "hard_blocker_codes": hard_blocker_codes,
     }
     return score, gates, contract, metrics, reasons, blockers, hard_blockers
 
@@ -924,6 +954,11 @@ async def _upstox_option_context(
         "reasons": reasons,
         "blockers": blockers,
         "hard_blockers": hard_blockers,
+        # Pipeline audit fix B5 -- surfaced at top level too, matching
+        # hard_blockers' own placement, so consumers (e.g.
+        # scanner/verdict_engine.py's _hard_gates()) don't need to dig
+        # into metrics for it.
+        "hard_blocker_codes": metrics.get("hard_blocker_codes", []),
         "pcr": row.get("pcr"),
     }
     await redis.set(cache_key, json.dumps(result, separators=(",", ":")), ex=30)

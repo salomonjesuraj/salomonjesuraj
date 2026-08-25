@@ -89,6 +89,11 @@ class ScanSignalV2(BaseModel, frozen=True):
     # Suppression
     suppressed: bool = False
     suppression_reason: str = ""  # "cooldown", "sector_weak", etc.
+    # Pipeline audit fix B5: stable RejectionCode value alongside the
+    # free-text reason above, when the gate that suppressed this signal
+    # has a matching taxonomy member (see infusion_models.rejection) --
+    # "" (not every gate maps to one yet), never a fabricated code.
+    suppression_code: str = ""
 
     # Explanation
     explanation: list[str] = Field(default_factory=list)  # human-readable signal reasons

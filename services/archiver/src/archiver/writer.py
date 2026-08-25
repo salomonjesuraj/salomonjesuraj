@@ -58,7 +58,7 @@ INSERT INTO signals (
     risk_reward_ratio, sector_id, sector_strength, market_regime,
     pre_breakout_state, suppressed, suppression_reason,
     conditions_met, explanation, sub_scores, session_hour,
-    t2_price, t3_price
+    t2_price, t3_price, suppression_code
 ) VALUES (
     $1::uuid, $2, $3, $4, $5,
     $6, $7, $8, $9,
@@ -66,7 +66,7 @@ INSERT INTO signals (
     $14, $15, $16, $17,
     $18, $19, $20,
     $21::jsonb, $22::text[], $23::jsonb, $24,
-    $25, $26
+    $25, $26, $27
 )
 ON CONFLICT (signal_id) DO NOTHING
 """
@@ -166,6 +166,8 @@ class SignalWriter:
                     # p.get() that would always miss.
                     (p.get("features_snapshot") or {}).get("t2_price", 0.0),  # $25
                     (p.get("features_snapshot") or {}).get("t3_price", 0.0),  # $26
+                    # Pipeline audit fix B5.
+                    p.get("suppression_code", ""),  # $27
                 )
             )
 

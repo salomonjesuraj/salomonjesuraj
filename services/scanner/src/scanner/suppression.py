@@ -7,8 +7,10 @@ Evaluation order is strict and deterministic:
   4. SECTOR FILTER    — sector strength above threshold?
   5. REGIME FILTER    — market regime compatible with strategy?
   6. CONVICTION FLOOR — score above minimum?
+  7. THETA CUTOFF     — new option-buying entries after 14:30 IST?
+     (pipeline audit fix B3 — see ScannerSettings.theta_cutoff_* )
 
-  (a 7th gate, PRECISION GUARD, runs after the above when enabled for a
+  (an 8th gate, PRECISION GUARD, runs after the above when enabled for a
   given strategy — see evaluate() below)
 
 The F&O ban gate (Phase 13.13) is the one gate here that isn't a signal-
@@ -35,6 +37,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import structlog
+from infusion_models.rejection import RejectionCode
 from infusion_streams.constants import (
     KEY_COOLDOWN_PREFIX,
     KEY_SECTOR_PREFIX,
@@ -82,20 +85,46 @@ def _current_session(now: dt_time | None = None) -> str:
     return "post_market"
 
 
+def _parse_hhmm(value: str, default: dt_time = dt_time(14, 30)) -> dt_time:
+    """Parse a "HH:MM" config string into a dt_time, IST. Falls back to
+    the theta-cutoff default rather than raising on a malformed env var
+    -- a typo in config must degrade to the safe default, not crash the
+    scanner."""
+    try:
+        hour_str, minute_str = str(value).strip().split(":", 1)
+        return dt_time(int(hour_str), int(minute_str))
+    except (ValueError, AttributeError):
+        return default
+
+
 class SuppressionResult:
-    """Result of suppression gate evaluation."""
+    """Result of suppression gate evaluation.
 
-    __slots__ = ("gate", "passed", "reason")
+    `code` (pipeline audit fix B5) is a stable RejectionCode alongside
+    the free-text `reason`, for dashboard slicing that doesn't depend on
+    exact wording. Not every gate maps to one of the taxonomy's members
+    yet (fo_ban/duplicate/cooldown/regime don't) -- `code` is None there,
+    a disclosed gap rather than a forced, ill-fitting mapping.
+    """
 
-    def __init__(self, passed: bool, reason: str = "", gate: str = "") -> None:
+    __slots__ = ("code", "gate", "passed", "reason")
+
+    def __init__(
+        self,
+        passed: bool,
+        reason: str = "",
+        gate: str = "",
+        code: RejectionCode | None = None,
+    ) -> None:
         self.passed = passed
         self.reason = reason
         self.gate = gate
+        self.code = code
 
     def __repr__(self) -> str:
         if self.passed:
             return "SuppressionResult(PASS)"
-        return f"SuppressionResult(SUPPRESSED: {self.gate}={self.reason})"
+        return f"SuppressionResult(SUPPRESSED: {self.gate}={self.reason}, code={self.code})"
 
 
 class SuppressionGate:
@@ -112,6 +141,11 @@ class SuppressionGate:
         self.redis = redis
         self._min_conviction = settings.min_conviction_score
         self._min_sector_strength = settings.min_sector_strength
+        self._theta_cutoff_enabled = settings.theta_cutoff_enabled
+        self._theta_cutoff_time = _parse_hhmm(settings.theta_cutoff_time)
+        self._theta_cutoff_strategy_ids = {
+            s.strip() for s in str(settings.theta_cutoff_strategy_ids).split(",") if s.strip()
+        }
         self._precision_guard_enabled = settings.precision_guard_enabled
         self._precision_guard_min_score = settings.precision_guard_min_score
         self._precision_guard_min_rr = settings.precision_guard_min_rr
@@ -131,6 +165,7 @@ class SuppressionGate:
         market_regime: str = "",
         signal_type: str = "bullish",
         risk_reward_ratio: float = 0.0,
+        now: dt_time | None = None,
     ) -> SuppressionResult:
         """Evaluate all suppression gates in strict order.
 
@@ -178,12 +213,18 @@ class SuppressionGate:
                     passed=False,
                     reason="sector_weak",
                     gate="sector",
+                    code=RejectionCode.REJECTED_SECTOR_WEAK,
                 )
             if strength is not None and bearish and strength > 75:
                 return SuppressionResult(
                     passed=False,
                     reason="sector_too_strong_for_pe",
                     gate="sector",
+                    # Same underlying family (sector strength working
+                    # against this candidate's direction) as sector_weak
+                    # above, just the mirror-image bearish case -- the
+                    # taxonomy has one sector code, not two.
+                    code=RejectionCode.REJECTED_SECTOR_WEAK,
                 )
 
         # ── Gate 5: Market regime ──────────────────────
@@ -200,9 +241,29 @@ class SuppressionGate:
                 passed=False,
                 reason="low_conviction",
                 gate="conviction",
+                code=RejectionCode.REJECTED_LOW_CONVICTION,
             )
 
-        # ── Gate 7: Precision guard from optimizer ─────────────────
+        # ── Gate 7: Late-session theta cutoff (pipeline audit fix B3) ──
+        # Deliberately after the conviction floor (a weak setup should
+        # still be rejected for being weak, not relabeled as a theta-
+        # cutoff rejection just because it's also late in the day) and
+        # before precision_guard (an optimizer-tunable mechanism this
+        # hard safety rail should not depend on being enabled/disabled).
+        if (
+            self._theta_cutoff_enabled
+            and strategy_id in self._theta_cutoff_strategy_ids
+            and (now if now is not None else datetime.now(tz=_IST).time())
+            >= self._theta_cutoff_time
+        ):
+            return SuppressionResult(
+                passed=False,
+                reason=f"late_session_theta_decay_after_{self._theta_cutoff_time.strftime('%H:%M')}",
+                gate="theta_cutoff",
+                code=RejectionCode.REJECTED_THETA_CUTOFF,
+            )
+
+        # ── Gate 8: Precision guard from optimizer ─────────────────
         if self._precision_guard_enabled and strategy_id in self._precision_guard_strategy_ids:
             if conviction_score < self._precision_guard_min_score:
                 return SuppressionResult(

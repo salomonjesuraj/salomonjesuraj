@@ -132,6 +132,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from infusion_models.rejection import RejectionCode
+
 from scanner.alignment import compute_signal_alignment
 
 # Per Q6.3's authorized temporary shadow bands -- NOT yet calibrated
@@ -177,6 +179,17 @@ MICROSTRUCTURE_THRESHOLD = 0.15
 VCP_MIN_SCORE = 60
 RVOL_BULL_THRESHOLD = 2.0  # matches trap_model.py's/breakout-radar's own "real volume" bar
 MARKET_CONTEXT_NEUTRAL_BAND = 3.0  # +/- around the 50-neutral midpoint that counts as "no read"
+
+# Pipeline audit fix B1: static OI-wall proximity, distinct from
+# _options_positioning_family below (which votes on wall STATE CHANGES
+# only, per Q3.4 -- see that function's own docstring). This is a
+# separate, new hard gate: a CE/PE candidate whose underlying is already
+# within this percent of the single highest-OI strike on its own side is
+# heading directly into real, CURRENT option-seller resistance right
+# now, regardless of how strong the underlying technical setup looks --
+# the exact gap the audit named. Does not touch or replace the existing
+# family; both can independently contribute their own read.
+OI_WALL_PROXIMITY_PCT = 0.5
 
 # EBIE EB-15 Phase 4 item 6 -- weighted evidence families, replacing
 # equal-vote counting. See this module's own docstring for the full
@@ -453,6 +466,39 @@ FAMILY_DESCRIPTIONS = {
 }
 
 
+def _oi_wall_reason(
+    *,
+    bullish: bool,
+    spot: float | None,
+    options_dynamics_cache: dict[str, Any],
+) -> tuple[str, str] | None:
+    """Pipeline audit fix B1. Returns (reason, RejectionCode.value) when
+    the underlying is already within OI_WALL_PROXIMITY_PCT of the single
+    highest-OI strike on the candidate's own side (call wall for a CE/
+    bullish candidate, put wall for a PE/bearish one) -- None otherwise,
+    including whenever real spot or real wall data isn't actually
+    cached yet (never fabricated from absence, same rule as every other
+    check in this module)."""
+    if not spot or spot <= 0:
+        return None
+    wall = options_dynamics_cache.get("wall") or {}
+    leg_key = "call_wall" if bullish else "put_wall"
+    top = (wall.get(leg_key) or [{}])[0]
+    strike = top.get("strike")
+    oi = top.get("oi")
+    if not strike or not oi:
+        return None
+    distance_pct = abs(float(strike) - float(spot)) / float(spot) * 100
+    if distance_pct > OI_WALL_PROXIMITY_PCT:
+        return None
+    side = "Call" if bullish else "Put"
+    reason = (
+        f"OI wall proximity: {side} wall at {strike:g} is {distance_pct:.2f}% "
+        f"from spot {float(spot):g} (OI {float(oi):,.0f})"
+    )
+    return reason, RejectionCode.REJECTED_OI_WALL.value
+
+
 def _hard_gates(
     *,
     fo_banned: bool,
@@ -462,7 +508,9 @@ def _hard_gates(
     tick_lag_ms: float | None,
     session_gap_ms: float | None,
     option_chain_context: dict[str, Any] | None,
-) -> list[str]:
+    bullish: bool,
+    options_dynamics_cache: dict[str, Any],
+) -> list[tuple[str, str | None]]:
     """Per docs/EBIE-IMPLEMENTATION-ANSWERS.md Q6.1's authorized hard-
     gate list. EB-15 Phase 5 item 9 closes the one gap that list's own
     original comment disclosed as out of scope: option-quote/liquidity
@@ -472,26 +520,45 @@ def _hard_gates(
     engine.py's _fetch_option_chain_context_cache()). Only acts when
     real chain data is actually cached -- a missing/stale cache (30s
     TTL, genuinely common between sweeps) is never treated as a
-    rejection, matching this whole module's "never fabricate" rule."""
-    gates: list[str] = []
+    rejection, matching this whole module's "never fabricate" rule.
+
+    Pipeline audit fix B5: returns (reason, code) pairs now, not bare
+    reason strings -- code is None for gates the taxonomy doesn't cover
+    yet (a disclosed gap, not a forced mapping)."""
+    gates: list[tuple[str, str | None]] = []
     if fo_banned:
-        gates.append("F&O ban in effect")
+        gates.append(("F&O ban in effect", None))
     if data_quality_score is not None and data_quality_score < DQ_HARD_FAIL:
-        gates.append(f"Data quality {data_quality_score} below hard-fail threshold {DQ_HARD_FAIL}")
+        gates.append(
+            (f"Data quality {data_quality_score} below hard-fail threshold {DQ_HARD_FAIL}", None)
+        )
     if not entry_price or not invalidation_price:
-        gates.append("Missing trigger or invalidation price")
+        gates.append(("Missing trigger or invalidation price", None))
     # Session-boundary-aware fields (EB-0) -- a large gap right after
     # the session opens is expected (see feature-engine's own
     # session_gap_ms gating) and is NOT itself a hard failure signal
     # here; only genuinely excessive intra-session lag/gap is.
     if tick_lag_ms is not None and tick_lag_ms > 30_000:
-        gates.append(f"Stale underlying quote (tick_lag_ms={tick_lag_ms})")
+        gates.append((f"Stale underlying quote (tick_lag_ms={tick_lag_ms})", None))
     if session_gap_ms is not None and session_gap_ms > 120_000:
-        gates.append(f"Feed gap detected (session_gap_ms={session_gap_ms})")
+        gates.append((f"Feed gap detected (session_gap_ms={session_gap_ms})", None))
     if (option_chain_context or {}).get("execution_status") == "AVOID_CONTRACT":
         blockers = (option_chain_context or {}).get("hard_blockers") or []
         detail = f" ({'; '.join(str(b) for b in blockers[:2])})" if blockers else ""
-        gates.append(f"OPTION_NOT_TRADEABLE{detail}")
+        # Reuse the SPECIFIC code(s) already determined at the source
+        # (market.py's _score_option_leg), rather than re-deriving or
+        # guessing one here from a generic catch-all reason -- the real
+        # reason (spread/liquidity/IV crush/delta band) is already known
+        # precisely at that point.
+        option_codes = (option_chain_context or {}).get("hard_blocker_codes") or []
+        gates.append((f"OPTION_NOT_TRADEABLE{detail}", option_codes[0] if option_codes else None))
+    oi_wall = _oi_wall_reason(
+        bullish=bullish,
+        spot=(option_chain_context or {}).get("spot") or (entry_price or None),
+        options_dynamics_cache=options_dynamics_cache,
+    )
+    if oi_wall:
+        gates.append(oi_wall)
     return gates
 
 
@@ -634,7 +701,7 @@ def compute_verdict(
     supporting_ranked = sorted(supporting, key=lambda f: weights.get(f, 0.0), reverse=True)
     contradicting_ranked = sorted(contradicting, key=lambda f: weights.get(f, 0.0), reverse=True)
 
-    hard_gate_reasons = _hard_gates(
+    hard_gate_pairs = _hard_gates(
         fo_banned=fo_banned,
         data_quality_score=data_quality_score,
         entry_price=entry_price,
@@ -642,7 +709,11 @@ def compute_verdict(
         tick_lag_ms=tick_lag_ms,
         session_gap_ms=session_gap_ms,
         option_chain_context=option_chain_context,
+        bullish=bullish,
+        options_dynamics_cache=options_dynamics_cache,
     )
+    hard_gate_reasons = [reason for reason, _ in hard_gate_pairs]
+    hard_gate_codes = [code for _, code in hard_gate_pairs if code]
 
     if hard_gate_reasons:
         band = "HARD_BLOCKED"
@@ -684,6 +755,10 @@ def compute_verdict(
         "top_reasons": [FAMILY_DESCRIPTIONS.get(f, f) for f in supporting_ranked][:6],
         "risks": [FAMILY_DESCRIPTIONS.get(f, f) for f in contradicting_ranked][:4],
         "hard_gates": hard_gate_reasons,
+        # Pipeline audit fix B5 -- stable codes alongside hard_gates
+        # above; only the ones a taxonomy member actually exists for
+        # (see _hard_gates()'s own comment on the disclosed gaps).
+        "hard_gate_codes": hard_gate_codes,
         "verdict": band,
         # Per Non-Negotiable Rule #7 -- no fabricated probability until a
         # real calibration exists. See api/verdict_calibration.py /
