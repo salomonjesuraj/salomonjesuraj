@@ -13,7 +13,9 @@ from feature_engine.state import SymbolState
 VWAP_SD_MIN_BARS = 5
 
 
-def update_price_features(state: SymbolState, ltp: float, volume: int) -> None:
+def update_price_features(
+    state: SymbolState, ltp: float, volume: int, exchange_atp: float = 0.0
+) -> None:
     """Update live session price features (day range and VWAP)."""
 
     # Day high/low
@@ -23,12 +25,24 @@ def update_price_features(state: SymbolState, ltp: float, volume: int) -> None:
     else:
         state.day_low = min(state.day_low, ltp)
 
-    # VWAP (incremental)
+    # VWAP (incremental) -- LTP is used as a proxy for the average price
+    # of the volume traded since the last tick. Pipeline audit finding
+    # C1: this is a local reconstruction, not the exchange's own VWAP --
+    # see get_vwap_drift() below, which surfaces how far this estimate
+    # actually strays from Upstox's own ATP when the feed carries one,
+    # rather than silently trusting the reconstruction.
     if volume > state.vwap_denominator:
         delta_vol = volume - state.vwap_denominator
         state.vwap_numerator += ltp * delta_vol
         state.vwap_sq_numerator += (ltp * ltp) * delta_vol
         state.vwap_denominator = volume
+
+    # Pipeline audit fix C1: last-known-good exchange ATP. Never
+    # overwritten by an absent (0.0) reading -- a feed type/instrument
+    # that doesn't carry atp (or a single tick missing it) must not blow
+    # away the previous good value and make get_vwap_drift() flicker.
+    if exchange_atp > 0:
+        state.exchange_atp = exchange_atp
 
 
 def update_ema_features(state: SymbolState, close: float) -> None:
@@ -46,6 +60,36 @@ def get_vwap(state: SymbolState) -> float:
     if state.vwap_denominator > 0:
         return state.vwap_numerator / state.vwap_denominator
     return state.ltp
+
+
+def get_vwap_drift(state: SymbolState) -> dict[str, Any]:
+    """Pipeline audit fix C1: how far the locally-reconstructed VWAP
+    (LTP * volume-delta) has strayed from Upstox's own exchange-computed
+    ATP, when the feed carries one. Deliberately informational only, not
+    wired into any gate/score -- this is a measurement of the existing
+    VWAP's reliability, surfaced honestly, not a second VWAP competing
+    with the first. `available: False` (not a fabricated 0% drift) when
+    the feed hasn't carried a real ATP yet (index feeds and some
+    instrument types never do)."""
+    if state.exchange_atp <= 0 or state.vwap_denominator <= 0:
+        return {
+            "available": False,
+            "exchange_atp": None,
+            "local_vwap": None,
+            "drift_pct": None,
+        }
+    local_vwap = state.vwap_numerator / state.vwap_denominator
+    drift_pct = (
+        ((local_vwap - state.exchange_atp) / state.exchange_atp) * 100
+        if state.exchange_atp > 0
+        else 0.0
+    )
+    return {
+        "available": True,
+        "exchange_atp": round(state.exchange_atp, 4),
+        "local_vwap": round(local_vwap, 4),
+        "drift_pct": round(drift_pct, 4),
+    }
 
 
 def get_vwap_sd_bands(state: SymbolState) -> dict[str, Any]:

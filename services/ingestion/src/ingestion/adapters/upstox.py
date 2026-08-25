@@ -332,6 +332,7 @@ class UpstoxAdapter(BrokerAdapter):
             exchange_timestamp_ms=decoded.exchange_timestamp_ms,
             received_at_us=received_at_us,
             depth_levels=decoded.depth_levels or [],
+            atp=decoded.atp,
         )
 
     @staticmethod

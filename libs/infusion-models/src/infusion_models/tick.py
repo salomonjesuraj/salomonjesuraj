@@ -39,6 +39,12 @@ class RawTickV1(BaseModel, frozen=True):
     # protobuf field instead of collecting all of them. Empty list for
     # feed types that only ever carry one level (index feeds).
     depth_levels: list[dict[str, Any]] = Field(default_factory=list)
+    # Pipeline audit fix C1: Upstox's own exchange-computed average
+    # traded price (MarketFullFeed field 5), previously never parsed --
+    # see upstox_codec.py's DecodedFeed. 0.0 for feed types that don't
+    # carry it (index feeds), same "0 means absent, not a fabricated
+    # zero-price tick" convention as oi above.
+    atp: float = 0.0
 
 
 class NormalizedTickV1(BaseModel, frozen=True):
@@ -77,3 +83,6 @@ class NormalizedTickV1(BaseModel, frozen=True):
     # this symbol (see normalizer/ordering.py). Never dropped for this --
     # only flagged, so Data Quality scoring downstream can account for it.
     is_out_of_order: bool = False
+    # Pipeline audit fix C1 -- carried through unchanged from RawTickV1.
+    # See that model's own field comment.
+    atp: float = 0.0

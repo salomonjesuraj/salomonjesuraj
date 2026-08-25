@@ -54,6 +54,14 @@ class SymbolState:
     # features/price.py get_vwap_sd_bands). Same session-boundary reset as
     # the other VWAP accumulators.
     vwap_sq_numerator: float = 0.0
+    # Pipeline audit fix C1: Upstox's own exchange-computed ATP (average
+    # traded price), when the feed carries it -- see NormalizedTickV1's
+    # own field comment. Last-known-good value (never overwritten by a
+    # 0.0/absent reading), so get_vwap_drift() can compare the locally
+    # reconstructed VWAP against it without a single missed tick making
+    # the comparison flicker to "no read." Session-boundary reset like
+    # every other VWAP-family accumulator above.
+    exchange_atp: float = 0.0
 
     # EMA state (keyed by period)
     ema: dict[int, float] = field(default_factory=dict)

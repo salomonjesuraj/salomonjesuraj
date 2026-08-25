@@ -9,7 +9,7 @@ import structlog
 from infusion_common.timing import now_us
 from infusion_models.feature import FeatureVectorV1
 
-from feature_engine.bar_builder import update_bars
+from feature_engine.bar_builder import force_close_stale_bars, update_bars
 from feature_engine.features.accumulation import clv_snapshot, update_clv
 from feature_engine.features.candles import body_pct, detect_candle_pattern, update_body_ema
 from feature_engine.features.divergence import detect_rsi_divergence
@@ -38,6 +38,7 @@ from feature_engine.features.price import (
     get_change_pct,
     get_gap_pct,
     get_vwap,
+    get_vwap_drift,
     get_vwap_sd_bands,
     update_ema_features,
     update_price_features,
@@ -223,6 +224,37 @@ class FeatureEngine:
             if self._buffer:
                 await self._flush()
 
+    async def bar_flush_timer(self) -> None:
+        """Pipeline audit fix C3: wall-clock timer that force-closes
+        stale bars for symbols that have gone quiet across a bar
+        boundary -- the tick-driven path in _compute() has no way to
+        notice this on its own, since it only ever runs when a tick
+        arrives. See bar_builder.force_close_stale_bars()'s own
+        docstring for the full reasoning and the double-emission-safety
+        argument."""
+        interval = self.config.bar_flush_interval_sec
+        while True:
+            await asyncio.sleep(interval)
+            await self._flush_stale_bars()
+
+    async def _flush_stale_bars(self) -> None:
+        now_ms = int(now_us() / 1000)
+        async with self._lock:
+            # Snapshot under the lock (protects self._states itself from
+            # concurrent resize by _get_or_create_state); the mutation of
+            # each state's own bar objects below is safe without holding
+            # the lock across it -- see force_close_stale_bars()'s own
+            # docstring for why a real, concurrently-arriving tick can
+            # never double-emit or corrupt a bar this pass just closed.
+            states = list(self._states.items())
+        for symbol, state in states:
+            completed = force_close_stale_bars(state, now_ms)
+            for timeframe, bar in completed:
+                if timeframe == 1:
+                    self._advance_1m_indicators(state, bar)
+                if self._on_bar:
+                    await self._on_bar(symbol, timeframe, bar)
+
     async def _flush(self) -> None:
         """Process buffered ticks."""
         async with self._lock:
@@ -333,6 +365,51 @@ class FeatureEngine:
                 state.delivery_trade_date = delivery.get("trade_date", "")
         return state
 
+    def _advance_1m_indicators(self, state: SymbolState, completed_1m: OHLCBar) -> None:
+        """Advance every indicator that's gated on a closed 1-minute bar.
+
+        Extracted out of _compute() (pipeline audit fix C3) so the same
+        logic runs identically whether the bar closed because a real
+        tick from the next period arrived (the normal path, still in
+        _compute() below) or because bar_flush_timer's periodic,
+        wall-clock-driven force_close_stale_bars() closed a stale bar
+        during a quiet/illiquid gap with no new tick to trigger it --
+        one indicator-advance implementation, not two copies that could
+        silently drift apart.
+        """
+        close_1m = completed_1m.close
+        update_ema_features(state, close_1m)
+        update_rsi(state, close_1m, self.config.rsi_period)
+        update_macd(
+            state,
+            close_1m,
+            self.config.macd_fast,
+            self.config.macd_slow,
+            self.config.macd_signal,
+        )
+        update_atr(state, completed_1m.high, completed_1m.low, close_1m, self.config.atr_period)
+        update_bollinger(state, close_1m)
+        update_stochastic(state, completed_1m.high, completed_1m.low, close_1m)
+        update_cci(state, completed_1m.high, completed_1m.low, close_1m, self.config.cci_period)
+        update_obv(state, close_1m, completed_1m.volume)
+        update_adx(state, completed_1m.high, completed_1m.low, close_1m)
+        update_supertrend(state, completed_1m.high, completed_1m.low, close_1m, state.atr)
+        update_body_ema(state, completed_1m.open, close_1m)
+        update_heiken_ashi(state, completed_1m.open, completed_1m.high, completed_1m.low, close_1m)
+        update_clv(state, completed_1m.high, completed_1m.low, close_1m, completed_1m.volume)
+        state.volume_history.append(completed_1m.volume)
+        state.recent_1m_bars.append(_bar_dict(completed_1m))
+        state.completed_1m_bars += 1
+        state.last_completed_1m_ms = completed_1m.bar_start_ms
+        # Structure (swing pivots / BOS-CHOCH) and zones both need the bar
+        # just appended above, so they run after recent_1m_bars.append().
+        # ICT runs after update_structure() specifically -- it reads
+        # swing_high_1/swing_low_1 as its liquidity-sweep precondition,
+        # so it needs this bar's swing state already current.
+        update_structure(state, rsi=get_rsi(state))
+        update_zones(state, completed_1m.bar_start_ms)
+        update_ict(state)
+
     def _compute(
         self, state: SymbolState, tick: TickPayload
     ) -> tuple[FeatureVectorV1 | None, list[tuple[int, OHLCBar]]]:
@@ -384,6 +461,7 @@ class FeatureEngine:
             state.vwap_numerator = 0.0
             state.vwap_denominator = 0
             state.vwap_sq_numerator = 0.0
+            state.exchange_atp = 0.0
             state.day_high = 0.0
             state.day_low = float("inf")
             state.day_open = float(tick.get("open") or ltp)
@@ -446,44 +524,14 @@ class FeatureEngine:
 
         # VWAP/day state remains live. Technical indicators advance only from
         # completed 1-minute OHLCV bars so tick rate cannot distort them.
-        update_price_features(state, ltp, volume)
+        # Pipeline audit fix C1: exchange_atp is Upstox's own ATP field
+        # when the feed carries one (0.0/absent for feed types that
+        # don't, e.g. index ticks) -- see price.py's own field comment.
+        update_price_features(state, ltp, volume, float(tick.get("atp") or 0.0))
         completed = update_bars(state, ltp, volume_delta, state.last_tick_exchange_ms)
         completed_1m = next((bar for tf, bar in completed if tf == 1), None)
         if completed_1m is not None:
-            close_1m = completed_1m.close
-            update_ema_features(state, close_1m)
-            update_rsi(state, close_1m, self.config.rsi_period)
-            update_macd(
-                state,
-                close_1m,
-                self.config.macd_fast,
-                self.config.macd_slow,
-                self.config.macd_signal,
-            )
-            update_atr(state, completed_1m.high, completed_1m.low, close_1m, self.config.atr_period)
-            update_bollinger(state, close_1m)
-            update_stochastic(state, completed_1m.high, completed_1m.low, close_1m)
-            update_cci(state, completed_1m.high, completed_1m.low, close_1m, self.config.cci_period)
-            update_obv(state, close_1m, completed_1m.volume)
-            update_adx(state, completed_1m.high, completed_1m.low, close_1m)
-            update_supertrend(state, completed_1m.high, completed_1m.low, close_1m, state.atr)
-            update_body_ema(state, completed_1m.open, close_1m)
-            update_heiken_ashi(
-                state, completed_1m.open, completed_1m.high, completed_1m.low, close_1m
-            )
-            update_clv(state, completed_1m.high, completed_1m.low, close_1m, completed_1m.volume)
-            state.volume_history.append(completed_1m.volume)
-            state.recent_1m_bars.append(_bar_dict(completed_1m))
-            state.completed_1m_bars += 1
-            state.last_completed_1m_ms = completed_1m.bar_start_ms
-            # Structure (swing pivots / BOS-CHOCH) and zones both need the bar
-            # just appended above, so they run after recent_1m_bars.append().
-            # ICT runs after update_structure() specifically -- it reads
-            # swing_high_1/swing_low_1 as its liquidity-sweep precondition,
-            # so it needs this bar's swing state already current.
-            update_structure(state, rsi=get_rsi(state))
-            update_zones(state, completed_1m.bar_start_ms)
-            update_ict(state)
+            self._advance_1m_indicators(state, completed_1m)
 
         # Collect computed features
         macd_line, macd_sig, macd_hist = get_macd(state)
@@ -506,6 +554,12 @@ class FeatureEngine:
             **get_vwap_sd_bands(state),
             **heiken_ashi_snapshot(state),
             **detect_rsi_divergence(state.rsi_swing_points),
+            # Pipeline audit fix C1: how far the locally-reconstructed
+            # VWAP has drifted from Upstox's own exchange ATP, when the
+            # feed carries one. Informational only -- see
+            # get_vwap_drift()'s own docstring for why this measures
+            # reliability rather than replacing the existing VWAP.
+            "vwap_drift": get_vwap_drift(state),
             # EBIE EB-2: Close-Location Value accumulation/distribution
             # evidence -- see feature_engine/features/accumulation.py.
             # Informational only, same governance as every field above.

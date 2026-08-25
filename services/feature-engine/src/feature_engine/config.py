@@ -12,6 +12,14 @@ class FeatureEngineSettings(InfusionSettings):
     batch_timer_ms: int = 5  # flush every 5ms
     batch_max_ticks: int = 200  # flush if buffer reaches 200
 
+    # Pipeline audit fix C3: how often the wall-clock timer checks every
+    # tracked symbol for a stale bar to force-close (see
+    # bar_builder.force_close_stale_bars()). This is independent of the
+    # tick-driven flush timer above -- a quiet/illiquid symbol has no
+    # ticks to trigger batch_timer_ms's own flush loop, which is exactly
+    # the gap this timer covers.
+    bar_flush_interval_sec: float = 5.0
+
     # Consumer
     consumer_batch_size: int = 200
     consumer_block_ms: int = 2

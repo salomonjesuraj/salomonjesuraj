@@ -205,6 +205,10 @@ async def main() -> None:
 
     # Start flush timer
     timer_task = asyncio.create_task(engine.flush_timer())
+    # Pipeline audit fix C3: separate wall-clock timer that force-closes
+    # stale bars for quiet/illiquid symbols -- see
+    # FeatureEngine.bar_flush_timer()'s own docstring.
+    bar_timer_task = asyncio.create_task(engine.bar_flush_timer())
 
     # Main loop
     logger.info("feature_engine_consuming", stream=STREAM_TICK_NORMALIZED)
@@ -216,6 +220,7 @@ async def main() -> None:
         await ack()
 
     timer_task.cancel()
+    bar_timer_task.cancel()
     await lifecycle.cleanup()
 
 

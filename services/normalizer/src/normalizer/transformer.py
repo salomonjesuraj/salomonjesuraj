@@ -40,4 +40,5 @@ def transform(
         normalized_at_us=now_us(),
         is_out_of_order=is_out_of_order,
         depth_levels=raw_payload.get("depth_levels") or [],
+        atp=raw_payload.get("atp", 0.0),
     )

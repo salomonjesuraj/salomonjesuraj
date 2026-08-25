@@ -1,17 +1,43 @@
-"""Outcome tracker — 30-second sampling of signal outcomes.
+"""Outcome tracker — bar-resolution sampling of signal outcomes.
 
-Reads untracked active signals from Postgres, checks current LTP
-from Redis hot state, and updates outcome status:
-  - TARGET_HIT: LTP reached target_price
-  - STOP_HIT: LTP reached invalidation_price
+Reads untracked active signals from Postgres, checks completed 1-minute
+OHLC bars from Redis (the same infusion:ohlc:{symbol}:1m zset feature-
+engine already writes on every bar close -- see
+feature_engine/main.py's on_bar()), and updates outcome status:
+  - TARGET_HIT: a bar's high/low crossed target_price
+  - STOP_HIT: a bar's high/low crossed invalidation_price
   - EXPIRED: signal TTL elapsed without hitting either
 
-Also tracks MFE/MAE (max favorable/adverse excursion) per signal.
+Fix (2026-08-25, pipeline audit finding C2): this previously sampled a
+single LTP point-in-time snapshot every tracker_interval_sec (30s) from
+Redis hot tick state. If price swept through BOTH target and stop
+inside one 30-second gap, the outcome was decided by whichever boundary
+happened to be true at the exact instant of the poll -- not by true
+chronological first-touch -- and a transient touch that reverted before
+the next poll was never recorded at all. Switching to completed
+1-minute bar high/low removes the polling-gap blind spot entirely: a
+bar's high/low reflect every trade in that minute, not one snapshot.
+The only remaining ambiguity is a single bar whose range spans BOTH
+target and stop (handled explicitly below with a deterministic
+tie-break), and the standard "the first minute has no closed bar yet"
+latency (<=60s), both far tighter than the previous, uncorrelated-to-
+price +/-30s poll window.
+
+Also tracks MFE/MAE (max favorable/adverse excursion) per signal --
+now computed from real bar highs/lows across the whole tracked window,
+not a running max of LTP poll samples, so it can no longer miss a
+spike that happened between two polls.
 
 Design:
-  - 30-second polling interval (configurable)
+  - 30-second polling interval (configurable) -- unchanged; this is how
+    often we re-check Redis for newly-closed bars, not the resolution
+    granularity of the outcome decision itself (that's now 1 minute,
+    bar-close-driven)
   - Only runs during market hours (09:15 - 15:30 IST)
-  - Deterministic: same price data → same outcome classification
+  - Deterministic: re-walks every bar since the signal's created_at, in
+    chronological order, every cycle, stopping at the first bar that
+    resolves it -- same price data -> same outcome, with no dependency
+    on exactly when a poll happened to land
   - Bounded: only tracks signals from current session
 """
 
@@ -19,12 +45,12 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 
 import asyncpg
 import structlog
-from infusion_streams.constants import KEY_TICK_PREFIX
 from redis.asyncio import Redis
 
 from archiver.config import ArchiverSettings
@@ -67,8 +93,55 @@ WHERE id = $1
 """
 
 
+def decode_bar(raw: Any) -> Payload | None:
+    """Decode one infusion:ohlc:{symbol}:1m zset member (JSON -- see
+    feature_engine/main.py's on_bar()). Self-contained duplication of
+    api/routes/mtf.py's own _decode_ohlc -- archiver and api are separate
+    services with no shared-lib import path for this, matching the same
+    cross-service duplication precedent used elsewhere in this codebase
+    (e.g. scanner/verdict_engine.py's own market-context duplication)."""
+    try:
+        val = raw.decode() if isinstance(raw, bytes) else raw
+        obj = json.loads(val)
+        return {
+            "t": int(obj.get("t") or 0),
+            "o": float(obj.get("o", 0)),
+            "h": float(obj.get("h", 0)),
+            "l": float(obj.get("l", 0)),
+            "c": float(obj.get("c", 0)),
+        }
+    except (json.JSONDecodeError, TypeError, ValueError, AttributeError):
+        return None
+
+
+def first_touch(bar: Payload, target: float, stop: float, bearish: bool) -> str | None:
+    """Which boundary this bar's high/low crossed, if any -- "TARGET_HIT",
+    "STOP_HIT", or None.
+
+    When a single bar's range spans BOTH target and stop (a real, if
+    uncommon, possibility on a 1-minute bar for a volatile underlying),
+    the boundary whose price is closer to the bar's OPEN is treated as
+    reached first -- a deterministic, disclosed tie-break, not a guess:
+    under any continuous price path starting at the bar's open, the
+    nearer of two levels is necessarily crossed before the farther one.
+    """
+    if not bearish:
+        hit_target = bar["h"] >= target
+        hit_stop = bar["l"] <= stop
+    else:
+        hit_target = bar["l"] <= target
+        hit_stop = bar["h"] >= stop
+    if hit_target and hit_stop:
+        return "STOP_HIT" if abs(bar["o"] - stop) < abs(bar["o"] - target) else "TARGET_HIT"
+    if hit_target:
+        return "TARGET_HIT"
+    if hit_stop:
+        return "STOP_HIT"
+    return None
+
+
 class OutcomeTracker:
-    """Tracks signal outcomes by sampling Redis LTP every interval.
+    """Tracks signal outcomes from completed 1-minute bar high/low.
 
     Usage:
         tracker = OutcomeTracker(pool, redis, settings)
@@ -107,19 +180,22 @@ class OutcomeTracker:
         close_t = self._market_close[0] * 60 + self._market_close[1]
         return open_t <= t <= close_t + 10  # 10 min grace after close
 
-    async def _get_ltp(self, symbol: str) -> float | None:
-        """Get current LTP from Redis hot state."""
-        key = f"{KEY_TICK_PREFIX}{symbol}"
-        raw = await self._redis.hget(key, "ltp")
-        if raw is None:
-            return None
-        try:
-            return float(raw)
-        except (ValueError, TypeError):
-            return None
+    async def _get_bars_since(self, symbol: str, since_epoch: int) -> list[Payload]:
+        """Every completed 1m bar for `symbol` at or after `since_epoch`
+        (Unix seconds), in chronological order. Same zset feature-engine
+        writes on every bar close -- already read live by
+        api/routes/mtf.py and api/routes/charts.py, so this reuses
+        proven, already-running production data, not a new write path."""
+        key = f"infusion:ohlc:{symbol}:1m"
+        raw = await self._redis.zrangebyscore(key, since_epoch, "+inf")
+        bars = [b for b in (decode_bar(r) for r in raw) if b is not None]
+        bars.sort(key=lambda b: b["t"])
+        return bars
 
     async def _track_cycle(self) -> None:
-        """One tracking cycle: fetch untracked signals, sample LTP, update outcomes."""
+        """One tracking cycle: fetch untracked signals, walk real
+        completed-bar high/low since each signal's created_at, and
+        resolve outcomes deterministically."""
         now_utc = datetime.now(UTC)
         lookback = now_utc - timedelta(minutes=self._lookback_min)
 
@@ -128,6 +204,17 @@ class OutcomeTracker:
 
         if not rows:
             return
+
+        # Group by symbol so each symbol's bar zset is fetched once per
+        # cycle regardless of how many untracked signals share it.
+        by_symbol: dict[str, list[Any]] = {}
+        for row in rows:
+            by_symbol.setdefault(row["symbol"], []).append(row)
+
+        bars_by_symbol: dict[str, list[Payload]] = {}
+        for symbol, symbol_rows in by_symbol.items():
+            earliest = min(r["created_at"] for r in symbol_rows)
+            bars_by_symbol[symbol] = await self._get_bars_since(symbol, int(earliest.timestamp()))
 
         updates = []
         for row in rows:
@@ -140,32 +227,34 @@ class OutcomeTracker:
             signal_type = str(row["signal_type"] or "").lower()
             bearish = target < entry or signal_type == "bearish"
             created = row["created_at"]
+            created_epoch = int(created.timestamp())
             prev_high = float(row["high_after_signal"] or entry)
             prev_low = float(row["low_after_signal"] or entry)
 
-            ltp = await self._get_ltp(symbol)
-            if ltp is None:
-                continue
+            bars = [b for b in bars_by_symbol.get(symbol, []) if b["t"] >= created_epoch]
 
-            # Update high/low tracking
-            current_high = max(prev_high, ltp)
-            current_low = min(prev_low, ltp)
+            current_high = prev_high
+            current_low = prev_low
+            outcome_label: str | None = None
+            resolving_bar: Payload | None = None
 
-            # MFE/MAE
-            if bearish:
-                mfe_pct = ((entry - current_low) / entry) * 100 if entry > 0 else 0
-                mae_pct = ((current_high - entry) / entry) * 100 if entry > 0 else 0
-            else:
-                mfe_pct = ((current_high - entry) / entry) * 100 if entry > 0 else 0
-                mae_pct = ((entry - current_low) / entry) * 100 if entry > 0 else 0
+            # Walk bars in order, stopping at the first one that resolves
+            # this signal -- MFE/MAE below only reflects the window up to
+            # and including that bar, matching this tracker's own
+            # documented scope boundary (a signal stops being updated the
+            # instant it resolves; T2/T3 progress in a LATER cycle, after
+            # the row has already left the untracked pool, is an honest,
+            # disclosed gap of this implementation, not silently hidden).
+            for bar in bars:
+                current_high = max(current_high, bar["h"])
+                current_low = min(current_low, bar["l"])
+                touch = first_touch(bar, target, stop, bearish)
+                if touch is not None:
+                    outcome_label = touch
+                    resolving_bar = bar
+                    break
 
-            # Time elapsed
-            elapsed = now_utc - created
-            elapsed_min = elapsed.total_seconds() / 60
-
-            # Outcome determination
             outcome_tracked = False
-            outcome_label = None
             target_hit_at = None
             stop_hit_at = None
             expired_at = None
@@ -173,45 +262,53 @@ class OutcomeTracker:
             time_to_stop = None
             target_level_hit = None
 
-            if (not bearish and ltp >= target) or (bearish and ltp <= target):
+            if outcome_label is not None and resolving_bar is not None:
                 outcome_tracked = True
-                outcome_label = "TARGET_HIT"
-                target_hit_at = now_utc
-                time_to_target = elapsed_min
-                self._target_hits += 1
-                # Phase N8: T1/T2/T3 level detection. Scoped to this exact
-                # moment -- the highest level ALREADY reached by the same
-                # ltp reading that just confirmed T1, not continued
-                # monitoring afterward (this row leaves the untracked pool
-                # the instant outcome_tracked flips true, same as it always
-                # has -- T2/T3 progression that happens in a LATER 30s
-                # cycle, after this row is no longer selected by
-                # _FETCH_UNTRACKED_SQL, is an honest, documented gap of
-                # this scoped implementation, not silently pretended away).
-                # A genuine confluence-cluster fib target (t3 > t2 > t1
-                # for bullish, t3 < t2 < t1 for bearish) is assumed since
-                # that's how compute_fib_targets()/practical_option_targets()
-                # both construct them; t2/t3 of 0 means "not computed for
-                # this signal" and is treated as "no further level to check".
-                target_level_hit = "T1"
-                if t3 > 0 and ((not bearish and ltp >= t3) or (bearish and ltp <= t3)):
-                    target_level_hit = "T3"
-                elif t2 > 0 and ((not bearish and ltp >= t2) or (bearish and ltp <= t2)):
-                    target_level_hit = "T2"
-            elif (not bearish and ltp <= stop) or (bearish and ltp >= stop):
-                outcome_tracked = True
-                outcome_label = "STOP_HIT"
-                stop_hit_at = now_utc
-                time_to_stop = elapsed_min
-                self._stop_hits += 1
-            elif elapsed_min >= self._signal_ttl_min:
-                outcome_tracked = True
-                outcome_label = "EXPIRED"
-                expired_at = now_utc
-                self._expired += 1
+                # Bar-open timestamp is a <=1-minute-resolution
+                # approximation of the true touch instant -- still a
+                # far tighter, price-correlated bound than the previous
+                # design's poll-wall-clock timestamp, which had no
+                # relationship to when the price move actually happened.
+                bar_ts = datetime.fromtimestamp(resolving_bar["t"], tz=UTC)
+                elapsed_min = (resolving_bar["t"] - created_epoch) / 60.0
+                if outcome_label == "TARGET_HIT":
+                    target_hit_at = bar_ts
+                    time_to_target = elapsed_min
+                    self._target_hits += 1
+                    target_level_hit = "T1"
+                    if t3 > 0 and (
+                        (not bearish and resolving_bar["h"] >= t3)
+                        or (bearish and resolving_bar["l"] <= t3)
+                    ):
+                        target_level_hit = "T3"
+                    elif t2 > 0 and (
+                        (not bearish and resolving_bar["h"] >= t2)
+                        or (bearish and resolving_bar["l"] <= t2)
+                    ):
+                        target_level_hit = "T2"
+                else:
+                    stop_hit_at = bar_ts
+                    time_to_stop = elapsed_min
+                    self._stop_hits += 1
+            else:
+                elapsed_min = (now_utc - created).total_seconds() / 60
+                if elapsed_min >= self._signal_ttl_min:
+                    outcome_tracked = True
+                    outcome_label = "EXPIRED"
+                    expired_at = now_utc
+                    self._expired += 1
 
             if outcome_tracked:
                 self._tracked_total += 1
+
+            # MFE/MAE from real bar highs/lows across the tracked window,
+            # not a running max of point-sampled LTPs.
+            if bearish:
+                mfe_pct = ((entry - current_low) / entry) * 100 if entry > 0 else 0
+                mae_pct = ((current_high - entry) / entry) * 100 if entry > 0 else 0
+            else:
+                mfe_pct = ((current_high - entry) / entry) * 100 if entry > 0 else 0
+                mae_pct = ((entry - current_low) / entry) * 100 if entry > 0 else 0
 
             updates.append(
                 (

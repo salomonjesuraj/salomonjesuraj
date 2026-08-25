@@ -39,6 +39,18 @@ class DecodedFeed:
     best_bid_qty: int = 0
     best_ask_qty: int = 0
     exchange_timestamp_ms: int = 0
+    # Pipeline audit fix C1 (2026-08-25): Upstox's real MarketFullFeed
+    # message carries its own exchange-computed average traded price
+    # (field 5) -- this decoder previously never parsed it, so every
+    # downstream VWAP was a local tick-reconstruction (LTP * volume-delta)
+    # with no way to check it against the exchange's own number. iv
+    # (field 8) is parsed too since it's on the same message, though it's
+    # only ever meaningfully populated on option-instrument feeds, not
+    # the equity/index full feed this adapter subscribes to for the
+    # underlying scan universe -- 0.0 here for a stock tick is expected,
+    # not a parsing failure.
+    atp: float = 0.0
+    iv: float = 0.0
     # EBIE EB-6: up to 5 {bidP,bidQ,askP,askQ} levels, best-first. Empty
     # for feed types that only ever carry one level (index feeds, the
     # FirstLevelWithGreeks options message type) -- never fabricated.
@@ -204,10 +216,14 @@ def _parse_market_full_feed(data: bytes) -> Payload:
             out["first_depth"] = levels[0] if levels else {}
         elif field_no == 4 and isinstance(value, bytes):
             out["ohlc"] = _parse_market_ohlc(value)
+        elif field_no == 5:
+            out["atp"] = _double(value)
         elif field_no == 6:
             out["volume"] = int(value)
         elif field_no == 7:
             out["oi"] = int(_double(value))
+        elif field_no == 8:
+            out["iv"] = _double(value)
         elif field_no == 9:
             out["tbq"] = int(_double(value))
         elif field_no == 10:
@@ -298,6 +314,8 @@ def _to_decoded_feed(instrument_key: str, feed: Payload, current_ts: int) -> Dec
         best_ask_qty=int(depth.get("askQ") or 0),
         exchange_timestamp_ms=int(ltpc.get("ltt") or current_ts or 0),
         depth_levels=feed.get("depth_levels") or [],
+        atp=float(feed.get("atp") or 0),
+        iv=float(feed.get("iv") or 0),
     )
 
 
