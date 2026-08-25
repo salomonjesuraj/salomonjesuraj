@@ -69,6 +69,7 @@ from api.routes.shadow_validation import routes as shadow_validation_routes
 from api.routes.strategy_selector import routes as strategy_selector_routes
 from api.routes.system import routes as system_routes
 from api.routes.ticks import routes as ticks_routes
+from api.routes.trade_blueprint import routes as trade_blueprint_routes
 from api.routes.triggers import routes as trigger_routes
 from api.routes.upstox_news import routes as upstox_news_routes
 from api.routes.verify import routes as verify_routes
@@ -145,6 +146,7 @@ async def main() -> None:
     app.router.add_routes(system_routes)
     app.router.add_routes(futures_routes)
     app.router.add_routes(options_dynamics_routes)
+    app.router.add_routes(trade_blueprint_routes)
     if pg_pool:
         app.router.add_routes(analytics_routes)
         app.router.add_routes(radar_alerts_routes)

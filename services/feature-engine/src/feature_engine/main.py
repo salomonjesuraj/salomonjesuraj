@@ -162,6 +162,10 @@ async def main() -> None:
         "delivery_pct_avg_20d",
         "delivery_avg_days",
         "delivery_trade_date",
+        # Mathematical audit fix (§1.2) -- api/trade_blueprint.py reads
+        # these live for the unified TradeBlueprint payload.
+        "retest_status",
+        "retest_level",
         # EBIE EB-2: CLV accumulation/distribution evidence -- see
         # feature_engine/features/accumulation.py.
         "clv_ema",
