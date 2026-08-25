@@ -45,7 +45,27 @@ class ScanSignalV2(BaseModel, frozen=True):
     # Scoring
     conviction_score: float = 0.0  # 0-100 composite score
     conviction_grade: str = ""  # A+, A, B, C, D
-    sub_scores: dict[str, float] = Field(default_factory=dict)  # { "volume": 25, "vwap": 20, ... }
+    # LIVE-CAUGHT REGRESSION (found while checking the dashboard for live
+    # errors, 2026-08-25): this field was narrowed from a bare `dict` to
+    # `dict[str, float]` by the strict-typing pass (commit 8387190) as a
+    # mechanical mypy fix, on the assumption the comment's own stale
+    # example ("volume": 25, "vwap": 20) still described real usage. It
+    # doesn't -- scanner/engine.py has stored rich nested dicts here under
+    # "verdict" (EB-8), "trap_risk" (EB-9), "portfolio_fit" (EB-11),
+    # "cross_confirmation", "position_sizing", and "ml_classifier" for
+    # most of this project's history. A bare `dict` in Pydantic v2 is
+    # dict[Any, Any] and never validated those values; `dict[str, float]`
+    # actively DOES validate them, and every one of those keys is a dict,
+    # not a float -- so ScanSignalV2(...) construction started raising a
+    # real ValidationError for essentially every candidate that reaches
+    # full scoring. Confirmed live: 1486 "feature_processing_error" log
+    # entries in the ~23 hours between that deploy and this fix (~226/hr,
+    # ~19% of all scanner log lines), each one a fully-scored candidate
+    # silently dropped before publish/archive. Fixed to dict[str, Any],
+    # matching features_snapshot's own correct pattern two fields below --
+    # still satisfies strict mypy's type-arg requirement, but no longer
+    # rejects the real payload shape.
+    sub_scores: dict[str, Any] = Field(default_factory=dict)
 
     # Price context
     price_at_signal: float = 0.0
