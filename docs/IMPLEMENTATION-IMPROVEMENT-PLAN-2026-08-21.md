@@ -819,3 +819,47 @@ checks but not enough for the Playwright CLI wrapper.
 9. Integration tests for Redis/Postgres/API/dashboard proxy flow.
 10. Frontend Playwright tests once npm or a Playwright runner is available.
 11. UI polish and Classic shell removal after New-shell parity is proven.
+
+## Update (continued in a later session, separate commits)
+
+Items 4-7 and 9 above are now done, each independently verified against
+the real running stack (not just type-checked) before committing --
+full details in each item's own git log entry, summarized here:
+
+- **Items 4-7 (strict typing, all four remaining files)**: `mypy libs/
+  services/` now reports **zero errors across all 200 source files**,
+  down from the original 1425/158. `ai_query.py` and `ebie_candidates.py`
+  were annotation-only changes. `ml_classifier.py` and `backtest.py`
+  (the largest file, 2122 lines/70 errors) also surfaced a handful of
+  real, small type-narrowing bugs beyond missing annotations -- each
+  fixed with an honest code change (e.g. a value read via `.get()`
+  twice instead of stored once, defeating mypy's None-narrowing; a
+  `bool(x)` truthiness check that doesn't narrow `Optional[float]` the
+  way `x is not None` does) rather than suppressed. Live-verified: every
+  route in both files (11 real backtest/ml-classifier endpoints, the
+  full ai_query.py pipeline, and its cross-file calls into
+  compute_optimizer_proposal) returns 200 with real, correct data
+  post-fix, including the specific values the narrowing fixes touched.
+
+- **Item 9 (Docker-backed integration tests)**: `tests/integration/`
+  now has 22 real tests across 5 files (`conftest.py` + infra
+  connectivity, Postgres schema contracts, symbol-universe sanity, API
+  contracts, dashboard nginx-proxy checks), run via the existing
+  `make test-integration` / `scripts/dev.ps1 test-integration` wiring
+  with zero new dependencies (aiohttp/asyncpg/redis/msgpack were already
+  in `requirements-dev.txt`). Deliberately scoped to real contract
+  checks against the actual running stack (the same `docker compose up
+  -d` deployment, real live data) rather than an isolated/ephemeral
+  stack with synthetic ticks injected through ingestion -- that's a
+  materially larger, separate project (mocking Upstox's protobuf feed
+  end to end), disclosed here as a real, known gap rather than silently
+  built as something smaller than it looks. The suite skips cleanly
+  (not a scary failure) with an actionable message if the stack isn't
+  up. All 22 pass against the real stack; `pytest tests/` (unit +
+  integration together) passes 28/28.
+
+Still genuinely open, unchanged from the original report: real
+integration coverage for the tick-injection pipeline itself (items 2-4
+of the original Phase 5 integration plan), Playwright smoke tests
+(this Windows environment still has no `npm`/`npx`/`node` on PATH,
+re-confirmed), the UI-polish pass, and CI.
