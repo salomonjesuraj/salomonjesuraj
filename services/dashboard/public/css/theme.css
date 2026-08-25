@@ -1592,12 +1592,61 @@
 .ifx-deck-verdict-word--bear { color: var(--ifx-bear); }
 .ifx-deck-verdict-reason { font-size: var(--ifx-text-xs); color: var(--ifx-shell-text-muted); margin-top: 3px; }
 .ifx-deck-levels { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; position: relative; }
+/* Mathematical-audit-follow-up UI work: 5th column (T3) only appears
+   once the blueprint fetch actually resolves a real target_3_fib --
+   see cockpit-v2.js's _paintBlueprint(). Until then the grid quietly
+   stays 4-wide with the empty data-deck-t3 cell taking no visible
+   space, rather than a placeholder column nobody can read yet. */
+.ifx-deck-levels--5 { grid-template-columns: repeat(5, 1fr); }
 .ifx-deck-lvl {
   display: flex; flex-direction: column; gap: 2px; padding: 8px 9px;
   border-radius: var(--ifx-radius-sm); background: var(--ifx-scrim-1); border: 1px solid var(--ifx-shell-border);
 }
 .ifx-deck-lvl label { font-size: 8.5px; text-transform: uppercase; letter-spacing: .4px; color: var(--ifx-shell-text-faint); }
 .ifx-deck-lvl b { font-family: var(--ifx-font-mono); font-size: 13px; font-weight: 700; color: var(--ifx-shell-text); }
+.ifx-deck-lvl small { font-size: 8px; color: var(--ifx-shell-text-faint); margin-top: 1px; }
+
+/* Direction badge + retest-status badge (Tasks 1/2/4 UI work) */
+.ifx-deck-top-right { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; flex: none; }
+.ifx-deck-grade-badge {
+  font-size: 10px; font-weight: 800; padding: 1px 6px; border-radius: var(--ifx-radius-pill);
+  background: var(--ifx-scrim-2); color: var(--ifx-shell-text-muted); margin-left: 6px; vertical-align: middle;
+}
+
+/* Volume Profile / Value Area pill */
+.ifx-deck-vp-pill {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 10px; padding: 7px 10px;
+  border-radius: var(--ifx-radius-sm); background: var(--ifx-scrim-1); border: 1px solid var(--ifx-shell-border);
+  font-size: var(--ifx-text-xs);
+}
+.ifx-deck-vp-item { display: inline-flex; align-items: baseline; gap: 4px; }
+.ifx-deck-vp-item label { font-size: 8.5px; text-transform: uppercase; letter-spacing: .3px; color: var(--ifx-shell-text-faint); }
+.ifx-deck-vp-item b { font-family: var(--ifx-font-mono); font-weight: 700; }
+.ifx-deck-vp-empty, .ifx-deck-oi-empty, .ifx-deck-option-empty {
+  font-size: var(--ifx-text-2xs); color: var(--ifx-shell-text-faint); font-style: italic;
+}
+
+/* 4-quadrant OI buildup + wall-hurdle pill */
+.ifx-deck-oi-pill {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 8px; padding: 7px 10px;
+  border-radius: var(--ifx-radius-sm); background: var(--ifx-scrim-1); border: 1px solid var(--ifx-shell-border);
+  font-size: var(--ifx-text-xs);
+}
+.ifx-deck-oi-hurdle { display: inline-flex; align-items: baseline; gap: 4px; color: var(--ifx-shell-text-muted); }
+.ifx-deck-oi-hurdle b { font-family: var(--ifx-font-mono); color: var(--ifx-shell-text); }
+
+/* Option Basis box */
+.ifx-deck-option-box {
+  margin-top: 8px; padding: 8px 10px; border-radius: var(--ifx-radius-sm);
+  background: var(--ifx-scrim-1); border: 1px solid var(--ifx-shell-border);
+}
+.ifx-deck-option-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ifx-deck-option-head b { font-family: var(--ifx-font-mono); font-size: var(--ifx-text-xs); font-weight: 700; }
+.ifx-deck-option-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 7px; }
+.ifx-deck-option-grid span { display: flex; flex-direction: column; gap: 1px; }
+.ifx-deck-option-grid label { font-size: 8px; text-transform: uppercase; letter-spacing: .3px; color: var(--ifx-shell-text-faint); }
+.ifx-deck-option-grid b { font-family: var(--ifx-font-mono); font-size: 11.5px; font-weight: 700; }
+
 .ifx-deck-spark { margin-top: 12px; height: 34px; position: relative; }
 .ifx-deck-spark svg { width: 100%; height: 100%; }
 .ifx-deck-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; position: relative; }
@@ -1623,6 +1672,14 @@
 .ifx-watch-progress > i { display: block; height: 100%; background: var(--ifx-accent); }
 .ifx-watch-foot { display: flex; justify-content: space-between; gap: 6px; font-size: 10px; color: var(--ifx-shell-text-faint); }
 .ifx-watch-foot b { color: var(--ifx-shell-text); font-family: var(--ifx-font-mono); font-weight: 700; white-space: nowrap; }
+
+/* Mathematical-audit-follow-up UI work: retest-status badge + compact
+   MTF alignment dot row, per-card (see watch-strip-v2.js's own
+   _loadRetest()/_loadMtf()). Empty (zero height, no layout jump) until
+   each fetch resolves. */
+.ifx-watch-meta-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 6px 0; min-height: 16px; }
+.ifx-watch-mtf-row { display: inline-flex; align-items: center; gap: 3px; }
+.ifx-watch-mtf-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
 
 /* ═══════════════════════════════════════════════════════════════════════
    NEW SHELL -- Phase N4: Screener table v2, mockup's 14-column spec plus

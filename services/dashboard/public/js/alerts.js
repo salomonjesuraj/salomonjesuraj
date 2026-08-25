@@ -331,15 +331,29 @@ export class AlertLog {
     const data = this._suppressed || {};
     const rows = Array.isArray(data.suppressed) ? data.suppressed : [];
     const reasons = data.reason_counts || {};
+    // Mathematical-audit-follow-up UI work: the unified RejectionCode
+    // taxonomy, aggregated server-side in api/routes/scanner.py's
+    // get_suppressed_signals() alongside the existing free-text reason
+    // counts. Only codes that gate actually attached one appear here --
+    // an empty map (all gates in this window happened to lack a
+    // matching code) shows the honest "not yet coded" note below, never
+    // a fabricated breakdown.
+    const codes = data.code_counts || {};
     const mode = data.mode || 'precision';
     const profile = data.profile || {};
     const topReasons = Object.entries(reasons)
       .sort((a, b) => Number(b[1]) - Number(a[1]))
       .slice(0, 6);
+    const topCodes = Object.entries(codes)
+      .sort((a, b) => Number(b[1]) - Number(a[1]))
+      .slice(0, 9);
 
     const reasonHtml = topReasons.length
       ? topReasons.map(([reason, count]) => `<span>${escapeHtml(cleanReason(reason))} <b>${Number(count || 0)}</b></span>`).join('')
       : '<span>No suppressed candidate data yet</span>';
+    const codeHtml = topCodes.length
+      ? topCodes.map(([code, count]) => `<span class="rejection-code-chip">${escapeHtml(code)} <b>${Number(count || 0)}</b></span>`).join('')
+      : '<span class="rejection-code-empty">No coded rejections in this window yet — not every gate has a taxonomy code, see the audit’s own disclosed gaps.</span>';
 
     const cards = rows.slice(0, 12).map(r => {
       const side = r.side || 'WAIT';
@@ -354,10 +368,12 @@ export class AlertLog {
         ...(Array.isArray(r.explanation) ? r.explanation.slice(0, 2) : []),
       ].filter(Boolean).slice(0, 3);
 
+      const codeChip = r.code ? `<span class="rejection-code-chip rejection-code-chip--inline">${escapeHtml(r.code)}</span>` : '';
       return `<article class="suppressed-card ${cls}">
         <div class="suppressed-head">
           <span>${escapeHtml(formatMicroTime(r.created_at_us))}</span>
           <b>${escapeHtml(r.symbol || '?')}</b>
+          ${codeChip}
           <em class="${escapeHtml(tone)}">${escapeHtml(action)}</em>
         </div>
         <div class="suppressed-command">
@@ -386,6 +402,10 @@ export class AlertLog {
       </div>
       ${profile.note ? `<div class="suppressed-mode-note">${escapeHtml(profile.note)}</div>` : ''}
       <div class="suppressed-reasons">${reasonHtml}</div>
+      <div class="rejection-code-row">
+        <span class="rejection-code-row-label">By RejectionCode</span>
+        ${codeHtml}
+      </div>
       ${cards ? `<div class="suppressed-grid">${cards}</div>` : '<div class="panel-empty">Waiting for suppressed scanner candidates...</div>'}
     </section>`;
   }

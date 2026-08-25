@@ -5868,6 +5868,24 @@ body.screener-v4-page{
   font-weight:800;
 }
 .suppressed-reasons b{color:var(--text-primary)}
+/* Mathematical-audit-follow-up UI work: RejectionCode taxonomy row --
+   deliberately its own blue-toned pill, distinct from .suppressed-
+   reasons' amber free-text pills above, so a stable code and a
+   human-readable reason are never visually confused for the same
+   thing. Kept in this file's own existing hardcoded palette
+   (var(--bg-surface) etc.) rather than theme.css's --ifx-* tokens, to
+   match its immediate siblings here exactly -- see the CSS-audit
+   follow-up task for reconciling this whole shared, un-scoped
+   suppressed-*/alert-* block onto the theme-token system properly. */
+.rejection-code-row{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin:8px 0 10px}
+.rejection-code-row-label{font-size:9px;font-weight:900;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted)}
+.rejection-code-chip{
+  border:1px solid #bfdbfe;border-radius:999px;background:var(--bg-surface);
+  color:#1d4ed8;padding:4px 8px;font-size:9.5px;font-weight:800;font-family:var(--font-mono,monospace);
+}
+.rejection-code-chip b{color:var(--text-primary);font-family:inherit}
+.rejection-code-chip--inline{margin-left:4px;padding:2px 6px;font-size:8.5px}
+.rejection-code-empty{font-size:10px;color:var(--text-muted);font-style:italic}
 .screener-pro-v4 .suppressed-grid{
   display:grid;
   grid-template-columns:repeat(auto-fit,minmax(330px,1fr));

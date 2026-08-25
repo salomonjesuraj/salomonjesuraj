@@ -236,6 +236,11 @@ def _compact_suppressed(payload: Payload, stream_id: str = "") -> Payload:
         "grade": payload.get("conviction_grade", ""),
         "score": payload.get("conviction_score", 0),
         "reason": payload.get("suppression_reason", ""),
+        # Mathematical-audit-follow-up Task 4 UI work: stable code
+        # alongside the free-text reason above, for the dashboard's
+        # RejectionCode taxonomy breakdown -- "" when this gate has no
+        # matching taxonomy member yet (see infusion_models.rejection).
+        "code": payload.get("suppression_code", ""),
         "entry": payload.get("entry_price", 0),
         "stop": payload.get("invalidation_price", 0),
         "target": payload.get("target_price", 0),
@@ -359,6 +364,11 @@ async def get_suppressed_signals(request: web.Request) -> web.Response:
     rows: list[Payload] = []
     reason_counts: dict[str, int] = {}
     strategy_counts: dict[str, int] = {}
+    # Mathematical-audit-follow-up Task 4 UI work: aggregated by the
+    # stable RejectionCode alongside the existing free-text reason_counts
+    # -- only rows with a real (non-empty) code count here, so this map
+    # never implies coverage the taxonomy doesn't actually have yet.
+    code_counts: dict[str, int] = {}
     for stream_id, fields in raw_entries:
         sid = stream_id.decode() if isinstance(stream_id, bytes) else str(stream_id)
         data = fields.get(b"data") or fields.get("data")
@@ -375,6 +385,9 @@ async def get_suppressed_signals(request: web.Request) -> web.Response:
         strategy = str(row.get("strategy_id") or "unknown")
         reason_counts[reason] = reason_counts.get(reason, 0) + 1
         strategy_counts[strategy] = strategy_counts.get(strategy, 0) + 1
+        code = str(row.get("code") or "")
+        if code:
+            code_counts[code] = code_counts.get(code, 0) + 1
 
     return web.json_response(
         {
@@ -384,6 +397,7 @@ async def get_suppressed_signals(request: web.Request) -> web.Response:
             "suppressed": rows,
             "reason_counts": reason_counts,
             "strategy_counts": strategy_counts,
+            "code_counts": code_counts,
         }
     )
 
