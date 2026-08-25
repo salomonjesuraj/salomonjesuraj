@@ -49,8 +49,18 @@ from typing import Any, cast
 
 import aiohttp
 import structlog
+from infusion_models.oi_buildup import OIBuildupType
 
 logger = structlog.get_logger()
+
+# Mathematical audit fix (2026-08-25, §3.1): +/- band on BOTH price and OI
+# change before either axis counts as genuinely "up" or "down" -- same
+# "don't force a noisy reading into a hard classification" discipline as
+# verdict_engine.py's MARKET_CONTEXT_NEUTRAL_BAND and options_analytics_v2.py's
+# WALL_CHANGE_THRESHOLD. This is Infusion's own calibration, not a cited
+# convention -- a single-sweep-interval (60s) price/OI move under this size
+# is noise, not a real buildup/unwinding signal.
+OI_BUILDUP_DEADBAND_PCT = 0.05
 
 INSTRUMENTS_MASTER_URL = "https://assets.upstox.com/market-quote/instruments/exchange/NSE.json.gz"
 UPSTOX_QUOTE_URL = "https://api.upstox.com/v2/market-quote/quotes"
@@ -151,6 +161,44 @@ def compute_oi_delta(current_oi: int, prev_oi: int | None) -> Payload:
     delta = current_oi - prev_oi
     pct = (delta / prev_oi * 100) if prev_oi > 0 else None
     return {"oi_change": delta, "oi_change_pct": round(pct, 2) if pct is not None else None}
+
+
+def compute_futures_price_change(current_ltp: float, prev_ltp: float | None) -> Payload:
+    """Single-sweep-interval futures LTP change -- same shape and same
+    "prev=None -> None, never a fabricated 0" rule as compute_oi_delta()
+    above. Deliberately the FUTURES contract's own price move, not
+    compute_basis()'s spot-vs-futures divergence -- classify_oi_buildup()
+    below needs the classic definition (the instrument that actually
+    carries the OI moving), which is a different question from basis."""
+    if prev_ltp is None or prev_ltp <= 0 or current_ltp <= 0:
+        return {"futures_price_change_pct": None}
+    pct = (current_ltp - prev_ltp) / prev_ltp * 100
+    return {"futures_price_change_pct": round(pct, 3)}
+
+
+def classify_oi_buildup(
+    price_change_pct: float | None, oi_change_pct: float | None
+) -> OIBuildupType:
+    """The classic 4-quadrant OI buildup matrix -- mathematical audit
+    fix for §3.1 ("genuinely not implemented anywhere"). Both axes must
+    clear OI_BUILDUP_DEADBAND_PCT before counting as directional; a miss
+    on either axis (data not yet available, or a genuinely flat sweep)
+    returns NEUTRAL rather than forcing a guess."""
+    if price_change_pct is None or oi_change_pct is None:
+        return OIBuildupType.NEUTRAL
+    price_up = price_change_pct > OI_BUILDUP_DEADBAND_PCT
+    price_down = price_change_pct < -OI_BUILDUP_DEADBAND_PCT
+    oi_up = oi_change_pct > OI_BUILDUP_DEADBAND_PCT
+    oi_down = oi_change_pct < -OI_BUILDUP_DEADBAND_PCT
+    if price_up and oi_up:
+        return OIBuildupType.LONG_BUILDUP
+    if price_up and oi_down:
+        return OIBuildupType.SHORT_COVERING
+    if price_down and oi_up:
+        return OIBuildupType.SHORT_BUILDUP
+    if price_down and oi_down:
+        return OIBuildupType.LONG_UNWINDING
+    return OIBuildupType.NEUTRAL
 
 
 async def fetch_quotes(

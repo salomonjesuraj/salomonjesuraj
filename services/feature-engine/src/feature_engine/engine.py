@@ -44,6 +44,7 @@ from feature_engine.features.price import (
     update_price_features,
 )
 from feature_engine.features.pullback import pullback_dryup_snapshot
+from feature_engine.features.retest import retest_snapshot, update_retest
 from feature_engine.features.structure import structure_snapshot, update_structure
 from feature_engine.features.volatility import (
     get_bollinger,
@@ -407,6 +408,10 @@ class FeatureEngine:
         # swing_high_1/swing_low_1 as its liquidity-sweep precondition,
         # so it needs this bar's swing state already current.
         update_structure(state, rsi=get_rsi(state))
+        # Mathematical audit fix (§1.2): must run after update_structure()
+        # -- reads its fresh structure_event/last_break_high/low output
+        # from this same bar.
+        update_retest(state)
         update_zones(state, completed_1m.bar_start_ms)
         update_ict(state)
 
@@ -547,6 +552,9 @@ class FeatureEngine:
         )
         ml_features: dict[str, Any] = {
             **structure_snapshot(state),
+            # Mathematical audit fix (§1.2) -- see retest.py's own module
+            # docstring for the state machine this reflects.
+            **retest_snapshot(state),
             **zone_snapshot(state),
             **fib_snapshot(state, ltp),
             **ict_snapshot(state),

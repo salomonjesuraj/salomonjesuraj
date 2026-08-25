@@ -132,6 +132,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from infusion_models.oi_buildup import OIBuildupType
 from infusion_models.rejection import RejectionCode
 
 from scanner.alignment import compute_signal_alignment
@@ -297,16 +298,20 @@ def _microstructure_family(ml: dict[str, Any]) -> bool | None:
 
 
 def _futures_positioning_family(futures_cache: dict[str, Any]) -> bool | None:
-    """EB-4 -- rising OI + rising premium (basis) reads as long
-    buildup; rising OI + falling premium reads as short buildup. Flat/
-    falling OI has no clear buildup interpretation either way."""
-    basis_pct = futures_cache.get("basis_pct")
-    oi_change_pct = futures_cache.get("oi_change_pct")
-    if basis_pct is None or oi_change_pct is None or oi_change_pct <= 0:
-        return None
-    if basis_pct > 0:
+    """Mathematical audit fix (§3.1, 2026-08-25): now reads the real
+    4-quadrant OI buildup classification (api/futures.py's
+    classify_oi_buildup(), cached at sweep-time by futures_queue.py)
+    instead of the old 2-quadrant basis_pct-only read that left
+    SHORT_COVERING and LONG_UNWINDING as unhandled None returns.
+    LONG_BUILDUP and SHORT_COVERING both read bullish for price
+    (aggressive fresh buying vs. shorts being forced to cover --
+    different mechanism, same net price direction this tick);
+    SHORT_BUILDUP and LONG_UNWINDING both read bearish. NEUTRAL (data
+    not yet available, or a genuinely flat sweep) still abstains."""
+    oi_buildup = futures_cache.get("oi_buildup")
+    if oi_buildup in (OIBuildupType.LONG_BUILDUP.value, OIBuildupType.SHORT_COVERING.value):
         return True
-    if basis_pct < 0:
+    if oi_buildup in (OIBuildupType.SHORT_BUILDUP.value, OIBuildupType.LONG_UNWINDING.value):
         return False
     return None
 

@@ -23,7 +23,9 @@ import structlog
 
 from api.futures import (
     FUTURES_STATE_PREFIX,
+    classify_oi_buildup,
     compute_basis,
+    compute_futures_price_change,
     compute_oi_delta,
     current_month_contract,
     fetch_futures_master,
@@ -126,12 +128,22 @@ async def sweep_once(app: Any) -> Payload:
         state_key = f"{FUTURES_STATE_PREFIX}{symbol}"
         prev_raw = await redis.hgetall(state_key)
         prev_oi = int(prev_raw[b"oi"]) if prev_raw and b"oi" in prev_raw else None
+        # Mathematical audit fix (§3.1): previous sweep's futures LTP,
+        # tracked the same way prev_oi already was -- the missing half
+        # needed for a genuine 4-quadrant OI buildup classification.
+        prev_futures_ltp = (
+            float(prev_raw[b"futures_ltp"]) if prev_raw and b"futures_ltp" in prev_raw else None
+        )
 
         spot_raw = await redis.hget(f"infusion:tick:{symbol}", "ltp")
         spot_ltp = float(spot_raw) if spot_raw else 0.0
 
         basis = compute_basis(spot_ltp, futures_ltp)
         oi_delta = compute_oi_delta(oi, prev_oi)
+        price_delta = compute_futures_price_change(futures_ltp, prev_futures_ltp)
+        oi_buildup = classify_oi_buildup(
+            price_delta.get("futures_price_change_pct"), oi_delta.get("oi_change_pct")
+        )
 
         mapping = {
             "instrument_key": instrument_key,
@@ -141,8 +153,10 @@ async def sweep_once(app: Any) -> Payload:
             "oi": oi,
             "volume": volume,
             "updated_at": now,
+            "oi_buildup": oi_buildup.value,
             **{k: ("" if v is None else v) for k, v in basis.items()},
             **{k: ("" if v is None else v) for k, v in oi_delta.items()},
+            **{k: ("" if v is None else v) for k, v in price_delta.items()},
         }
         pipe.hset(state_key, mapping=mapping)
         pipe.expire(state_key, STATE_TTL_SEC)

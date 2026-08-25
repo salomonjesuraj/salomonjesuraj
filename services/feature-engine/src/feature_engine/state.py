@@ -175,6 +175,17 @@ class SymbolState:
     last_break_low: float | None = None
     structure_event: bool = False  # True only on the bar a break just fired
 
+    # Mathematical audit fix (§1.2, 2026-08-25): retest-vs-rejection
+    # tracking for a just-broken swing level -- see
+    # feature_engine/features/retest.py. armed_at_bar is completed_1m_bars
+    # at the moment tracking started, for the staleness TTL (a breakout
+    # that's never retested within RETEST_TTL_BARS reverts to NO_BREAKOUT
+    # rather than tracking forever).
+    retest_status: str = "NO_BREAKOUT"
+    retest_level: float = 0.0
+    retest_direction: int = 0  # 1 = tracking a bullish breakout, -1 = bearish, 0 = none
+    retest_armed_at_bar: int = 0
+
     # Extended swing-point history for Fibonacci retracement/extension/
     # projection confluence (features/fibonacci.py). BOS/CHOCH above only
     # needs the latest 2 highs/lows; Fibonacci confluence needs several
