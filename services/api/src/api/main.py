@@ -35,6 +35,7 @@ from api.ai_advisor import OpenAIAdvisor
 from api.config import APISettings
 from api.ebie_state_queue import ebie_state_loop
 from api.futures_queue import futures_queue_loop
+from api.middleware import redis_error_middleware
 from api.mtf_queue import mtf_queue_loop
 from api.news_queue import news_queue_loop
 from api.option_chain_queue import option_chain_queue_loop
@@ -101,7 +102,7 @@ async def main() -> None:
     health = HealthReporter(redis, config.service_name)
     await health.start()
 
-    app = web.Application()
+    app = web.Application(middlewares=[redis_error_middleware])
     app["redis"] = redis
     app["config"] = config
     http_session = aiohttp.ClientSession()
