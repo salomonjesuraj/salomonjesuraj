@@ -45,6 +45,7 @@ from __future__ import annotations
 import contextlib
 import gzip
 import json
+import time
 from typing import Any, cast
 
 import aiohttp
@@ -134,12 +135,30 @@ async def fetch_futures_master(
 def current_month_contract(contracts: list[Payload]) -> Payload | None:
     """Nearest, non-expired contract -- "current month" per the
     authorized subscription policy. Contracts list is already
-    expiry-sorted ascending by fetch_futures_master(); the day-boundary
-    handling (an already-expired contract still in the list on expiry
-    day itself) is left to the exchange's own listing -- Upstox stops
-    listing an expired contract the next trading day, which is precise
-    enough for this use.
+    expiry-sorted ascending by fetch_futures_master().
+
+    Live-session bug found and fixed 2026-08-26 (day after Aug expiry):
+    this used to just return contracts[0] on the documented assumption
+    that "Upstox stops listing an expired contract the next trading
+    day." That assumption is false -- verified live against the real
+    instruments master and the real Full Market Quote endpoint the
+    morning after expiry: the just-expired "BANKNIFTY FUT 25 AUG 26"
+    contract was still contracts[0] in the cached master, and Upstox's
+    quote endpoint correctly returned `{"data": {}}` for it (an expired
+    contract simply isn't quotable), which meant fetch_quotes() got
+    nothing for any of the 208 F&O underlyings and oi_buildup silently
+    never populated for the entire session. Filtering out already-
+    expired entries here, rather than trusting the master file to have
+    dropped them, is the actual fix -- confirmed live that the next
+    contract (BANKNIFTY FUT 29 SEP 26) returns real OI/LTP/volume.
     """
+    now_ms = int(time.time() * 1000)
+    live = [c for c in contracts if isinstance(c.get("expiry"), int | float) and c["expiry"] > now_ms]
+    if live:
+        return live[0]
+    # Nothing unexpired in the cached list (e.g. a brand-new expiry day
+    # before the master cache has refreshed) -- fall back to the
+    # nearest entry rather than returning None, same as before.
     return contracts[0] if contracts else None
 
 
