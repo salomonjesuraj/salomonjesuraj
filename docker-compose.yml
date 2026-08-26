@@ -403,6 +403,30 @@ services:
           memory: 64M
     <<: *service-defaults
 
+  # ════════════════════════════════════════════
+  # SNIPER HUD -- the ui/ rebuild, alongside the legacy dashboard above
+  # (not a replacement yet) on its own port until it's ready to take
+  # over. Same build-then-serve-behind-Nginx shape, own Dockerfile
+  # since it's a real Node build step rather than static files.
+  # ════════════════════════════════════════════
+
+  ui:
+    build:
+      context: ui
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3001"
+    depends_on:
+      api:
+        condition: service_started
+      ws-gateway:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+    <<: *service-defaults
+
 volumes:
   pgdata:
   redisdata:
