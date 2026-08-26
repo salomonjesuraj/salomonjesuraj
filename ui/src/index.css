@@ -1,0 +1,50 @@
+@import "tailwindcss";
+
+/* Sniper HUD palette -- slate/gray ground, two neon accents reserved
+   strictly for directional meaning (bull/bear), a third neutral accent
+   family for trade_horizon badges since that's a duration read, not a
+   direction. Tailwind v4 turns every custom color token below into a
+   matching set of bg/text/border utilities automatically. */
+@theme {
+  --color-hud-bg: #05070a;
+  --color-hud-panel: #0d1218;
+  --color-hud-panel-hover: #111826;
+  --color-hud-border: #1e2734;
+  --color-hud-muted: #6b7684;
+  --color-hud-text: #e2e8f0;
+
+  --color-bull: #39ff8a;
+  --color-bull-dim: #123322;
+  --color-bear: #ff3d5e;
+  --color-bear-dim: #3a1420;
+
+  --color-horizon-scalp: #22d3ee;
+  --color-horizon-intraday: #a78bfa;
+  --color-horizon-btst: #fbbf24;
+  --color-horizon-swing: #34d399;
+
+  --font-sans: "Inter", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Consolas, monospace;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  background: var(--color-hud-bg);
+  color: var(--color-hud-text);
+  font-family: var(--font-sans);
+  font-feature-settings: "tnum" 1;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* Live price digits everywhere use tabular figures so a ticking LTP
+   never reflows its neighbors. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
