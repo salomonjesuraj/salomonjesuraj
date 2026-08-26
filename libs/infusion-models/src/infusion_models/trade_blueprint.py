@@ -10,6 +10,12 @@ OI buildup cache, market.py's option-chain OI reads). Nothing here
 recomputes or overrides those sources; api/routes/trade_blueprint.py's own
 docstring lists exactly which field comes from where.
 
+`trade_horizon` (Sniper HUD Phase 1, 2026-08-26) is the one exception to
+"pure passthrough" above -- it's a genuine new classification, derived
+from a combination of the fields already in this model plus a few extra
+reads (MTF timeframe states, a 20-day daily Volume Profile). See
+api/trade_blueprint.py's classify_trade_horizon() for the full rule set.
+
 `setup_name`/`direction` describe the underlying strategy candidate this
 blueprint bundles context around -- not a new signal generator.
 """
@@ -47,6 +53,13 @@ class TradeBlueprint(BaseModel):
     # wall for BULL, put wall for BEAR).
     oi_attraction_strike: float | None = None
     oi_hurdle_strike: float | None = None
+
+    # "Sniper HUD" Phase 1 -- TradeHorizon value. See
+    # api/trade_blueprint.py's classify_trade_horizon() for the rule
+    # set; UNCLASSIFIED (not a fifth silently-wrong guess) whenever
+    # there's no active signal or the evidence doesn't cleanly clear
+    # one horizon's specific bar.
+    trade_horizon: str = "UNCLASSIFIED"
 
     # Honesty fields -- which of the above actually had real data behind
     # them right now, so a dashboard never has to guess why a field is
