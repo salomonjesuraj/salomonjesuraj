@@ -16,7 +16,28 @@ const STATUS_CLASS: Record<string, string> = {
   CLOSED: 'bg-hud-muted/15 text-hud-muted',
 }
 
-const WIN_OUTCOMES = new Set(['WIN', 'TARGET', 'T1', 'T2'])
+// "Visual Tracking & Lifecycle" sprint (2026-08-27) -- WIN_T1/T2/T3 and
+// MISSED are api/lifecycle_monitor.py's own real outcome vocabulary;
+// WIN/TARGET/T1/T2/STOP/SL stay recognized for rows a trader closed the
+// old manual way (journal.py's /outcome route is still live). T3 gets
+// its own brighter shade so the deepest real win reads as visibly
+// better than a T1 scratch, not just "green" undifferentiated.
+const OUTCOME_CLASS: Record<string, string> = {
+  WIN_T3: 'bg-bull/25 text-bull ring-1 ring-bull/50',
+  WIN_T2: 'bg-bull/20 text-bull',
+  WIN_T1: 'bg-bull/15 text-bull',
+  WIN: 'bg-bull/15 text-bull',
+  TARGET: 'bg-bull/15 text-bull',
+  T1: 'bg-bull/15 text-bull',
+  T2: 'bg-bull/20 text-bull',
+  LOSS: 'bg-bear/15 text-bear',
+  STOP: 'bg-bear/15 text-bear',
+  SL: 'bg-bear/15 text-bear',
+  MISSED: 'bg-horizon-btst/15 text-horizon-btst',
+  REVIEW: 'bg-hud-muted/15 text-hud-muted',
+}
+
+const WIN_OUTCOMES = new Set(['WIN_T1', 'WIN_T2', 'WIN_T3', 'WIN', 'TARGET', 'T1', 'T2'])
 const LOSS_OUTCOMES = new Set(['LOSS', 'STOP', 'SL'])
 
 function TradeCard({ trade }: { trade: JournalTrade }) {
@@ -27,22 +48,34 @@ function TradeCard({ trade }: { trade: JournalTrade }) {
         ? 'text-bear'
         : 'text-hud-muted'
     : 'text-hud-muted'
+  // A resolved outcome replaces the plain status badge entirely (the
+  // dynamic, color-coded badge Phase 3 asked for) -- an unresolved
+  // trade still shows its status (PLANNED/WATCH/BLOCKED) same as
+  // before.
+  const badgeText = trade.outcome || trade.status
+  const badgeClass = trade.outcome
+    ? OUTCOME_CLASS[trade.outcome] || 'bg-hud-muted/15 text-hud-muted'
+    : STATUS_CLASS[trade.status] || 'bg-hud-muted/15 text-hud-muted'
   return (
     <article className="rounded-xl border border-hud-border bg-hud-panel p-4">
       <div className="flex items-start justify-between gap-2">
         <div>
-          <h3 className="font-mono text-sm font-bold text-hud-text">{trade.symbol}</h3>
+          <h3 className="font-mono text-sm font-bold text-hud-text">
+            {trade.symbol}
+            {trade.signal_grade && trade.signal_grade !== '-' && (
+              <span className="ml-1.5 text-xs font-normal text-hud-muted">
+                {trade.signal_grade}
+              </span>
+            )}
+          </h3>
           <span className="text-[10px] uppercase tracking-wide text-hud-muted">
             {trade.decision}
           </span>
         </div>
         <span
-          className={
-            'shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ' +
-            (STATUS_CLASS[trade.status] || 'bg-hud-muted/15 text-hud-muted')
-          }
+          className={'shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ' + badgeClass}
         >
-          {trade.status}
+          {badgeText}
         </span>
       </div>
 
@@ -66,9 +99,12 @@ function TradeCard({ trade }: { trade: JournalTrade }) {
       </div>
 
       {trade.outcome && (
-        <div className={'tnum mt-2 text-xs font-bold ' + outcomeTone}>
-          {trade.outcome}
-          {trade.exit_price ? ` @ ${fmt(trade.exit_price)}` : ''}
+        <div className={'tnum mt-2 flex items-center justify-between text-xs font-bold ' + outcomeTone}>
+          <span>
+            {trade.outcome}
+            {trade.exit_price ? ` @ ${fmt(trade.exit_price)}` : ''}
+          </span>
+          {trade.duration && <span className="font-normal text-hud-muted">{trade.duration}</span>}
         </div>
       )}
 

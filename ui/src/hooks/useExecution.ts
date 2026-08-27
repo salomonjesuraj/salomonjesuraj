@@ -10,6 +10,15 @@ export interface StageParams {
   entry: number
   stop: number
   target1: number
+  // "Visual Tracking & Lifecycle" sprint (2026-08-27) -- carried through
+  // to the journal row so api/lifecycle_monitor.py's background sweep
+  // has real T2/T3 levels to resolve WIN_T2/WIN_T3 against, and so The
+  // Ledger can show the real conviction grade this setup had when it
+  // was taken. Neither is sent to /api/execution/stage itself (that
+  // route's own ticket shape doesn't use them) -- both are journal-only.
+  target2?: number
+  target3?: number
+  signalGrade?: string
   option?: Record<string, unknown>
 }
 
@@ -73,6 +82,9 @@ export function useExecution(): UseExecutionResult {
             entry: params.entry,
             stop: params.stop,
             target1: params.target1,
+            target2: params.target2,
+            target3: params.target3,
+            signal_grade: params.signalGrade,
             source: 'sniper_hud_1click',
             selected_option: params.option ?? {},
             risk: { riskAmount: risk.risk_per_trade_amount },

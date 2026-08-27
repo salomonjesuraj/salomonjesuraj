@@ -72,6 +72,11 @@ def _normalise_trade(payload: Payload) -> Payload:
     stop = _num(payload.get("stop") or payload.get("stop_loss_hint"))
     target1 = _num(payload.get("target1") or payload.get("target_1_hint"))
     target2 = _num(payload.get("target2") or payload.get("target_2_hint"))
+    # "Visual Tracking & Lifecycle" sprint (2026-08-27) -- third target
+    # level so lifecycle_monitor.py can resolve WIN_T3, matching the
+    # same real Fibonacci/structural target_3_fib the rest of this app
+    # already surfaces (ActionCard.tsx's own t1/t2/t3 fallback chain).
+    target3 = _num(payload.get("target3") or payload.get("target_3_hint"))
     risk_points = abs(entry - stop) if entry and stop else 0.0
     rr1 = (
         round(abs(target1 - entry) / risk_points, 2)
@@ -92,6 +97,17 @@ def _normalise_trade(payload: Payload) -> Payload:
     return {
         "id": f"paper_{ts_ms}_{symbol}",
         "created_at_ist": _now_ist(),
+        # "Visual Tracking & Lifecycle" sprint (2026-08-27) -- a real
+        # Unix-seconds timestamp alongside the display-only IST string
+        # above. lifecycle_monitor.py needs a precise, unambiguous
+        # instant to walk real 1-min OHLC bars "since entry" from;
+        # parsing created_at_ist's "YYYY-MM-DD HH:MM:SS IST" text back
+        # into an instant on every sweep cycle would be fragile and
+        # slower for no reason when the real epoch is available for free
+        # right here at creation time. Journal rows written before this
+        # sprint lack this field -- the monitor skips those rather than
+        # guessing, an honest, disclosed gap, not silently faked.
+        "created_at_epoch": ts_ms // 1000,
         "source": _text(payload.get("source"), "dashboard_manual_paper"),
         "status": status,
         "signal_id": _text(payload.get("signal_id"), ""),
@@ -107,7 +123,20 @@ def _normalise_trade(payload: Payload) -> Payload:
         "stop": stop,
         "target1": target1,
         "target2": target2,
+        "target3": target3,
         "rr1": rr1,
+        # The scanner's own conviction_grade (A+/A/B/C/D, scoring.py's
+        # grade_conviction) at the moment this trade was journaled --
+        # NOT option.quality_grade below, which grades the OPTION
+        # CONTRACT's own liquidity/tradability, a different axis
+        # entirely. Absent for rows logged without a real signal behind
+        # them (a manual dashboard entry), honestly "-", never guessed.
+        "signal_grade": _text(payload.get("signal_grade"), "-"),
+        # Filled in by lifecycle_monitor.py once this trade resolves;
+        # None until then, same honest-placeholder convention as
+        # "outcome" below -- never fabricated ahead of a real bar
+        # actually confirming it.
+        "duration": None,
         "positive_above": _num(payload.get("positive_above")),
         "negative_below": _num(payload.get("negative_below")),
         "setup_strength": _num(payload.get("setup_strength")),
@@ -176,7 +205,7 @@ def _normalise_trade(payload: Payload) -> Payload:
     }
 
 
-async def _load_rows(redis: Any, limit: int = 80) -> list[Payload]:
+async def load_rows(redis: Any, limit: int = 80) -> list[Payload]:
     raw_rows = await redis.lrange(JOURNAL_KEY, 0, max(0, limit - 1))
     rows: list[Payload] = []
     for raw in raw_rows:
@@ -195,12 +224,32 @@ async def _load_rows(redis: Any, limit: int = 80) -> list[Payload]:
     return rows
 
 
+async def save_rows(redis: Any, rows: list[Payload]) -> None:
+    """Rewrites the whole journal list -- the only way to "update one
+    row" in a Redis LIST-backed store with no per-row key. Shared by
+    the two route handlers below AND, new this sprint,
+    lifecycle_monitor.py's own background sweep, so all three writers
+    go through one delete+lpush-reversed+ltrim dance instead of three
+    copies of it. This is the same best-effort concurrency posture the
+    two route handlers already had before this sprint (a second writer
+    racing between this function's own load_rows() and this save_rows()
+    could clobber the first's update) -- not a new gap introduced here,
+    and not worth a distributed lock for a single-operator paper
+    journal at this volume."""
+    pipe = redis.pipeline()
+    pipe.delete(JOURNAL_KEY)
+    for row in reversed(rows):
+        pipe.lpush(JOURNAL_KEY, json.dumps(row))
+    pipe.ltrim(JOURNAL_KEY, 0, MAX_JOURNAL_ROWS - 1)
+    await pipe.execute()
+
+
 @routes.get("/api/journal/trades")
 async def get_journal_trades(request: web.Request) -> web.Response:
     redis = request.app["redis"]
     limit = int(request.query.get("limit", "80") or 80)
     limit = max(1, min(limit, MAX_JOURNAL_ROWS))
-    rows = await _load_rows(redis, limit)
+    rows = await load_rows(redis, limit)
     return web.json_response({"ok": True, "count": len(rows), "trades": rows})
 
 
@@ -244,7 +293,7 @@ async def auto_log_signal(request: web.Request) -> web.Response:
     added = await redis.sadd(JOURNAL_SIGNAL_IDS_KEY, dedupe_id)
     await redis.expire(JOURNAL_SIGNAL_IDS_KEY, 86400 * 120)
     if not added:
-        rows = await _load_rows(redis, MAX_JOURNAL_ROWS)
+        rows = await load_rows(redis, MAX_JOURNAL_ROWS)
         existing = next((r for r in rows if r.get("signal_id") == dedupe_id), None)
         return web.json_response({"ok": True, "duplicate": True, "trade": existing})
     payload["signal_id"] = dedupe_id
@@ -268,7 +317,7 @@ async def update_journal_discretion(request: web.Request) -> web.Response:
     action = _text(payload.get("discretionary_action"), "").upper()
     if action not in {"TAKEN", "SKIPPED", "NOT_REVIEWED"}:
         return web.json_response({"ok": False, "error": "invalid_discretionary_action"}, status=400)
-    rows = await _load_rows(redis, MAX_JOURNAL_ROWS)
+    rows = await load_rows(redis, MAX_JOURNAL_ROWS)
     updated: Payload | None = None
     next_rows: list[Payload] = []
     for row in rows:
@@ -282,12 +331,7 @@ async def update_journal_discretion(request: web.Request) -> web.Response:
         next_rows.append(row)
     if not updated:
         return web.json_response({"ok": False, "error": "trade_not_found"}, status=404)
-    pipe = redis.pipeline()
-    pipe.delete(JOURNAL_KEY)
-    for row in reversed(next_rows):
-        pipe.lpush(JOURNAL_KEY, json.dumps(row))
-    pipe.ltrim(JOURNAL_KEY, 0, MAX_JOURNAL_ROWS - 1)
-    await pipe.execute()
+    await save_rows(redis, next_rows)
     return web.json_response({"ok": True, "trade": updated})
 
 
@@ -300,7 +344,7 @@ async def update_journal_outcome(request: web.Request) -> web.Response:
     except Exception:
         payload_raw = {}
     payload = cast(Payload, payload_raw) if isinstance(payload_raw, dict) else {}
-    rows = await _load_rows(redis, MAX_JOURNAL_ROWS)
+    rows = await load_rows(redis, MAX_JOURNAL_ROWS)
     updated: Payload | None = None
     next_rows: list[Payload] = []
     for row in rows:
@@ -314,19 +358,14 @@ async def update_journal_outcome(request: web.Request) -> web.Response:
         next_rows.append(row)
     if not updated:
         return web.json_response({"ok": False, "error": "trade_not_found"}, status=404)
-    pipe = redis.pipeline()
-    pipe.delete(JOURNAL_KEY)
-    for row in reversed(next_rows):
-        pipe.lpush(JOURNAL_KEY, json.dumps(row))
-    pipe.ltrim(JOURNAL_KEY, 0, MAX_JOURNAL_ROWS - 1)
-    await pipe.execute()
+    await save_rows(redis, next_rows)
     return web.json_response({"ok": True, "trade": updated})
 
 
 @routes.get("/api/journal/stats")
 async def get_journal_stats(request: web.Request) -> web.Response:
     redis = request.app["redis"]
-    rows = await _load_rows(redis, MAX_JOURNAL_ROWS)
+    rows = await load_rows(redis, MAX_JOURNAL_ROWS)
     today = datetime.now(IST).strftime("%Y-%m-%d")
     today_rows = [r for r in rows if str(r.get("created_at_ist", "")).startswith(today)]
     closed = [r for r in today_rows if r.get("outcome")]
@@ -363,7 +402,7 @@ async def get_journal_expectancy(request: web.Request) -> web.Response:
     journal-based so TAKEN, SKIPPED and NOT_REVIEWED can be separated.
     """
     redis = request.app["redis"]
-    rows = await _load_rows(redis, MAX_JOURNAL_ROWS)
+    rows = await load_rows(redis, MAX_JOURNAL_ROWS)
     closed = [r for r in rows if r.get("status") == "CLOSED" and r.get("outcome")]
     taken = [r for r in rows if str(r.get("discretionary_action", "")).upper() == "TAKEN"]
     skipped = [r for r in rows if str(r.get("discretionary_action", "")).upper() == "SKIPPED"]

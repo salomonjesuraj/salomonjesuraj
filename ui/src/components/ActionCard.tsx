@@ -145,6 +145,9 @@ export function ActionCard({ candidate, isActive, isHighConviction, onSelect }: 
       entry: entryPrice,
       stop: invalidationSl,
       target1: t1,
+      target2: t2,
+      target3: t3,
+      signalGrade: candidate.grade,
       option: executionOptionPayload,
     })
   }

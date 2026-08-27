@@ -45,6 +45,27 @@ function toCandle(bar: ChartBar): CandlestickData<UTCTimestamp> {
   }
 }
 
+/** Shared by Effects 3 and 4 below (previously a local closure only
+ * Effect 4 had) -- a null/undefined price removes that specific line
+ * rather than drawing a fabricated one at 0, the same honesty rule both
+ * the position overlay and the MTF structure overlay need. */
+function syncPriceLine(
+  candleSeries: ISeriesApi<'Candlestick'>,
+  ref: MutableRefObject<IPriceLine | null>,
+  price: number | null | undefined,
+  opts: { color: string; lineWidth: 1 | 2; lineStyle: LineStyle; title: string },
+): void {
+  if (price === null || price === undefined) {
+    if (ref.current) {
+      candleSeries.removePriceLine(ref.current)
+      ref.current = null
+    }
+    return
+  }
+  if (ref.current) ref.current.applyOptions({ price, ...opts })
+  else ref.current = candleSeries.createPriceLine({ price, ...opts })
+}
+
 function toVolume(bar: ChartBar): HistogramData<UTCTimestamp> {
   return {
     time: bar.time as UTCTimestamp,
@@ -53,8 +74,33 @@ function toVolume(bar: ChartBar): HistogramData<UTCTimestamp> {
   }
 }
 
+/** Real entry/stop/target1 to overlay -- each independently nullable,
+ * since a real broker position's own invalidation_level/target_primary
+ * can genuinely be unavailable (no fabricated 0 line gets drawn for a
+ * level the backend never computed). "Visual Tracking & Lifecycle"
+ * sprint (2026-08-27), embedding this chart into the Active Cockpit's
+ * PositionIntelligenceCard. */
+export interface PositionOverlay {
+  entry: number | null
+  stop: number | null
+  target1: number | null
+}
+
 interface LiveCandlestickChartProps {
   symbol: string
+  // Miniature instance inside a grid card (PositionIntelligenceCard)
+  // vs. the original full-size Sniper HUD pane -- same component,
+  // different footprint. Defaults to the original h-80 so every
+  // existing caller is pixel-identical to before this prop existed.
+  heightClassName?: string
+  // When provided, overrides useActivePosition's own journal lookup for
+  // the ENTRY/STOP LOSS/TARGET overlay lines -- a real open broker
+  // position (Active Cockpit) is ground truth for itself and shouldn't
+  // wait on a matching (or possibly absent/stale) journal row to know
+  // its own entry/stop/target. Sniper HUD's own usage never passes
+  // this, so it keeps resolving those lines from the journal exactly
+  // as it did before this prop existed.
+  brokerPosition?: PositionOverlay | null
 }
 
 /** Live 1-min candlestick chart for the Sniper HUD (2026-08-27 charting
@@ -77,7 +123,11 @@ interface LiveCandlestickChartProps {
  *    chart feel "live" without resetting the user's zoom/pan on every
  *    10s refresh the way a repeated setData() would.
  */
-export function LiveCandlestickChart({ symbol }: LiveCandlestickChartProps) {
+export function LiveCandlestickChart({
+  symbol,
+  heightClassName = 'h-80',
+  brokerPosition,
+}: LiveCandlestickChartProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
@@ -93,7 +143,11 @@ export function LiveCandlestickChart({ symbol }: LiveCandlestickChartProps) {
   const channelLowerLineRef = useRef<IPriceLine | null>(null)
 
   const { bars, loading, error } = useHistoricalData(symbol)
-  const activePosition = useActivePosition(symbol)
+  const journalPosition = useActivePosition(symbol)
+  // A real broker position (when passed) is ground truth for its own
+  // entry/stop/target and takes precedence over the journal lookup --
+  // see PositionOverlay's own docstring above.
+  const activePosition: PositionOverlay | null = brokerPosition ?? journalPosition
   // Same 5s cadence ActionCard already polls TradeBlueprint at -- this
   // chart fetches its own copy rather than requiring the parent to plumb
   // it through as a prop, matching useHistoricalData/useActivePosition's
@@ -228,57 +282,36 @@ export function LiveCandlestickChart({ symbol }: LiveCandlestickChartProps) {
   }, [bars])
 
   // Effect 3: Active Trade Chart Overlay ("Terminal Edge" sprint,
-  // 2026-08-27) -- dashed white ENTRY, solid red STOP LOSS, solid green
-  // TARGET, read straight off the real active journal position for this
-  // symbol (useActivePosition). create-once + applyOptions() on later
-  // changes (a position's own entry/SL/target rarely move once staged,
-  // but this stays correct if a journal row is ever edited); removed
-  // outright the moment there's no active position for this symbol, not
-  // left stale on screen.
+  // 2026-08-27; widened "Visual Tracking & Lifecycle" sprint, 2026-08-27,
+  // to accept a real broker position in place of the journal lookup and
+  // to drop each line independently null-safe rather than all-or-
+  // nothing) -- dashed white ENTRY, solid red STOP LOSS, solid green
+  // TARGET. create-once + applyOptions() on later changes (a position's
+  // own entry/SL/target rarely move once staged, but this stays correct
+  // if a journal row is ever edited); each line is removed the moment
+  // its own price goes missing, not left stale on screen.
   useEffect(() => {
     const candleSeries = candleSeriesRef.current
     if (!candleSeries) return
 
-    if (!activePosition) {
-      if (entryLineRef.current) candleSeries.removePriceLine(entryLineRef.current)
-      if (slLineRef.current) candleSeries.removePriceLine(slLineRef.current)
-      if (targetLineRef.current) candleSeries.removePriceLine(targetLineRef.current)
-      entryLineRef.current = null
-      slLineRef.current = null
-      targetLineRef.current = null
-      return
-    }
-
-    const entryOpts = {
-      price: activePosition.entry,
+    syncPriceLine(candleSeries, entryLineRef, activePosition?.entry, {
       color: ENTRY_LINE_COLOR,
-      lineWidth: 1 as const,
+      lineWidth: 1,
       lineStyle: LineStyle.Dashed,
       title: 'ENTRY',
-    }
-    const slOpts = {
-      price: activePosition.stop,
+    })
+    syncPriceLine(candleSeries, slLineRef, activePosition?.stop, {
       color: CHART_BEAR,
-      lineWidth: 2 as const,
+      lineWidth: 2,
       lineStyle: LineStyle.Solid,
       title: 'STOP LOSS',
-    }
-    const targetOpts = {
-      price: activePosition.target1,
+    })
+    syncPriceLine(candleSeries, targetLineRef, activePosition?.target1, {
       color: CHART_BULL,
-      lineWidth: 2 as const,
+      lineWidth: 2,
       lineStyle: LineStyle.Solid,
       title: 'TARGET',
-    }
-
-    if (entryLineRef.current) entryLineRef.current.applyOptions(entryOpts)
-    else entryLineRef.current = candleSeries.createPriceLine(entryOpts)
-
-    if (slLineRef.current) slLineRef.current.applyOptions(slOpts)
-    else slLineRef.current = candleSeries.createPriceLine(slOpts)
-
-    if (targetLineRef.current) targetLineRef.current.applyOptions(targetOpts)
-    else targetLineRef.current = candleSeries.createPriceLine(targetOpts)
+    })
   }, [activePosition])
 
   // Effect 4: "Terminal Edge & Analyst" sprint (2026-08-27) -- HTF
@@ -292,41 +325,25 @@ export function LiveCandlestickChart({ symbol }: LiveCandlestickChartProps) {
     const candleSeries = candleSeriesRef.current
     if (!candleSeries) return
 
-    const syncLine = (
-      ref: MutableRefObject<IPriceLine | null>,
-      price: number | null | undefined,
-      opts: { color: string; lineWidth: 1 | 2; lineStyle: LineStyle; title: string },
-    ) => {
-      if (price === null || price === undefined) {
-        if (ref.current) {
-          candleSeries.removePriceLine(ref.current)
-          ref.current = null
-        }
-        return
-      }
-      if (ref.current) ref.current.applyOptions({ price, ...opts })
-      else ref.current = candleSeries.createPriceLine({ price, ...opts })
-    }
-
-    syncLine(supportLineRef, structure?.support, {
+    syncPriceLine(candleSeries, supportLineRef, structure?.support, {
       color: CHART_BULL,
       lineWidth: 1,
       lineStyle: LineStyle.Solid,
       title: 'HTF SUPPORT',
     })
-    syncLine(resistanceLineRef, structure?.resistance, {
+    syncPriceLine(candleSeries, resistanceLineRef, structure?.resistance, {
       color: CHART_BEAR,
       lineWidth: 1,
       lineStyle: LineStyle.Solid,
       title: 'HTF RESISTANCE',
     })
-    syncLine(channelUpperLineRef, structure?.channel_upper, {
+    syncPriceLine(candleSeries, channelUpperLineRef, structure?.channel_upper, {
       color: CHANNEL_LINE_COLOR,
       lineWidth: 1,
       lineStyle: LineStyle.Dashed,
       title: 'CHANNEL UPPER',
     })
-    syncLine(channelLowerLineRef, structure?.channel_lower, {
+    syncPriceLine(candleSeries, channelLowerLineRef, structure?.channel_lower, {
       color: CHANNEL_LINE_COLOR,
       lineWidth: 1,
       lineStyle: LineStyle.Dashed,
@@ -335,7 +352,10 @@ export function LiveCandlestickChart({ symbol }: LiveCandlestickChartProps) {
   }, [structure])
 
   return (
-    <div className="relative h-80 w-full overflow-hidden rounded-lg" style={{ background: CHART_BACKGROUND }}>
+    <div
+      className={`relative w-full overflow-hidden rounded-lg ${heightClassName}`}
+      style={{ background: CHART_BACKGROUND }}
+    >
       <div ref={containerRef} className="h-full w-full" />
       {bars.length === 0 && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-xs text-hud-muted">

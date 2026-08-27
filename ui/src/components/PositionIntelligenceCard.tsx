@@ -1,5 +1,8 @@
 import { AlertTriangle } from 'lucide-react'
+import { LiveCandlestickChart } from './LiveCandlestickChart'
 import { DASH } from './MetricCard'
+import { usePolling } from '../hooks/usePolling'
+import { fetchTradeBlueprint } from '../lib/api'
 import type { BrokerPosition } from '../types'
 
 function fmt(value: number | null | undefined, digits = 2): string {
@@ -31,7 +34,19 @@ const HORIZON_CLASS: Record<string, string> = {
  * Engine read ("Broker Sync & Active Position Intelligence" sprint,
  * 2026-08-27). Every number here is either a raw Upstox field or a
  * value api/broker_sync.py computed from real structure/DTE data --
- * see PositionIntelligence's own type docstring for exactly which. */
+ * see PositionIntelligence's own type docstring for exactly which.
+ *
+ * "Visual Tracking & Lifecycle" sprint (2026-08-27): embeds a
+ * miniature LiveCandlestickChart (real 1-min candles + the same real
+ * MTF Support/Resistance/Channel overlay Sniper HUD's own chart already
+ * draws -- see LiveCandlestickChart.tsx's Effect 4) and replaced the
+ * "How Far Can It Go"/"Where Will It Turn" prose with an explicit data
+ * grid. T1/T2/T3 reuse the real, already-computed Fibonacci targets
+ * GET /api/trade-blueprint/{symbol} produces (the same endpoint
+ * ActionCard.tsx's own t1/t2/t3 fallback chain already trusts) rather
+ * than inventing a second Fibonacci calculation here -- MTF
+ * Support/Resistance stay sourced from `intel.structure`, already on
+ * this exact payload, no second fetch needed for those two. */
 export function PositionIntelligenceCard({ position }: { position: BrokerPosition }) {
   const symbol = position.trading_symbol || position.tradingsymbol || '—'
   const intel = position.intelligence
@@ -47,6 +62,39 @@ export function PositionIntelligenceCard({ position }: { position: BrokerPositio
   // ActionCard's green pulse is persistent: a glow left on while the
   // condition holds isn't spam the way a repeating sound would be.
   const isExitImmediate = intel.holding_horizon === 'EXIT IMMEDIATELY'
+
+  // 10s cadence: a position's own Fibonacci geometry moves far slower
+  // than a live-scanning Sniper HUD candidate's does, so this doesn't
+  // need ActionCard/LiveCandlestickChart's own 5s cadence for the
+  // identical endpoint.
+  const { data: blueprint } = usePolling(
+    () => fetchTradeBlueprint(intel.underlying),
+    10000,
+    [intel.underlying],
+  )
+  const t1 = blueprint?.target_1_fib || intel.target_primary
+  const t2 = blueprint?.target_2_fib || intel.target_secondary
+  const t3 = blueprint?.target_3_fib || t2
+
+  const ltp = position.last_price
+  const stop = intel.invalidation_level
+  // "Current Live Risk:Reward Ratio (based on LTP vs Stop/Target)" --
+  // read literally: reward/risk from where price actually is right
+  // now, against T1 (the nearest, soonest-reachable target) and the
+  // real invalidation level, not the original entry's own planned R:R.
+  // Honestly DASH (never a fabricated ratio) when either level is
+  // unavailable or LTP already sits exactly on the stop.
+  const liveRiskReward =
+    stop !== null && t1 !== null && Math.abs(ltp - stop) > 0
+      ? Math.abs(t1 - ltp) / Math.abs(ltp - stop)
+      : null
+
+  // Same real same-day-buy quirk broker_sync.py's own verification
+  // disclosure documents: average_price reads as a bare 0 for a
+  // position bought and still held intraday, never carried overnight --
+  // day_buy_price is the real fill for that case. See BrokerPosition's
+  // own type comment.
+  const chartEntry = position.average_price || position.day_buy_price || null
 
   return (
     <article
@@ -103,23 +151,51 @@ export function PositionIntelligenceCard({ position }: { position: BrokerPositio
         </div>
       )}
 
-      <div className="mt-3 grid grid-cols-2 gap-2 rounded-lg border border-hud-border bg-hud-bg/60 p-3 text-[11px]">
-        <div>
-          <div className="text-hud-muted">How Far Can It Go</div>
-          <div className="tnum font-mono text-hud-text">
-            <span className="text-bull">{fmt(intel.target_primary)}</span>
-            {intel.target_secondary !== null && (
-              <span className="text-hud-muted"> / {fmt(intel.target_secondary)}</span>
-            )}
+      <div className="mt-3">
+        <LiveCandlestickChart
+          symbol={intel.underlying}
+          heightClassName="h-48"
+          brokerPosition={{ entry: chartEntry, stop, target1: t1 }}
+        />
+      </div>
+
+      {/* Institutional data grid ("Visual Tracking & Lifecycle" sprint,
+          2026-08-27) -- replaces the earlier "How Far Can It
+          Go"/"Where Will It Turn" prose with explicit numbers. */}
+      <div className="mt-2 rounded-lg border border-hud-border bg-hud-bg/60 p-3 text-[11px]">
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <div className="text-hud-muted">MTF Support</div>
+            <div className="tnum font-mono text-bull">{fmt(intel.structure.support)}</div>
+          </div>
+          <div>
+            <div className="text-hud-muted">MTF Resistance</div>
+            <div className="tnum font-mono text-bear">{fmt(intel.structure.resistance)}</div>
           </div>
         </div>
-        <div>
-          <div className="text-hud-muted">Where Will It Turn</div>
-          <div className="tnum font-mono text-hud-text">
-            <span className="text-bear">{fmt(intel.invalidation_level)}</span>
-            {intel.nearest_ob_fvg_level !== null && (
-              <span className="text-hud-muted"> · OB/FVG {fmt(intel.nearest_ob_fvg_level)}</span>
-            )}
+        {intel.nearest_ob_fvg_level !== null && (
+          <div className="mt-1.5 text-hud-muted">
+            Nearest OB/FVG <span className="tnum font-mono text-hud-text">{fmt(intel.nearest_ob_fvg_level)}</span>
+          </div>
+        )}
+        <div className="mt-2 flex items-center justify-between border-t border-hud-border pt-2">
+          <span className="text-hud-muted">Live R:R (LTP-based)</span>
+          <span className="tnum font-mono font-bold text-hud-text">
+            {liveRiskReward !== null ? `1:${liveRiskReward.toFixed(2)}` : DASH}
+          </span>
+        </div>
+        <div className="mt-2 grid grid-cols-3 gap-2 border-t border-hud-border pt-2">
+          <div>
+            <div className="text-hud-muted">T1</div>
+            <div className="tnum font-mono text-bull">{fmt(t1)}</div>
+          </div>
+          <div>
+            <div className="text-hud-muted">T2</div>
+            <div className="tnum font-mono text-bull">{fmt(t2)}</div>
+          </div>
+          <div>
+            <div className="text-hud-muted">T3</div>
+            <div className="tnum font-mono text-bull">{fmt(t3)}</div>
           </div>
         </div>
       </div>

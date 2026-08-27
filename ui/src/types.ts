@@ -505,10 +505,22 @@ export interface OptimizerProposal {
 }
 
 /** One row from GET /api/journal/trades -- paper-trade journal, the
- * exact setup evidence visible before any live execution is allowed. */
+ * exact setup evidence visible before any live execution is allowed.
+ *
+ * "Visual Tracking & Lifecycle" sprint (2026-08-27): target3/
+ * signal_grade/created_at_epoch are written at creation time
+ * (api/routes/journal.py's _normalise_trade); duration/exit_price/
+ * closed_at_ist and the WIN_T1/WIN_T2/WIN_T3/LOSS/MISSED outcome
+ * vocabulary are written later by api/lifecycle_monitor.py's
+ * background sweep once a real 1-min bar resolves the trade. The
+ * legacy WIN/LOSS/TARGET/STOP/T1/T2/REVIEW values stay in the union
+ * because rows closed manually (the old /outcome POST path, still
+ * live) can still carry them -- never assume every row uses the new
+ * vocabulary. */
 export interface JournalTrade {
   id: string
   created_at_ist: string
+  created_at_epoch?: number
   status: 'PLANNED' | 'WATCH' | 'BLOCKED' | 'CLOSED' | string
   symbol: string
   decision: string
@@ -516,12 +528,27 @@ export interface JournalTrade {
   stop: number
   target1: number
   target2: number
+  target3?: number
   rr1: number
+  signal_grade?: string
+  duration?: string | null
   option_readiness?: number
   setup_strength?: number
   strength_reasons?: string[]
   rejection_reasons?: string[]
-  outcome?: 'WIN' | 'LOSS' | 'TARGET' | 'STOP' | 'T1' | 'T2' | 'REVIEW' | null
+  outcome?:
+    | 'WIN_T1'
+    | 'WIN_T2'
+    | 'WIN_T3'
+    | 'LOSS'
+    | 'MISSED'
+    | 'WIN'
+    | 'TARGET'
+    | 'STOP'
+    | 'T1'
+    | 'T2'
+    | 'REVIEW'
+    | null
   exit_price?: number
   closed_at_ist?: string
   discretionary_action?: string
@@ -706,6 +733,12 @@ export interface BrokerPosition {
   product: string
   quantity: number
   average_price: number
+  // Real Upstox quirk, verified live (2026-08-27): a position bought
+  // and still held intraday (never carried overnight) reports
+  // average_price as a bare 0, not the real fill -- day_buy_price is
+  // the real entry for that case. See PositionIntelligenceCard.tsx's
+  // own use of this for exactly why.
+  day_buy_price?: number
   last_price: number
   close_price: number
   pnl: number

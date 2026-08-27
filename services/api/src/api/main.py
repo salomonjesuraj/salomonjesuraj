@@ -35,6 +35,7 @@ from api.ai_advisor import OpenAIAdvisor
 from api.config import APISettings
 from api.ebie_state_queue import ebie_state_loop
 from api.futures_queue import futures_queue_loop
+from api.lifecycle_monitor import lifecycle_monitor_loop
 from api.middleware import redis_error_middleware
 from api.mtf_queue import mtf_queue_loop
 from api.news_queue import news_queue_loop
@@ -176,6 +177,7 @@ async def main() -> None:
     news_queue_task = asyncio.create_task(news_queue_loop(app))
     sentiment_cache_task = asyncio.create_task(sentiment_cache_loop(app))
     portfolio_risk_task = asyncio.create_task(portfolio_risk_loop(app))
+    lifecycle_monitor_task = asyncio.create_task(lifecycle_monitor_loop(app))
 
     # Run forever
     try:
@@ -193,6 +195,7 @@ async def main() -> None:
         news_queue_task.cancel()
         sentiment_cache_task.cancel()
         portfolio_risk_task.cancel()
+        lifecycle_monitor_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await option_queue_task
         with contextlib.suppress(asyncio.CancelledError):
@@ -211,6 +214,8 @@ async def main() -> None:
             await sentiment_cache_task
         with contextlib.suppress(asyncio.CancelledError):
             await portfolio_risk_task
+        with contextlib.suppress(asyncio.CancelledError):
+            await lifecycle_monitor_task
         await health.stop()
         await runner.cleanup()
         if pg_pool:

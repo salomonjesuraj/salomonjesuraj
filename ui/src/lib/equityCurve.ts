@@ -1,7 +1,38 @@
 import type { JournalTrade } from '../types'
 
-const WIN_OUTCOMES = new Set(['WIN', 'TARGET', 'T1', 'T2'])
+// "Visual Tracking & Lifecycle" sprint (2026-08-27): WIN_T1/T2/T3 are
+// api/lifecycle_monitor.py's own real outcome vocabulary, written once
+// its background sweep actually resolves a trade against real 1-min
+// bars -- WIN/TARGET/T1/T2 stay for rows closed the old manual way
+// (still a live code path, see journal.py's /outcome route). MISSED is
+// deliberately absent from both sets: it's neither a win nor a loss,
+// just a setup that never resolved either way -- the existing `r ===
+// null` skip below already handles it correctly with no code change.
+const WIN_OUTCOMES = new Set(['WIN_T1', 'WIN_T2', 'WIN_T3', 'WIN', 'TARGET', 'T1', 'T2'])
 const LOSS_OUTCOMES = new Set(['LOSS', 'STOP', 'SL'])
+
+const TARGET_FIELD: Record<string, keyof JournalTrade> = {
+  WIN_T1: 'target1',
+  WIN_T2: 'target2',
+  WIN_T3: 'target3',
+}
+
+/** The real R-multiple a WIN_T1/T2/T3 outcome actually banked --
+ * (target reached - entry) / (entry - stop), using the SAME real
+ * target/entry/stop prices already on the row, rather than a synthetic
+ * "T2 = 1.5x, T3 = 2x" multiplier on top of rr1 (which is only ever
+ * T1's own risk:reward). Falls back to rr1 (or 1) when the specific
+ * target field is missing/zero -- the same honest-fallback shape the
+ * rest of this file already uses, not a fabricated number. */
+function realizedR(trade: JournalTrade, outcome: string): number {
+  const field = TARGET_FIELD[outcome]
+  const risk = Math.abs(trade.entry - trade.stop)
+  const targetPrice = field ? (trade[field] as number | undefined) : undefined
+  if (field && targetPrice && risk > 0) {
+    return Math.abs(targetPrice - trade.entry) / risk
+  }
+  return trade.rr1 > 0 ? trade.rr1 : 1
+}
 
 export interface EquityPoint {
   index: number
@@ -38,7 +69,7 @@ export function buildEquityCurve(trades: JournalTrade[]): EquityPoint[] {
   for (const trade of closed) {
     const outcome = (trade.outcome || '').toUpperCase()
     let r: number | null = null
-    if (WIN_OUTCOMES.has(outcome)) r = trade.rr1 > 0 ? trade.rr1 : 1
+    if (WIN_OUTCOMES.has(outcome)) r = realizedR(trade, outcome)
     else if (LOSS_OUTCOMES.has(outcome)) r = -1
     if (r === null) continue
     cumulative = Math.round((cumulative + r) * 1000) / 1000
