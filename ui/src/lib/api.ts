@@ -1,11 +1,22 @@
 import { demoBlueprint, demoOptionSummary, DEMO_SIGNALS, isDemoMode } from './demo'
 import type {
+  AlertLogEntry,
+  BacktestSummary,
+  HealthStatus,
   IndexTick,
+  JournalExpectancy,
+  JournalStats,
+  JournalTrade,
   MarketBreadth,
   OiBuildupMap,
+  OptimizerProposal,
+  OptionsChainAnalytics,
   OptionSummary,
   PrebreakoutRow,
+  SafetyStatus,
   SignalRow,
+  StagedTicketsResponse,
+  StrategySelectorResult,
   SuppressedSignalRow,
   TickRow,
   TradeBlueprint,
@@ -82,4 +93,78 @@ export async function fetchOiBuildupMap(): Promise<OiBuildupMap> {
     '/api/futures/oi-buildup-map',
   )
   return body.oi_buildup || {}
+}
+
+// ── Command Center data-wiring sprint (2026-08-27) ───────────────────
+// All four hit real, already-shipped backend routes -- no new API
+// surface was added for this. Each honestly reports `available`/`ready`
+// false (never a fabricated zero) when its own data source -- Postgres,
+// the Upstox option chain, a sweep loop -- isn't there yet.
+
+// Demo mode has no Upstox option chain to point these two at (they hit
+// the real broker chain, unlike fetchOptionSummary's own symbol-keyed
+// mock map) -- same "never mix real backend reads into the simulated
+// screen" rule fetchSuppressedSignals follows, honestly reported the
+// same way the real backend itself reports a thin/unavailable chain.
+const DEMO_UNAVAILABLE = { ready: false, reason: 'Not available in demo mode.' } as const
+
+/** GET /api/options/chain-analytics -- omit `symbol` to let the backend
+ * pick its own default (most recent active signal, else best pre-
+ * breakout candidate), same fallback every options route already uses. */
+export async function fetchOptionsChainAnalytics(symbol?: string): Promise<OptionsChainAnalytics> {
+  if (isDemoMode()) return { ...DEMO_UNAVAILABLE, pcr: null, oi_support_resistance: null, max_pain: null }
+  const qs = symbol ? `?symbol=${encodeURIComponent(symbol)}` : ''
+  return getJson<OptionsChainAnalytics>(`/api/options/chain-analytics${qs}`)
+}
+
+export async function fetchStrategySelector(symbol?: string): Promise<StrategySelectorResult> {
+  if (isDemoMode()) return { ...DEMO_UNAVAILABLE }
+  const qs = symbol ? `?symbol=${encodeURIComponent(symbol)}` : ''
+  return getJson<StrategySelectorResult>(`/api/options/strategy-selector${qs}`)
+}
+
+/** GET /api/backtest/summary -- server-cached 90s, so client polling
+ * faster than that just re-reads the same cached row. */
+export async function fetchBacktestSummary(days = 60): Promise<BacktestSummary> {
+  return getJson<BacktestSummary>(`/api/backtest/summary?days=${days}`)
+}
+
+/** GET /api/backtest/optimizer-proposal/latest -- reads the last written
+ * proposal, does NOT trigger a fresh walk-forward sweep (that's a
+ * separate, expensive endpoint this page deliberately never calls). */
+export async function fetchOptimizerProposal(): Promise<OptimizerProposal> {
+  return getJson<OptimizerProposal>('/api/backtest/optimizer-proposal/latest')
+}
+
+export async function fetchJournalTrades(limit = 40): Promise<JournalTrade[]> {
+  const body = await getJson<{ ok: boolean; count: number; trades: JournalTrade[] }>(
+    `/api/journal/trades?limit=${limit}`,
+  )
+  return body.trades || []
+}
+
+export async function fetchJournalStats(): Promise<JournalStats | null> {
+  const body = await getJson<{ ok: boolean; stats: JournalStats }>('/api/journal/stats')
+  return body.stats ?? null
+}
+
+export async function fetchJournalExpectancy(): Promise<JournalExpectancy> {
+  return getJson<JournalExpectancy>('/api/journal/expectancy')
+}
+
+export async function fetchStagedTickets(): Promise<StagedTicketsResponse> {
+  return getJson<StagedTicketsResponse>('/api/execution/staged?limit=40')
+}
+
+export async function fetchSafetyStatus(): Promise<SafetyStatus> {
+  return getJson<SafetyStatus>('/api/safety/status')
+}
+
+export async function fetchHealth(): Promise<HealthStatus> {
+  return getJson<HealthStatus>('/api/health')
+}
+
+export async function fetchAlertLog(): Promise<AlertLogEntry[]> {
+  const body = await getJson<{ count: number; log: AlertLogEntry[] }>('/api/alerts/log')
+  return body.log || []
 }

@@ -90,8 +90,13 @@ export interface TradeBlueprint {
 }
 
 /** The subset of /api/options/summary this HUD's Microstructure Pill
- * reads -- see upstox_option.metrics in the real payload. */
+ * reads -- see upstox_option.metrics in the real payload. `symbol` is
+ * also real (api/routes/market.py's options_summary() always includes
+ * it, even in the no-symbol/no-signal fallback response), added when
+ * Options Analytics needed to know which symbol the backend's own
+ * default-symbol fallback had picked. */
 export interface OptionSummary {
+  symbol?: string
   bias?: 'CE' | 'PE'
   suggested_contract?: string
   upstox_option?: {
@@ -236,4 +241,285 @@ export interface PrebreakoutRow {
   rel_vol?: number
   bb_width?: number
   has_signal?: boolean
+}
+
+/* ── Command Center data-wiring sprint (2026-08-27) ───────────────────
+ * Shapes for the four routes hydrated below -- each verified against
+ * its route module's actual return statement, not guessed. A real,
+ * disclosed gap found during that read: this backend computes and
+ * scores exactly one live option Greek (Delta) anywhere -- Gamma/Theta/
+ * Vega are never read out of Upstox's option_greeks payload by any
+ * route. Options Analytics below is honest about that; see its own
+ * page file. */
+
+/** GET /api/options/chain-analytics -- PCR + OI-based support/resistance
+ * + Max Pain for one symbol, off the full Upstox option chain. `pcr`/
+ * `oi_support_resistance`/`max_pain` are each independently nullable
+ * (api/options_analytics.py returns None per-metric on a thin/pre-market
+ * chain rather than a misleading 0), not just the top-level `ready`. */
+export interface OptionsChainAnalytics {
+  ready: boolean
+  reason?: string
+  symbol?: string
+  expiry?: string
+  spot?: number
+  strikes_in_chain?: number
+  pcr: { pcr: number; sentiment: string; total_call_oi: number; total_put_oi: number } | null
+  oi_support_resistance: {
+    resistance: number | null
+    resistance_oi: number | null
+    support: number | null
+    support_oi: number | null
+  } | null
+  max_pain: {
+    max_pain_strike: number | null
+    min_total_payout: number | null
+    candidates_evaluated: number
+  } | null
+}
+
+/** One leg inside a RankedStrategy's `legs` array
+ * (api/options_strategies.py's `_leg()`). */
+export interface StrategyLeg {
+  action: 'BUY' | 'SELL'
+  type: 'CE' | 'PE'
+  strike: number
+  premium: number
+  iv: number
+  delta: number
+}
+
+/** One entry in GET /api/options/strategy-selector's ranked_strategies --
+ * field set past `components` varies per strategy (a credit spread has
+ * `net_credit`, a debit spread has `net_debit`, both have `max_profit`/
+ * `max_loss`/`breakeven`), so those are all optional here rather than
+ * guessed into one fixed shape. */
+export interface RankedStrategy {
+  strategy: string
+  ready: true
+  fit_score: number
+  components: {
+    directional: { score: number; reason: string }
+    iv_rank: { score: number; reason: string }
+    pcr: { score: number; reason: string }
+    max_pain: { score: number; reason: string }
+  }
+  legs?: StrategyLeg[]
+  max_profit?: number
+  max_loss?: number
+  net_debit?: number
+  net_credit?: number
+  breakeven?: number[]
+}
+
+/** GET /api/options/strategy-selector */
+export interface StrategySelectorResult {
+  ready: boolean
+  reason?: string
+  symbol?: string
+  spot?: number
+  expiry?: string
+  trade_bias?: string
+  mtf_alignment?: string
+  iv_rank?: number | null
+  pcr_sentiment?: string | null
+  max_pain_strike?: number | null
+  ranked_strategies?: RankedStrategy[]
+}
+
+/** One row of GET /api/backtest/summary's by_grade/by_session/by_sector
+ * breakdowns. */
+export interface BacktestBreakdownRow {
+  label: string
+  total: number
+  wins: number
+  losses: number
+  precision_pct: number | null
+}
+
+/** GET /api/backtest/summary -- Postgres-archived signal outcomes,
+ * server-cached 90s. `available: false` means no Postgres analytics
+ * pool (never a fabricated zero). */
+export interface BacktestSummary {
+  available: boolean
+  reason?: string
+  days?: number
+  strategy?: string
+  total?: number
+  active?: number
+  suppressed?: number
+  target_hits?: number
+  stop_hits?: number
+  expired?: number
+  decided?: number
+  precision_pct?: number | null
+  avg_score?: number | null
+  avg_rr?: number | null
+  avg_mfe_pct?: number | null
+  avg_mae_pct?: number | null
+  reliability?: string
+  note?: string
+  by_grade?: BacktestBreakdownRow[]
+  by_session?: BacktestBreakdownRow[]
+  by_sector?: BacktestBreakdownRow[]
+  cached?: boolean
+}
+
+/** GET /api/backtest/optimizer-proposal/latest -- last-written comparison
+ * of the scanner's live precision_guard config against the nightly
+ * walk-forward recommendation. `recommended.test_sharpe.sharpe` is the
+ * one real Sharpe this backend computes anywhere (per-trade, R-multiple
+ * based, not annualized) -- null whenever no profile currently clears
+ * its out-of-sample target, which is a legitimate outcome, not a bug. */
+export interface OptimizerProposal {
+  available: boolean
+  reason?: string
+  status?: 'PROPOSED' | 'NO_DRIFT' | 'NO_PROPOSAL'
+  live_config?: {
+    precision_guard_min_score?: number
+    precision_guard_min_rr?: number
+    precision_guard_sessions?: string
+  }
+  recommended?: {
+    min_score?: number
+    min_rr?: number
+    sessions?: string
+    test?: { precision_pct?: number | null; decided?: number }
+    test_sharpe?: {
+      n: number
+      mean: number | null
+      std: number | null
+      sharpe: number | null
+    }
+  } | null
+  score_diff?: number
+  rr_diff?: number
+  note?: string
+}
+
+/** One row from GET /api/journal/trades -- paper-trade journal, the
+ * exact setup evidence visible before any live execution is allowed. */
+export interface JournalTrade {
+  id: string
+  created_at_ist: string
+  status: 'PLANNED' | 'WATCH' | 'BLOCKED' | 'CLOSED' | string
+  symbol: string
+  decision: string
+  entry: number
+  stop: number
+  target1: number
+  target2: number
+  rr1: number
+  option_readiness?: number
+  setup_strength?: number
+  strength_reasons?: string[]
+  rejection_reasons?: string[]
+  outcome?: 'WIN' | 'LOSS' | 'TARGET' | 'STOP' | 'T1' | 'T2' | 'REVIEW' | null
+  exit_price?: number
+  closed_at_ist?: string
+  discretionary_action?: string
+}
+
+/** GET /api/journal/stats */
+export interface JournalStats {
+  today: string
+  total_today: number
+  watch: number
+  planned: number
+  blocked: number
+  closed: number
+  wins: number
+  losses: number
+  win_rate: number
+  risk_planned: number
+}
+
+/** GET /api/journal/expectancy -- cost-aware paper expectancy, the P1
+ * headline metric this project uses instead of raw rupee P&L (no route
+ * anywhere aggregates realized rupee P&L across trades; expectancy in
+ * R-multiples is the real number this backend actually produces). */
+export interface JournalExpectancy {
+  ok: boolean
+  sample: { total: number; closed: number; taken: number; skipped: number; not_reviewed: number }
+  expectancy_r: number | null
+  profit_factor: number | null
+  hit_rate: number | null
+  cost_drag: number
+  max_drawdown_r: number
+}
+
+/** One row from GET /api/execution/staged -- paper order tickets. */
+export interface StagedTicket {
+  id: string
+  created_at_ist: string
+  status: 'READY_TO_STAGE' | 'BLOCKED' | string
+  symbol: string
+  decision: string
+  quantity: number
+  blockers?: string[]
+}
+
+/** GET /api/execution/staged */
+export interface StagedTicketsResponse {
+  ok: boolean
+  count: number
+  ready: number
+  blocked: number
+  tickets: StagedTicket[]
+}
+
+/** One gate row inside GET /api/safety/status. */
+export interface SafetyGate {
+  key: string
+  label: string
+  state: 'pass' | 'warn' | 'block'
+  detail: string
+}
+
+/** GET /api/safety/status -- the safety cockpit's own gate checklist +
+ * verdict, the real "active gates" data source for Safety & Logs. */
+export interface SafetyStatus {
+  ok: boolean
+  verdict: 'PAPER_READY' | 'WATCH_READY' | 'BLOCKED' | string
+  session: string
+  timestamp_ist: string
+  paper_first: boolean
+  kill_switch: { enabled: boolean; reason: string; updated_at_ist: string }
+  gates: SafetyGate[]
+  counts: {
+    active_signals: number
+    journal_today: number
+    staged_today: number
+    ready_tickets: number
+    blocked_tickets: number
+  }
+  next_action: string
+}
+
+/** One service's heartbeat inside GET /api/health. */
+export interface ServiceHealth {
+  status: 'healthy' | 'unhealthy' | string
+  reason?: string
+  [key: string]: unknown
+}
+
+/** GET /api/health */
+export interface HealthStatus {
+  status: 'healthy' | 'degraded'
+  services: Record<string, ServiceHealth>
+}
+
+/** One entry from GET /api/alerts/log -- recent Telegram delivery log
+ * (services/alerter/src/alerter/engine.py's `_log_delivery`). `outcome`
+ * is a free-text delivery result (e.g. "sent", "throttled", "failed"),
+ * not a fixed enum on the wire, so it stays a string here. */
+export interface AlertLogEntry {
+  signal_id?: string
+  symbol?: string
+  grade?: string
+  outcome?: string
+  reason?: string
+  ts?: string
+  raw?: string
+  [key: string]: unknown
 }
