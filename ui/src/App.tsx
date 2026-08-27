@@ -1,5 +1,9 @@
 import { useEffect } from 'react'
 import { ActionCard } from './components/ActionCard'
+import { IndexPulseHeader } from './components/IndexPulseHeader'
+import { PreBreakoutWatchlist } from './components/PreBreakoutWatchlist'
+import { RadarScanningStrip } from './components/RadarScanningStrip'
+import { SmartMoneyRadar } from './components/SmartMoneyRadar'
 import { useSignals } from './hooks/useSignals'
 import { isDemoMode, startDemoTicker, stopDemoTicker } from './lib/demo'
 import { connectTickSocket, useConnStatus } from './store/useTickStore'
@@ -16,19 +20,6 @@ const STATUS_CLASS: Record<string, string> = {
   disconnected: 'bg-bear/15 text-bear',
 }
 
-function EmptyState() {
-  return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-3 py-24 text-center">
-      <div className="text-5xl">◎</div>
-      <h2 className="text-lg font-semibold text-hud-text">Awaiting High Conviction Setups</h2>
-      <p className="max-w-md text-sm text-hud-muted">
-        No active signal currently clears the conviction bar. That's the anti-noise design working
-        as intended, not a loading state — the HUD only ever shows a setup worth acting on.
-      </p>
-    </div>
-  )
-}
-
 function DemoBanner() {
   return (
     <div className="border-b border-horizon-btst/40 bg-horizon-btst/10 px-6 py-2 text-center text-xs font-bold uppercase tracking-wide text-horizon-btst">
@@ -37,6 +28,20 @@ function DemoBanner() {
   )
 }
 
+/**
+ * 4-Zone Trading Command Screen (2026-08-27 rebuild).
+ *
+ * The old version rendered a single empty screen whenever nothing
+ * cleared the 80.0 conviction floor -- which per this project's own
+ * live audits is most of most trading days. Zone 2 alone used to BE
+ * the whole page; it's now one section of four, and the only one that
+ * ever goes empty (replaced by RadarScanningStrip when it does) --
+ * Zones 1, 3, and 4 are built from data sources that are populated
+ * essentially always (index prices, the 208-symbol tick universe,
+ * pre-breakout watchlist), so the screen has structured market
+ * awareness on it at every moment regardless of whether a real signal
+ * exists.
+ */
 function App() {
   const demo = isDemoMode()
   const connStatus = useConnStatus()
@@ -52,43 +57,50 @@ function App() {
 
   const activeSignals = signals ?? []
 
+  const statusBadge = demo ? (
+    <span className="rounded-full bg-horizon-btst/15 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-horizon-btst">
+      Demo
+    </span>
+  ) : (
+    <span
+      className={
+        'rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ' +
+        STATUS_CLASS[connStatus]
+      }
+    >
+      {STATUS_LABEL[connStatus]}
+    </span>
+  )
+
   return (
     <div className="flex min-h-screen flex-col bg-hud-bg">
       {demo && <DemoBanner />}
 
-      <header className="flex items-center justify-between border-b border-hud-border px-6 py-4">
-        <div className="flex items-baseline gap-2">
-          <h1 className="font-mono text-sm font-bold uppercase tracking-[0.2em] text-hud-text">
-            Sniper HUD
-          </h1>
-          <span className="text-xs text-hud-muted">Pre-Breakout Decision Support</span>
-        </div>
-        {demo ? (
-          <span className="rounded-full bg-horizon-btst/15 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-horizon-btst">
-            Demo
-          </span>
-        ) : (
-          <span
-            className={
-              'rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ' +
-              STATUS_CLASS[connStatus]
-            }
-          >
-            {STATUS_LABEL[connStatus]}
-          </span>
-        )}
-      </header>
+      {/* Zone 1 */}
+      <IndexPulseHeader statusBadge={statusBadge} />
 
-      <main className="flex flex-1 flex-col px-6 py-6">
-        {activeSignals.length === 0 ? (
-          <EmptyState />
-        ) : (
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {activeSignals.map((signal) => (
-              <ActionCard key={`${signal.symbol}:${signal.strategy_id}`} signal={signal} />
-            ))}
-          </div>
-        )}
+      <main className="flex flex-1 flex-col gap-8 px-6 py-6">
+        {/* Zone 2 */}
+        <section>
+          <h2 className="mb-3 text-xs font-bold uppercase tracking-wide text-hud-muted">
+            Live Action Breakout
+          </h2>
+          {activeSignals.length === 0 ? (
+            <RadarScanningStrip />
+          ) : (
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {activeSignals.map((signal) => (
+                <ActionCard key={`${signal.symbol}:${signal.strategy_id}`} signal={signal} />
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* Zone 3 */}
+        <SmartMoneyRadar />
+
+        {/* Zone 4 */}
+        <PreBreakoutWatchlist />
       </main>
     </div>
   )

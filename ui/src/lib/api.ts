@@ -1,5 +1,15 @@
 import { demoBlueprint, demoOptionSummary, DEMO_SIGNALS, isDemoMode } from './demo'
-import type { OptionSummary, SignalRow, TradeBlueprint } from '../types'
+import type {
+  IndexTick,
+  MarketBreadth,
+  OiBuildupMap,
+  OptionSummary,
+  PrebreakoutRow,
+  SignalRow,
+  SuppressedSignalRow,
+  TickRow,
+  TradeBlueprint,
+} from '../types'
 
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url)
@@ -21,4 +31,47 @@ export async function fetchTradeBlueprint(symbol: string): Promise<TradeBlueprin
 export async function fetchOptionSummary(symbol: string): Promise<OptionSummary> {
   if (isDemoMode()) return demoOptionSummary(symbol)
   return getJson<OptionSummary>(`/api/options/summary?symbol=${encodeURIComponent(symbol)}`)
+}
+
+// ── 4-Zone Trading Command Screen ────────────────────────────────────
+
+export async function fetchIndices(): Promise<IndexTick[]> {
+  const body = await getJson<{ count: number; indices: IndexTick[] }>('/api/market/indices')
+  return body.indices || []
+}
+
+export async function fetchBreadth(): Promise<MarketBreadth> {
+  const body = await getJson<{
+    available: boolean
+    components?: { advance_decline?: { advancing?: number; declining?: number } }
+  }>('/api/market/breadth-health')
+  return {
+    available: body.available,
+    advancing: body.components?.advance_decline?.advancing,
+    declining: body.components?.advance_decline?.declining,
+  }
+}
+
+export async function fetchSuppressedSignals(): Promise<SuppressedSignalRow[]> {
+  const body = await getJson<{ count: number; suppressed: SuppressedSignalRow[] }>(
+    '/api/signals/suppressed?limit=50',
+  )
+  return body.suppressed || []
+}
+
+export async function fetchAllTicks(): Promise<TickRow[]> {
+  const body = await getJson<{ count: number; ticks: TickRow[] }>('/api/ticks')
+  return body.ticks || []
+}
+
+export async function fetchPrebreakout(): Promise<PrebreakoutRow[]> {
+  const body = await getJson<{ count: number; watchlist: PrebreakoutRow[] }>('/api/prebreakout')
+  return body.watchlist || []
+}
+
+export async function fetchOiBuildupMap(): Promise<OiBuildupMap> {
+  const body = await getJson<{ count: number; oi_buildup: OiBuildupMap }>(
+    '/api/futures/oi-buildup-map',
+  )
+  return body.oi_buildup || {}
 }
