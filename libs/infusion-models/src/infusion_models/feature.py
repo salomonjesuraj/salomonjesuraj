@@ -89,5 +89,14 @@ class FeatureVectorV1(BaseModel, frozen=True):
     order_imbalance: float = 0.0  # (buy_qty - sell_qty) / (buy_qty + sell_qty)
     delivery_pct: float = 0.0  # from NSE data (when available)
 
+    # "Terminal Edge" sprint (2026-08-27): raw per-level order-book depth
+    # (up to 5 real levels, {bidP, bidQ, askP, askQ} per upstox_codec.py's
+    # depth-codec), for a Level 2 DOM ladder. Distinct from the derived
+    # microstructure_depth aggregate already inside ml_features below
+    # (book_imbalance/depth_concentration) -- this is the raw ladder those
+    # aggregates are computed FROM, not previously carried this far
+    # downstream since nothing needed the individual levels before now.
+    depth_levels: list[dict[str, Any]] = Field(default_factory=list)
+
     # ML features (free-form, for future model iteration)
     ml_features: dict[str, Any] = Field(default_factory=dict)

@@ -184,12 +184,35 @@ async def main() -> None:
             received_at_us=fv.timestamp_us,
         )
         # Update hot state
-        mapping = {k: str(v) for k, v in payload.items() if k != "ml_features"}
+        mapping = {
+            k: str(v) for k, v in payload.items() if k not in ("ml_features", "depth_levels")
+        }
         ml_features = payload.get("ml_features") or {}
         for key in HOT_STATE_ML_WHITELIST:
             if key in ml_features:
                 mapping[key] = str(ml_features[key])
         await redis.hset(f"{KEY_FEATURE_PREFIX}{fv.symbol}", mapping=mapping)
+
+        # "Terminal Edge" sprint (2026-08-27): dedicated key for the raw
+        # depth ladder, NOT folded into the mapping above -- this hash's
+        # own generic serialization is `str(value)` per field (see
+        # mapping construction above), which produces Python dict/list
+        # repr (single-quoted, True/False/None) for anything nested, not
+        # valid JSON. A depth ladder is exactly that kind of nested value,
+        # so it gets its own real JSON-encoded key instead of a value
+        # /api/features/{symbol}'s generic hgetall reader could never
+        # safely parse back. Short TTL (10s, ~1 tick's worth of staleness
+        # tolerance) so a stalled feed reads as genuinely unavailable
+        # rather than a frozen stale ladder.
+        depth_levels = payload.get("depth_levels") or []
+        if depth_levels:
+            await redis.set(
+                f"infusion:depth:{fv.symbol}",
+                json.dumps(
+                    {"symbol": fv.symbol, "levels": depth_levels, "updated_at_us": fv.timestamp_us}
+                ),
+                ex=10,
+            )
 
     engine.set_callback(on_feature)
     engine.set_bar_callback(on_bar)

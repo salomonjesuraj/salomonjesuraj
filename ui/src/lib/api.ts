@@ -3,6 +3,8 @@ import type {
   AlertLogEntry,
   BacktestSummary,
   ChartBar,
+  DepthResponse,
+  ExecutionTicket,
   HealthStatus,
   IndexTick,
   IntradayChartResponse,
@@ -15,6 +17,7 @@ import type {
   OptionsChainAnalytics,
   OptionSummary,
   PrebreakoutRow,
+  RiskSettings,
   SafetyStatus,
   SignalRow,
   StagedTicketsResponse,
@@ -27,6 +30,16 @@ import type {
 
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url)
+  if (!res.ok) throw new Error(`${url} -> HTTP ${res.status}`)
+  return (await res.json()) as T
+}
+
+async function postJson<T>(url: string, body: unknown): Promise<T> {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
   if (!res.ok) throw new Error(`${url} -> HTTP ${res.status}`)
   return (await res.json()) as T
 }
@@ -195,4 +208,48 @@ export async function fetchIntradayChart(symbol: string): Promise<ChartBar[]> {
   )
   if (body.error) throw new Error(body.error)
   return body.bars || []
+}
+
+// ── Level 2 DOM ladder (2026-08-27 "Terminal Edge" sprint) ────────────
+// GET /api/market/depth/{symbol} is new this sprint -- feature-engine's
+// own raw 5-level order-book capture (upstox_codec.py's real MarketLevel
+// depth-codec) wasn't previously exposed past its derived aggregate
+// (book_imbalance/depth_concentration); it now also gets a dedicated
+// Redis key + this route. See services/api/src/api/routes/depth.py.
+
+export async function fetchDepth(symbol: string): Promise<DepthResponse> {
+  return getJson<DepthResponse>(`/api/market/depth/${encodeURIComponent(symbol)}`)
+}
+
+// ── 1-Click paper execution (2026-08-27 "Terminal Edge" sprint) ──────
+// Deliberately wired to the REAL, already-shipped, paper-only
+// api/routes/execution.py -- NOT a new live-order-placing endpoint. See
+// useExecution.ts's own note for why: this backend's execution
+// architecture is paper-first end to end (execution.py's own module
+// docstring, safety.py's paper_first gate, journal.py's "intentionally
+// paper-only"), and building a real Upstox order-placement path is a
+// financial-trade-execution capability this session does not add.
+
+export async function fetchRiskSettings(): Promise<RiskSettings> {
+  const body = await getJson<{ ok: boolean; settings: RiskSettings }>('/api/risk/settings')
+  return body.settings
+}
+
+export async function stageExecutionTicket(trade: Record<string, unknown>): Promise<ExecutionTicket> {
+  const body = await postJson<{ ok: boolean; ticket: ExecutionTicket }>(
+    '/api/execution/stage',
+    { trade },
+  )
+  return body.ticket
+}
+
+/** Logs a staged paper ticket into the real journal (/journal, The
+ * Ledger) so Phase 3's chart overlay has a real active position to
+ * draw -- the same POST /api/journal/trades the dashboard's own manual
+ * journal entry already uses, not a new endpoint. Best-effort: a
+ * failure here doesn't undo the staged ticket the trader already saw,
+ * so callers should catch and ignore, not surface this as the
+ * execution having failed. */
+export async function logJournalTrade(payload: Record<string, unknown>): Promise<void> {
+  await postJson('/api/journal/trades', payload)
 }

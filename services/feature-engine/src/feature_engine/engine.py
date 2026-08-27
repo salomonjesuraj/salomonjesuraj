@@ -17,6 +17,7 @@ from feature_engine.features.fibonacci import fib_snapshot
 from feature_engine.features.heiken_ashi import heiken_ashi_snapshot, update_heiken_ashi
 from feature_engine.features.ict import ict_snapshot, update_ict
 from feature_engine.features.microstructure import (
+    D5_MAX_LEVELS,
     get_order_imbalance,
     get_spread_bps,
     microstructure_depth_snapshot,
@@ -640,6 +641,10 @@ class FeatureEngine:
             spread_bps=get_spread_bps(state),
             order_imbalance=get_order_imbalance(state),
             delivery_pct=state.delivery_pct,
+            # "Terminal Edge" sprint (2026-08-27): raw levels for a Level 2
+            # DOM ladder, capped at the same D5_MAX_LEVELS boundary every
+            # other depth computation in microstructure.py already uses.
+            depth_levels=state.latest_depth_levels[:D5_MAX_LEVELS],
             ml_features=ml_features,
         ), completed
 

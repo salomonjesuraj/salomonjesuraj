@@ -1,9 +1,11 @@
 import { fetchOptionSummary, fetchTradeBlueprint } from '../lib/api'
+import { useExecution } from '../hooks/useExecution'
 import { usePolling } from '../hooks/usePolling'
 import type { Candidate } from '../lib/candidates'
 import { useLtp } from '../store/useTickStore'
 import type { OIBuildupType, TradeHorizon } from '../types'
 import { DynamicTimeline } from './DynamicTimeline'
+import { HoldToExecuteButton } from './HoldToExecuteButton'
 import { ProximityBar } from './ProximityBar'
 
 const HORIZON_LABEL: Record<TradeHorizon, string> = {
@@ -84,6 +86,49 @@ export function ActionCard({ candidate, isActive, onSelect }: ActionCardProps) {
   const t3 = blueprint?.target_3_fib || t2
   const rr = candidate.riskRewardRatio
   const warningTags = candidate.warningTags
+
+  // "Terminal Edge" sprint (2026-08-27): 1-click execution stages a
+  // PAPER ticket via the real POST /api/execution/stage -- see
+  // useExecution.ts's own note for why this deliberately never calls a
+  // live order-placement endpoint. The option payload carries real
+  // option-chain fidelity when the chain has resolved (optionSummary
+  // populated); an empty object when it hasn't -- the backend's own
+  // gates correctly mark that ticket BLOCKED rather than pretending
+  // it's ready, same honesty standard as every dash elsewhere on this
+  // card.
+  const execution = useExecution()
+  const upstoxOption = optionSummary?.upstox_option
+  const executionOptionPayload = upstoxOption
+    ? {
+        instrument_key: upstoxOption.contract,
+        suggested_contract: optionSummary?.suggested_contract,
+        ask: metrics?.ask,
+        bid: metrics?.bid,
+        entry_fill: metrics?.entry_fill,
+        exit_fill_reference: metrics?.exit_fill_reference,
+        delta: metrics?.delta,
+        spread_pct: metrics?.spread_pct,
+        lot_size: metrics?.lot_size,
+        liquidity_whitelist_pass: metrics?.liquidity_whitelist_pass,
+        physical_settlement_block: metrics?.physical_settlement_block,
+        event_calendar: upstoxOption.event_calendar,
+        hard_blockers: upstoxOption.hard_blockers,
+        blockers: upstoxOption.blockers,
+        quality_grade: upstoxOption.quality_grade,
+        trade_ready: upstoxOption.trade_ready,
+      }
+    : undefined
+
+  const handleExecute = () => {
+    void execution.stage({
+      symbol,
+      decision: direction === 'BULL' ? 'BUY CE' : 'BUY PE',
+      entry: entryPrice,
+      stop: invalidationSl,
+      target1: t1,
+      option: executionOptionPayload,
+    })
+  }
 
   return (
     <article
@@ -216,6 +261,78 @@ export function ActionCard({ candidate, isActive, onSelect }: ActionCardProps) {
           <div className="text-hud-muted">Delta</div>
           <div className="tnum font-mono text-hud-text">{fmt(metrics?.delta, 2)}</div>
         </div>
+      </div>
+
+      {/* Execution Module -- stops propagation so pressing/holding the
+          button doesn't also toggle the card's own onSelect (opening/
+          closing the candlestick panel). */}
+      <div className="mt-3 border-t border-hud-border pt-3" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-2 flex items-center justify-between">
+          <span className="text-[10px] font-bold uppercase tracking-wide text-hud-muted">
+            Execution Module
+          </span>
+          <span className="rounded bg-horizon-btst/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-horizon-btst">
+            Paper Only
+          </span>
+        </div>
+
+        {execution.status === 'idle' || execution.status === 'error' ? (
+          <>
+            <HoldToExecuteButton
+              label={direction === 'BULL' ? 'Stage Paper Long' : 'Stage Paper Short'}
+              tone={direction === 'BULL' ? 'bull' : 'bear'}
+              onConfirm={handleExecute}
+            />
+            {execution.status === 'error' && (
+              <p className="mt-2 text-[11px] text-bear">{execution.error}</p>
+            )}
+          </>
+        ) : execution.status === 'staging' ? (
+          <div className="rounded-lg border border-hud-border py-2.5 text-center text-xs font-bold uppercase tracking-wide text-hud-muted">
+            Staging ticket…
+          </div>
+        ) : (
+          execution.ticket && (
+            <div className="rounded-lg border border-hud-border bg-hud-bg/60 p-3 text-[11px]">
+              <div className="flex items-center justify-between">
+                <span
+                  className={
+                    'rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ' +
+                    (execution.ticket.status === 'READY_TO_STAGE'
+                      ? 'bg-bull/15 text-bull'
+                      : 'bg-bear/15 text-bear')
+                  }
+                >
+                  {execution.ticket.status.replace(/_/g, ' ')}
+                </span>
+                <span className="tnum text-hud-muted">
+                  Qty {execution.ticket.quantity} ({execution.ticket.lot_count} lot
+                  {execution.ticket.lot_count === 1 ? '' : 's'})
+                </span>
+              </div>
+              <div className="tnum mt-2 text-hud-text">
+                Est. max loss <span className="font-bold text-bear">₹{fmt(execution.ticket.estimated_max_loss)}</span>
+              </div>
+              {execution.ticket.blockers.length > 0 && (
+                <ul className="mt-2 space-y-1 border-t border-hud-border pt-2 text-hud-muted">
+                  {execution.ticket.blockers.slice(0, 4).map((b) => (
+                    <li key={b}>⚠ {b}</li>
+                  ))}
+                </ul>
+              )}
+              <p className="mt-2 border-t border-hud-border pt-2 text-[10px] italic text-hud-muted">
+                {execution.ticket.warning}
+              </p>
+              <button
+                type="button"
+                onClick={execution.reset}
+                className="mt-2 w-full rounded border border-hud-border py-1.5 text-[10px] font-bold uppercase tracking-wide text-hud-muted hover:bg-hud-panel-hover hover:text-hud-text"
+              >
+                Stage Another
+              </button>
+            </div>
+          )
+        )}
       </div>
     </article>
   )

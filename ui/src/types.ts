@@ -101,14 +101,63 @@ export interface OptionSummary {
   suggested_contract?: string
   upstox_option?: {
     ready?: boolean
+    // Widened for the "Terminal Edge" sprint (2026-08-27) to carry what
+    // api/routes/execution.py's _build_ticket() actually reads off a
+    // trade's `option` sub-object, so ActionCard's execution module can
+    // stage a real paper ticket with real option-chain fidelity instead
+    // of an empty placeholder. Every field optional -- the chain may
+    // still be CHAIN_PENDING/AVOID_CONTRACT, in which case most of this
+    // is genuinely absent, not just untyped.
+    contract?: string
+    trade_ready?: boolean
+    execution_status?: string
+    quality_grade?: string | null
+    hard_blockers?: string[]
+    blockers?: string[]
+    event_calendar?: Record<string, unknown>
     metrics?: {
       ltp?: number
+      bid?: number
+      ask?: number
+      entry_fill?: number
+      exit_fill_reference?: number
       delta?: number
       spread_pct?: number
       option_sl_price?: number
+      lot_size?: number
       strike?: number
+      liquidity_whitelist_pass?: boolean
+      physical_settlement_block?: boolean
     }
   }
+}
+
+/** The subset of GET /api/risk/settings this HUD reads for sizing a
+ * staged paper ticket -- see api/routes/risk.py's own DEFAULT_RISK. */
+export interface RiskSettings {
+  risk_per_trade_amount: number
+  high_conviction_risk_amount: number
+  max_lots: number
+}
+
+/** POST /api/execution/stage's response ticket -- a PAPER order ticket
+ * only (api/routes/execution.py's own module docstring: "This route
+ * builds a broker-style order ticket... but it does not place orders").
+ * Every field this app doesn't render is left off rather than typed
+ * blind; the real response carries more (see _build_ticket()'s full
+ * return dict). */
+export interface ExecutionTicket {
+  id: string
+  mode: string
+  status: 'READY_TO_STAGE' | 'BLOCKED' | string
+  symbol: string
+  decision: string
+  quantity: number
+  lot_count: number
+  estimated_max_loss: number
+  net_pnl_flat?: number
+  blockers: string[]
+  warning: string
 }
 
 /** ws-gateway's tick_batch message, per services/dashboard/public/js/ws.js's
@@ -569,6 +618,32 @@ export interface IntradayChartResponse {
   count: number
   bars: ChartBar[]
   error?: string
+}
+
+/** One real order-book level from GET /api/market/depth/{symbol} --
+ * field names match upstox_codec.py's own MarketLevel quote parsing
+ * (bidP/bidQ/askP/askQ) verbatim, not renamed. Each level carries BOTH
+ * sides (level 0 = best bid + best ask, level 1 = 2nd-best each, etc.)
+ * -- that's how Upstox's own depth feed pairs them, not a frontend
+ * reshaping. */
+export interface DepthLevel {
+  bidP: number
+  bidQ: number
+  askP: number
+  askQ: number
+}
+
+/** GET /api/market/depth/{symbol} -- "Terminal Edge" sprint (2026-08-27).
+ * `available: false` (never a fabricated empty ladder) when
+ * feature-engine's own infusion:depth:{symbol} key has expired --
+ * either genuinely no depth for this symbol, or its 10s TTL lapsed
+ * because the feed stopped ticking it. */
+export interface DepthResponse {
+  available: boolean
+  symbol?: string
+  levels?: DepthLevel[]
+  updated_at_us?: number
+  reason?: string
 }
 
 /** One entry from GET /api/alerts/log -- recent Telegram delivery log

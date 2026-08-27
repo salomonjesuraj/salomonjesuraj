@@ -4,16 +4,21 @@ import {
   createChart,
   CrosshairMode,
   HistogramSeries,
+  LineStyle,
   type CandlestickData,
   type HistogramData,
   type IChartApi,
+  type IPriceLine,
   type ISeriesApi,
   type UTCTimestamp,
 } from 'lightweight-charts'
 import { useEffect, useRef } from 'react'
+import { useActivePosition } from '../hooks/useActivePosition'
 import { useHistoricalData } from '../hooks/useHistoricalData'
 import { CHART_BEAR, CHART_BULL } from '../lib/chartTheme'
 import type { ChartBar } from '../types'
+
+const ENTRY_LINE_COLOR = '#FFFFFF'
 
 // This sprint's own strict instruction -- gray-900, not this app's
 // usual --color-hud-bg/--color-hud-panel tokens. Scoped to this one
@@ -72,8 +77,12 @@ export function LiveCandlestickChart({ symbol }: LiveCandlestickChartProps) {
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null)
   const isFirstLoadRef = useRef(true)
   const lastBarTimeRef = useRef<number | null>(null)
+  const entryLineRef = useRef<IPriceLine | null>(null)
+  const slLineRef = useRef<IPriceLine | null>(null)
+  const targetLineRef = useRef<IPriceLine | null>(null)
 
   const { bars, loading, error } = useHistoricalData(symbol)
+  const activePosition = useActivePosition(symbol)
 
   // Effect 1: create once, tear down on unmount.
   useEffect(() => {
@@ -122,6 +131,12 @@ export function LiveCandlestickChart({ symbol }: LiveCandlestickChartProps) {
       chartRef.current = null
       candleSeriesRef.current = null
       volumeSeriesRef.current = null
+      // chart.remove() already tears down every price line attached to
+      // it -- these refs just shouldn't outlive the series they point
+      // into.
+      entryLineRef.current = null
+      slLineRef.current = null
+      targetLineRef.current = null
     }
   }, [])
 
@@ -133,6 +148,20 @@ export function LiveCandlestickChart({ symbol }: LiveCandlestickChartProps) {
     lastBarTimeRef.current = null
     candleSeriesRef.current?.setData([])
     volumeSeriesRef.current?.setData([])
+
+    // The old symbol's price lines (if any) belong to a different
+    // instrument's entry/SL/target -- drop them immediately rather than
+    // leaving them on screen until Effect 3 catches up with the new
+    // symbol's own active-position data.
+    const candleSeries = candleSeriesRef.current
+    if (candleSeries) {
+      if (entryLineRef.current) candleSeries.removePriceLine(entryLineRef.current)
+      if (slLineRef.current) candleSeries.removePriceLine(slLineRef.current)
+      if (targetLineRef.current) candleSeries.removePriceLine(targetLineRef.current)
+    }
+    entryLineRef.current = null
+    slLineRef.current = null
+    targetLineRef.current = null
   }, [symbol])
 
   // Effect 2: bind fetched bars into the series.
@@ -156,6 +185,60 @@ export function LiveCandlestickChart({ symbol }: LiveCandlestickChartProps) {
     }
     lastBarTimeRef.current = bars[bars.length - 1].time
   }, [bars])
+
+  // Effect 3: Active Trade Chart Overlay ("Terminal Edge" sprint,
+  // 2026-08-27) -- dashed white ENTRY, solid red STOP LOSS, solid green
+  // TARGET, read straight off the real active journal position for this
+  // symbol (useActivePosition). create-once + applyOptions() on later
+  // changes (a position's own entry/SL/target rarely move once staged,
+  // but this stays correct if a journal row is ever edited); removed
+  // outright the moment there's no active position for this symbol, not
+  // left stale on screen.
+  useEffect(() => {
+    const candleSeries = candleSeriesRef.current
+    if (!candleSeries) return
+
+    if (!activePosition) {
+      if (entryLineRef.current) candleSeries.removePriceLine(entryLineRef.current)
+      if (slLineRef.current) candleSeries.removePriceLine(slLineRef.current)
+      if (targetLineRef.current) candleSeries.removePriceLine(targetLineRef.current)
+      entryLineRef.current = null
+      slLineRef.current = null
+      targetLineRef.current = null
+      return
+    }
+
+    const entryOpts = {
+      price: activePosition.entry,
+      color: ENTRY_LINE_COLOR,
+      lineWidth: 1 as const,
+      lineStyle: LineStyle.Dashed,
+      title: 'ENTRY',
+    }
+    const slOpts = {
+      price: activePosition.stop,
+      color: CHART_BEAR,
+      lineWidth: 2 as const,
+      lineStyle: LineStyle.Solid,
+      title: 'STOP LOSS',
+    }
+    const targetOpts = {
+      price: activePosition.target1,
+      color: CHART_BULL,
+      lineWidth: 2 as const,
+      lineStyle: LineStyle.Solid,
+      title: 'TARGET',
+    }
+
+    if (entryLineRef.current) entryLineRef.current.applyOptions(entryOpts)
+    else entryLineRef.current = candleSeries.createPriceLine(entryOpts)
+
+    if (slLineRef.current) slLineRef.current.applyOptions(slOpts)
+    else slLineRef.current = candleSeries.createPriceLine(slOpts)
+
+    if (targetLineRef.current) targetLineRef.current.applyOptions(targetOpts)
+    else targetLineRef.current = candleSeries.createPriceLine(targetOpts)
+  }, [activePosition])
 
   return (
     <div className="relative h-80 w-full overflow-hidden rounded-lg" style={{ background: CHART_BACKGROUND }}>
