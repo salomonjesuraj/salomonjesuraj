@@ -221,13 +221,12 @@ async def test_position_warning_fires_on_exit_immediately_horizon() -> None:
     assert payloads[0]["signal_type"] == "position_warning"
     assert payloads[0]["symbol"] == "POWERGRID"
     message = payloads[0]["message"]
-    # Bold headline outside the fence + a monospace detail table inside
-    # it -- "Telegram Redesign & Token Modal" sprint (2026-08-27).
-    assert message.startswith("*")
-    assert message.count("```") == 2
-    assert "EXIT IMMEDIATELY" in message
-    assert "Rs 10.00" in message  # BROKEN LVL
-    assert "Rs -58,900.00" in message  # PNL
+    # "Fast Exit Alarm" HTML template ("Blended HUD" redesign,
+    # 2026-08-28) -- bold spans via <b>, no code fence at all this time.
+    assert message.startswith("⚠️ <b>FAST EXIT ALARM</b> ⚠️")
+    assert "<b>EXIT IMMEDIATELY</b>" in message
+    assert "Broken Level: Rs 10.00" in message
+    assert "PnL : Rs -58,900.00" in message
 
 
 async def test_position_warning_fires_on_a_structural_break_tag_alone() -> None:
@@ -250,10 +249,15 @@ async def test_position_warning_fires_on_a_structural_break_tag_alone() -> None:
     assert len(payloads) == 1
     message = payloads[0]["message"]
     assert "STRUCTURAL_BREAK" in message
-    # No invalidation level known -> an honest dash, never a fabricated
-    # price.
-    broken_lvl_line = next(line for line in message.split("\n") if line.startswith("BROKEN LVL"))
-    assert broken_lvl_line.strip() == "BROKEN LVL -"
+    # No invalidation level known -> an honest N/A, never a fabricated
+    # price. The bottom banner also stays honest about severity: no
+    # EXIT IMMEDIATELY horizon here, just a structural-break tag, so it
+    # reads STRUCTURAL BREAK, not an overstated EXIT IMMEDIATELY.
+    broken_lvl_line = next(
+        line for line in message.split("\n") if line.startswith("• Broken Level")
+    )
+    assert broken_lvl_line == "• Broken Level: N/A"
+    assert "ACTION: STRUCTURAL BREAK" in message
 
 
 async def test_position_warning_respects_the_per_instrument_cooldown() -> None:

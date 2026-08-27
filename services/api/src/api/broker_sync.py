@@ -361,28 +361,22 @@ POSITION_WARNING_COOLDOWN_PREFIX = "infusion:alert:position-warning-cooldown:"
 ALERTABLE_HORIZONS = {"EXIT IMMEDIATELY"}
 ALERTABLE_TAGS = {"STRUCTURAL_BREAK", "FAST_EXIT"}
 
-# "Telegram Redesign & Token Modal" sprint (2026-08-27) -- same
-# MarkdownV2 escaping split alerter/formatter.py's own module docstring
-# explains: _escape_md for the one bold headline OUTSIDE the code fence,
-# _escape_pre (only backslash/backtick) for everything inside it.
-# Duplicated here rather than imported -- broker_sync.py (api service)
-# and alerter/formatter.py (alerter service) are separate services with
-# no shared-lib path for this, the exact same precedent this module's
-# own decode_bar-style helpers already establish elsewhere in this file.
-_MD_SPECIAL = re.compile(r"([_*\[\]()~`>#+\-=|{}.!\\])")
-_PRE_SPECIAL = re.compile(r"([\\`])")
+# "Blended HUD" redesign (2026-08-28) -- same HTML escaping choice
+# alerter/formatter.py's own module docstring explains (parse_mode
+# "HTML", not MarkdownV2 -- a far smaller escaping surface for a
+# template this dense with literal punctuation). Duplicated here rather
+# than imported -- broker_sync.py (api service) and alerter/formatter.py
+# (alerter service) are separate services with no shared-lib path for
+# this, the exact same precedent this module's own decode_bar-style
+# helpers already establish elsewhere in this file.
+_HTML_SPECIAL = {"&": "&amp;", "<": "&lt;", ">": "&gt;"}
 
 
-def _escape_md(text: str) -> str:
-    return _MD_SPECIAL.sub(r"\\\1", str(text))
-
-
-def _escape_pre(text: str) -> str:
-    return _PRE_SPECIAL.sub(r"\\\1", str(text))
-
-
-def _row(label: str, value: str) -> str:
-    return f"{label:<11}{value}"
+def _escape_html(text: Any) -> str:
+    out = str(text)
+    for raw, esc in _HTML_SPECIAL.items():
+        out = out.replace(raw, esc)
+    return out
 
 
 async def _maybe_alert_position_warning(
@@ -412,39 +406,28 @@ async def _maybe_alert_position_warning(
 
     action = "EXIT IMMEDIATELY" if holding_horizon in ALERTABLE_HORIZONS else "STRUCTURAL BREAK"
     tags_text = ", ".join(invalidation_tags) if invalidation_tags else holding_horizon
-    broken_level_text = f"Rs {invalidation_level:,.2f}" if invalidation_level is not None else "-"
+    broken_level_text = f"Rs {invalidation_level:,.2f}" if invalidation_level is not None else "N/A"
 
-    # Bold warning headline outside the fence (per the sprint's own
-    # ask), monospace detail table inside it -- same split
-    # alerter/formatter.py's format_signal() now uses, for the same
-    # reason: MarkdownV2 doesn't parse bold inside a code entity.
-    #
-    # Real bug caught live (2026-08-27): escaping only the interpolated
-    # underlying/action values and leaving the literal "(" ")" around
-    # them unescaped got a genuine 400 from Telegram's own API --
-    # "Character '(' is reserved and must be escaped" -- the first time
-    # this ever sent through a real (non-dry-run) bot token. Every
-    # reserved character in a MarkdownV2 entity must be escaped,
-    # including ones typed directly into the f-string, not just ones
-    # substituted in -- so the fix escapes the fully-assembled headline
-    # TEXT as one string, then wraps *that* in the bold markers (which
-    # must stay outside the escape, since `*` here is live syntax, not
-    # literal text).
-    headline_text = f"🚨 POSITION WARNING — {underlying} ({action})"
-    headline = f"*{_escape_md(headline_text)}*"
-    table = _escape_pre(
-        "\n".join(
-            [
-                _row("SYMBOL", f"{underlying} ({trading_symbol})"),
-                _row("ACTION", action),
-                _row("TAGS", tags_text),
-                _row("LTP", f"Rs {ltp:,.2f}"),
-                _row("PNL", f"Rs {pnl:,.2f}"),
-                _row("BROKEN LVL", broken_level_text),
-            ]
-        )
+    # "Fast Exit Alarm" template ("Blended HUD" redesign, 2026-08-28) --
+    # the bottom banner echoes the real determined `action` rather than
+    # always shouting "EXIT IMMEDIATELY" regardless of severity: a
+    # position carrying only a structural-break tag under a
+    # non-EXIT-IMMEDIATELY horizon (see ALERTABLE_TAGS's own callers)
+    # gets an honest "STRUCTURAL BREAK" banner, not an overstated one.
+    symbol_text = f"{underlying} ({trading_symbol})"
+    message = "\n".join(
+        [
+            "⚠️ <b>FAST EXIT ALARM</b> ⚠️",
+            f"<b>{_escape_html(symbol_text)}</b>",
+            "",
+            f"• LTP : Rs {ltp:,.2f}",
+            f"• PnL : Rs {pnl:,.2f}",
+            f"• Status: 🚨 <b>{_escape_html(tags_text)}</b>",
+            f"• Broken Level: {broken_level_text}",
+            "",
+            f"🔴 <b>ACTION: {_escape_html(action)}</b>",
+        ]
     )
-    message = f"{headline}\n```\n{table}\n```"
     now_us = int(time.time() * 1_000_000)
     payload = {
         "signal_id": f"position_warning_{instrument_token}_{now_us}",

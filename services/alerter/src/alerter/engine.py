@@ -134,12 +134,18 @@ class AlerterEngine:
         # ── Format message ─────────────────────────────
         enriched_payload = await self._enrich_direction_zone(enriched_payload, persist=True)
         enriched_payload = await self._enrich_option_context(enriched_payload)
+        enriched_payload = await self._enrich_mtf_structure(enriched_payload)
         message = self._format_signal(enriched_payload)
 
         # ── Deliver via Telegram ───────────────────────
+        # "Blended HUD" redesign (2026-08-28): format_signal() now
+        # builds HTML (`<b>`), not MarkdownV2 -- see that module's own
+        # docstring for why. Every formatter_fn-driven send in this
+        # class uses the same parse_mode for the same reason.
         outcome: DeliveryOutcome = await self.telegram.send_message(
             chat_id=self._chat_id,
             text=message,
+            parse_mode="HTML",
         )
 
         self._retries_total += outcome.retries
@@ -226,6 +232,35 @@ class AlerterEngine:
             return enriched
         return payload
 
+    async def _enrich_mtf_structure(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """"Blended HUD" redesign (2026-08-28) -- attach the real cached
+        HTF support/resistance so format_signal()'s "Structural Anchor"
+        section has a real level, not a guess. Same real
+        infusion:mtf:{symbol} cache (blocker_up_level/blocker_down_level)
+        api/broker_sync.py's own Position Intelligence Engine already
+        reads, and the same "only ever warm for a rolling subset, a miss
+        is routine" cache scanner/engine.py's own _fetch_mtf_context
+        already established -- {} on a miss, same shape as
+        _enrich_option_context's own honest-absence convention above."""
+        symbol = str(payload.get("symbol") or "").upper()
+        if not symbol:
+            return payload
+
+        raw = await self.redis.get(f"infusion:mtf:{symbol}")
+        if not raw:
+            return payload
+        try:
+            text = raw.decode() if isinstance(raw, bytes) else raw
+            mtf = json.loads(text)
+        except Exception:
+            return payload
+        if not isinstance(mtf, dict):
+            return payload
+
+        enriched = dict(payload)
+        enriched["mtf_structure"] = mtf
+        return enriched
+
     async def _deliver_recap(self, payload: dict[str, Any]) -> None:
         """Deliver daily recap event — bypasses gate, sends text directly."""
         recap_text = payload.get("recap_text", "")
@@ -260,10 +295,12 @@ class AlerterEngine:
         symbol = payload.get("symbol", "INFUSION_TEST")
         grade = payload.get("conviction_grade", "A+")
         enriched_payload = await self._enrich_direction_zone(payload)
+        enriched_payload = await self._enrich_mtf_structure(enriched_payload)
         message = self._format_signal(enriched_payload)
         outcome: DeliveryOutcome = await self.telegram.send_message(
             chat_id=self._chat_id,
             text=message,
+            parse_mode="HTML",
         )
         self._retries_total += outcome.retries
         if outcome.success:
@@ -292,15 +329,14 @@ class AlerterEngine:
             )
 
     async def _deliver_position_warning(self, payload: dict[str, Any]) -> None:
-        """Deliver a real broker position warning. "Telegram Redesign &
-        Token Modal" sprint (2026-08-27): broker_sync.py now builds this
-        message as a bold MarkdownV2 headline + a fenced monospace
-        detail table (its own module-level _escape_md/_escape_pre,
-        matching alerter/formatter.py's identical split), so this now
-        sends with the real MarkdownV2 parse_mode -- the plain-text
-        parse_mode="" this used before that redesign is what recap still
-        uses today, for its own different (box-drawing, unescaped)
-        reason."""
+        """Deliver a real broker position warning. "Blended HUD"
+        redesign (2026-08-28): broker_sync.py now builds this as the
+        "Fast Exit Alarm" HTML template (its own module-level
+        _escape_html, matching alerter/formatter.py's own choice and the
+        same reasoning -- see that module's docstring), so this sends
+        with parse_mode="HTML" -- the plain-text parse_mode="" this used
+        before any of these redesigns is what recap still uses today,
+        for its own different (box-drawing, unescaped) reason."""
         signal_id = payload.get("signal_id", "")
         symbol = payload.get("symbol", "")
         text = payload.get("message", "")
@@ -310,6 +346,7 @@ class AlerterEngine:
         outcome: DeliveryOutcome = await self.telegram.send_message(
             chat_id=self._chat_id,
             text=text,
+            parse_mode="HTML",
         )
         if outcome.success:
             self._alerts_sent += 1
