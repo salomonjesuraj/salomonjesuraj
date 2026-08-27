@@ -28,7 +28,7 @@ def test_rejection_code_is_a_plain_string_everywhere_it_matters() -> None:
     assert json.dumps({"code": code}) == '{"code": "REJECTED_OI_WALL"}'
 
 
-def test_rejection_code_has_exactly_the_nine_specified_members() -> None:
+def test_rejection_code_has_exactly_the_ten_specified_members() -> None:
     assert {member.value for member in RejectionCode} == {
         "REJECTED_OI_WALL",
         "REJECTED_OPTION_SPREAD",
@@ -39,6 +39,7 @@ def test_rejection_code_has_exactly_the_nine_specified_members() -> None:
         "REJECTED_THETA_CUTOFF",
         "REJECTED_LOW_CONVICTION",
         "REJECTED_SECTOR_WEAK",
+        "REJECTED_CHASING_OB",
     }
 
 
@@ -202,6 +203,66 @@ async def test_sector_weak_carries_the_rejection_code() -> None:
     assert result.passed is False
     assert result.gate == "sector"
     assert result.code == RejectionCode.REJECTED_SECTOR_WEAK
+
+
+# ── SMC Inception Conviction Model: institutional anti-chase gate ──────
+# (2026-08-27 -- see scanner/scoring.py's own module docstring for the
+# model this gate is the hard-rejection complement to.)
+
+
+async def test_chasing_ob_is_rejected_beyond_the_configured_distance() -> None:
+    gate = SuppressionGate(_FakeRedis(), _settings())  # type: ignore[arg-type]
+    result = await gate.evaluate(
+        symbol="RELIANCE",
+        strategy_id="options_first_hybrid",
+        conviction_score=95.0,
+        ob_fvg_distance_pct=1.2,  # > CHASING_OB_MAX_DISTANCE_PCT (0.75)
+        now=dt_time(11, 0),
+    )
+    assert result.passed is False
+    assert result.gate == "institutional_anti_chase"
+    assert result.code == RejectionCode.REJECTED_CHASING_OB
+
+
+async def test_price_at_the_base_of_the_ob_is_not_rejected() -> None:
+    gate = SuppressionGate(_FakeRedis(), _settings())  # type: ignore[arg-type]
+    result = await gate.evaluate(
+        symbol="RELIANCE",
+        strategy_id="options_first_hybrid",
+        conviction_score=95.0,
+        ob_fvg_distance_pct=0.3,  # inside the 0.75% line
+        now=dt_time(11, 0),
+    )
+    assert result.passed is True
+
+
+async def test_no_ob_or_fvg_at_all_does_not_trigger_the_anti_chase_gate() -> None:
+    """Absence of a zone to chase is not the same thing as chasing
+    one -- None must no-op, not be treated as infinitely far away."""
+    gate = SuppressionGate(_FakeRedis(), _settings())  # type: ignore[arg-type]
+    result = await gate.evaluate(
+        symbol="RELIANCE",
+        strategy_id="options_first_hybrid",
+        conviction_score=95.0,
+        ob_fvg_distance_pct=None,
+        now=dt_time(11, 0),
+    )
+    assert result.passed is True
+
+
+async def test_low_conviction_is_rejected_before_the_anti_chase_gate_is_even_checked() -> None:
+    """Same gate-ordering discipline as theta_cutoff's own test above --
+    a weak setup is rejected for being weak first."""
+    gate = SuppressionGate(_FakeRedis(), _settings())  # type: ignore[arg-type]
+    result = await gate.evaluate(
+        symbol="RELIANCE",
+        strategy_id="options_first_hybrid",
+        conviction_score=10.0,
+        ob_fvg_distance_pct=5.0,
+        now=dt_time(11, 0),
+    )
+    assert result.passed is False
+    assert result.gate == "conviction"
 
 
 # ── B1: static OI-wall proximity ────────────────────────────────────────

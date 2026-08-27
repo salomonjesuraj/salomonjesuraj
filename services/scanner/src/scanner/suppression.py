@@ -9,8 +9,13 @@ Evaluation order is strict and deterministic:
   6. CONVICTION FLOOR — score above minimum?
   7. THETA CUTOFF     — new option-buying entries after 14:30 IST?
      (pipeline audit fix B3 — see ScannerSettings.theta_cutoff_* )
+  8. INSTITUTIONAL ANTI-CHASE — LTP more than CHASING_OB_MAX_DISTANCE_PCT
+     from the nearest Order Block/FVG's proximal line? (SMC Inception
+     Conviction Model, 2026-08-27 — see scanner/scoring.py's own
+     module docstring for the model this gate is the hard-rejection
+     complement to.)
 
-  (an 8th gate, PRECISION GUARD, runs after the above when enabled for a
+  (a 9th gate, PRECISION GUARD, runs after the above when enabled for a
   given strategy — see evaluate() below)
 
 The F&O ban gate (Phase 13.13) is the one gate here that isn't a signal-
@@ -85,6 +90,15 @@ def _current_session(now: dt_time | None = None) -> str:
     return "post_market"
 
 
+# SMC Inception Conviction Model (2026-08-27) -- Infusion's own
+# calibration (the user's own spec value), not from a cited source,
+# same posture as every other threshold constant in this codebase.
+# Deliberately tighter than scoring.py's OB_FVG_ZERO_CREDIT_PCT (1.5%,
+# where the score component itself reaches zero) -- see Gate 8's own
+# comment for why the two thresholds are meant to differ.
+CHASING_OB_MAX_DISTANCE_PCT = 0.75
+
+
 def _parse_hhmm(value: str, default: dt_time = dt_time(14, 30)) -> dt_time:
     """Parse a "HH:MM" config string into a dt_time, IST. Falls back to
     the theta-cutoff default rather than raising on a malformed env var
@@ -146,6 +160,7 @@ class SuppressionGate:
         self._theta_cutoff_strategy_ids = {
             s.strip() for s in str(settings.theta_cutoff_strategy_ids).split(",") if s.strip()
         }
+        self._chasing_ob_max_pct = CHASING_OB_MAX_DISTANCE_PCT
         self._precision_guard_enabled = settings.precision_guard_enabled
         self._precision_guard_min_score = settings.precision_guard_min_score
         self._precision_guard_min_rr = settings.precision_guard_min_rr
@@ -165,6 +180,7 @@ class SuppressionGate:
         market_regime: str = "",
         signal_type: str = "bullish",
         risk_reward_ratio: float = 0.0,
+        ob_fvg_distance_pct: float | None = None,
         now: dt_time | None = None,
     ) -> SuppressionResult:
         """Evaluate all suppression gates in strict order.
@@ -263,7 +279,27 @@ class SuppressionGate:
                 code=RejectionCode.REJECTED_THETA_CUTOFF,
             )
 
-        # ── Gate 8: Precision guard from optimizer ─────────────────
+        # ── Gate 8: Institutional anti-chase (SMC Inception model, 2026-08-27) ──
+        # Deliberately after the conviction floor, same reasoning as
+        # theta_cutoff above -- a weak setup is rejected for being weak
+        # first. This is tighter than scoring.py's own OB/FVG decay
+        # (which reaches zero credit at 1.5%): a setup between 0.75%
+        # and 1.5% away can still accumulate SOME smc_structure points
+        # from other components, but this hard-rejects it anyway --
+        # the whole point of the Inception model is entries AT the
+        # base, not "still gets some credit for being nearby."
+        # ob_fvg_distance_pct is None (this gate no-ops) whenever there
+        # is no unmitigated OB/FVG at all right now -- absence of a
+        # zone to chase is not the same thing as chasing one.
+        if ob_fvg_distance_pct is not None and ob_fvg_distance_pct > self._chasing_ob_max_pct:
+            return SuppressionResult(
+                passed=False,
+                reason=f"price_{ob_fvg_distance_pct:.2f}pct_from_order_block_base",
+                gate="institutional_anti_chase",
+                code=RejectionCode.REJECTED_CHASING_OB,
+            )
+
+        # ── Gate 9: Precision guard from optimizer ─────────────────
         if self._precision_guard_enabled and strategy_id in self._precision_guard_strategy_ids:
             if conviction_score < self._precision_guard_min_score:
                 return SuppressionResult(

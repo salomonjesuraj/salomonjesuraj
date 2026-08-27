@@ -61,6 +61,21 @@ class TradeBlueprint(BaseModel):
     # one horizon's specific bar.
     trade_horizon: str = "UNCLASSIFIED"
 
+    # SMC Inception Conviction Model (2026-08-27) -- the same three
+    # reads scanner/scoring.py's compute_conviction() scores against,
+    # surfaced here so the frontend can show the exact institutional
+    # footprint a signal was scored on. ob_fvg_distance_pct is None
+    # when there's no unmitigated 1m Order Block/FVG right now (see
+    # api/trade_blueprint.py's own note on why this is 1-minute
+    # structure, not the 15m/1H originally asked for).
+    ob_fvg_distance_pct: float | None = None
+    liquidity_sweep: str | None = None  # "sellside" | "buyside" | None
+    # Honest substitute for CVD -- real order-BOOK imbalance pressure
+    # (book_imbalance vs. its own EMA), not executed-trade volume delta.
+    # See scanner/scoring.py's module docstring for why true CVD isn't
+    # available from this pipeline's real feed.
+    order_flow_divergence: bool = False
+
     # Honesty fields -- which of the above actually had real data behind
     # them right now, so a dashboard never has to guess why a field is
     # null versus genuinely absent from the response.

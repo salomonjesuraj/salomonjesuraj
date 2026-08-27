@@ -1,38 +1,57 @@
-"""Conviction scoring engine.
+"""Conviction scoring engine -- SMC Inception Conviction Model
+(2026-08-27 rewrite).
 
-Deterministic scoring: same features → same score → same grade.
-No randomness, no ML, no opaque logic.
+The prior model (VWAP-distance/RSI/volume-spike/EMA-alignment, blended
+with Pine confidence and a Strength Meter) is a LAGGING model: by the
+time those inputs agree, the move has typically already run 3-4%,
+turning every entry into a retail-style chase with poor risk/reward.
+This tears that weighting out and replaces it with an INCEPTION model:
+score the setup at its base -- proximity to an unmitigated Order Block
+or Fair Value Gap, a confirmed liquidity sweep, order-flow pressure
+building while price is still compressed, OI buildup during a squeeze,
+and higher-timeframe/structural confirmation -- so a signal fires
+where an entry can actually be taken, not after the fact.
 
-The final score blends FOUR components so the single number a trader sees
-is the actual sum of everything the system knows — not one of several
-competing scores that could quietly disagree with each other:
+Two real data-availability findings from building this, both disclosed
+here rather than silently worked around:
 
-  Technical (0-100, weight 0.45): volume/VWAP/RSI/EMA/flow/bollinger/spread,
-      the original point-sum below.
-  Pine confidence (0-100, weight 0.25): EMA-stack/ATR-trend/MACD/RSI/VWAP/
-      rel-vol/candle/spread proxy — scanner/pine_confidence.py.
-  Strength meter (0-100, weight 0.20): ADX/EMA-stack-spread/Supertrend-VWAP
-      agreement/candle-body — the Pine v6 Strength Meter equivalent.
-      compute_strength_meter() in pine_confidence.py.
-  Structure alignment (0-100, weight 0.10): does the fractal-pivot trend
-      state / most recent BOS-CHOCH event agree with the signal direction —
-      feature_engine/features/structure.py, via ml_features.
+1. Order Block / FVG / liquidity-sweep detection already exists
+   (feature_engine/features/ict.py, wired into ml_features today) --
+   but only on 1-MINUTE bars. There is no 15m/1H equivalent: that would
+   need the swing-pivot detection in feature_engine/features/structure.py
+   duplicated at each additional timeframe (state.swing_high_1/
+   swing_low_1 are themselves 1m-only), a materially larger, separate
+   piece of infrastructure than this scoring rewrite. This model scores
+   against the real 1m zones -- still a genuine, close-confirmed
+   institutional footprint, just a lower timeframe than originally
+   asked for.
+2. True Cumulative Volume Delta (buyer-initiated minus seller-initiated
+   EXECUTED volume) is not something this pipeline can compute: checked
+   ingestion/adapters/upstox_codec.py directly -- the real Upstox feed
+   carries tbq/tsq (exchange-wide RESTING order quantity totals) and
+   5-level market depth, never a per-trade buy/sell side tag. The
+   honest analogue used here is book_imbalance / book_imbalance_ema
+   (feature_engine/features/microstructure.py's own weighted depth-
+   imbalance + its EMA, already computed, previously never wired into
+   scoring) -- real order-BOOK pressure, not executed-trade delta.
+   Named "order-flow divergence" throughout, deliberately not "CVD",
+   so this distinction can't be lost in a later refactor.
 
-  Technical sub-score breakdown (0-100 before blending):
-    Volume:    0-25 (relative volume magnitude)
-    VWAP:      0-25 (distance from VWAP — fresh reclaim scores highest)
-    RSI:       0-15 (sweet spot 50-65)
-    EMA:       0-10 (alignment: ltp > ema9 > ema20)
-    Flow:      0-10 (order imbalance magnitude)
-    Bollinger: 0-10 (breakout or healthy width)
-    Spread:    0-5  (tighter = more liquid = better)
+HTF (1H/1D) trend alignment and OI-buildup context live in OTHER
+services (api/routes/mtf.py's infusion:mtf:{symbol} cache;
+api/futures_queue.py's infusion:futures:{symbol} hash) that
+feature-engine's own per-tick ml_features never touches -- engine.py's
+_process_candidate() now reads both (two cheap Redis GETs, the same
+"read what's already computed" pattern used everywhere else in this
+codebase) and passes them in as the optional mtf_data/futures_data
+arguments below. Both are commonly absent for any given symbol at any
+given moment (mtf_queue.py only keeps ~50/208 symbols warm at once,
+per EBIE-KNOWN-GAPS.md 1.7) -- absence scores 0 for that component,
+deliberately not neutral credit, since these points are meant to be
+EARNED higher-timeframe confirmation, not assumed in the absence of
+data.
 
-Chaseable is a hard cap, not a cosmetic badge: a setup Pine v6's Rocket
-marker doesn't confirm (weak ADX, no Supertrend/VWAP agreement, indecisive
-candle) cannot score into A/A+ no matter how good the rest looks — it caps
-at the top of B. A high score should mean "act", not "almost."
-
-Grade mapping:
+Grade mapping (unchanged):
   85-100 → A+  (exceptional)
   70-84  → A   (strong)
   55-69  → B   (moderate)
@@ -46,199 +65,236 @@ from typing import Any
 
 CHASEABLE_GRADE_CAP = 69.0  # top of B — below the 70-point A threshold
 
-_BOS_CHOCH_ALIGNED = {
-    "bullish": {"Bullish BOS", "Bullish CHOCH"},
-    "bearish": {"Bearish BOS", "Bearish CHOCH"},
-}
+# ── SMC Structure (35 pts) ───────────────────────────────────────────
+OB_FVG_MAX_POINTS = 20.0
+OB_FVG_FULL_CREDIT_PCT = 0.5  # within this %, full credit
+OB_FVG_ZERO_CREDIT_PCT = 1.5  # at/beyond this %, zero credit -- this IS the anti-chase line
+LIQUIDITY_SWEEP_POINTS = 15.0
+
+# ── Order Flow & Derivatives (35 pts) ───────────────────────────────
+ORDER_FLOW_DIVERGENCE_POINTS = 20.0
+ORDER_FLOW_DOMINANCE_THRESHOLD = 0.05  # book_imbalance must actually lean this way, not just tick off zero
+SQUEEZE_STATES = {"EXTREME", "COILED", "BUILDING"}
+BB_WIDTH_COMPRESSED_MAX = 0.02
+OI_SQUEEZE_POINTS = 15.0
+
+# ── MTF Alignment & LTF Trigger (30 pts) ────────────────────────────
+HTF_ALIGNMENT_FULL_POINTS = 15.0
+HTF_ALIGNMENT_PARTIAL_POINTS = 8.0
+CHOCH_TRIGGER_POINTS = 15.0
+# CHoCH only counts as an LTF trigger "inside the HTF Order Block" if
+# price is still within this distance of the zone -- reuses the same
+# line the SMC Structure component itself decays to zero at, so a
+# CHoCH that fires nowhere near a zone can't still earn LTF-trigger
+# credit.
+CHOCH_MAX_OB_DISTANCE_PCT = OB_FVG_ZERO_CREDIT_PCT
+
+_CHOCH_ALIGNED = {"bullish": "Bullish CHOCH", "bearish": "Bearish CHOCH"}
 
 
-def _structure_alignment_score(features: dict[str, Any], bearish: bool) -> float:
-    """0-100: does the fractal-pivot trend/BOS-CHOCH story agree with the
-    signal's direction? A fresh same-direction break scores highest; an
-    opposing trend scores lowest; "no structure data yet" stays neutral
-    rather than penalizing symbols still warming up.
+def nearest_ob_or_fvg_distance_pct(features: dict[str, Any], bearish: bool) -> float | None:
+    """% distance from LTP to the nearest validated, direction-aligned
+    Order Block or non-rebalanced Fair Value Gap's proximal line (the
+    edge price would touch first on a pullback into the zone). None
+    when no such zone currently exists -- never a fabricated 0.0 that
+    would misread as "sitting right at the zone."
     """
+    ltp = features.get("ltp") or 0.0
+    if ltp <= 0:
+        return None
+
+    candidates: list[float] = []
+    if not bearish:
+        if (
+            features.get("order_block_bullish_validated")
+            and features.get("order_block_bullish_high") is not None
+        ):
+            candidates.append(float(features["order_block_bullish_high"]))
+        if features.get("fvg_bullish_top") is not None:
+            candidates.append(float(features["fvg_bullish_top"]))
+    else:
+        if (
+            features.get("order_block_bearish_validated")
+            and features.get("order_block_bearish_low") is not None
+        ):
+            candidates.append(float(features["order_block_bearish_low"]))
+        if features.get("fvg_bearish_bottom") is not None:
+            candidates.append(float(features["fvg_bearish_bottom"]))
+
+    if not candidates:
+        return None
+    nearest = min(candidates, key=lambda z: abs(z - ltp))
+    return abs(nearest - ltp) / ltp * 100.0
+
+
+def _liquidity_sweep_score(features: dict[str, Any], bearish: bool) -> float:
+    """A sellside sweep (wick below a swing low, close back above) is a
+    bullish stop-hunt-then-reclaim; a buyside sweep is the bearish
+    mirror -- feature_engine/features/ict.py's own state machine."""
+    sweep = features.get("last_liquidity_sweep")
+    wants = "buyside" if bearish else "sellside"
+    return LIQUIDITY_SWEEP_POINTS if sweep == wants else 0.0
+
+
+def smc_structure_score(
+    features: dict[str, Any], bearish: bool
+) -> tuple[float, float | None]:
+    """0-35: Order Block/FVG proximity (0-20, linearly decaying from
+    full credit at 0.5% to zero at 1.5%) + confirmed liquidity sweep
+    (0-15). Returns (points, distance_pct) -- the distance is reused by
+    both the CHoCH trigger check below and the anti-chase suppression
+    gate, so all three always agree on the same number."""
+    distance = nearest_ob_or_fvg_distance_pct(features, bearish)
+    ob_points = 0.0
+    if distance is not None:
+        if distance <= OB_FVG_FULL_CREDIT_PCT:
+            ob_points = OB_FVG_MAX_POINTS
+        elif distance < OB_FVG_ZERO_CREDIT_PCT:
+            span = OB_FVG_ZERO_CREDIT_PCT - OB_FVG_FULL_CREDIT_PCT
+            ob_points = OB_FVG_MAX_POINTS * (OB_FVG_ZERO_CREDIT_PCT - distance) / span
+    return ob_points + _liquidity_sweep_score(features, bearish), distance
+
+
+def _is_price_compressed(features: dict[str, Any]) -> bool:
+    squeeze_state = str(features.get("squeeze_state") or "").upper()
+    bb_width = features.get("bb_width")
+    compressed_by_bb = bb_width is not None and 0 < float(bb_width) <= BB_WIDTH_COMPRESSED_MAX
+    return squeeze_state in SQUEEZE_STATES or compressed_by_bb
+
+
+def order_flow_divergence_score(features: dict[str, Any], bearish: bool) -> float:
+    """0 or 20: order-BOOK pressure (see module docstring for why this
+    isn't executed-trade CVD) building in the signal's direction while
+    price is still compressed -- book_imbalance pulling away from its
+    own slower EMA (the raw reading leading its trend) while a squeeze/
+    tight-Bollinger state means price itself hasn't expanded yet. This
+    IS "hidden accumulation": pressure building, price still flat.
+    """
+    imbalance = features.get("book_imbalance")
+    imbalance_ema = features.get("book_imbalance_ema")
+    if imbalance is None or imbalance_ema is None:
+        return 0.0
+    if not _is_price_compressed(features):
+        return 0.0
+
+    imbalance = float(imbalance)
+    imbalance_ema = float(imbalance_ema)
+    pressure_building = (imbalance - imbalance_ema) > 0 if not bearish else (
+        imbalance - imbalance_ema
+    ) < 0
+    side_dominant = (
+        imbalance > ORDER_FLOW_DOMINANCE_THRESHOLD
+        if not bearish
+        else imbalance < -ORDER_FLOW_DOMINANCE_THRESHOLD
+    )
+    return ORDER_FLOW_DIVERGENCE_POINTS if pressure_building and side_dominant else 0.0
+
+
+def oi_squeeze_score(features: dict[str, Any], futures_data: dict[str, Any] | None, bearish: bool) -> float:
+    """0 or 15: pre-breakout LONG_BUILDUP (bullish) / SHORT_BUILDUP
+    (bearish) OI, specifically during a volatility squeeze -- OI
+    conviction building while the range is still tight, not a buildup
+    already accompanying an expanded move. futures_data is
+    infusion:futures:{symbol}'s own hash (api/futures_queue.py) --
+    absent when that sweep hasn't reached this symbol yet this cycle;
+    scores 0, not a guess."""
+    if not futures_data or not _is_price_compressed(features):
+        return 0.0
+    oi_buildup = str(futures_data.get("oi_buildup") or "NEUTRAL")
+    wants = "SHORT_BUILDUP" if bearish else "LONG_BUILDUP"
+    return OI_SQUEEZE_POINTS if oi_buildup == wants else 0.0
+
+
+def htf_alignment_score(mtf_data: dict[str, Any] | None, bearish: bool) -> float:
+    """0, 8, or 15: how many of 1H/1D agree with this direction.
+    mtf_data is infusion:mtf:{symbol}'s cached payload (api/routes/
+    mtf.py) -- absent for most symbols most of the time (see module
+    docstring); absence scores 0 deliberately, not neutral credit."""
+    if not mtf_data:
+        return 0.0
+    timeframes = mtf_data.get("timeframes") or {}
+    wants = "BEAR" if bearish else "BULL"
+    agree = sum(1 for tf in ("1H", "1D") if (timeframes.get(tf) or {}).get("state") == wants)
+    if agree >= 2:
+        return HTF_ALIGNMENT_FULL_POINTS
+    if agree == 1:
+        return HTF_ALIGNMENT_PARTIAL_POINTS
+    return 0.0
+
+
+def choch_trigger_score(features: dict[str, Any], bearish: bool, ob_distance_pct: float | None) -> float:
+    """0 or 15: an immediate CHoCH (feature_engine/features/structure.py's
+    own BOS/CHOCH state machine, 1m) firing while price is still inside/
+    near the Order Block or FVG zone -- a CHoCH far from any zone is a
+    reversal signal on its own, but not the "reaction right at the
+    base" this points bucket is meant to reward."""
     direction = "bearish" if bearish else "bullish"
-    event = str(features.get("last_event_label") or "").strip()
-    if event and event != "None" and event in _BOS_CHOCH_ALIGNED[direction]:
-        return 100.0
-
-    trend_state = features.get("trend_state")
-    try:
-        trend_state = int(trend_state) if trend_state is not None else None
-    except (TypeError, ValueError):
-        trend_state = None
-    if trend_state is None:
-        return 50.0  # structure engine hasn't confirmed a pivot yet
-    wants = -1 if bearish else 1
-    if trend_state == wants:
-        return 70.0
-    if trend_state == 0:
-        return 50.0
-    return 20.0  # trend_state actively opposes the signal direction
+    event = str(features.get("last_event_label") or "")
+    if event != _CHOCH_ALIGNED[direction]:
+        return 0.0
+    if ob_distance_pct is None or ob_distance_pct > CHOCH_MAX_OB_DISTANCE_PCT:
+        return 0.0
+    return CHOCH_TRIGGER_POINTS
 
 
-def compute_conviction(features: dict[str, Any]) -> tuple[float, dict[str, float]]:
-    """Compute conviction score from features.
+def compute_conviction(
+    features: dict[str, Any],
+    mtf_data: dict[str, Any] | None = None,
+    futures_data: dict[str, Any] | None = None,
+) -> tuple[float, dict[str, float]]:
+    """Compute conviction score from features -- SMC Inception model.
 
     Args:
         features: feature snapshot dict from SignalCandidate
+            (feature_engine's own per-tick ml_features).
+        mtf_data: infusion:mtf:{symbol}'s cached payload, or None.
+        futures_data: infusion:futures:{symbol}'s hash, or None.
 
     Returns:
         (total_score, sub_scores_dict)
 
-    Contract: deterministic — same features → same score.
+    Contract: deterministic — same inputs → same score.
     """
-    sub_scores: dict[str, float] = {}
-    pine_confidence = features.get("pine_confidence")
-    if pine_confidence is not None:
-        try:
-            pine_confidence = float(pine_confidence)
-        except (TypeError, ValueError):
-            pine_confidence = None
-
-    # ── Volume component (0-25) ────────────────────
-    rel_vol = features.get("rel_vol_20d", 1.0)
-    if rel_vol >= 5.0:
-        sub_scores["volume"] = 25.0
-    elif rel_vol >= 3.0:
-        sub_scores["volume"] = 20.0
-    elif rel_vol >= 2.0:
-        sub_scores["volume"] = 15.0
-    else:
-        sub_scores["volume"] = 5.0
-
-    # ── VWAP reclaim component (0-25) ──────────────
     direction = str(features.get("direction") or "bullish").lower()
     bearish = direction == "bearish"
+    sub_scores: dict[str, float] = {}
 
-    ltp = features.get("ltp", 0.0)
-    vwap = features.get("vwap", 0.0)
-    vwap_distance_pct = (vwap - ltp if bearish else ltp - vwap) / vwap * 100 if vwap > 0 else 0.0
+    smc_points, ob_distance_pct = smc_structure_score(features, bearish)
+    sub_scores["smc_structure"] = round(smc_points, 2)
+    if ob_distance_pct is not None:
+        sub_scores["ob_fvg_distance_pct"] = round(ob_distance_pct, 3)
 
-    if 0 < vwap_distance_pct <= 0.3:
-        sub_scores["vwap"] = 25.0  # fresh reclaim, tight
-    elif vwap_distance_pct <= 0.8:
-        sub_scores["vwap"] = 20.0
-    elif vwap_distance_pct <= 1.5:
-        sub_scores["vwap"] = 15.0
-    else:
-        sub_scores["vwap"] = 8.0
+    order_flow_points = order_flow_divergence_score(features, bearish)
+    oi_points = oi_squeeze_score(features, futures_data, bearish)
+    sub_scores["order_flow_divergence"] = round(order_flow_points, 2)
+    sub_scores["oi_squeeze"] = round(oi_points, 2)
 
-    # ── RSI component (0-15) ──────────────────────
-    rsi = features.get("rsi_14", 50.0)
-    if (not bearish and 50 <= rsi <= 65) or (bearish and 35 <= rsi <= 50):
-        sub_scores["rsi"] = 15.0  # sweet spot
-    elif (not bearish and (40 < rsi < 50 or 65 < rsi < 75)) or (
-        bearish and (28 < rsi < 35 or 50 < rsi < 60)
-    ):
-        sub_scores["rsi"] = 10.0
-    else:
-        sub_scores["rsi"] = 3.0
+    htf_points = htf_alignment_score(mtf_data, bearish)
+    choch_points = choch_trigger_score(features, bearish, ob_distance_pct)
+    sub_scores["htf_alignment"] = round(htf_points, 2)
+    sub_scores["choch_trigger"] = round(choch_points, 2)
 
-    # ── EMA alignment component (0-10) ─────────────
-    ema_9 = features.get("ema_9", 0.0)
-    ema_20 = features.get("ema_20", 0.0)
-    if (not bearish and ltp > ema_9 > ema_20 > 0) or (
-        bearish and ltp < ema_9 < ema_20 and ema_20 > 0
-    ):
-        sub_scores["ema_alignment"] = 10.0  # full directional alignment
-    elif (not bearish and ltp > ema_9 > 0) or (bearish and ltp < ema_9 and ema_9 > 0):
-        sub_scores["ema_alignment"] = 5.0  # short EMA aligned
-    else:
-        sub_scores["ema_alignment"] = 0.0
+    total = smc_points + order_flow_points + oi_points + htf_points + choch_points
+    sub_scores["technical_component"] = round(total, 2)
 
-    # ── Order flow component (0-10) ────────────────
-    oi = features.get("order_imbalance", 0.0)
-    flow = -oi if bearish else oi
-    if flow > 0.3:
-        sub_scores["order_flow"] = 10.0
-    elif flow > 0.1:
-        sub_scores["order_flow"] = 7.0
-    elif flow > 0:
-        sub_scores["order_flow"] = 3.0
-    else:
-        sub_scores["order_flow"] = 0.0
+    # ── Risk overlays -- orthogonal to the conviction MODEL above,
+    # unchanged by this rewrite: these penalize/cap on separate risk
+    # grounds (anti-chase location/risk rules, accumulated rejection
+    # reasons), not on "does the setup look institutional." ──
+    if features.get("anti_chase_ok") is False:
+        total -= 8.0
+        sub_scores["anti_chase_penalty"] = -8.0
+    rejection_reasons = features.get("rejection_reasons") or []
+    if isinstance(rejection_reasons, list) and rejection_reasons:
+        penalty = min(10.0, len(rejection_reasons) * 3.0)
+        total -= penalty
+        sub_scores["rejection_penalty"] = -penalty
+    total = min(max(total, 0.0), 100.0)
 
-    # ── Bollinger component (0-10) ─────────────────
-    bb_upper = features.get("bb_upper", 0.0)
-    bb_width = features.get("bb_width", 0.0)
-    squeeze_state = str(features.get("squeeze_state", "")).upper()
-    nr_pattern = str(features.get("nr_pattern", ""))
-    if bb_upper > 0 and ltp > bb_upper:
-        sub_scores["bollinger"] = 10.0  # breaking out
-    elif squeeze_state in {"EXTREME", "COILED"} or nr_pattern in {"NR4", "NR7"}:
-        sub_scores["bollinger"] = 8.0  # compression/NR setup can expand fast
-    elif bb_width > 0.02:
-        sub_scores["bollinger"] = 5.0  # healthy width
-    elif bb_width > 0.01:
-        sub_scores["bollinger"] = 3.0
-    else:
-        sub_scores["bollinger"] = 0.0
+    if features.get("chaseable") is False and total > CHASEABLE_GRADE_CAP:
+        sub_scores["chaseable_cap_applied"] = round(CHASEABLE_GRADE_CAP - total, 2)
+        total = CHASEABLE_GRADE_CAP
 
-    # ── Spread/liquidity component (0-5) ───────────
-    atr_trend = str(features.get("atr_trend", "")).upper()
-    candle = str(features.get("candle_pattern", ""))
-    atr_ok = (not bearish and atr_trend == "BULL") or (bearish and atr_trend == "BEAR")
-    candle_ok = (not bearish and candle in {"Bullish Engulfing", "Hammer"}) or (
-        bearish and candle in {"Bearish Engulfing", "Shooting Star"}
-    )
-    sub_scores["atr_trail"] = 7.0 if atr_ok else 2.0 if atr_trend in {"BULL", "BEAR"} else 0.0
-    sub_scores["candle"] = 3.0 if candle_ok else 0.0
-
-    spread = features.get("spread_bps", 0.0)
-    if spread < 10:
-        sub_scores["spread"] = 5.0
-    elif spread < 30:
-        sub_scores["spread"] = 3.0
-    elif spread < 50:
-        sub_scores["spread"] = 1.0
-    else:
-        sub_scores["spread"] = 0.0
-
-    technical = min(sum(sub_scores.values()), 100.0)
-    sub_scores["technical_component"] = round(technical, 2)
-
-    if pine_confidence is not None:
-        # ── Four-component blend ────────────────────────
-        # One authoritative score instead of technical + pine_confidence +
-        # strength_score + chaseable existing as separate, occasionally-
-        # disagreeing numbers. See module docstring for the weights.
-        strength_score = features.get("strength_score")
-        try:
-            strength_score = float(strength_score) if strength_score is not None else 50.0
-        except (TypeError, ValueError):
-            strength_score = 50.0
-        structure_score = _structure_alignment_score(features, bearish)
-
-        total = (
-            technical * 0.45
-            + pine_confidence * 0.25
-            + strength_score * 0.20
-            + structure_score * 0.10
-        )
-        sub_scores["pine_confidence_component"] = round(pine_confidence * 0.25, 2)
-        sub_scores["strength_component"] = round(strength_score * 0.20, 2)
-        sub_scores["structure_component"] = round(structure_score * 0.10, 2)
-
-        if features.get("anti_chase_ok") is False:
-            total -= 8.0
-            sub_scores["anti_chase_penalty"] = -8.0
-        rejection_reasons = features.get("rejection_reasons") or []
-        if isinstance(rejection_reasons, list) and rejection_reasons:
-            total -= min(10.0, len(rejection_reasons) * 3.0)
-            sub_scores["rejection_penalty"] = -min(10.0, len(rejection_reasons) * 3.0)
-        total = min(max(total, 0.0), 100.0)
-
-        # ── Chaseable hard cap ───────────────────────────
-        # A score this strong should mean "act", not "almost." If Pine v6's
-        # Rocket marker doesn't confirm, the grade cannot reach A/A+ no
-        # matter how good every other component looks.
-        if features.get("chaseable") is False and total > CHASEABLE_GRADE_CAP:
-            sub_scores["chaseable_cap_applied"] = round(CHASEABLE_GRADE_CAP - total, 2)
-            total = CHASEABLE_GRADE_CAP
-    else:
-        total = technical
     return total, sub_scores
 
 

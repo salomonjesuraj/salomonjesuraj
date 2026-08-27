@@ -516,6 +516,39 @@ class ScannerEngine:
         except Exception:
             return None
 
+    async def _fetch_mtf_context(self, symbol: str) -> dict[str, Any] | None:
+        """SMC Inception Conviction Model (2026-08-27): best-effort read
+        of api/routes/mtf.py's infusion:mtf:{symbol} cache for HTF (1H/
+        1D) alignment scoring. That cache is only ever warm for a
+        rolling ~50/208-symbol subset (EBIE-KNOWN-GAPS.md 1.7), so a
+        miss here is routine, not a bug -- scoring.compute_conviction()
+        scores 0 for htf_alignment when this is None, never a guess."""
+        try:
+            raw = await self.redis.get(f"infusion:mtf:{symbol}")
+            if not raw:
+                return None
+            decoded = json.loads(raw.decode() if isinstance(raw, bytes) else raw)
+            return decoded if isinstance(decoded, dict) else None
+        except Exception:
+            return None
+
+    async def _fetch_futures_context(self, symbol: str) -> dict[str, Any] | None:
+        """SMC Inception Conviction Model (2026-08-27): best-effort read
+        of api/futures_queue.py's infusion:futures:{symbol} hash for
+        the OI-buildup-during-squeeze scoring component."""
+        try:
+            raw = await self.redis.hgetall(f"infusion:futures:{symbol}")
+            if not raw:
+                return None
+            return {
+                (k.decode() if isinstance(k, bytes) else k): (
+                    v.decode() if isinstance(v, bytes) else v
+                )
+                for k, v in raw.items()
+            }
+        except Exception:
+            return None
+
     async def _persist_diagnostics(
         self,
         symbol: str,
@@ -596,7 +629,11 @@ class ScannerEngine:
         """Score, suppress, and publish a signal candidate."""
 
         # ── Score ──────────────────────────────────────
-        score, numeric_sub_scores = compute_conviction(candidate.features_snapshot)
+        mtf_data = await self._fetch_mtf_context(candidate.symbol)
+        futures_data = await self._fetch_futures_context(candidate.symbol)
+        score, numeric_sub_scores = compute_conviction(
+            candidate.features_snapshot, mtf_data=mtf_data, futures_data=futures_data
+        )
         sub_scores: dict[str, Any] = dict(numeric_sub_scores)
 
         # ── Sector conviction adjustment ───────────────
@@ -758,6 +795,7 @@ class ScannerEngine:
             market_regime=market_regime,
             signal_type=candidate.signal_type,
             risk_reward_ratio=rr,
+            ob_fvg_distance_pct=sub_scores.get("ob_fvg_distance_pct"),
         )
 
         # ── Build signal ──────────────────────────────

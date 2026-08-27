@@ -54,6 +54,74 @@ BTST_NEAR_EXTREME_FRACTION = 0.15
 # honest read of "the move has used its legs" available today.
 INTRADAY_ATR_RANGE_MULT = 0.8
 
+# ── SMC Inception Conviction Model presentation (2026-08-27) ─────────
+# Deliberately duplicated from scanner/scoring.py rather than a cross-
+# service import -- api and scanner are separate deployable images with
+# no shared import path except libs/, and this codebase's own
+# established pattern is to duplicate small pure functions verbatim
+# when both services need the identical logic (see e.g.
+# feature_engine/features/volume_profile.py vs. api/volume_profile.py).
+# Keep both copies in lockstep by hand if the formula ever changes.
+ORDER_FLOW_DOMINANCE_THRESHOLD = 0.05
+SQUEEZE_STATES = {"EXTREME", "COILED", "BUILDING"}
+BB_WIDTH_COMPRESSED_MAX = 0.02
+
+
+def _nearest_ob_or_fvg_distance_pct(feature_row: Payload, bearish: bool) -> float | None:
+    """See scanner/scoring.py's nearest_ob_or_fvg_distance_pct -- identical
+    logic, api's own feature_row dict instead of scanner's features_snapshot."""
+    ltp = _f(feature_row, "ltp")
+    if ltp <= 0:
+        return None
+    candidates: list[float] = []
+    if not bearish:
+        if feature_row.get("order_block_bullish_validated") in (True, "True", "1"):
+            high = feature_row.get("order_block_bullish_high")
+            if high not in (None, "", "None"):
+                candidates.append(float(high))
+        top = feature_row.get("fvg_bullish_top")
+        if top not in (None, "", "None"):
+            candidates.append(float(top))
+    else:
+        if feature_row.get("order_block_bearish_validated") in (True, "True", "1"):
+            low = feature_row.get("order_block_bearish_low")
+            if low not in (None, "", "None"):
+                candidates.append(float(low))
+        bottom = feature_row.get("fvg_bearish_bottom")
+        if bottom not in (None, "", "None"):
+            candidates.append(float(bottom))
+    if not candidates:
+        return None
+    nearest = min(candidates, key=lambda z: abs(z - ltp))
+    return abs(nearest - ltp) / ltp * 100.0
+
+
+def _order_flow_divergence(feature_row: Payload, bearish: bool) -> bool:
+    """See scanner/scoring.py's order_flow_divergence_score -- same
+    honest book-imbalance-vs-its-own-EMA proxy for "hidden accumulation/
+    distribution", presented here as a plain bool (the score's own
+    +20/-0 split collapses to yes/no once it's just informational)."""
+    imbalance_raw = feature_row.get("book_imbalance")
+    imbalance_ema_raw = feature_row.get("book_imbalance_ema")
+    if imbalance_raw in (None, "", "None") or imbalance_ema_raw in (None, "", "None"):
+        return False
+    squeeze_state = str(feature_row.get("squeeze_state") or "").upper()
+    bb_width = _f(feature_row, "bb_width")
+    compressed = squeeze_state in SQUEEZE_STATES or (0 < bb_width <= BB_WIDTH_COMPRESSED_MAX)
+    if not compressed:
+        return False
+    imbalance = float(imbalance_raw)
+    imbalance_ema = float(imbalance_ema_raw)
+    pressure_building = (imbalance - imbalance_ema) > 0 if not bearish else (
+        imbalance - imbalance_ema
+    ) < 0
+    side_dominant = (
+        imbalance > ORDER_FLOW_DOMINANCE_THRESHOLD
+        if not bearish
+        else imbalance < -ORDER_FLOW_DOMINANCE_THRESHOLD
+    )
+    return pressure_building and side_dominant
+
 
 def _decode_hash(raw: Payload) -> Payload:
     out: Payload = {}
@@ -374,6 +442,16 @@ async def build_trade_blueprint(redis: Any, symbol: str) -> TradeBlueprint:
     else:
         unavailable.append("trade_horizon")
 
+    # ── SMC Inception Conviction Model presentation ─────────────────────
+    bearish = direction == "BEAR"
+    ob_fvg_distance_pct = _nearest_ob_or_fvg_distance_pct(feature_row, bearish)
+    liquidity_sweep = feature_row.get("last_liquidity_sweep") or None
+    order_flow_divergence = _order_flow_divergence(feature_row, bearish)
+    if ob_fvg_distance_pct is not None:
+        available.append("ob_fvg_distance_pct")
+    else:
+        unavailable.append("ob_fvg_distance_pct")
+
     return TradeBlueprint(
         symbol=symbol,
         direction=direction,
@@ -394,6 +472,9 @@ async def build_trade_blueprint(redis: Any, symbol: str) -> TradeBlueprint:
         oi_attraction_strike=oi_attraction_strike,
         oi_hurdle_strike=oi_hurdle_strike,
         trade_horizon=trade_horizon.value,
+        ob_fvg_distance_pct=ob_fvg_distance_pct,
+        liquidity_sweep=liquidity_sweep,
+        order_flow_divergence=order_flow_divergence,
         available_fields=available,
         unavailable_fields=unavailable,
     )

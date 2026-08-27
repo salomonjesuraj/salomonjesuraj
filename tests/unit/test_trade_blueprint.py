@@ -213,3 +213,59 @@ async def test_never_raises_on_a_symbol_with_nothing_cached_anywhere() -> None:
     assert blueprint.entry_price == 0.0
     assert blueprint.oi_buildup == OIBuildupType.NEUTRAL.value
     assert len(blueprint.unavailable_fields) > 0
+
+
+# ── SMC Inception Conviction Model presentation (2026-08-27) ────────────
+# Same formulas as scanner/scoring.py's own (thoroughly tested)
+# nearest_ob_or_fvg_distance_pct/order_flow_divergence_score --
+# duplicated per this codebase's established cross-service pattern (see
+# api/trade_blueprint.py's own comment), so these tests just confirm
+# the duplication and the Redis-hash-string-typing are correct, not a
+# full re-derivation of every edge case already covered there.
+
+
+def test_ob_distance_reads_string_typed_redis_hash_values() -> None:
+    """Redis hashes decode to plain strings, unlike scanner's own
+    already-typed features_snapshot -- this must coerce correctly."""
+    feature_row = {
+        "ltp": "100.0",
+        "order_block_bullish_validated": "True",
+        "order_block_bullish_high": "99.5",
+    }
+    assert tb._nearest_ob_or_fvg_distance_pct(feature_row, bearish=False) == pytest.approx(0.5)
+
+
+def test_ob_distance_none_with_no_zone() -> None:
+    assert tb._nearest_ob_or_fvg_distance_pct({"ltp": "100.0"}, bearish=False) is None
+
+
+def test_order_flow_divergence_true_when_pressure_builds_during_a_squeeze() -> None:
+    feature_row = {
+        "book_imbalance": "0.4",
+        "book_imbalance_ema": "0.1",
+        "squeeze_state": "COILED",
+    }
+    assert tb._order_flow_divergence(feature_row, bearish=False) is True
+
+
+def test_order_flow_divergence_false_without_compression() -> None:
+    feature_row = {"book_imbalance": "0.4", "book_imbalance_ema": "0.1", "bb_width": "0.05"}
+    assert tb._order_flow_divergence(feature_row, bearish=False) is False
+
+
+async def test_blueprint_surfaces_ob_distance_and_liquidity_sweep() -> None:
+    redis = _FakeRedis(
+        {
+            "infusion:feature:RELIANCE": {
+                "ltp": "100.0",
+                "retest_status": "NO_BREAKOUT",
+                "order_block_bullish_validated": "True",
+                "order_block_bullish_high": "99.5",
+                "last_liquidity_sweep": "sellside",
+            }
+        }
+    )
+    blueprint = await tb.build_trade_blueprint(redis, "RELIANCE")
+    assert blueprint.ob_fvg_distance_pct == pytest.approx(0.5)
+    assert blueprint.liquidity_sweep == "sellside"
+    assert "ob_fvg_distance_pct" in blueprint.available_fields

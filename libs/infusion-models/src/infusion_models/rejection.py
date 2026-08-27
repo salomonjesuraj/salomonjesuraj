@@ -33,3 +33,9 @@ class RejectionCode(StrEnum):
     REJECTED_THETA_CUTOFF = "REJECTED_THETA_CUTOFF"
     REJECTED_LOW_CONVICTION = "REJECTED_LOW_CONVICTION"
     REJECTED_SECTOR_WEAK = "REJECTED_SECTOR_WEAK"
+    # SMC Inception Conviction Model (2026-08-27) -- the anti-chase
+    # complement to the new Order-Block-proximity scoring in
+    # scanner/scoring.py: a setup that has already run away from its
+    # own Order Block/FVG has moved past the base this model is built
+    # to catch, regardless of how the rest of the score reads.
+    REJECTED_CHASING_OB = "REJECTED_CHASING_OB"
