@@ -795,7 +795,6 @@ class ScannerEngine:
             market_regime=market_regime,
             signal_type=candidate.signal_type,
             risk_reward_ratio=rr,
-            ob_fvg_distance_pct=sub_scores.get("ob_fvg_distance_pct"),
         )
 
         # ── Build signal ──────────────────────────────

@@ -21,6 +21,11 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from infusion_models.oi_buildup import OIBuildupType
+from infusion_models.smc import (
+    compute_warning_tags,
+    nearest_ob_or_fvg_distance_pct,
+    order_flow_divergence,
+)
 from infusion_models.trade_blueprint import TradeBlueprint
 from infusion_models.trade_horizon import TradeHorizon
 
@@ -54,73 +59,19 @@ BTST_NEAR_EXTREME_FRACTION = 0.15
 # honest read of "the move has used its legs" available today.
 INTRADAY_ATR_RANGE_MULT = 0.8
 
-# ── SMC Inception Conviction Model presentation (2026-08-27) ─────────
-# Deliberately duplicated from scanner/scoring.py rather than a cross-
-# service import -- api and scanner are separate deployable images with
-# no shared import path except libs/, and this codebase's own
-# established pattern is to duplicate small pure functions verbatim
-# when both services need the identical logic (see e.g.
-# feature_engine/features/volume_profile.py vs. api/volume_profile.py).
-# Keep both copies in lockstep by hand if the formula ever changes.
-ORDER_FLOW_DOMINANCE_THRESHOLD = 0.05
-SQUEEZE_STATES = {"EXTREME", "COILED", "BUILDING"}
-BB_WIDTH_COMPRESSED_MAX = 0.02
 
-
-def _nearest_ob_or_fvg_distance_pct(feature_row: Payload, bearish: bool) -> float | None:
-    """See scanner/scoring.py's nearest_ob_or_fvg_distance_pct -- identical
-    logic, api's own feature_row dict instead of scanner's features_snapshot."""
-    ltp = _f(feature_row, "ltp")
-    if ltp <= 0:
-        return None
-    candidates: list[float] = []
-    if not bearish:
-        if feature_row.get("order_block_bullish_validated") in (True, "True", "1"):
-            high = feature_row.get("order_block_bullish_high")
-            if high not in (None, "", "None"):
-                candidates.append(float(high))
-        top = feature_row.get("fvg_bullish_top")
-        if top not in (None, "", "None"):
-            candidates.append(float(top))
+def _compute_risk_reward(entry: float, invalidation: float, target: float) -> float:
+    """Identical formula to scanner/scoring.py's compute_risk_reward --
+    small enough (6 lines) that duplicating it verbatim per this
+    codebase's established cross-service pattern is simpler than a
+    shared-module addition for one trivial function."""
+    if target < entry and invalidation > entry:
+        risk, reward = invalidation - entry, entry - target
     else:
-        if feature_row.get("order_block_bearish_validated") in (True, "True", "1"):
-            low = feature_row.get("order_block_bearish_low")
-            if low not in (None, "", "None"):
-                candidates.append(float(low))
-        bottom = feature_row.get("fvg_bearish_bottom")
-        if bottom not in (None, "", "None"):
-            candidates.append(float(bottom))
-    if not candidates:
-        return None
-    nearest = min(candidates, key=lambda z: abs(z - ltp))
-    return abs(nearest - ltp) / ltp * 100.0
-
-
-def _order_flow_divergence(feature_row: Payload, bearish: bool) -> bool:
-    """See scanner/scoring.py's order_flow_divergence_score -- same
-    honest book-imbalance-vs-its-own-EMA proxy for "hidden accumulation/
-    distribution", presented here as a plain bool (the score's own
-    +20/-0 split collapses to yes/no once it's just informational)."""
-    imbalance_raw = feature_row.get("book_imbalance")
-    imbalance_ema_raw = feature_row.get("book_imbalance_ema")
-    if imbalance_raw in (None, "", "None") or imbalance_ema_raw in (None, "", "None"):
-        return False
-    squeeze_state = str(feature_row.get("squeeze_state") or "").upper()
-    bb_width = _f(feature_row, "bb_width")
-    compressed = squeeze_state in SQUEEZE_STATES or (0 < bb_width <= BB_WIDTH_COMPRESSED_MAX)
-    if not compressed:
-        return False
-    imbalance = float(imbalance_raw)
-    imbalance_ema = float(imbalance_ema_raw)
-    pressure_building = (imbalance - imbalance_ema) > 0 if not bearish else (
-        imbalance - imbalance_ema
-    ) < 0
-    side_dominant = (
-        imbalance > ORDER_FLOW_DOMINANCE_THRESHOLD
-        if not bearish
-        else imbalance < -ORDER_FLOW_DOMINANCE_THRESHOLD
-    )
-    return pressure_building and side_dominant
+        risk, reward = entry - invalidation, target - entry
+    if risk <= 0 or reward <= 0:
+        return 0.0
+    return round(reward / risk, 2)
 
 
 def _decode_hash(raw: Payload) -> Payload:
@@ -444,13 +395,25 @@ async def build_trade_blueprint(redis: Any, symbol: str) -> TradeBlueprint:
 
     # ── SMC Inception Conviction Model presentation ─────────────────────
     bearish = direction == "BEAR"
-    ob_fvg_distance_pct = _nearest_ob_or_fvg_distance_pct(feature_row, bearish)
+    ob_fvg_distance_pct = nearest_ob_or_fvg_distance_pct(feature_row, bearish)
     liquidity_sweep = feature_row.get("last_liquidity_sweep") or None
-    order_flow_divergence = _order_flow_divergence(feature_row, bearish)
+    has_order_flow_divergence = order_flow_divergence(feature_row, bearish)
     if ob_fvg_distance_pct is not None:
         available.append("ob_fvg_distance_pct")
     else:
         unavailable.append("ob_fvg_distance_pct")
+
+    # "Probabilistic Grading and Warning Tags" (2026-08-27): honest
+    # flags surfaced alongside the setup instead of the hard
+    # REJECTED_CHASING_OB rejection this pipeline used to apply at the
+    # exact same distance line -- see infusion_models.smc's own
+    # docstring. rr is only computable when a real active signal
+    # supplied entry/SL/T1 above; None (not a fabricated 0.0) for a
+    # cold symbol, so compute_warning_tags simply skips the R:R tag.
+    rr = (
+        _compute_risk_reward(entry_price, invalidation_sl, target_1_fib) if signal_row else None
+    )
+    warning_tags = compute_warning_tags(ob_fvg_distance_pct, rr)
 
     return TradeBlueprint(
         symbol=symbol,
@@ -474,7 +437,8 @@ async def build_trade_blueprint(redis: Any, symbol: str) -> TradeBlueprint:
         trade_horizon=trade_horizon.value,
         ob_fvg_distance_pct=ob_fvg_distance_pct,
         liquidity_sweep=liquidity_sweep,
-        order_flow_divergence=order_flow_divergence,
+        order_flow_divergence=has_order_flow_divergence,
+        warning_tags=warning_tags,
         available_fields=available,
         unavailable_fields=unavailable,
     )

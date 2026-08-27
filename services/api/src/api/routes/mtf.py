@@ -203,6 +203,28 @@ def _vwap(bars: list[Bar]) -> float | None:
     return pv / total_volume
 
 
+# SMC probabilistic revision (2026-08-27) -- HTF Momentum Continuation
+# needs a Marubozu read on THIS function's own 1H/Daily bars (it's
+# already the one place in this codebase that classifies candles for
+# arbitrary timeframes via _aggregate()); feature_engine/features/
+# candles.py's own, more complete Marubozu detector is 1-minute-only
+# and sizes against a persistent EMA(14)-of-body state this batch,
+# stateless function doesn't carry. Same shape check (near-zero wicks,
+# body large versus recent average), baseline computed fresh from the
+# same bars list instead of a carried EMA.
+MARUBOZU_WICK_PCT = 0.05
+MARUBOZU_BODY_AVG_MULT = 1.3
+MARUBOZU_BODY_LOOKBACK = 14
+
+
+def _recent_avg_body(bars: list[Bar]) -> float:
+    window = bars[-(MARUBOZU_BODY_LOOKBACK + 1) : -1]  # excludes the current bar itself
+    if not window:
+        return 0.0
+    bodies = [abs(float(b["close"]) - float(b["open"])) for b in window]
+    return float(sum(bodies) / len(bodies))
+
+
 def _candle_pattern(bars: list[Bar]) -> str:
     if not bars:
         return "NA"
@@ -221,6 +243,10 @@ def _candle_pattern(bars: list[Bar]) -> str:
             return "Bearish Engulfing"
         if h <= prev["high"] and low >= prev["low"]:
             return "Inside Bar"
+    avg_body = _recent_avg_body(bars)
+    is_marubozu_shape = upper <= rng * MARUBOZU_WICK_PCT and lower <= rng * MARUBOZU_WICK_PCT
+    if is_marubozu_shape and avg_body > 0 and body >= avg_body * MARUBOZU_BODY_AVG_MULT:
+        return "Bullish Marubozu" if c > o else "Bearish Marubozu"
     if body <= rng * 0.12:
         return "Doji"
     if lower >= body * 2.0 and upper <= body * 0.8:

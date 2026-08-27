@@ -205,64 +205,13 @@ async def test_sector_weak_carries_the_rejection_code() -> None:
     assert result.code == RejectionCode.REJECTED_SECTOR_WEAK
 
 
-# ── SMC Inception Conviction Model: institutional anti-chase gate ──────
-# (2026-08-27 -- see scanner/scoring.py's own module docstring for the
-# model this gate is the hard-rejection complement to.)
-
-
-async def test_chasing_ob_is_rejected_beyond_the_configured_distance() -> None:
-    gate = SuppressionGate(_FakeRedis(), _settings())  # type: ignore[arg-type]
-    result = await gate.evaluate(
-        symbol="RELIANCE",
-        strategy_id="options_first_hybrid",
-        conviction_score=95.0,
-        ob_fvg_distance_pct=1.2,  # > CHASING_OB_MAX_DISTANCE_PCT (0.75)
-        now=dt_time(11, 0),
-    )
-    assert result.passed is False
-    assert result.gate == "institutional_anti_chase"
-    assert result.code == RejectionCode.REJECTED_CHASING_OB
-
-
-async def test_price_at_the_base_of_the_ob_is_not_rejected() -> None:
-    gate = SuppressionGate(_FakeRedis(), _settings())  # type: ignore[arg-type]
-    result = await gate.evaluate(
-        symbol="RELIANCE",
-        strategy_id="options_first_hybrid",
-        conviction_score=95.0,
-        ob_fvg_distance_pct=0.3,  # inside the 0.75% line
-        now=dt_time(11, 0),
-    )
-    assert result.passed is True
-
-
-async def test_no_ob_or_fvg_at_all_does_not_trigger_the_anti_chase_gate() -> None:
-    """Absence of a zone to chase is not the same thing as chasing
-    one -- None must no-op, not be treated as infinitely far away."""
-    gate = SuppressionGate(_FakeRedis(), _settings())  # type: ignore[arg-type]
-    result = await gate.evaluate(
-        symbol="RELIANCE",
-        strategy_id="options_first_hybrid",
-        conviction_score=95.0,
-        ob_fvg_distance_pct=None,
-        now=dt_time(11, 0),
-    )
-    assert result.passed is True
-
-
-async def test_low_conviction_is_rejected_before_the_anti_chase_gate_is_even_checked() -> None:
-    """Same gate-ordering discipline as theta_cutoff's own test above --
-    a weak setup is rejected for being weak first."""
-    gate = SuppressionGate(_FakeRedis(), _settings())  # type: ignore[arg-type]
-    result = await gate.evaluate(
-        symbol="RELIANCE",
-        strategy_id="options_first_hybrid",
-        conviction_score=10.0,
-        ob_fvg_distance_pct=5.0,
-        now=dt_time(11, 0),
-    )
-    assert result.passed is False
-    assert result.gate == "conviction"
+# The REJECTED_CHASING_OB hard suppression gate (and its own tests,
+# here) was removed 2026-08-27 -- see scanner/suppression.py's own
+# comment at that point in evaluate()'s gate sequence for the full
+# context (explicit "hard suppression" -> "probabilistic grading +
+# warning tags" philosophy pivot, not a data-driven calibration).
+# LATE_ENTRY is now a TradeBlueprint warning_tags entry instead of a
+# rejection -- see tests/unit/test_trade_blueprint.py.
 
 
 # ── B1: static OI-wall proximity ────────────────────────────────────────

@@ -7,6 +7,7 @@ from typing import Any
 
 from aiohttp import web
 from infusion_models.events import EventType
+from infusion_models.smc import compute_warning_tags, nearest_ob_or_fvg_distance_pct
 from infusion_streams.codec import decode_event, encode_event
 from infusion_streams.constants import MAXLEN_SIGNALS, STREAM_SCAN_SIGNALS, STREAM_SCAN_SUPPRESSED
 
@@ -208,6 +209,15 @@ async def get_signals(request: web.Request) -> web.Response:
             entry = _decode_hash(data)
             entry["symbol"] = symbol
             entry["active_score"] = score
+            fs = entry.get("features_snapshot")
+            fs = fs if isinstance(fs, dict) else {}
+            bearish = entry.get("signal_type") == "bearish"
+            ob_fvg_distance_pct = nearest_ob_or_fvg_distance_pct(fs, bearish)
+            rr = entry.get("risk_reward_ratio")
+            entry["ob_fvg_distance_pct"] = ob_fvg_distance_pct
+            entry["warning_tags"] = compute_warning_tags(
+                ob_fvg_distance_pct, rr if isinstance(rr, int | float) else None
+            )
             signals.append(entry)
 
     return web.json_response({"count": len(signals), "signals": signals})
@@ -227,6 +237,20 @@ def _compact_suppressed(payload: Payload, stream_id: str = "") -> Payload:
     side = fs.get("option_bias") or (
         "BUY PE" if payload.get("signal_type") == "bearish" else "BUY CE"
     )
+
+    # "Probabilistic Grading and Warning Tags" (2026-08-27): the display
+    # floor dropped to score >= 65 (was gated at score >= 80's suppression
+    # boundary before) specifically so a setup like this -- suppressed,
+    # but potentially still worth the trader's own judgment -- can reach
+    # the Sniper HUD with its own honest distance/R:R read attached,
+    # rather than being invisible below the old hard floor. Same
+    # ob_fvg_distance_pct/compute_warning_tags scanner/scoring.py's own
+    # compute_conviction() already scored this exact candidate against.
+    bearish = payload.get("signal_type") == "bearish"
+    ob_fvg_distance_pct = nearest_ob_or_fvg_distance_pct(fs, bearish)
+    rr = payload.get("risk_reward_ratio")
+    warning_tags = compute_warning_tags(ob_fvg_distance_pct, rr if isinstance(rr, int | float) else None)
+
     return {
         "id": stream_id,
         "signal_id": payload.get("signal_id", ""),
@@ -262,6 +286,8 @@ def _compact_suppressed(payload: Payload, stream_id: str = "") -> Payload:
         "anti_chase_reasons": fs.get("anti_chase_reasons", []),
         "rejection_reasons": fs.get("rejection_reasons", []),
         "explanation": explanation[:6],
+        "ob_fvg_distance_pct": ob_fvg_distance_pct,
+        "warning_tags": warning_tags,
     }
 
 

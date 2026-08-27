@@ -226,17 +226,18 @@ async def test_never_raises_on_a_symbol_with_nothing_cached_anywhere() -> None:
 
 def test_ob_distance_reads_string_typed_redis_hash_values() -> None:
     """Redis hashes decode to plain strings, unlike scanner's own
-    already-typed features_snapshot -- this must coerce correctly."""
+    already-typed features_snapshot -- infusion_models.smc's coercion
+    must handle that regardless of which service calls it."""
     feature_row = {
         "ltp": "100.0",
         "order_block_bullish_validated": "True",
         "order_block_bullish_high": "99.5",
     }
-    assert tb._nearest_ob_or_fvg_distance_pct(feature_row, bearish=False) == pytest.approx(0.5)
+    assert tb.nearest_ob_or_fvg_distance_pct(feature_row, bearish=False) == pytest.approx(0.5)
 
 
 def test_ob_distance_none_with_no_zone() -> None:
-    assert tb._nearest_ob_or_fvg_distance_pct({"ltp": "100.0"}, bearish=False) is None
+    assert tb.nearest_ob_or_fvg_distance_pct({"ltp": "100.0"}, bearish=False) is None
 
 
 def test_order_flow_divergence_true_when_pressure_builds_during_a_squeeze() -> None:
@@ -245,12 +246,12 @@ def test_order_flow_divergence_true_when_pressure_builds_during_a_squeeze() -> N
         "book_imbalance_ema": "0.1",
         "squeeze_state": "COILED",
     }
-    assert tb._order_flow_divergence(feature_row, bearish=False) is True
+    assert tb.order_flow_divergence(feature_row, bearish=False) is True
 
 
 def test_order_flow_divergence_false_without_compression() -> None:
     feature_row = {"book_imbalance": "0.4", "book_imbalance_ema": "0.1", "bb_width": "0.05"}
-    assert tb._order_flow_divergence(feature_row, bearish=False) is False
+    assert tb.order_flow_divergence(feature_row, bearish=False) is False
 
 
 async def test_blueprint_surfaces_ob_distance_and_liquidity_sweep() -> None:
@@ -269,3 +270,86 @@ async def test_blueprint_surfaces_ob_distance_and_liquidity_sweep() -> None:
     assert blueprint.ob_fvg_distance_pct == pytest.approx(0.5)
     assert blueprint.liquidity_sweep == "sellside"
     assert "ob_fvg_distance_pct" in blueprint.available_fields
+
+
+# ── "Probabilistic Grading and Warning Tags" (2026-08-27) ───────────────
+# LATE_ENTRY/R:R warning_tags replaced the old hard REJECTED_CHASING_OB
+# suppression gate -- see infusion_models.smc.compute_warning_tags and
+# scanner/suppression.py's own removal comment for the full context.
+
+
+async def test_late_entry_tag_fires_beyond_the_old_gates_threshold() -> None:
+    redis = _FakeRedis(
+        {
+            "infusion:signal:RELIANCE": {
+                "signal_type": "bullish",
+                "entry_price": "100.0",
+                "invalidation_price": "98.0",
+                "target_price": "104.0",
+            },
+            "infusion:feature:RELIANCE": {
+                "ltp": "100.0",
+                "retest_status": "NO_BREAKOUT",
+                "order_block_bullish_validated": "True",
+                "order_block_bullish_high": "98.5",  # 1.52% away -- past the 0.75% line
+            },
+        }
+    )
+    blueprint = await tb.build_trade_blueprint(redis, "RELIANCE")
+    assert "LATE_ENTRY" in blueprint.warning_tags
+
+
+async def test_poor_rr_tag_fires_below_1_point_5() -> None:
+    redis = _FakeRedis(
+        {
+            "infusion:signal:RELIANCE": {
+                "signal_type": "bullish",
+                "entry_price": "100.0",
+                "invalidation_price": "99.0",  # risk 1.0
+                "target_price": "101.0",  # reward 1.0 -> R:R 1.0, below 1.5
+            },
+            "infusion:feature:RELIANCE": {"ltp": "100.0", "retest_status": "NO_BREAKOUT"},
+        }
+    )
+    blueprint = await tb.build_trade_blueprint(redis, "RELIANCE")
+    assert "R:R < 1:1.5" in blueprint.warning_tags
+
+
+async def test_no_warning_tags_for_a_clean_close_setup() -> None:
+    redis = _FakeRedis(
+        {
+            "infusion:signal:RELIANCE": {
+                "signal_type": "bullish",
+                "entry_price": "100.0",
+                "invalidation_price": "99.0",  # risk 1.0
+                "target_price": "102.0",  # reward 2.0 -> R:R 2.0
+            },
+            "infusion:feature:RELIANCE": {
+                "ltp": "100.0",
+                "retest_status": "NO_BREAKOUT",
+                "order_block_bullish_validated": "True",
+                "order_block_bullish_high": "99.7",  # 0.3% away -- inside the line
+            },
+        }
+    )
+    blueprint = await tb.build_trade_blueprint(redis, "RELIANCE")
+    assert blueprint.warning_tags == []
+
+
+async def test_no_active_signal_means_no_rr_tag_but_still_checks_late_entry() -> None:
+    """A cold symbol has no entry/SL/T1 to compute R:R from -- that
+    must not crash or fabricate a tag, it should just skip the R:R
+    check while still evaluating LATE_ENTRY from feature_row alone."""
+    redis = _FakeRedis(
+        {
+            "infusion:feature:RELIANCE": {
+                "ltp": "100.0",
+                "retest_status": "NO_BREAKOUT",
+                "order_block_bullish_validated": "True",
+                "order_block_bullish_high": "98.5",  # 1.52% away
+            }
+        }
+    )
+    blueprint = await tb.build_trade_blueprint(redis, "RELIANCE")
+    assert "LATE_ENTRY" in blueprint.warning_tags
+    assert "R:R < 1:1.5" not in blueprint.warning_tags

@@ -76,6 +76,17 @@ class TradeBlueprint(BaseModel):
     # available from this pipeline's real feed.
     order_flow_divergence: bool = False
 
+    # "Probabilistic Grading and Warning Tags" (2026-08-27): the hard
+    # REJECTED_CHASING_OB suppression gate was removed the same day --
+    # an extended setup is no longer hidden, it's shown with this flag
+    # instead (LATE_ENTRY, at the identical distance the old gate used
+    # to hard-reject at) so the trader decides with the data in hand,
+    # not a binary the system already decided for them. See
+    # infusion_models.smc.compute_warning_tags for the exact rules;
+    # empty list (not a fabricated all-clear) whenever nothing about
+    # this setup's timing or risk math is worth flagging.
+    warning_tags: list[str] = []
+
     # Honesty fields -- which of the above actually had real data behind
     # them right now, so a dashboard never has to guess why a field is
     # null versus genuinely absent from the response.
