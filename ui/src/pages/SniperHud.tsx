@@ -1,5 +1,7 @@
-import { useMemo } from 'react'
+import { X } from 'lucide-react'
+import { useMemo, useState } from 'react'
 import { ActionCard } from '../components/ActionCard'
+import { LiveCandlestickChart } from '../components/LiveCandlestickChart'
 import { PreBreakoutWatchlist } from '../components/PreBreakoutWatchlist'
 import { RadarScanningStrip } from '../components/RadarScanningStrip'
 import { SmartMoneyRadar } from '../components/SmartMoneyRadar'
@@ -19,6 +21,13 @@ import { mergeCandidates } from '../lib/candidates'
 export function SniperHud() {
   const { data: signals } = useSignals()
   const { data: suppressed } = useSuppressedSignals()
+  // Charting sprint (2026-08-27): clicking an Action Card opens a live
+  // candlestick chart for that symbol right here, in flow, rather than
+  // sending the trader to TradingView. A dedicated pane between Zone 2
+  // and Zone 3 rather than a modal -- it stays visible alongside the
+  // rest of the HUD's market awareness instead of covering it, matching
+  // this whole page's own "never hide the rest of the screen" ethos.
+  const [activeSymbol, setActiveSymbol] = useState<string | null>(null)
 
   // "Probabilistic Grading and Warning Tags" (2026-08-27): shows every
   // candidate >= DISPLAY_FLOOR (65), not just the ones that cleared the
@@ -45,11 +54,37 @@ export function SniperHud() {
               <ActionCard
                 key={`${candidate.symbol}:${candidate.strategyId}`}
                 candidate={candidate}
+                isActive={candidate.symbol === activeSymbol}
+                onSelect={(symbol) =>
+                  setActiveSymbol((current) => (current === symbol ? null : symbol))
+                }
               />
             ))}
           </div>
         )}
       </section>
+
+      {/* Candlestick pane -- only mounted while a symbol is selected, so
+          idle Sniper HUD sessions never pay for a chart nobody asked
+          for. */}
+      {activeSymbol && (
+        <section className="rounded-xl border border-hud-border bg-hud-panel p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-xs font-bold uppercase tracking-wide text-hud-muted">
+              {activeSymbol} · 1-Min Chart
+            </h2>
+            <button
+              type="button"
+              onClick={() => setActiveSymbol(null)}
+              aria-label="Close chart"
+              className="rounded p-1 text-hud-muted transition-colors hover:bg-hud-panel-hover hover:text-hud-text"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <LiveCandlestickChart symbol={activeSymbol} />
+        </section>
+      )}
 
       {/* Zone 3 */}
       <SmartMoneyRadar />

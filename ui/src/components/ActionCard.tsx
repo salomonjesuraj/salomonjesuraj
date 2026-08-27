@@ -58,9 +58,14 @@ function warningTagClass(tag: string): string {
 
 interface ActionCardProps {
   candidate: Candidate
+  /** Whether this card's symbol is the one currently charted in the
+   * candlestick panel below Zone 2 (2026-08-27 charting sprint) --
+   * purely a selection ring, the card's own data is unaffected. */
+  isActive?: boolean
+  onSelect?: (symbol: string) => void
 }
 
-export function ActionCard({ candidate }: ActionCardProps) {
+export function ActionCard({ candidate, isActive, onSelect }: ActionCardProps) {
   const symbol = candidate.symbol
   const ltp = useLtp(symbol)
 
@@ -81,7 +86,14 @@ export function ActionCard({ candidate }: ActionCardProps) {
   const warningTags = candidate.warningTags
 
   return (
-    <article className="min-w-0 rounded-xl border border-hud-border bg-hud-panel p-4 shadow-lg shadow-black/30 transition-colors hover:bg-hud-panel-hover">
+    <article
+      onClick={() => onSelect?.(symbol)}
+      className={
+        'min-w-0 rounded-xl border bg-hud-panel p-4 shadow-lg shadow-black/30 transition-colors hover:bg-hud-panel-hover ' +
+        (onSelect ? 'cursor-pointer ' : '') +
+        (isActive ? 'border-bull ring-1 ring-bull' : 'border-hud-border')
+      }
+    >
       {/* Header. min-w-0 on the left column + truncate on the symbol
           are the actual fix for a long symbol name -- flex/grid items
           default to min-width:auto, which refuses to shrink below the

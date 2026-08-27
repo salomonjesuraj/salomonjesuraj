@@ -2,8 +2,10 @@ import { demoBlueprint, demoOptionSummary, DEMO_SIGNALS, isDemoMode } from './de
 import type {
   AlertLogEntry,
   BacktestSummary,
+  ChartBar,
   HealthStatus,
   IndexTick,
+  IntradayChartResponse,
   JournalExpectancy,
   JournalStats,
   JournalTrade,
@@ -179,4 +181,18 @@ export async function fetchHealth(): Promise<HealthStatus> {
 export async function fetchAlertLog(): Promise<AlertLogEntry[]> {
   const body = await getJson<{ count: number; log: AlertLogEntry[] }>('/api/alerts/log')
   return body.log || []
+}
+
+// ── Sniper HUD candlestick chart (2026-08-27 charting sprint) ────────
+// /api/chart/{symbol}/intraday already existed, real and shipped
+// (api/routes/charts.py) -- 1-min OHLC bars from feature-engine's own
+// bar_builder, keyed off infusion:ohlc:{symbol}:1m. No new backend
+// route was needed for this sprint.
+
+export async function fetchIntradayChart(symbol: string): Promise<ChartBar[]> {
+  const body = await getJson<IntradayChartResponse>(
+    `/api/chart/${encodeURIComponent(symbol)}/intraday?interval=1m`,
+  )
+  if (body.error) throw new Error(body.error)
+  return body.bars || []
 }

@@ -548,6 +548,29 @@ export interface HealthStatus {
   services: Record<string, ServiceHealth>
 }
 
+/** One bar from GET /api/chart/{symbol}/intraday -- real 1-min OHLCV
+ * built by feature-engine's bar_builder from live tick aggregation
+ * (api/routes/charts.py). `time` is already a Unix-seconds integer, the
+ * exact unit lightweight-charts' own UTCTimestamp expects -- no
+ * conversion needed between this wire shape and the chart's data model. */
+export interface ChartBar {
+  time: number
+  open: number
+  high: number
+  low: number
+  close: number
+  volume: number
+}
+
+/** GET /api/chart/{symbol}/intraday */
+export interface IntradayChartResponse {
+  symbol: string
+  interval: string
+  count: number
+  bars: ChartBar[]
+  error?: string
+}
+
 /** One entry from GET /api/alerts/log -- recent Telegram delivery log
  * (services/alerter/src/alerter/engine.py's `_log_delivery`). `outcome`
  * is a free-text delivery result (e.g. "sent", "throttled", "failed"),
