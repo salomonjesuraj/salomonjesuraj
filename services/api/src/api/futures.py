@@ -249,3 +249,40 @@ async def fetch_quotes(
         except Exception as exc:
             logger.warning("futures_quote_fetch_error", error=str(exc))
     return result
+
+
+async def compute_oi_buildup_map(redis: Any) -> dict[str, str]:
+    """Sniper HUD Zone 3 (2026-08-27): every symbol's current
+    OIBuildupType in one call, for the Smart Money Direction Radar's
+    bull/bear filter -- a single SCAN + pipelined HMGET, not a fan-out
+    of one request per symbol (the futures_queue sweep already wrote
+    these into infusion:futures:{symbol} hashes; this only reads them).
+    Symbols with no futures row yet (sweep hasn't reached them, or the
+    hash's 300s TTL lapsed) are simply absent from the returned map --
+    the caller treats "missing" the same as NEUTRAL, never a guess.
+    """
+    out: dict[str, str] = {}
+    master_key = f"{FUTURES_STATE_PREFIX}master"
+    cursor = 0
+    keys: list[Any] = []
+    while True:
+        cursor, batch = await redis.scan(cursor, match=f"{FUTURES_STATE_PREFIX}*", count=500)
+        keys.extend(k for k in batch if (k.decode() if isinstance(k, bytes) else k) != master_key)
+        if cursor == 0:
+            break
+    if not keys:
+        return out
+
+    pipe = redis.pipeline(transaction=False)
+    for key in keys:
+        pipe.hget(key, "oi_buildup")
+    values = await pipe.execute()
+
+    prefix_len = len(FUTURES_STATE_PREFIX)
+    for key, value in zip(keys, values, strict=True):
+        if not value:
+            continue
+        key_str = key.decode() if isinstance(key, bytes) else key
+        symbol = key_str[prefix_len:]
+        out[symbol] = value.decode() if isinstance(value, bytes) else value
+    return out

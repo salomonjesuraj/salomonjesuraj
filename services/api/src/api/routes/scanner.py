@@ -10,6 +10,7 @@ from infusion_models.events import EventType
 from infusion_streams.codec import decode_event, encode_event
 from infusion_streams.constants import MAXLEN_SIGNALS, STREAM_SCAN_SIGNALS, STREAM_SCAN_SUPPRESSED
 
+from api.futures import compute_oi_buildup_map
 from api.market_breadth import compute_market_breadth
 
 routes = web.RouteTableDef()
@@ -539,6 +540,21 @@ async def market_breadth_health(request: web.Request) -> web.Response:
     if result.get("available") and redis:
         await redis.set(MARKET_BREADTH_KEY, _json.dumps(result, separators=(",", ":")), ex=15 * 60)
     return web.json_response(result)
+
+
+@routes.get("/api/futures/oi-buildup-map")
+async def futures_oi_buildup_map(request: web.Request) -> web.Response:
+    """GET /api/futures/oi-buildup-map -- Sniper HUD Zone 3's Smart
+    Money Direction Radar needs each symbol's OIBuildupType to filter
+    bull vs. bear, but fetching /api/trade-blueprint/{symbol} for all
+    208 symbols to get one field each is exactly the fan-out cost this
+    codebase has deliberately avoided elsewhere (see watch-strip-v2.js's
+    own docstring). One SCAN + pipelined HGET over the already-written
+    infusion:futures:{symbol} hashes instead -- see
+    api.futures.compute_oi_buildup_map's own docstring."""
+    redis = request.app["redis"]
+    oi_map = await compute_oi_buildup_map(redis)
+    return web.json_response({"count": len(oi_map), "oi_buildup": oi_map})
 
 
 @routes.get("/api/alerts/log")

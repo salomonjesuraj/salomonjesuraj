@@ -195,24 +195,38 @@ async def _upstox_index_quotes(request: web.Request, symbols: list[str]) -> dict
 
     out: dict[str, Payload] = {}
     data = payload.get("data", {}) if isinstance(payload, dict) else {}
-    reverse = {v: k for k, v in UPSTOX_INDEX_MAP.items()}
+    # NIFTYBANK and BANKNIFTY are two aliases for the same instrument
+    # key -- {v: k for k, v in UPSTOX_INDEX_MAP.items()} collapses to
+    # whichever alias happens to come last in the dict literal, so a
+    # caller asking by the OTHER alias never finds its match here even
+    # though the quote came back fine (caught live 2026-08-27: NIFTY50
+    # recovered, NIFTYBANK stayed stuck on "stale_tick_data" for
+    # exactly this reason). Map every alias that shares an instrument
+    # key, not just one.
+    aliases_by_token: dict[str, list[str]] = {}
+    for alias, token in UPSTOX_INDEX_MAP.items():
+        if token:
+            aliases_by_token.setdefault(token, []).append(alias)
     for _, quote in data.items():
         token = quote.get("instrument_token") or quote.get("instrument_key")
-        symbol = reverse.get(token)
-        if not symbol or not isinstance(quote, dict):
+        aliases = aliases_by_token.get(token, [])
+        if not aliases or not isinstance(quote, dict):
             continue
         quote_payload = cast(Payload, quote)
         ltp = float(quote_payload.get("last_price") or quote_payload.get("ltp") or 0)
         close = float(quote_payload.get("cp") or 0)
         change_pct = ((ltp - close) / close * 100) if ltp and close else 0.0
-        out[symbol] = {
-            "symbol": symbol,
-            "ltp": ltp,
-            "change_pct": round(change_pct, 4),
-            "volume": float(quote_payload.get("volume") or 0),
-            "exchange_ts": quote_payload.get("last_trade_time") or quote_payload.get("ltt") or "",
-            "source": "upstox_quote_fallback",
-        }
+        for symbol in aliases:
+            out[symbol] = {
+                "symbol": symbol,
+                "ltp": ltp,
+                "change_pct": round(change_pct, 4),
+                "volume": float(quote_payload.get("volume") or 0),
+                "exchange_ts": quote_payload.get("last_trade_time")
+                or quote_payload.get("ltt")
+                or "",
+                "source": "upstox_quote_fallback",
+            }
 
     cache["ts"] = now
     cache["data"] = out
@@ -1025,6 +1039,17 @@ async def _default_symbol(redis: Any) -> str:
     return best_symbol
 
 
+# Sniper HUD live-fire review (2026-08-27): a tick's mere PRESENCE was
+# the only freshness test here -- infusion:tick:NIFTY50/NIFTYBANK had
+# been sitting on an August 3rd value for weeks (the real Upstox
+# ingestion adapter never subscribes to NSE_INDEX instrument keys at
+# all; only ingestion/adapters/mock.py does), and because a stale tick
+# is still a *present* tick, the Upstox REST fallback below never
+# triggered for it -- it only ever covered the genuinely-missing case
+# (GIFT NIFTY). Age, not presence, is the right test.
+INDEX_TICK_STALE_AFTER_SEC = 60
+
+
 @routes.get("/api/market/indices")
 async def market_indices(request: web.Request) -> web.Response:
     """Return top index ticks for the dashboard ticker strip."""
@@ -1036,6 +1061,7 @@ async def market_indices(request: web.Request) -> web.Response:
         ("GIFTNIFTY", "GIFT NIFTY"),
     ]
 
+    now_us = time.time() * 1_000_000
     indices: list[Payload] = []
     seen: set[str] = set()
     missing_symbols: list[str] = []
@@ -1043,12 +1069,25 @@ async def market_indices(request: web.Request) -> web.Response:
         if label in seen:
             continue
         tick = await _tick(redis, symbol)
-        if tick:
+        age_sec = (
+            (now_us - float(tick["updated_at"])) / 1_000_000
+            if tick and tick.get("updated_at")
+            else None
+        )
+        is_stale = age_sec is None or age_sec > INDEX_TICK_STALE_AFTER_SEC
+        if tick and not is_stale:
             tick["label"] = label
             indices.append(tick)
         else:
             missing_symbols.append(symbol)
-            indices.append({"symbol": symbol, "label": label, "error": "no_tick_data"})
+            indices.append(
+                {
+                    "symbol": symbol,
+                    "label": label,
+                    "error": "stale_tick_data" if tick else "no_tick_data",
+                    "stale_age_sec": age_sec,
+                }
+            )
         seen.add(label)
 
     if missing_symbols:
