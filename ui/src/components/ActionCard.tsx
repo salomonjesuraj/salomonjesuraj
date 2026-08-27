@@ -65,15 +65,23 @@ export function ActionCard({ signal }: ActionCardProps) {
   const t3 = blueprint?.target_3_fib || t2
 
   return (
-    <article className="rounded-xl border border-hud-border bg-hud-panel p-4 shadow-lg shadow-black/30 transition-colors hover:bg-hud-panel-hover">
-      {/* Header */}
+    <article className="min-w-0 rounded-xl border border-hud-border bg-hud-panel p-4 shadow-lg shadow-black/30 transition-colors hover:bg-hud-panel-hover">
+      {/* Header. min-w-0 on the left column + truncate on the symbol
+          are the actual fix for a long symbol name -- flex/grid items
+          default to min-width:auto, which refuses to shrink below the
+          text's own width and forces the whole row (and, uncontained,
+          the page itself) to overflow horizontally. flex-wrap on the
+          badge row lets the direction/horizon badges drop to their own
+          line instead of fighting the symbol for space. */}
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <h3 className="font-mono text-lg font-bold tracking-tight text-hud-text">{symbol}</h3>
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="truncate font-mono text-lg font-bold tracking-tight text-hud-text">
+              {symbol}
+            </h3>
             <span
               className={
-                'rounded px-1.5 py-0.5 text-[10px] font-bold ' +
+                'shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ' +
                 (direction === 'BULL' ? 'bg-bull/15 text-bull' : 'bg-bear/15 text-bear')
               }
             >
@@ -89,7 +97,7 @@ export function ActionCard({ signal }: ActionCardProps) {
             {HORIZON_LABEL[horizon]}
           </span>
         </div>
-        <div className="text-right">
+        <div className="shrink-0 text-right">
           <div className="text-[10px] uppercase tracking-wide text-hud-muted">Conviction</div>
           <div className="tnum font-mono text-xl font-bold text-hud-text">
             {fmt(signal.conviction_score, 0)}
@@ -101,7 +109,7 @@ export function ActionCard({ signal }: ActionCardProps) {
       </div>
 
       {/* Live LTP line */}
-      <div className="mt-2 flex items-baseline gap-2">
+      <div className="mt-2 flex flex-wrap items-baseline gap-2">
         <span className="tnum font-mono text-2xl font-bold text-hud-text">
           {ltp !== undefined ? ltp.toFixed(2) : DASH}
         </span>

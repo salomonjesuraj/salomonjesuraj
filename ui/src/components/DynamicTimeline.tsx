@@ -28,6 +28,19 @@ interface Level {
 // data-driven precision.
 const ENTRY_ZONE_HALF_WIDTH_FRACTION = 0.06
 
+// Live-data bug found and fixed (2026-08-27): every level label is
+// centered under its tick via translateX(-50%), which is fine for a
+// label sitting mid-track but pushes half the label's own width past
+// the container's edge for whichever level lands at/near 0% or 100%
+// (SL and T3, always -- see the pct() comment below for why they're
+// always the extremes). A wide value (a >=6-digit price, or a long
+// decimal) made this a real, reproducible card overflow, not just a
+// theoretical one. Fix: map positions into an inset range instead of
+// the full 0-100%, so even a fully-centered edge label has margin to
+// sit inside. 9% comfortably fits a "123456.79"-width label at this
+// font-size in a card as narrow as the mobile grid column gets.
+const EDGE_INSET_PCT = 9
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
 }
@@ -64,7 +77,18 @@ export function DynamicTimeline({
     const max = Math.max(...values)
     const span = max - min || 1
 
-    const pctFn = (price: number) => clamp(((scalar(price) - min) / span) * 100, 0, 100)
+    // Raw 0-100 first, then compressed into [EDGE_INSET_PCT, 100 -
+    // EDGE_INSET_PCT] -- see EDGE_INSET_PCT's own comment. SL and T3
+    // are always the raw min/max by construction (scalar() makes the
+    // riskiest level the smallest value and the furthest target the
+    // largest, for both directions), so they're always the ones that
+    // actually need the inset; middle levels get compressed too, but
+    // proportionally, so their relative spacing is preserved.
+    const insetSpan = 100 - EDGE_INSET_PCT * 2
+    const pctFn = (price: number) => {
+      const raw = clamp(((scalar(price) - min) / span) * 100, 0, 100)
+      return EDGE_INSET_PCT + (raw / 100) * insetSpan
+    }
 
     return {
       levels: built,

@@ -148,12 +148,22 @@ export function demoLtp(symbol: string, tMs: number): number {
 
 let demoTickerHandle: number | undefined
 
+// 5 ticks/sec, matching Phase 2's own "an LTP update at 5 ticks-per-
+// second" framing. Also a real fix, not just flavor: live-tested at
+// 500ms, the sine wave's per-tick step (~8.7 price units near the
+// steepest part of the curve) was comparable to the entry-zone band's
+// own width (~10 units), so the ticker could jump clean over the zone
+// between two consecutive ticks and the retest highlight would simply
+// never fire that cycle. 200ms keeps the per-tick step (~3.5 units)
+// comfortably smaller than the zone, so the sweep is guaranteed to
+// land inside it every period.
+const DEMO_TICK_INTERVAL_MS = 200
+
 /** Feeds useTickStore synthetic tick_batch frames for both demo
- * symbols every 500ms, entirely client-side -- no real WS connection
- * involved, so this works even with the backend unreachable. Safe to
- * call more than once (no-ops if already running). Call
- * stopDemoTicker() to tear it down (e.g. if demo mode is toggled off
- * without a full page reload). */
+ * symbols, entirely client-side -- no real WS connection involved, so
+ * this works even with the backend unreachable. Safe to call more than
+ * once (no-ops if already running). Call stopDemoTicker() to tear it
+ * down (e.g. if demo mode is toggled off without a full page reload). */
 export function startDemoTicker(): void {
   if (demoTickerHandle !== undefined) return
   const start = Date.now()
@@ -168,7 +178,7 @@ export function startDemoTicker(): void {
       },
     }
     useTickStore.getState()._applyBatch(batch)
-  }, 500)
+  }, DEMO_TICK_INTERVAL_MS)
 }
 
 export function stopDemoTicker(): void {
