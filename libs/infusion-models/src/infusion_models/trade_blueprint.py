@@ -25,6 +25,37 @@ from __future__ import annotations
 from pydantic import BaseModel
 
 
+class TradeStructure(BaseModel):
+    """"Terminal Edge & Analyst" sprint (2026-08-27) -- every field here
+    is a passthrough of an already-computed real value, not a new
+    geometry engine:
+
+    - support/resistance: api/routes/mtf.py's own _major_blocker() --
+      the nearest confirmed fractal swing pivot (feature_engine/
+      features/structure.py's own batch-array twin, same left/right=2
+      rule) above/below price across the 1H+1D timeframes. This
+      function already existed and was already wired into compute_mtf()
+      for the "Major Blocker" concept; this reuses it verbatim rather
+      than adding a second support/resistance computation.
+    - channel_upper/channel_lower: compute_mtf()'s own existing Donchian
+      Channel (donchian.high/donchian.low, real N-day daily high/low
+      channel), not a new trendline/channel engine.
+    - trend: feature_engine's own real 1-minute BOS/CHOCH structure
+      state (features/structure.py's trend_text) -- "UPTREND (HH/HL)" /
+      "DOWNTREND (LH/LL)" / "RANGE / UNDEFINED".
+
+    Any field can be None when its own upstream source has no data yet
+    (e.g. no daily bar history for the Donchian channel) -- never a
+    fabricated level standing in for a real one that isn't there.
+    """
+
+    support: float | None = None
+    resistance: float | None = None
+    channel_upper: float | None = None
+    channel_lower: float | None = None
+    trend: str = "RANGE / UNDEFINED"
+
+
 class TradeBlueprint(BaseModel):
     symbol: str
     direction: str  # "BULL" | "BEAR"
@@ -86,6 +117,19 @@ class TradeBlueprint(BaseModel):
     # empty list (not a fabricated all-clear) whenever nothing about
     # this setup's timing or risk math is worth flagging.
     warning_tags: list[str] = []
+
+    # "Terminal Edge & Analyst" sprint (2026-08-27) -- see TradeStructure's
+    # own docstring above for exactly which already-computed real values
+    # feed structure. `trade_rationale` is a DETERMINISTIC sentence
+    # template built from those same real signals (structure break event,
+    # OI buildup, trend) in api/trade_blueprint.py -- not an LLM call.
+    # This service doesn't call any model per-blueprint-request (that
+    # would add real per-request latency/cost/failure modes to a path
+    # this dashboard polls every 5s); see api/routes/ai.py for where this
+    # codebase's actual OpenAI integration lives, which is separate,
+    # on-demand, and unrelated to this field.
+    structure: TradeStructure | None = None
+    trade_rationale: str = ""
 
     # Honesty fields -- which of the above actually had real data behind
     # them right now, so a dashboard never has to guess why a field is

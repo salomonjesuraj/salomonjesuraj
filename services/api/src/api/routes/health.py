@@ -14,7 +14,13 @@ async def health(request: web.Request) -> web.Response:
     """Aggregated health check across all services."""
     redis = request.app["redis"]
 
-    services = ["ingestion", "normalizer", "feature-engine", "ws-gateway", "api"]
+    # "Terminal Edge & Analyst" sprint (2026-08-27): added "scanner" --
+    # it already reports its own real heartbeat via the same
+    # HealthReporter every other service here uses (infusion_common.
+    # health), this endpoint just never checked it. The Admin Terminal's
+    # "Signal & Scoring Engine" status needs a real signal for the
+    # service that actually runs conviction scoring, not a guess.
+    services = ["ingestion", "normalizer", "feature-engine", "ws-gateway", "api", "scanner"]
     result: dict[str, Payload] = {}
 
     for svc in services:

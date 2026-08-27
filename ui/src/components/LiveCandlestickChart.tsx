@@ -12,13 +12,20 @@ import {
   type ISeriesApi,
   type UTCTimestamp,
 } from 'lightweight-charts'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, type MutableRefObject } from 'react'
 import { useActivePosition } from '../hooks/useActivePosition'
 import { useHistoricalData } from '../hooks/useHistoricalData'
+import { usePolling } from '../hooks/usePolling'
+import { fetchTradeBlueprint } from '../lib/api'
 import { CHART_BEAR, CHART_BULL } from '../lib/chartTheme'
+import { useUiEngineStore } from '../store/useUiEngineStore'
 import type { ChartBar } from '../types'
 
 const ENTRY_LINE_COLOR = '#FFFFFF'
+const CHANNEL_LINE_COLOR = '#6b7684' // matches --color-hud-muted -- deliberately
+// muted/neutral so the Donchian channel bounds read as a wider, softer
+// context band, not competing visually with the sharper green/red
+// support & resistance lines or the white/red/green position lines.
 
 // This sprint's own strict instruction -- gray-900, not this app's
 // usual --color-hud-bg/--color-hud-panel tokens. Scoped to this one
@@ -80,54 +87,76 @@ export function LiveCandlestickChart({ symbol }: LiveCandlestickChartProps) {
   const entryLineRef = useRef<IPriceLine | null>(null)
   const slLineRef = useRef<IPriceLine | null>(null)
   const targetLineRef = useRef<IPriceLine | null>(null)
+  const supportLineRef = useRef<IPriceLine | null>(null)
+  const resistanceLineRef = useRef<IPriceLine | null>(null)
+  const channelUpperLineRef = useRef<IPriceLine | null>(null)
+  const channelLowerLineRef = useRef<IPriceLine | null>(null)
 
   const { bars, loading, error } = useHistoricalData(symbol)
   const activePosition = useActivePosition(symbol)
+  // Same 5s cadence ActionCard already polls TradeBlueprint at -- this
+  // chart fetches its own copy rather than requiring the parent to plumb
+  // it through as a prop, matching useHistoricalData/useActivePosition's
+  // own "self-contained" shape.
+  const { data: blueprint } = usePolling(() => fetchTradeBlueprint(symbol), 5000, [symbol])
+  const structure = blueprint?.structure ?? null
 
-  // Effect 1: create once, tear down on unmount.
+  // Effect 1: create once, tear down on unmount. Wrapped in try/catch
+  // purely to feed useUiEngineStore's real chart-health probe ("Terminal
+  // Edge & Analyst" sprint's Admin Terminal) -- lightweight-charts
+  // itself doesn't normally throw here, but if container sizing or a
+  // future options change ever does, the Admin Terminal should see a
+  // real failure instead of staying silent about it.
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
 
-    const chart = createChart(container, {
-      autoSize: true,
-      layout: {
-        background: { type: ColorType.Solid, color: CHART_BACKGROUND },
-        textColor: AXIS_TEXT_COLOR,
-      },
-      grid: {
-        vertLines: { visible: false },
-        horzLines: { visible: false },
-      },
-      crosshair: { mode: CrosshairMode.Normal },
-      rightPriceScale: { borderVisible: false },
-      timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false },
-    })
+    try {
+      const chart = createChart(container, {
+        autoSize: true,
+        layout: {
+          background: { type: ColorType.Solid, color: CHART_BACKGROUND },
+          textColor: AXIS_TEXT_COLOR,
+        },
+        grid: {
+          vertLines: { visible: false },
+          horzLines: { visible: false },
+        },
+        crosshair: { mode: CrosshairMode.Normal },
+        rightPriceScale: { borderVisible: false },
+        timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false },
+      })
 
-    const candleSeries = chart.addSeries(CandlestickSeries, {
-      upColor: CHART_BULL,
-      downColor: CHART_BEAR,
-      borderUpColor: CHART_BULL,
-      borderDownColor: CHART_BEAR,
-      wickUpColor: CHART_BULL,
-      wickDownColor: CHART_BEAR,
-    })
+      const candleSeries = chart.addSeries(CandlestickSeries, {
+        upColor: CHART_BULL,
+        downColor: CHART_BEAR,
+        borderUpColor: CHART_BULL,
+        borderDownColor: CHART_BEAR,
+        wickUpColor: CHART_BULL,
+        wickDownColor: CHART_BEAR,
+      })
 
-    const volumeSeries = chart.addSeries(HistogramSeries, {
-      priceFormat: { type: 'volume' },
-      priceScaleId: 'volume',
-    })
-    // Overlay the volume series into the bottom ~20% of the same pane
-    // rather than a separate chart pane -- "a histogramSeries at the
-    // bottom of the chart pane," read literally.
-    chart.priceScale('volume').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } })
+      const volumeSeries = chart.addSeries(HistogramSeries, {
+        priceFormat: { type: 'volume' },
+        priceScaleId: 'volume',
+      })
+      // Overlay the volume series into the bottom ~20% of the same pane
+      // rather than a separate chart pane -- "a histogramSeries at the
+      // bottom of the chart pane," read literally.
+      chart.priceScale('volume').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } })
 
-    chartRef.current = chart
-    candleSeriesRef.current = candleSeries
-    volumeSeriesRef.current = volumeSeries
+      chartRef.current = chart
+      candleSeriesRef.current = candleSeries
+      volumeSeriesRef.current = volumeSeries
+      useUiEngineStore.getState().reportChartEngine('ok')
+    } catch (err) {
+      useUiEngineStore
+        .getState()
+        .reportChartEngine('error', err instanceof Error ? err.message : String(err))
+    }
 
     return () => {
-      chart.remove()
+      chartRef.current?.remove()
       chartRef.current = null
       candleSeriesRef.current = null
       volumeSeriesRef.current = null
@@ -137,6 +166,10 @@ export function LiveCandlestickChart({ symbol }: LiveCandlestickChartProps) {
       entryLineRef.current = null
       slLineRef.current = null
       targetLineRef.current = null
+      supportLineRef.current = null
+      resistanceLineRef.current = null
+      channelUpperLineRef.current = null
+      channelLowerLineRef.current = null
     }
   }, [])
 
@@ -158,10 +191,18 @@ export function LiveCandlestickChart({ symbol }: LiveCandlestickChartProps) {
       if (entryLineRef.current) candleSeries.removePriceLine(entryLineRef.current)
       if (slLineRef.current) candleSeries.removePriceLine(slLineRef.current)
       if (targetLineRef.current) candleSeries.removePriceLine(targetLineRef.current)
+      if (supportLineRef.current) candleSeries.removePriceLine(supportLineRef.current)
+      if (resistanceLineRef.current) candleSeries.removePriceLine(resistanceLineRef.current)
+      if (channelUpperLineRef.current) candleSeries.removePriceLine(channelUpperLineRef.current)
+      if (channelLowerLineRef.current) candleSeries.removePriceLine(channelLowerLineRef.current)
     }
     entryLineRef.current = null
     slLineRef.current = null
     targetLineRef.current = null
+    supportLineRef.current = null
+    resistanceLineRef.current = null
+    channelUpperLineRef.current = null
+    channelLowerLineRef.current = null
   }, [symbol])
 
   // Effect 2: bind fetched bars into the series.
@@ -239,6 +280,59 @@ export function LiveCandlestickChart({ symbol }: LiveCandlestickChartProps) {
     if (targetLineRef.current) targetLineRef.current.applyOptions(targetOpts)
     else targetLineRef.current = candleSeries.createPriceLine(targetOpts)
   }, [activePosition])
+
+  // Effect 4: "Terminal Edge & Analyst" sprint (2026-08-27) -- HTF
+  // Support (green) / Resistance (red) from the real fractal-pivot
+  // "Major Blocker" read, Channel upper/lower (muted, dashed) from the
+  // real Donchian channel -- see TradeStructure's own docstring for the
+  // exact backend source of each. A null field (upstream has no data
+  // yet) removes that specific line rather than drawing a fabricated
+  // one at 0.
+  useEffect(() => {
+    const candleSeries = candleSeriesRef.current
+    if (!candleSeries) return
+
+    const syncLine = (
+      ref: MutableRefObject<IPriceLine | null>,
+      price: number | null | undefined,
+      opts: { color: string; lineWidth: 1 | 2; lineStyle: LineStyle; title: string },
+    ) => {
+      if (price === null || price === undefined) {
+        if (ref.current) {
+          candleSeries.removePriceLine(ref.current)
+          ref.current = null
+        }
+        return
+      }
+      if (ref.current) ref.current.applyOptions({ price, ...opts })
+      else ref.current = candleSeries.createPriceLine({ price, ...opts })
+    }
+
+    syncLine(supportLineRef, structure?.support, {
+      color: CHART_BULL,
+      lineWidth: 1,
+      lineStyle: LineStyle.Solid,
+      title: 'HTF SUPPORT',
+    })
+    syncLine(resistanceLineRef, structure?.resistance, {
+      color: CHART_BEAR,
+      lineWidth: 1,
+      lineStyle: LineStyle.Solid,
+      title: 'HTF RESISTANCE',
+    })
+    syncLine(channelUpperLineRef, structure?.channel_upper, {
+      color: CHANNEL_LINE_COLOR,
+      lineWidth: 1,
+      lineStyle: LineStyle.Dashed,
+      title: 'CHANNEL UPPER',
+    })
+    syncLine(channelLowerLineRef, structure?.channel_lower, {
+      color: CHANNEL_LINE_COLOR,
+      lineWidth: 1,
+      lineStyle: LineStyle.Dashed,
+      title: 'CHANNEL LOWER',
+    })
+  }, [structure])
 
   return (
     <div className="relative h-80 w-full overflow-hidden rounded-lg" style={{ background: CHART_BACKGROUND }}>

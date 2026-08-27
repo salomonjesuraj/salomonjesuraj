@@ -1,3 +1,4 @@
+import { Minus, Sparkles, TrendingDown, TrendingUp } from 'lucide-react'
 import { fetchOptionSummary, fetchTradeBlueprint } from '../lib/api'
 import { useExecution } from '../hooks/useExecution'
 import { usePolling } from '../hooks/usePolling'
@@ -7,6 +8,16 @@ import type { OIBuildupType, TradeHorizon } from '../types'
 import { DynamicTimeline } from './DynamicTimeline'
 import { HoldToExecuteButton } from './HoldToExecuteButton'
 import { ProximityBar } from './ProximityBar'
+
+/** "Terminal Edge & Analyst" sprint (2026-08-27) -- structure.trend is a
+ * free-text label (feature_engine's trend_text: "UPTREND (HH/HL)" /
+ * "DOWNTREND (LH/LL)" / "RANGE / UNDEFINED"), not an enum, so this reads
+ * it by substring rather than an exhaustive switch. */
+function trendIcon(trend: string) {
+  if (trend.includes('UPTREND')) return { Icon: TrendingUp, tone: 'text-bull' }
+  if (trend.includes('DOWNTREND')) return { Icon: TrendingDown, tone: 'text-bear' }
+  return { Icon: Minus, tone: 'text-hud-muted' }
+}
 
 const HORIZON_LABEL: Record<TradeHorizon, string> = {
   SCALP: 'SCALP · 15M-1H',
@@ -262,6 +273,42 @@ export function ActionCard({ candidate, isActive, onSelect }: ActionCardProps) {
           <div className="tnum font-mono text-hud-text">{fmt(metrics?.delta, 2)}</div>
         </div>
       </div>
+
+      {/* AI Analysis -- "Terminal Edge & Analyst" sprint (2026-08-27).
+          trade_rationale is a deterministic sentence template over real
+          structure/OI/trend signals (api/trade_blueprint.py's
+          _build_trade_rationale), not an LLM call -- disclosed in the
+          subtitle rather than left implicit. */}
+      {blueprint?.structure && (
+        <div className="mt-3 rounded-lg border border-hud-border bg-hud-bg/60 p-3 text-[11px]">
+          <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-hud-muted">
+            <Sparkles className="h-3 w-3" />
+            AI Analysis
+          </div>
+          <p className="mt-1.5 text-hud-text">{blueprint.trade_rationale || 'No structural or order-flow evidence yet.'}</p>
+          <div className="mt-2 grid grid-cols-2 gap-2 border-t border-hud-border pt-2">
+            <div>
+              <div className="text-hud-muted">Overall Bias</div>
+              <div className={'mt-0.5 flex items-center gap-1 font-bold ' + (direction === 'BULL' ? 'text-bull' : 'text-bear')}>
+                {direction === 'BULL' ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
+                {direction}
+              </div>
+            </div>
+            <div>
+              <div className="text-hud-muted">Trend Direction</div>
+              {(() => {
+                const { Icon, tone } = trendIcon(blueprint.structure.trend)
+                return (
+                  <div className={'mt-0.5 flex items-center gap-1 font-bold ' + tone}>
+                    <Icon className="h-3.5 w-3.5" />
+                    <span className="truncate">{blueprint.structure.trend}</span>
+                  </div>
+                )
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Execution Module -- stops propagation so pressing/holding the
           button doesn't also toggle the card's own onSelect (opening/

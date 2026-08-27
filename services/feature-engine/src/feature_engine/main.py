@@ -173,6 +173,18 @@ async def main() -> None:
         "clv_upper_quartile_rate",
         "clv_lower_quartile_rate",
         "clv_ready",
+        # "Terminal Edge & Analyst" sprint (2026-08-27) -- real 1-minute
+        # BOS/CHOCH structure state (features/structure.py), for
+        # TradeBlueprint's own `structure.trend` field and the
+        # deterministic trade_rationale sentence built from
+        # last_event_label. All five are flat scalars (int/float/str),
+        # unlike depth_levels above -- they serialize through this
+        # hash's str(value) mapping cleanly, no dedicated key needed.
+        "trend_state",
+        "trend_text",
+        "last_event_label",
+        "swing_high_1",
+        "swing_low_1",
     )
 
     async def on_feature(fv: Any) -> None:

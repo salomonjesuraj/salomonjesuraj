@@ -85,6 +85,25 @@ export interface TradeBlueprint {
 
   trade_horizon: TradeHorizon
 
+  // "Terminal Edge & Analyst" sprint (2026-08-27) -- see
+  // infusion_models.trade_blueprint.TradeStructure's own docstring for
+  // exactly which already-computed real value each field passes
+  // through (mtf.py's fractal-pivot "Major Blocker" for support/
+  // resistance, its existing Donchian Channel for channel bounds,
+  // feature-engine's real 1-minute BOS/CHOCH trend state for trend).
+  // null (not 0) when the upstream source has no data yet.
+  structure: {
+    support: number | null
+    resistance: number | null
+    channel_upper: number | null
+    channel_lower: number | null
+    trend: string
+  } | null
+  // A DETERMINISTIC sentence built server-side from structure/OI/trend
+  // signals (api/trade_blueprint.py's _build_trade_rationale) -- not an
+  // LLM call. See that function's own docstring.
+  trade_rationale: string
+
   available_fields: string[]
   unavailable_fields: string[]
 }

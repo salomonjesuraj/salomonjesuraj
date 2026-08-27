@@ -9,6 +9,7 @@ orchestration function without hitting either.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import api.trade_blueprint as tb
@@ -17,12 +18,23 @@ from infusion_models.oi_buildup import OIBuildupType
 
 
 class _FakeRedis:
-    def __init__(self, hashes: dict[str, dict[str, Any]] | None = None) -> None:
+    def __init__(
+        self,
+        hashes: dict[str, dict[str, Any]] | None = None,
+        lists: dict[str, list[str]] | None = None,
+    ) -> None:
         self._hashes = hashes or {}
+        self._lists = lists or {}
 
     async def hgetall(self, key: str) -> dict[bytes, bytes]:
         row = self._hashes.get(key) or {}
         return {k.encode(): str(v).encode() for k, v in row.items()}
+
+    async def lrange(self, key: str, start: int, end: int) -> list[bytes]:
+        # Real redis-py semantics: end is inclusive, -1 means "to the end".
+        items = self._lists.get(key) or []
+        stop = len(items) if end == -1 else end + 1
+        return [item.encode() for item in items[start:stop]]
 
 
 def _bar(high: float, low: float, close: float, volume: float) -> dict[str, Any]:
@@ -353,3 +365,137 @@ async def test_no_active_signal_means_no_rr_tag_but_still_checks_late_entry() ->
     blueprint = await tb.build_trade_blueprint(redis, "RELIANCE")
     assert "LATE_ENTRY" in blueprint.warning_tags
     assert "R:R < 1:1.5" not in blueprint.warning_tags
+
+
+# ── "Terminal Edge & Analyst" sprint (2026-08-27) ─────────────────────
+
+
+def _mtf_with_structure(
+    *,
+    blocker_up: float | None,
+    blocker_down: float | None,
+    donch_high: float | None,
+    donch_low: float | None,
+):
+    async def _fake_compute_mtf(redis, symbol, store=False):
+        return {
+            "timeframes": {},
+            "blocker_up_level": blocker_up,
+            "blocker_down_level": blocker_down,
+            "donchian": {"high": donch_high, "low": donch_low},
+        }
+
+    return _fake_compute_mtf
+
+
+async def test_structure_populates_from_mtf_blocker_and_donchian(monkeypatch) -> None:
+    monkeypatch.setattr(
+        tb,
+        "compute_mtf",
+        _mtf_with_structure(blocker_up=110.0, blocker_down=95.0, donch_high=115.0, donch_low=90.0),
+    )
+    redis = _FakeRedis(
+        {"infusion:feature:RELIANCE": {"ltp": "100.0", "trend_text": "UPTREND (HH/HL)"}}
+    )
+    blueprint = await tb.build_trade_blueprint(redis, "RELIANCE")
+    assert blueprint.structure is not None
+    assert blueprint.structure.resistance == 110.0
+    assert blueprint.structure.support == 95.0
+    assert blueprint.structure.channel_upper == 115.0
+    assert blueprint.structure.channel_lower == 90.0
+    assert blueprint.structure.trend == "UPTREND (HH/HL)"
+    assert "structure" in blueprint.available_fields
+
+
+async def test_structure_is_honestly_unavailable_with_no_mtf_data() -> None:
+    """Default stub (_load_bars returns nothing) -> compute_mtf runs for
+    real against empty bars -> every structure field is None, never a
+    fabricated level."""
+    redis = _FakeRedis({"infusion:feature:RELIANCE": {"ltp": "100.0"}})
+    blueprint = await tb.build_trade_blueprint(redis, "RELIANCE")
+    assert blueprint.structure is not None
+    assert blueprint.structure.support is None
+    assert blueprint.structure.resistance is None
+    assert "structure" in blueprint.unavailable_fields
+
+
+def test_trade_rationale_mentions_bos_and_oi_buildup() -> None:
+    structure = tb.TradeStructure(resistance=110.0, support=95.0, trend="UPTREND (HH/HL)")
+    rationale = tb._build_trade_rationale(
+        direction="BULL",
+        trend_text="UPTREND (HH/HL)",
+        last_event_label="Bullish BOS",
+        oi_buildup="LONG_BUILDUP",
+        structure=structure,
+    )
+    assert "resistance" in rationale
+    assert "110.00" in rationale
+    assert "long buildup" in rationale.lower()
+    assert "uptrend" in rationale.lower()
+
+
+def test_trade_rationale_is_honest_with_nothing_to_report() -> None:
+    structure = tb.TradeStructure()
+    rationale = tb._build_trade_rationale(
+        direction="BULL",
+        trend_text="RANGE / UNDEFINED",
+        last_event_label="",
+        oi_buildup="NEUTRAL",
+        structure=structure,
+    )
+    assert rationale == "No structural or order-flow evidence yet." or "range" in rationale.lower()
+
+
+async def test_fast_exit_tag_fires_when_active_long_position_breaks_support(monkeypatch) -> None:
+    monkeypatch.setattr(
+        tb,
+        "compute_mtf",
+        _mtf_with_structure(blocker_up=110.0, blocker_down=95.0, donch_high=115.0, donch_low=90.0),
+    )
+    active_trade = {"symbol": "RELIANCE", "status": "WATCH", "decision": "BUY CE"}
+    redis = _FakeRedis(
+        hashes={"infusion:feature:RELIANCE": {"ltp": "94.0"}},  # below support (95.0)
+        lists={"infusion:journal:paper_trades": [json.dumps(active_trade)]},
+    )
+    blueprint = await tb.build_trade_blueprint(redis, "RELIANCE")
+    assert "FAST_EXIT" in blueprint.warning_tags
+    assert "STRUCTURAL_BREAK" not in blueprint.warning_tags  # 94.0 is still above channel_lower (90.0)
+
+
+async def test_structural_break_tag_fires_when_channel_bound_gives_way(monkeypatch) -> None:
+    monkeypatch.setattr(
+        tb,
+        "compute_mtf",
+        _mtf_with_structure(blocker_up=110.0, blocker_down=95.0, donch_high=115.0, donch_low=90.0),
+    )
+    active_trade = {"symbol": "RELIANCE", "status": "PLANNED", "decision": "BUY CE"}
+    redis = _FakeRedis(
+        hashes={"infusion:feature:RELIANCE": {"ltp": "88.0"}},  # below channel_lower (90.0) too
+        lists={"infusion:journal:paper_trades": [json.dumps(active_trade)]},
+    )
+    blueprint = await tb.build_trade_blueprint(redis, "RELIANCE")
+    assert "FAST_EXIT" in blueprint.warning_tags
+    assert "STRUCTURAL_BREAK" in blueprint.warning_tags
+
+
+async def test_no_fast_exit_tags_without_an_active_journal_position() -> None:
+    redis = _FakeRedis({"infusion:feature:RELIANCE": {"ltp": "50.0"}})
+    blueprint = await tb.build_trade_blueprint(redis, "RELIANCE")
+    assert "FAST_EXIT" not in blueprint.warning_tags
+    assert "STRUCTURAL_BREAK" not in blueprint.warning_tags
+
+
+async def test_closed_journal_rows_are_not_treated_as_active_positions(monkeypatch) -> None:
+    monkeypatch.setattr(
+        tb,
+        "compute_mtf",
+        _mtf_with_structure(blocker_up=110.0, blocker_down=95.0, donch_high=115.0, donch_low=90.0),
+    )
+    closed_trade = {"symbol": "RELIANCE", "status": "CLOSED", "decision": "BUY CE"}
+    redis = _FakeRedis(
+        hashes={"infusion:feature:RELIANCE": {"ltp": "50.0"}},  # well below every bound
+        lists={"infusion:journal:paper_trades": [json.dumps(closed_trade)]},
+    )
+    blueprint = await tb.build_trade_blueprint(redis, "RELIANCE")
+    assert "FAST_EXIT" not in blueprint.warning_tags
+    assert "STRUCTURAL_BREAK" not in blueprint.warning_tags

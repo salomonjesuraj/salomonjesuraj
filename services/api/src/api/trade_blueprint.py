@@ -26,7 +26,7 @@ from infusion_models.smc import (
     nearest_ob_or_fvg_distance_pct,
     order_flow_divergence,
 )
-from infusion_models.trade_blueprint import TradeBlueprint
+from infusion_models.trade_blueprint import TradeBlueprint, TradeStructure
 from infusion_models.trade_horizon import TradeHorizon
 
 from api.options_analytics import compute_max_pain, compute_oi_support_resistance
@@ -39,6 +39,12 @@ Payload = dict[str, Any]
 FUTURES_STATE_PREFIX = "infusion:futures:"
 SIGNAL_KEY_PREFIX = "infusion:signal:"
 FEATURE_KEY_PREFIX = "infusion:feature:"
+# Same Redis LIST api/routes/journal.py's own JOURNAL_KEY writes/reads --
+# duplicated as a literal here rather than cross-imported, matching this
+# module's own established "small constant, not worth a shared import"
+# precedent (_compute_risk_reward's docstring above).
+JOURNAL_KEY = "infusion:journal:paper_trades"
+ACTIVE_JOURNAL_STATUSES = {"PLANNED", "WATCH"}
 
 _IST = ZoneInfo("Asia/Kolkata")
 
@@ -110,6 +116,83 @@ def _f(row: Payload, key: str, default: float = 0.0) -> float:
         return float(val) if val not in (None, "") else default
     except (TypeError, ValueError):
         return default
+
+
+def _opt_f(row: Payload, key: str) -> float | None:
+    """Same coercion as _f, but None (not 0.0) when genuinely absent --
+    for structure fields where 0.0 would misread as a real price level."""
+    val = row.get(key)
+    if val in (None, "", "None"):
+        return None
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return None
+
+
+async def _load_active_position(redis: Any, symbol: str) -> Payload | None:
+    """"Terminal Edge & Analyst" sprint (2026-08-27) Fast Exit Logic --
+    the most recent still-open (PLANNED/WATCH, not yet CLOSED/BLOCKED)
+    real journal entry for this symbol, same status machine The Ledger's
+    own journal.py already uses. None (not a fabricated position) when
+    nothing real is open for this symbol right now. Scans up to 300 rows
+    (journal.py's own MAX_JOURNAL_ROWS) since this list isn't indexed by
+    symbol -- fine at this list's real size, not called on a hot path
+    (TradeBlueprint is polled per-card at 5s, not per-tick).
+    """
+    raw_rows = await redis.lrange(JOURNAL_KEY, 0, 299)
+    for raw in raw_rows:
+        try:
+            text = raw.decode() if isinstance(raw, bytes) else raw
+            row = json.loads(text)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if (
+            isinstance(row, dict)
+            and str(row.get("symbol", "")).upper() == symbol
+            and row.get("status") in ACTIVE_JOURNAL_STATUSES
+        ):
+            return row
+    return None
+
+
+def _build_trade_rationale(
+    *,
+    direction: str,
+    trend_text: str,
+    last_event_label: str,
+    oi_buildup: str,
+    structure: TradeStructure,
+) -> str:
+    """Deterministic sentence template over real computed signals --
+    NOT an LLM call (see TradeBlueprint.trade_rationale's own docstring
+    for why). Every clause only appears when its own underlying signal
+    is real and present; a cold symbol with no structure event and
+    neutral OI gets a short, honest sentence instead of a padded-out
+    fake-sounding one."""
+    clauses: list[str] = []
+
+    bullish = direction == "BULL"
+    if last_event_label and (
+        ("Bullish" in last_event_label and bullish) or ("Bearish" in last_event_label and not bullish)
+    ):
+        level_word = "resistance" if bullish else "support"
+        level = structure.resistance if bullish else structure.support
+        level_text = f" ({level:.2f})" if level is not None else ""
+        clauses.append(f"Price broke {last_event_label.split()[-1]} through HTF {level_word}{level_text}")
+
+    oi_word = {
+        "LONG_BUILDUP": "Bullish long buildup detected in futures OI",
+        "SHORT_COVERING": "Short-covering buildup detected in futures OI",
+        "SHORT_BUILDUP": "Bearish short buildup detected in futures OI",
+        "LONG_UNWINDING": "Long-unwinding detected in futures OI",
+    }.get(oi_buildup)
+    if oi_word:
+        clauses.append(oi_word)
+
+    clauses.append(f"Structural trend is {trend_text.split(' (')[0].lower()}")
+
+    return ". ".join(clauses) + "." if clauses else "No structural or order-flow evidence yet."
 
 
 def classify_trade_horizon(
@@ -366,6 +449,7 @@ async def build_trade_blueprint(redis: Any, symbol: str) -> TradeBlueprint:
         mtf = await compute_mtf(redis, symbol, store=False)
         mtf_states = {tf: row.get("state") for tf, row in (mtf.get("timeframes") or {}).items()}
     except Exception:
+        mtf = {}
         mtf_states = {}
 
     trade_horizon = classify_trade_horizon(
@@ -415,6 +499,55 @@ async def build_trade_blueprint(redis: Any, symbol: str) -> TradeBlueprint:
     )
     warning_tags = compute_warning_tags(ob_fvg_distance_pct, rr)
 
+    # ── Structural geometry + AI Analyst rationale (2026-08-27) ─────────
+    # Every field sourced from something already computed elsewhere --
+    # see TradeStructure's own docstring for exactly where each one
+    # comes from. Real gaps (no daily bar history, cold symbol never
+    # confirmed a swing pivot) surface as None, not a fabricated level.
+    donchian = mtf.get("donchian") or {}
+    trend_text_raw = str(feature_row.get("trend_text") or "RANGE / UNDEFINED")
+    last_event_label = str(feature_row.get("last_event_label") or "")
+    structure = TradeStructure(
+        support=_opt_f(mtf, "blocker_down_level"),
+        resistance=_opt_f(mtf, "blocker_up_level"),
+        channel_upper=_opt_f(donchian, "high"),
+        channel_lower=_opt_f(donchian, "low"),
+        trend=trend_text_raw,
+    )
+    if structure.support is not None or structure.resistance is not None:
+        available.append("structure")
+    else:
+        unavailable.append("structure")
+
+    trade_rationale = _build_trade_rationale(
+        direction=direction,
+        trend_text=trend_text_raw,
+        last_event_label=last_event_label,
+        oi_buildup=oi_buildup,
+        structure=structure,
+    )
+
+    # ── Fast Exit Logic -- an ACTIVE real journal position for this
+    # symbol whose own direction has been invalidated by a real
+    # structural break. STRUCTURAL_BREAK = the wider Donchian channel
+    # bound gave way (the more extreme "something bigger changed"
+    # read); FAST_EXIT = the nearer HTF support/resistance gave way (the
+    # more tactical, closer-to-price read). Both can fire together --
+    # they're independent real checks, not mutually exclusive tiers.
+    active_position = await _load_active_position(redis, symbol)
+    if active_position is not None and ltp_effective > 0:
+        position_bullish = "CE" in str(active_position.get("decision", ""))
+        if position_bullish:
+            if structure.channel_lower is not None and ltp_effective < structure.channel_lower:
+                warning_tags.append("STRUCTURAL_BREAK")
+            if structure.support is not None and ltp_effective < structure.support:
+                warning_tags.append("FAST_EXIT")
+        else:
+            if structure.channel_upper is not None and ltp_effective > structure.channel_upper:
+                warning_tags.append("STRUCTURAL_BREAK")
+            if structure.resistance is not None and ltp_effective > structure.resistance:
+                warning_tags.append("FAST_EXIT")
+
     return TradeBlueprint(
         symbol=symbol,
         direction=direction,
@@ -439,6 +572,8 @@ async def build_trade_blueprint(redis: Any, symbol: str) -> TradeBlueprint:
         liquidity_sweep=liquidity_sweep,
         order_flow_divergence=has_order_flow_divergence,
         warning_tags=warning_tags,
+        structure=structure,
+        trade_rationale=trade_rationale,
         available_fields=available,
         unavailable_fields=unavailable,
     )

@@ -71,6 +71,15 @@ const DEMO_BLUEPRINTS: Record<string, TradeBlueprint> = {
     oi_attraction_strike: 1020,
     oi_hurdle_strike: 1050,
     trade_horizon: 'INTRADAY',
+    structure: {
+      support: 990,
+      resistance: 1018,
+      channel_upper: 1040,
+      channel_lower: 970,
+      trend: 'UPTREND (HH/HL)',
+    },
+    trade_rationale:
+      'Price broke Bullish through HTF resistance (1018.00). Bullish long buildup detected in futures OI. Structural trend is uptrend (hh/hl).',
     available_fields: [],
     unavailable_fields: [],
   },
@@ -94,6 +103,15 @@ const DEMO_BLUEPRINTS: Record<string, TradeBlueprint> = {
     oi_attraction_strike: 490,
     oi_hurdle_strike: 470,
     trade_horizon: 'SCALP',
+    structure: {
+      support: 492,
+      resistance: 515,
+      channel_upper: 525,
+      channel_lower: 480,
+      trend: 'DOWNTREND (LH/LL)',
+    },
+    trade_rationale:
+      'Price broke Bearish through HTF support (492.00). Bearish short buildup detected in futures OI. Structural trend is downtrend (lh/ll).',
     available_fields: [],
     unavailable_fields: [],
   },
