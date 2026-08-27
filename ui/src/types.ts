@@ -32,7 +32,14 @@ export type TradeHorizon =
 /** One row from GET /api/signals -- the active-signal list this HUD
  * builds its Action Cards from. Field set is the raw scanner signal
  * hash (routes/scanner.py's _decode_hash) so it carries more than we
- * use; only the fields this UI actually reads are typed here. */
+ * use; only the fields this UI actually reads are typed here.
+ *
+ * "Probabilistic Grading and Warning Tags" (2026-08-27): ob_fvg_distance_pct
+ * and warning_tags are now on this row directly (routes/scanner.py
+ * computes them from the same features_snapshot compute_conviction()
+ * already scored), same fields SuppressedSignalRow below carries --
+ * ActionCard.tsx merges both row types into one Candidate shape (see
+ * lib/candidates.ts) so a single component renders either. */
 export interface SignalRow {
   symbol: string
   strategy_id: string
@@ -44,8 +51,11 @@ export interface SignalRow {
   invalidation_price?: number
   target_price?: number
   t2_price?: number
+  risk_reward_ratio?: number
   sector_id?: string
   created_at_us?: number
+  ob_fvg_distance_pct?: number | null
+  warning_tags?: string[]
 }
 
 /** GET /api/trade-blueprint/{symbol} */
@@ -143,6 +153,7 @@ export type OiBuildupMap = Record<string, OIBuildupType>
 export interface SuppressedSignalRow {
   symbol: string
   strategy_id: string
+  signal_type?: 'bullish' | 'bearish' | string
   side?: string
   grade?: string
   score?: number
@@ -154,6 +165,8 @@ export interface SuppressedSignalRow {
   rr?: number
   ltp?: number
   why?: string
+  ob_fvg_distance_pct?: number | null
+  warning_tags?: string[]
 }
 
 /** One row from GET /api/ticks -- the bulk per-symbol payload Zone 3

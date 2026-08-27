@@ -1,7 +1,8 @@
 import { fetchOptionSummary, fetchTradeBlueprint } from '../lib/api'
 import { usePolling } from '../hooks/usePolling'
+import type { Candidate } from '../lib/candidates'
 import { useLtp } from '../store/useTickStore'
-import type { OIBuildupType, SignalRow, TradeHorizon } from '../types'
+import type { OIBuildupType, TradeHorizon } from '../types'
 import { DynamicTimeline } from './DynamicTimeline'
 
 const HORIZON_LABEL: Record<TradeHorizon, string> = {
@@ -42,27 +43,41 @@ function fmt(value: number | null | undefined, digits = 2): string {
   return value === null || value === undefined || Number.isNaN(value) ? DASH : value.toFixed(digits)
 }
 
-interface ActionCardProps {
-  signal: SignalRow
+/** "Probabilistic Grading and Warning Tags" (2026-08-27): a tag is a risk
+ * call-out, not a rejection -- the card renders regardless. R:R shortfall
+ * reads as the harder of the two risk facts (a bad reward-to-risk math
+ * problem) so it gets red; a late/extended entry is a softer amber
+ * caution. Any future tag this taxonomy doesn't yet know about still
+ * renders (falls back to amber) rather than silently vanishing. */
+function warningTagClass(tag: string): string {
+  return tag.startsWith('R:R')
+    ? 'bg-bear/15 text-bear ring-1 ring-bear/40'
+    : 'bg-horizon-btst/15 text-horizon-btst ring-1 ring-horizon-btst/40'
 }
 
-export function ActionCard({ signal }: ActionCardProps) {
-  const symbol = signal.symbol
+interface ActionCardProps {
+  candidate: Candidate
+}
+
+export function ActionCard({ candidate }: ActionCardProps) {
+  const symbol = candidate.symbol
   const ltp = useLtp(symbol)
 
   const { data: blueprint } = usePolling(() => fetchTradeBlueprint(symbol), 5000, [symbol])
   const { data: optionSummary } = usePolling(() => fetchOptionSummary(symbol), 5000, [symbol])
 
-  const direction = blueprint?.direction ?? (signal.signal_type === 'bearish' ? 'BEAR' : 'BULL')
+  const direction = blueprint?.direction ?? (candidate.signalType === 'bearish' ? 'BEAR' : 'BULL')
   const horizon = blueprint?.trade_horizon ?? 'UNCLASSIFIED'
   const oiBuildup = blueprint?.oi_buildup ?? 'NEUTRAL'
   const metrics = optionSummary?.upstox_option?.metrics
 
-  const entryPrice = blueprint?.entry_price || signal.entry_price || 0
-  const invalidationSl = blueprint?.invalidation_sl || signal.invalidation_price || 0
-  const t1 = blueprint?.target_1_fib || signal.target_price || 0
-  const t2 = blueprint?.target_2_fib || signal.t2_price || 0
+  const entryPrice = blueprint?.entry_price || candidate.entryPrice || 0
+  const invalidationSl = blueprint?.invalidation_sl || candidate.invalidationPrice || 0
+  const t1 = blueprint?.target_1_fib || candidate.targetPrice || 0
+  const t2 = blueprint?.target_2_fib || candidate.t2Price || 0
   const t3 = blueprint?.target_3_fib || t2
+  const rr = candidate.riskRewardRatio
+  const warningTags = candidate.warningTags
 
   return (
     <article className="min-w-0 rounded-xl border border-hud-border bg-hud-panel p-4 shadow-lg shadow-black/30 transition-colors hover:bg-hud-panel-hover">
@@ -87,6 +102,11 @@ export function ActionCard({ signal }: ActionCardProps) {
             >
               {direction}
             </span>
+            {!candidate.isOfficial && (
+              <span className="shrink-0 rounded bg-hud-muted/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-hud-muted">
+                Candidate
+              </span>
+            )}
           </div>
           <span
             className={
@@ -98,15 +118,35 @@ export function ActionCard({ signal }: ActionCardProps) {
           </span>
         </div>
         <div className="shrink-0 text-right">
-          <div className="text-[10px] uppercase tracking-wide text-hud-muted">Conviction</div>
+          <div className="text-[10px] uppercase tracking-wide text-hud-muted">Win Probability</div>
           <div className="tnum font-mono text-xl font-bold text-hud-text">
-            {fmt(signal.conviction_score, 0)}
-            {signal.conviction_grade && (
-              <span className="ml-1 text-xs font-normal text-hud-muted">{signal.conviction_grade}</span>
+            {fmt(candidate.probability, 0)}
+            <span className="text-sm font-normal text-hud-muted">%</span>
+            {candidate.grade && (
+              <span className="ml-1 text-xs font-normal text-hud-muted">{candidate.grade}</span>
             )}
+          </div>
+          <div className="text-[10px] uppercase tracking-wide text-hud-muted">
+            R:R {rr !== undefined ? `1:${fmt(rr, 2)}` : DASH}
           </div>
         </div>
       </div>
+
+      {/* Warning chips -- never hides the card, only flags the risk the
+          score already priced in (see scanner/scoring.py's soft-decay
+          model + infusion_models.smc.compute_warning_tags). */}
+      {warningTags.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {warningTags.map((tag) => (
+            <span
+              key={tag}
+              className={'rounded px-1.5 py-0.5 text-[10px] font-bold ' + warningTagClass(tag)}
+            >
+              ⚠ {tag}
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* Live LTP line */}
       <div className="mt-2 flex flex-wrap items-baseline gap-2">

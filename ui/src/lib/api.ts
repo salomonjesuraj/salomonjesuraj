@@ -53,8 +53,16 @@ export async function fetchBreadth(): Promise<MarketBreadth> {
 }
 
 export async function fetchSuppressedSignals(): Promise<SuppressedSignalRow[]> {
+  // Demo mode's two mock signals come through fetchSignals() (active)
+  // only -- returning real suppressed data alongside them here would
+  // mix real symbols into an otherwise fully-simulated screen.
+  if (isDemoMode()) return []
+  // 200 (the route's own max) rather than 50 -- Zone 2's probabilistic
+  // display now needs to find every candidate scoring >= 65 in the
+  // recent window, not just the single closest near-miss the old
+  // RadarScanningStrip needed.
   const body = await getJson<{ count: number; suppressed: SuppressedSignalRow[] }>(
-    '/api/signals/suppressed?limit=50',
+    '/api/signals/suppressed?limit=200',
   )
   return body.suppressed || []
 }
