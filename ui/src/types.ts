@@ -747,13 +747,34 @@ export interface PositionIntelligence {
     channel_lower: number | null
     trend: string
   }
+  // SPOT TARGETS -- every one of these three is a level on the
+  // underlying's own chart, never the option premium. T2/T3
+  // ("Strict Quant & Option Logic" sprint, 2026-08-28) are real,
+  // mathematically distinct 1.618/2.618 Fibonacci extensions of the
+  // real Donchian swing (`structure.channel_upper/channel_lower`
+  // above) -- they can no longer render as the same number the way an
+  // earlier design's T3 (borrowed from a signal-only endpoint with
+  // nothing to fall back to) sometimes did.
   target_primary: number | null
   target_secondary: number | null
+  target_tertiary: number | null
   invalidation_level: number | null
   nearest_ob_fvg_level: number | null
   trend_aligned: boolean
   warning_tags: string[]
   holding_horizon: 'HOLD (2-3 DAYS)' | 'RUNNER (INTRADAY ONLY)' | 'TIGHTEN STOP' | 'EXIT IMMEDIATELY' | string
+  // Real entry price (average_price, falling back to day_buy_price for
+  // a same-day-only buy Upstox itself reports as a bare 0 average --
+  // see api/broker_sync.py's own _effective_entry_price docstring for
+  // the live-verified quirk). null only when neither is genuinely known.
+  effective_entry_price: number | null
+  // Option Breakeven & Spot Mapping ("Strict Quant & Option Logic"
+  // sprint, 2026-08-28) -- option_strike/option_type/spot_breakeven are
+  // all null for a plain equity position (is_option: false).
+  is_option: boolean
+  option_strike: number | null
+  option_type: 'CE' | 'PE' | null
+  spot_breakeven: number | null
 }
 
 /** One row from GET /api/broker/positions -- Upstox's own real fields

@@ -143,10 +143,25 @@ export function ActiveCockpit() {
         <MetricCard label="Capital Deployed" value={portfolio ? fmt(portfolio.capital_deployed, 0) : DASH} />
         <MetricCard
           label="Structural Risk Est."
-          value={portfolio ? fmt(portfolio.structural_risk_estimate, 0) : DASH}
+          // "Strict Quant & Option Logic" sprint (2026-08-28): an
+          // option's own last_price is its PREMIUM, not a spot price --
+          // subtracting a real spot invalidation level from it produced
+          // an absurd, unit-mismatched number (a real ~9.6M figure
+          // caught live). api/broker_sync.py now excludes every option
+          // leg from this sum entirely rather than guess a delta, so
+          // known_for genuinely reaching 0 means every open position is
+          // an option -- shown honestly as unavailable, not a
+          // misleading "0" that would read as "no risk."
+          value={
+            portfolio && portfolio.structural_risk_known_for > 0
+              ? fmt(portfolio.structural_risk_estimate, 0)
+              : DASH
+          }
           sublabel={
             portfolio
-              ? `Known for ${portfolio.structural_risk_known_for}/${portfolio.structural_risk_total_positions} positions -- distance to the nearest real invalidation level, not a stop you set`
+              ? portfolio.structural_risk_known_for > 0
+                ? `Known for ${portfolio.structural_risk_known_for}/${portfolio.structural_risk_total_positions} positions -- distance to the nearest real invalidation level, not a stop you set`
+                : 'Not available for option positions -- premium distance, not spot distance, would be needed'
               : undefined
           }
         />

@@ -160,6 +160,79 @@ def test_holding_horizon_tightens_stop_for_a_misaligned_delivery_position() -> N
     assert horizon == "TIGHTEN STOP"
 
 
+# "Strict Quant & Option Logic" sprint (2026-08-28) -- regression tests
+# for the real bugs the user's own audit caught live.
+
+
+def test_effective_entry_price_uses_average_price_when_real() -> None:
+    assert bs._effective_entry_price({"average_price": 4.4, "day_buy_price": 0.0}) == 4.4
+
+
+def test_effective_entry_price_falls_back_to_day_buy_price_when_average_is_zero() -> None:
+    # The exact real KAYNES26SEP4200CE shape caught live: a same-day buy
+    # that Upstox reports with average_price == 0.
+    assert (
+        bs._effective_entry_price({"average_price": 0.0, "day_buy_price": 145.0}) == 145.0
+    )
+
+
+def test_effective_entry_price_is_zero_when_neither_is_known() -> None:
+    assert bs._effective_entry_price({}) == 0.0
+
+
+def test_extract_option_strike_reads_the_real_compact_symbol_tail() -> None:
+    assert bs.extract_option_strike("POWERGRID26SEP280CE") == (280.0, "CE")
+    assert bs.extract_option_strike("KAYNES26SEP4200CE") == (4200.0, "CE")
+    assert bs.extract_option_strike("NIFTY28DEC24500PE") == (24500.0, "PE")
+
+
+def test_extract_option_strike_is_none_for_equity_and_futures_symbols() -> None:
+    assert bs.extract_option_strike("RELIANCE") is None
+    assert bs.extract_option_strike("POWERGRID26SEPFUT") is None
+
+
+def test_fib_extension_targets_are_distinct_for_a_bullish_position() -> None:
+    # The exact bug this replaces: T2 and T3 rendering as the identical
+    # number. 1.618x and 2.618x of the same real swing range must never
+    # coincide unless the range itself is 0.
+    t2, t3 = bs._fib_extension_targets(bullish=True, channel_upper=294.10, channel_lower=262.05)
+    assert t2 is not None
+    assert t3 is not None
+    assert t2 != t3
+    swing = 294.10 - 262.05
+    assert t2 == 262.05 + swing * 1.618
+    assert t3 == 262.05 + swing * 2.618
+    assert t3 > t2  # T3 is the deeper extension
+
+
+def test_fib_extension_targets_project_downward_for_a_bearish_position() -> None:
+    t2, t3 = bs._fib_extension_targets(bullish=False, channel_upper=294.10, channel_lower=262.05)
+    swing = 294.10 - 262.05
+    assert t2 == 294.10 - swing * 1.618
+    assert t3 == 294.10 - swing * 2.618
+    assert t3 < t2  # T3 is the deeper (lower) extension
+
+
+def test_option_breakeven_adds_the_premium_for_a_call() -> None:
+    # A real live example: KAYNES26SEP4200CE, strike 4200, entry ~145.
+    assert bs.option_breakeven(4200.0, 145.0, "CE") == 4345.0
+
+
+def test_option_breakeven_subtracts_the_premium_for_a_put() -> None:
+    assert bs.option_breakeven(24500.0, 120.0, "PE") == 24380.0
+
+
+def test_fib_extension_targets_are_honestly_none_without_a_real_channel() -> None:
+    assert bs._fib_extension_targets(bullish=True, channel_upper=None, channel_lower=262.05) == (
+        None,
+        None,
+    )
+    assert bs._fib_extension_targets(bullish=True, channel_upper=294.10, channel_lower=None) == (
+        None,
+        None,
+    )
+
+
 class _FakeRedis:
     """Minimal fake standing in for the real async Redis client --
     only the three calls `_maybe_alert_position_warning` actually makes

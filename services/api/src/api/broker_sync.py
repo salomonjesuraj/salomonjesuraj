@@ -99,6 +99,22 @@ def _opt_f(row: Payload, key: str) -> float | None:
         return None
 
 
+def _effective_entry_price(position: Payload) -> float:
+    """"Strict Quant & Option Logic" sprint (2026-08-28) -- real Upstox
+    quirk, verified live against a real account: a position bought and
+    still held intraday (never carried overnight, e.g. KAYNES26SEP4200CE
+    the first time this was caught) reports average_price as a bare 0,
+    not the real fill -- day_buy_price is the real entry for that case.
+    Every real-money calculation this module does with "the entry
+    price" (Capital Deployed, option breakeven) goes through this one
+    function so the fallback can't drift between call sites the way it
+    would if each one re-implemented its own version of it."""
+    avg = _num(position, "average_price")
+    if avg > 0:
+        return avg
+    return _num(position, "day_buy_price")
+
+
 async def _headers(redis: Any) -> tuple[dict[str, str], str]:
     """Returns (headers, error) -- error is non-empty when there's no
     token to build real headers from, in which case headers is {}."""
@@ -198,6 +214,11 @@ _MONTH_ABBR = {
 # _infer_expiry_year) rather than assume a format that isn't real.
 _OPTION_TAIL_RE = re.compile(r"(\d{1,2})([A-Z]{3})\d+(?:\.\d+)?(?:CE|PE)$")
 _FUTURES_TAIL_RE = re.compile(r"(\d{1,2})([A-Z]{3})FUT$")
+# Same confirmed-live compact tail as _OPTION_TAIL_RE, but capturing the
+# strike-price digits that one intentionally discards (it only needed
+# day+month) -- "Strict Quant & Option Logic" sprint (2026-08-28), for
+# the new option-breakeven math.
+_OPTION_STRIKE_RE = re.compile(r"\d{1,2}[A-Z]{3}(\d+(?:\.\d+)?)(CE|PE)$")
 
 
 def _infer_expiry_year(day: int, month: int, today: date) -> date | None:
@@ -274,6 +295,32 @@ def extract_expiry(row: Payload, today: date | None = None) -> date | None:
     return _infer_expiry_year(int(day_text), month, today)
 
 
+def extract_option_strike(trading_symbol: str) -> tuple[float, str] | None:
+    """Real strike price + option type ("CE"/"PE"), parsed from the same
+    confirmed-live Upstox compact trading-symbol tail extract_expiry's
+    own _OPTION_TAIL_RE already matches -- this one just also captures
+    the strike digits that regex intentionally discards. None for a
+    plain equity/futures symbol (no CE/PE suffix at all), never a
+    guessed strike standing in for a real one."""
+    match = _OPTION_STRIKE_RE.search(trading_symbol.strip().upper())
+    if not match:
+        return None
+    try:
+        strike = float(match.group(1))
+    except ValueError:
+        return None
+    return strike, match.group(2)
+
+
+def option_breakeven(strike: float, entry_premium: float, option_type: str) -> float:
+    """Spot Breakeven -- "Strict Quant & Option Logic" sprint
+    (2026-08-28), Phase 4. CE: the underlying must clear the strike by
+    at least the premium paid before the position is profitable at
+    expiry; PE: it must fall below the strike by at least the premium.
+    Standard options-pricing arithmetic, not a calibrated threshold."""
+    return strike + entry_premium if option_type == "CE" else strike - entry_premium
+
+
 def compute_dte(expiry: date | None, today: date) -> tuple[int | None, str]:
     """Trading days (Mon-Fri only; no NSE holiday calendar is consulted
     here, disclosed rather than silently assumed accurate to the day)
@@ -330,6 +377,46 @@ def classify_holding_horizon(
     if trend_aligned and theta_risk in {"LOW", "ACCELERATING"}:
         return "HOLD (2-3 DAYS)"
     return "TIGHTEN STOP"
+
+
+# "Strict Quant & Option Logic" sprint (2026-08-28) -- real 1.618/2.618
+# Fibonacci extensions, not textbook-arbitrary numbers: golden-ratio
+# extensions of a measured swing are a real, standard SMC/technical-
+# analysis convention (1.0 = the swing's own high, 1.618 and 2.618 are
+# the two extensions institutional desks most commonly quote past it).
+FIB_EXTENSION_T2 = 1.618
+FIB_EXTENSION_T3 = 2.618
+
+
+def _fib_extension_targets(
+    *, bullish: bool, channel_upper: float | None, channel_lower: float | None
+) -> tuple[float | None, float | None]:
+    """Real T2/T3 projected from the position's own real Donchian swing
+    range (channel_upper/channel_lower, the exact same values already on
+    this position's `structure` block) -- fixes a real bug: the previous
+    design set target_secondary to the bare channel bound and let T3
+    fall back to T2 on the frontend whenever no live scanner signal
+    existed for this symbol (the normal case for a manually-held
+    position, which has no active signal to source a Fibonacci target
+    from), so T2 and T3 always rendered as the identical number. These
+    two are now mathematically distinct by construction -- 1.618x vs
+    2.618x of the same measured range, projected from the swing low
+    (bullish) or swing high (bearish) -- never coincidentally equal
+    unless the swing range itself is 0. None/None when the channel
+    itself isn't known yet, never a fabricated number standing in for
+    a real one."""
+    if channel_upper is None or channel_lower is None:
+        return None, None
+    swing_range = channel_upper - channel_lower
+    if bullish:
+        return (
+            channel_lower + swing_range * FIB_EXTENSION_T2,
+            channel_lower + swing_range * FIB_EXTENSION_T3,
+        )
+    return (
+        channel_upper - swing_range * FIB_EXTENSION_T2,
+        channel_upper - swing_range * FIB_EXTENSION_T3,
+    )
 
 
 async def _feature_row(redis: Any, symbol: str) -> Payload:
@@ -519,6 +606,28 @@ async def compute_position_intelligence(redis: Any, position: Payload) -> Payloa
         holding_horizon=horizon,
     )
 
+    # "Strict Quant & Option Logic" sprint (2026-08-28) -- Option
+    # Breakeven & Spot Mapping. effective_entry uses the same
+    # day_buy_price fallback Capital Deployed now uses (see
+    # _effective_entry_price's own docstring for the real Upstox quirk
+    # behind it). option_strike/option_type are None for a plain equity
+    # position (extract_option_strike's own honest-absence contract);
+    # spot_breakeven stays None rather than a fabricated number whenever
+    # either the strike or a real entry price isn't actually known.
+    effective_entry = _effective_entry_price(position)
+    option_info = extract_option_strike(trading_symbol)
+    option_strike: float | None = None
+    option_type: str | None = None
+    spot_breakeven: float | None = None
+    if option_info is not None:
+        option_strike, option_type = option_info
+        if effective_entry > 0:
+            spot_breakeven = option_breakeven(option_strike, effective_entry, option_type)
+
+    target_secondary, target_tertiary = _fib_extension_targets(
+        bullish=bullish, channel_upper=channel_upper, channel_lower=channel_lower
+    )
+
     return {
         "underlying": underlying,
         "direction": "BULL" if bullish else "BEAR",
@@ -532,18 +641,30 @@ async def compute_position_intelligence(redis: Any, position: Payload) -> Payloa
             "channel_lower": channel_lower,
             "trend": trend_text,
         },
-        # "How Far Can It Go" / "Where Will It Turn" -- primary target is
-        # the nearer real HTF level in this position's favor, secondary
-        # extension is the wider Donchian bound; invalidation is the
-        # nearer real level AGAINST this position (the same level
-        # structural_invalidation's FAST_EXIT check watches).
+        # SPOT TARGETS -- every one of these three is a level on the
+        # UNDERLYING's own chart, not the option premium. T1 is the
+        # nearest real HTF level in this position's favor (unchanged);
+        # T2/T3 are real, mathematically distinct 1.618/2.618 Fibonacci
+        # extensions of the real Donchian swing range -- see
+        # _fib_extension_targets's own docstring for the bug this
+        # replaces (T2 and T3 used to be the identical number).
         "target_primary": resistance if bullish else support,
-        "target_secondary": channel_upper if bullish else channel_lower,
+        "target_secondary": target_secondary,
+        "target_tertiary": target_tertiary,
         "invalidation_level": invalidation_level,
         "nearest_ob_fvg_level": ob_fvg_level,
         "trend_aligned": trend_aligned,
         "warning_tags": invalidation_tags,
         "holding_horizon": horizon,
+        # Real entry price and Option Breakeven & Spot Mapping (Phase 2
+        # and Phase 4) -- effective_entry_price is None (never a
+        # fabricated 0) when neither average_price nor day_buy_price is
+        # actually known yet.
+        "effective_entry_price": effective_entry if effective_entry > 0 else None,
+        "is_option": option_info is not None,
+        "option_strike": option_strike,
+        "option_type": option_type,
+        "spot_breakeven": spot_breakeven,
     }
 
 
@@ -567,8 +688,15 @@ async def fetch_positions_with_intelligence(redis: Any) -> Payload:
 
     total_unrealized = sum(_num(p, "pnl") for p in active)
     total_realized = sum(_num(p, "realised") for p in active)
+    # "Strict Quant & Option Logic" sprint (2026-08-28) -- real bug fix:
+    # this used to multiply by the raw average_price field, which is a
+    # bare 0 for any position bought and still held intraday (Upstox's
+    # own real quirk -- see _effective_entry_price's docstring), so that
+    # leg's real capital silently never made it into this sum at all.
+    # Every leg's real entry price (with the day_buy_price fallback)
+    # now counts.
     capital_deployed = sum(
-        abs(_num(p, "quantity")) * _num(p, "average_price") * _num(p, "multiplier", 1.0)
+        abs(_num(p, "quantity")) * _effective_entry_price(p) * _num(p, "multiplier", 1.0)
         for p in active
     )
     # "Total Open Risk" has no real per-position stop to sum -- these
@@ -577,11 +705,23 @@ async def fetch_positions_with_intelligence(redis: Any) -> Payload:
     # honest number available is distance-to-the-real-computed-
     # invalidation-level per position, summed only over rows where that
     # level is actually known (never padded with a guess for the rest).
+    #
+    # Real unit-mismatch bug fix: for an OPTION position, last_price is
+    # the option's own PREMIUM (e.g. Rs 1.30), while invalidation_level
+    # is a level on the UNDERLYING's own spot chart (e.g. Rs 264.65) --
+    # subtracting one from the other and multiplying by the option's own
+    # (much larger) lot quantity produced an absurd number (a real
+    # ~9.6M figure caught live) that was never a real Rupee risk. Option
+    # legs are excluded from this sum entirely rather than converted
+    # through a fabricated/guessed delta -- see compute_position_
+    # intelligence's own is_option field, computed once per position and
+    # reused here rather than re-parsed.
     structural_risk_total = 0.0
     structural_risk_known_for = 0
     for row in enriched:
-        level = row["intelligence"].get("invalidation_level")
-        if level is None:
+        intel = row["intelligence"]
+        level = intel.get("invalidation_level")
+        if level is None or intel.get("is_option"):
             continue
         structural_risk_total += abs(_num(row, "quantity")) * abs(_num(row, "last_price") - level)
         structural_risk_known_for += 1

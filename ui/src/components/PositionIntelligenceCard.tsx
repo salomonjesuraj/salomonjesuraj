@@ -1,8 +1,6 @@
 import { AlertTriangle } from 'lucide-react'
 import { LiveCandlestickChart } from './LiveCandlestickChart'
 import { DASH } from './MetricCard'
-import { usePolling } from '../hooks/usePolling'
-import { fetchTradeBlueprint } from '../lib/api'
 import type { BrokerPosition } from '../types'
 
 function fmt(value: number | null | undefined, digits = 2): string {
@@ -41,12 +39,23 @@ const HORIZON_CLASS: Record<string, string> = {
  * MTF Support/Resistance/Channel overlay Sniper HUD's own chart already
  * draws -- see LiveCandlestickChart.tsx's Effect 4) and replaced the
  * "How Far Can It Go"/"Where Will It Turn" prose with an explicit data
- * grid. T1/T2/T3 reuse the real, already-computed Fibonacci targets
- * GET /api/trade-blueprint/{symbol} produces (the same endpoint
- * ActionCard.tsx's own t1/t2/t3 fallback chain already trusts) rather
- * than inventing a second Fibonacci calculation here -- MTF
- * Support/Resistance stay sourced from `intel.structure`, already on
- * this exact payload, no second fetch needed for those two. */
+ * grid.
+ *
+ * "Strict Quant & Option Logic" sprint (2026-08-28): T1/T2/T3 no longer
+ * poll GET /api/trade-blueprint/{symbol} -- that endpoint only has real
+ * Fibonacci targets when there's an ACTIVE SCANNER SIGNAL for the
+ * symbol, which a manually-held broker position typically doesn't have
+ * (both real positions this card was built against, POWERGRID and
+ * KAYNES, come back "no_active_signal"). Falling back through an empty
+ * blueprint meant T3's own fallback chain (`target_3_fib || t2`) always
+ * landed on the same value as T2 -- not a rounding coincidence, T2 and
+ * T3 were structurally guaranteed to be identical. All three now come
+ * straight from `intel` itself -- api/broker_sync.py's own
+ * compute_position_intelligence() always computes real, distinct T2/T3
+ * (1.618/2.618 Fibonacci extensions of the real Donchian swing) for
+ * every position, signal or no signal. Explicitly labeled SPOT TARGETS
+ * below since every one of them is a level on the underlying's own
+ * chart, not the option premium. */
 export function PositionIntelligenceCard({ position }: { position: BrokerPosition }) {
   const symbol = position.trading_symbol || position.tradingsymbol || '—'
   const intel = position.intelligence
@@ -63,18 +72,9 @@ export function PositionIntelligenceCard({ position }: { position: BrokerPositio
   // condition holds isn't spam the way a repeating sound would be.
   const isExitImmediate = intel.holding_horizon === 'EXIT IMMEDIATELY'
 
-  // 10s cadence: a position's own Fibonacci geometry moves far slower
-  // than a live-scanning Sniper HUD candidate's does, so this doesn't
-  // need ActionCard/LiveCandlestickChart's own 5s cadence for the
-  // identical endpoint.
-  const { data: blueprint } = usePolling(
-    () => fetchTradeBlueprint(intel.underlying),
-    10000,
-    [intel.underlying],
-  )
-  const t1 = blueprint?.target_1_fib || intel.target_primary
-  const t2 = blueprint?.target_2_fib || intel.target_secondary
-  const t3 = blueprint?.target_3_fib || t2
+  const t1 = intel.target_primary
+  const t2 = intel.target_secondary
+  const t3 = intel.target_tertiary
 
   const ltp = position.last_price
   const stop = intel.invalidation_level
@@ -89,12 +89,13 @@ export function PositionIntelligenceCard({ position }: { position: BrokerPositio
       ? Math.abs(t1 - ltp) / Math.abs(ltp - stop)
       : null
 
-  // Same real same-day-buy quirk broker_sync.py's own verification
-  // disclosure documents: average_price reads as a bare 0 for a
-  // position bought and still held intraday, never carried overnight --
-  // day_buy_price is the real fill for that case. See BrokerPosition's
-  // own type comment.
-  const chartEntry = position.average_price || position.day_buy_price || null
+  // Real entry price -- api/broker_sync.py's own effective_entry_price
+  // already applies the same day_buy_price fallback (a position bought
+  // and still held intraday reports average_price as a bare 0, a real
+  // Upstox quirk, not a missing value) as the backend's own Capital
+  // Deployed sum, so this card and that master strip can never disagree
+  // about what this position's own real entry was.
+  const effectiveEntry = intel.effective_entry_price
 
   return (
     <article
@@ -118,7 +119,7 @@ export function PositionIntelligenceCard({ position }: { position: BrokerPositio
               {intel.direction}
             </span>
             <span>Qty {position.quantity}</span>
-            <span>Avg {fmt(position.average_price)}</span>
+            <span>Avg {fmt(effectiveEntry)}</span>
           </div>
         </div>
         {/* Live PnL -- a glowing badge, colored + a soft outer ring so it
@@ -155,7 +156,7 @@ export function PositionIntelligenceCard({ position }: { position: BrokerPositio
         <LiveCandlestickChart
           symbol={intel.underlying}
           heightClassName="h-48"
-          brokerPosition={{ entry: chartEntry, stop, target1: t1 }}
+          brokerPosition={{ entry: effectiveEntry, stop, target1: t1 }}
         />
       </div>
 
@@ -184,20 +185,35 @@ export function PositionIntelligenceCard({ position }: { position: BrokerPositio
             {liveRiskReward !== null ? `1:${liveRiskReward.toFixed(2)}` : DASH}
           </span>
         </div>
-        <div className="mt-2 grid grid-cols-3 gap-2 border-t border-hud-border pt-2">
-          <div>
-            <div className="text-hud-muted">T1</div>
-            <div className="tnum font-mono text-bull">{fmt(t1)}</div>
+        <div className="mt-2 border-t border-hud-border pt-2">
+          {/* "Strict Quant & Option Logic" sprint (2026-08-28): labeled
+              explicitly so a trader holding an option never mistakes
+              these for premium targets -- every one of T1/T2/T3 is a
+              level on the underlying's own spot chart. */}
+          <div className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-hud-muted">
+            Spot Targets
           </div>
-          <div>
-            <div className="text-hud-muted">T2</div>
-            <div className="tnum font-mono text-bull">{fmt(t2)}</div>
-          </div>
-          <div>
-            <div className="text-hud-muted">T3</div>
-            <div className="tnum font-mono text-bull">{fmt(t3)}</div>
+          <div className="grid grid-cols-3 gap-2">
+            <div>
+              <div className="text-hud-muted">T1</div>
+              <div className="tnum font-mono text-bull">{fmt(t1)}</div>
+            </div>
+            <div>
+              <div className="text-hud-muted">T2</div>
+              <div className="tnum font-mono text-bull">{fmt(t2)}</div>
+            </div>
+            <div>
+              <div className="text-hud-muted">T3</div>
+              <div className="tnum font-mono text-bull">{fmt(t3)}</div>
+            </div>
           </div>
         </div>
+        {intel.is_option && (
+          <div className="mt-2 flex items-center justify-between border-t border-hud-border pt-2">
+            <span className="text-hud-muted">Spot Required for Breakeven</span>
+            <span className="tnum font-mono font-bold text-hud-text">{fmt(intel.spot_breakeven)}</span>
+          </div>
+        )}
       </div>
 
       {/* DTE & Theta Meter */}
