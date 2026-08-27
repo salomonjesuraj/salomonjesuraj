@@ -292,10 +292,14 @@ class AlerterEngine:
             )
 
     async def _deliver_position_warning(self, payload: dict[str, Any]) -> None:
-        """Deliver a real broker position warning -- plain text, no
-        MarkdownV2 (the message is built in broker_sync.py, which
-        doesn't escape for Telegram's markdown dialect), same
-        parse_mode="" choice _deliver_recap already makes for the same
+        """Deliver a real broker position warning. "Telegram Redesign &
+        Token Modal" sprint (2026-08-27): broker_sync.py now builds this
+        message as a bold MarkdownV2 headline + a fenced monospace
+        detail table (its own module-level _escape_md/_escape_pre,
+        matching alerter/formatter.py's identical split), so this now
+        sends with the real MarkdownV2 parse_mode -- the plain-text
+        parse_mode="" this used before that redesign is what recap still
+        uses today, for its own different (box-drawing, unescaped)
         reason."""
         signal_id = payload.get("signal_id", "")
         symbol = payload.get("symbol", "")
@@ -306,7 +310,6 @@ class AlerterEngine:
         outcome: DeliveryOutcome = await self.telegram.send_message(
             chat_id=self._chat_id,
             text=text,
-            parse_mode="",
         )
         if outcome.success:
             self._alerts_sent += 1

@@ -3,6 +3,22 @@
 These endpoints intentionally support the local Infusion dashboard workflow:
 when Upstox expires the access token, the user can paste a fresh token in the
 dashboard and force ingestion to re-authenticate without editing .env files.
+
+"Telegram Redesign & Token Modal" sprint (2026-08-27) -- the sprint asked
+for a new `POST /api/broker/token` that validates a pasted token with a
+live call to Upstox's own `/v2/user/profile`. This route
+(`POST /api/auth/upstox/token`) already existed and already does
+everything else that endpoint would have needed to do: parse the token's
+own JWT `exp` claim, store it in the exact `infusion:auth:upstox` Redis
+key `api/broker_sync.py`'s `_upstox_access_token()` already reads,
+trigger an ingestion recheck. Building a second, parallel `/api/broker/
+token` route that wrote to the same Redis key via a different code path
+would have meant two competing "the current Upstox token" writers -- so
+instead, `_verify_token_live()` below adds exactly the live-validation
+call that was actually new here, onto this already-real, already-wired
+endpoint, rather than duplicating it. See `save_upstox_token()`'s own
+docstring for the validation order and the deliberate soft-fail when
+Upstox itself (not the token) is unreachable.
 """
 
 from __future__ import annotations
@@ -13,15 +29,19 @@ import time
 from datetime import UTC, datetime, timedelta, timezone
 from typing import Any, cast
 
+import aiohttp
+import structlog
 from aiohttp import web
 
 routes = web.RouteTableDef()
 Payload = dict[str, Any]
+logger = structlog.get_logger()
 
 KEY_AUTH_UPSTOX = "infusion:auth:upstox"
 KEY_AUTH_STATUS = "infusion:auth:upstox:status"
 KEY_FORCE_RECHECK = "infusion:auth:upstox:force_recheck"
 IST = timezone(timedelta(hours=5, minutes=30))
+UPSTOX_PROFILE_URL = "https://api.upstox.com/v2/user/profile"
 
 
 def _jwt_expiry(token: str) -> int:
@@ -36,6 +56,34 @@ def _jwt_expiry(token: str) -> int:
 
 def _iso(ts: int, tz: timezone = UTC) -> str:
     return datetime.fromtimestamp(ts, tz=UTC).astimezone(tz).isoformat() if ts else ""
+
+
+async def _verify_token_live(token: str) -> tuple[bool, str]:
+    """A real GET against Upstox's own `/v2/user/profile` with the
+    pasted token -- catches what the JWT-expiry check above cannot: a
+    well-formed, not-yet-expired token that Upstox has already revoked
+    server-side (a fresh login elsewhere, a manually invalidated
+    session). Returns (is_valid, reason) -- is_valid is True both when
+    Upstox actually confirms the token AND when Upstox itself couldn't
+    be reached at all (a network hiccup on OUR side is not evidence the
+    TOKEN is bad; failing the paste over that would be a worse trade
+    than trusting the JWT-expiry check alone for this one request), so
+    only a real 401/403 from Upstox's own server ever fails this."""
+    try:
+        async with (
+            aiohttp.ClientSession() as session,
+            session.get(
+                UPSTOX_PROFILE_URL,
+                headers={"Accept": "application/json", "Authorization": f"Bearer {token}"},
+                timeout=aiohttp.ClientTimeout(total=5),
+            ) as resp,
+        ):
+            if resp.status in (401, 403):
+                return False, "Upstox rejected this token (401/403 from /v2/user/profile)."
+            return True, ""
+    except Exception as exc:
+        logger.warning("upstox_token_live_check_unreachable", error=str(exc))
+        return True, ""
 
 
 @routes.get("/api/auth/upstox/status")
@@ -102,38 +150,55 @@ async def upstox_auth_status(request: web.Request) -> web.Response:
     )
 
 
+def _rejected(error: str, **extra: Any) -> web.Response:
+    """Every rejection path shares one response shape: `ok`/`error` (this
+    route's own pre-existing contract) alongside `status`/`message` (the
+    "Telegram Redesign & Token Modal" sprint's own literal ask) -- an
+    additive widening, not a breaking rename, so anything that already
+    reads `ok`/`error` keeps working unchanged."""
+    body: Payload = {"ok": False, "error": error, "status": "error", "message": error}
+    body.update(extra)
+    return web.json_response(body, status=400)
+
+
 @routes.post("/api/auth/upstox/token")
 async def save_upstox_token(request: web.Request) -> web.Response:
+    """Validates and stores a pasted Upstox access token. Two
+    independent checks, both real, run in this order:
+      1. Decode the token's own JWT `exp` claim -- catches a malformed
+         paste or one that's already past its stated expiry, with zero
+         network I/O.
+      2. `_verify_token_live()` -- a real GET to Upstox's own
+         `/v2/user/profile`, catching a well-formed/unexpired token
+         Upstox has already revoked server-side. Soft-fails open if
+         Upstox itself is unreachable (see that function's own
+         docstring for why) -- only an explicit 401/403 FROM Upstox
+         rejects the paste here.
+    """
     redis = request.app["redis"]
     try:
         body_raw = await request.json()
     except Exception:
-        return web.json_response({"ok": False, "error": "Invalid JSON body."}, status=400)
+        return _rejected("Invalid JSON body.")
     body = cast(Payload, body_raw) if isinstance(body_raw, dict) else {}
 
     token = str(body.get("access_token") or "").strip()
     if not token:
-        return web.json_response({"ok": False, "error": "Access token is required."}, status=400)
+        return _rejected("Access token is required.")
 
     expiry_ts = _jwt_expiry(token)
     if not expiry_ts:
-        return web.json_response(
-            {
-                "ok": False,
-                "error": "Could not read expiry from this token. Please paste the full Upstox access token.",
-            },
-            status=400,
+        return _rejected(
+            "Could not read expiry from this token. Please paste the full Upstox access token."
         )
     now = int(time.time())
     if expiry_ts and expiry_ts <= now:
-        return web.json_response(
-            {
-                "ok": False,
-                "error": "This Upstox token is already expired.",
-                "expiry_ist": _iso(expiry_ts, IST),
-            },
-            status=400,
-        )
+        return _rejected("This Upstox token is already expired.", expiry_ist=_iso(expiry_ts, IST))
+
+    live_valid, live_reason = await _verify_token_live(token)
+    if not live_valid:
+        logger.warning("upstox_token_rejected_by_live_check", reason=live_reason)
+        return _rejected("Invalid Upstox Token")
 
     ttl = max((expiry_ts - now - 60), 300) if expiry_ts else 20 * 3600
     auth_data = {
@@ -160,6 +225,7 @@ async def save_upstox_token(request: web.Request) -> web.Response:
     return web.json_response(
         {
             "ok": True,
+            "status": "success",
             "broker": "upstox",
             "source": "dashboard",
             "expiry_ts": expiry_ts,

@@ -195,6 +195,7 @@ async def test_position_warning_does_not_fire_for_a_healthy_position() -> None:
         trading_symbol="POWERGRID26SEP280CE",
         underlying="POWERGRID",
         ltp=12.5,
+        pnl=-1000.0,
         invalidation_level=10.0,
         invalidation_tags=[],
         holding_horizon="HOLD (2-3 DAYS)",
@@ -210,6 +211,7 @@ async def test_position_warning_fires_on_exit_immediately_horizon() -> None:
         trading_symbol="POWERGRID26SEP280CE",
         underlying="POWERGRID",
         ltp=12.5,
+        pnl=-58900.0,
         invalidation_level=10.0,
         invalidation_tags=[],
         holding_horizon="EXIT IMMEDIATELY",
@@ -218,8 +220,14 @@ async def test_position_warning_fires_on_exit_immediately_horizon() -> None:
     assert len(payloads) == 1
     assert payloads[0]["signal_type"] == "position_warning"
     assert payloads[0]["symbol"] == "POWERGRID"
-    assert "EXIT IMMEDIATELY" in payloads[0]["message"]
-    assert "Invalidation level 10.00" in payloads[0]["message"]
+    message = payloads[0]["message"]
+    # Bold headline outside the fence + a monospace detail table inside
+    # it -- "Telegram Redesign & Token Modal" sprint (2026-08-27).
+    assert message.startswith("*")
+    assert message.count("```") == 2
+    assert "EXIT IMMEDIATELY" in message
+    assert "Rs 10.00" in message  # BROKEN LVL
+    assert "Rs -58,900.00" in message  # PNL
 
 
 async def test_position_warning_fires_on_a_structural_break_tag_alone() -> None:
@@ -233,16 +241,19 @@ async def test_position_warning_fires_on_a_structural_break_tag_alone() -> None:
         trading_symbol="KAYNES26SEP4200CE",
         underlying="KAYNES",
         ltp=55.0,
+        pnl=-500.0,
         invalidation_level=None,
         invalidation_tags=["STRUCTURAL_BREAK"],
         holding_horizon="HOLD (2-3 DAYS)",
     )
     payloads = _decoded_alert_payloads(redis)
     assert len(payloads) == 1
-    assert "STRUCTURAL_BREAK" in payloads[0]["message"]
-    # No invalidation level known -> the sentence fragment is omitted
-    # entirely rather than printed as a fabricated "None".
-    assert "Invalidation level" not in payloads[0]["message"]
+    message = payloads[0]["message"]
+    assert "STRUCTURAL_BREAK" in message
+    # No invalidation level known -> an honest dash, never a fabricated
+    # price.
+    broken_lvl_line = next(line for line in message.split("\n") if line.startswith("BROKEN LVL"))
+    assert broken_lvl_line.strip() == "BROKEN LVL -"
 
 
 async def test_position_warning_respects_the_per_instrument_cooldown() -> None:
@@ -255,6 +266,7 @@ async def test_position_warning_respects_the_per_instrument_cooldown() -> None:
         trading_symbol="POWERGRID26SEP280CE",
         underlying="POWERGRID",
         ltp=12.5,
+        pnl=-1000.0,
         invalidation_level=10.0,
         invalidation_tags=["FAST_EXIT"],
         holding_horizon="EXIT IMMEDIATELY",
@@ -274,6 +286,7 @@ async def test_position_warning_cooldown_is_scoped_per_instrument() -> None:
         trading_symbol="POWERGRID26SEP280CE",
         underlying="POWERGRID",
         ltp=12.5,
+        pnl=-1000.0,
         invalidation_level=10.0,
         invalidation_tags=["FAST_EXIT"],
         holding_horizon="EXIT IMMEDIATELY",
@@ -284,6 +297,7 @@ async def test_position_warning_cooldown_is_scoped_per_instrument() -> None:
         trading_symbol="KAYNES26SEP4200CE",
         underlying="KAYNES",
         ltp=55.0,
+        pnl=-500.0,
         invalidation_level=None,
         invalidation_tags=["STRUCTURAL_BREAK"],
         holding_horizon="EXIT IMMEDIATELY",

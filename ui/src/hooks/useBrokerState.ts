@@ -1,4 +1,5 @@
 import { fetchBrokerHoldings, fetchBrokerOrders, fetchBrokerPositions } from '../lib/api'
+import { useBrokerRefreshStore } from '../store/useBrokerRefreshStore'
 import { usePolling } from './usePolling'
 
 /**
@@ -10,16 +11,24 @@ import { usePolling } from './usePolling'
  * holdings slowest (delivery equity, moves at most once a day). All
  * three are read-only GETs -- see api/broker_sync.py's own module
  * docstring for the full "no order placement anywhere" disclosure.
+ *
+ * "Telegram Redesign & Token Modal" sprint (2026-08-27): all three now
+ * also depend on useBrokerRefreshStore's nonce, so a fresh token save
+ * can force an immediate refetch instead of waiting out each hook's own
+ * interval -- see that store's own docstring for why.
  */
 
 export function useActivePositions() {
-  return usePolling(fetchBrokerPositions, 3000, [])
+  const refreshNonce = useBrokerRefreshStore((s) => s.nonce)
+  return usePolling(fetchBrokerPositions, 3000, [refreshNonce])
 }
 
 export function useOrderBook() {
-  return usePolling(fetchBrokerOrders, 15000, [])
+  const refreshNonce = useBrokerRefreshStore((s) => s.nonce)
+  return usePolling(fetchBrokerOrders, 15000, [refreshNonce])
 }
 
 export function useHoldings() {
-  return usePolling(fetchBrokerHoldings, 60000, [])
+  const refreshNonce = useBrokerRefreshStore((s) => s.nonce)
+  return usePolling(fetchBrokerHoldings, 60000, [refreshNonce])
 }

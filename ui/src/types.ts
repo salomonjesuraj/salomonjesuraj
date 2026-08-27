@@ -637,6 +637,38 @@ export interface ServiceHealth {
   [key: string]: unknown
 }
 
+/** GET /api/auth/upstox/status -- "Telegram Redesign & Token Modal"
+ * sprint (2026-08-27). Purpose-built for exactly the question the
+ * Upstox Token Modal needs answered ("does the trader need to paste a
+ * fresh token right now"), so the modal's own watcher polls this
+ * directly rather than pattern-matching on error strings from every
+ * individual broker endpoint -- see useUpstoxAuthWatcher.ts's own note. */
+export interface UpstoxAuthStatus {
+  broker: string
+  token_state: 'valid' | 'expired' | 'invalid' | 'missing' | string
+  needs_token: boolean
+  auth_error: string
+  source: string
+  expiry_ts: number
+  expiry_utc: string
+  expiry_ist: string
+  ingestion_state: string
+  last_tick_age_ms: number
+  tick_count: number
+}
+
+/** Response body from POST /api/auth/upstox/token -- both the route's
+ * own pre-existing `ok`/`error` fields and the sprint's own literal
+ * `status`/`message` shape are present on every response (additive
+ * widening, see routes/auth.py's own _rejected() docstring), so this
+ * type only needs to carry the ones the modal actually reads. */
+export interface UpstoxTokenSaveResult {
+  ok: boolean
+  status: 'success' | 'error'
+  message: string
+  expiry_ist?: string
+}
+
 /** GET /api/health */
 export interface HealthStatus {
   status: 'healthy' | 'degraded'

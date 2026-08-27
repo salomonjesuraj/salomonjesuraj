@@ -1,9 +1,12 @@
 import { useEffect } from 'react'
 import { Outlet } from 'react-router-dom'
+import { useUpstoxAuthWatcher } from '../hooks/useUpstoxAuthWatcher'
 import { isDemoMode, startDemoTicker, stopDemoTicker } from '../lib/demo'
 import { connectTickSocket, useConnStatus } from '../store/useTickStore'
+import { useUpstoxAuthStore } from '../store/useUpstoxAuthStore'
 import { IndexPulseHeader } from './IndexPulseHeader'
 import { Sidebar } from './Sidebar'
+import { UpstoxTokenModal } from './UpstoxTokenModal'
 
 const STATUS_LABEL: Record<string, string> = {
   connecting: 'Connecting…',
@@ -41,6 +44,11 @@ function DemoBanner() {
 export function Layout() {
   const demo = isDemoMode()
   const connStatus = useConnStatus()
+  // Always called (rules-of-hooks) -- the modal itself is only rendered
+  // outside demo mode below, since demo sessions don't depend on a real
+  // broker connection and shouldn't be interrupted by one expiring.
+  useUpstoxAuthWatcher()
+  const isTokenModalOpen = useUpstoxAuthStore((s) => s.isTokenModalOpen)
 
   useEffect(() => {
     if (demo) {
@@ -75,6 +83,7 @@ export function Layout() {
           <Outlet />
         </main>
       </div>
+      {!demo && isTokenModalOpen && <UpstoxTokenModal />}
     </div>
   )
 }

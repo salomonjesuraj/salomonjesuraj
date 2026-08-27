@@ -28,6 +28,8 @@ import type {
   SuppressedSignalRow,
   TickRow,
   TradeBlueprint,
+  UpstoxAuthStatus,
+  UpstoxTokenSaveResult,
   WalkforwardResult,
 } from '../types'
 
@@ -272,4 +274,31 @@ export async function fetchBrokerHoldings(): Promise<BrokerHoldingsResponse> {
 
 export async function fetchBrokerOrders(): Promise<BrokerOrdersResponse> {
   return getJson<BrokerOrdersResponse>('/api/broker/orders')
+}
+
+// ── "Telegram Redesign & Token Modal" sprint (2026-08-27) -- the real,
+// already-shipped api/routes/auth.py token-recovery pair. See
+// UpstoxAuthStatus's own type comment for why the modal watches this
+// purpose-built status endpoint rather than sniffing 401s off every
+// broker fetch above.
+
+export async function fetchUpstoxAuthStatus(): Promise<UpstoxAuthStatus> {
+  return getJson<UpstoxAuthStatus>('/api/auth/upstox/status')
+}
+
+/** Deliberately NOT built on postJson: that helper throws away the
+ * response body on a non-2xx status, and the real failure text this
+ * route returns on its 400 (e.g. "Invalid Upstox Token") is exactly
+ * what the modal needs to show the trader -- so this reads the JSON
+ * body first and only then decides what to return, regardless of
+ * status code. */
+export async function saveUpstoxToken(accessToken: string): Promise<UpstoxTokenSaveResult> {
+  const res = await fetch('/api/auth/upstox/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ access_token: accessToken }),
+  })
+  const body = (await res.json().catch(() => null)) as UpstoxTokenSaveResult | null
+  if (body) return body
+  return { ok: false, status: 'error', message: `Unexpected response (HTTP ${res.status}).` }
 }
