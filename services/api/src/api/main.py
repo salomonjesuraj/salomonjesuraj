@@ -46,6 +46,7 @@ from api.routes.ai import routes as ai_routes
 from api.routes.analytics import routes as analytics_routes
 from api.routes.auth import routes as auth_routes
 from api.routes.backtest import routes as backtest_routes
+from api.routes.broker import routes as broker_routes
 from api.routes.charts import routes as charts_routes
 from api.routes.depth import routes as depth_routes
 from api.routes.ebie_candidates import routes as ebie_candidates_routes
@@ -149,6 +150,7 @@ async def main() -> None:
     app.router.add_routes(options_dynamics_routes)
     app.router.add_routes(trade_blueprint_routes)
     app.router.add_routes(depth_routes)
+    app.router.add_routes(broker_routes)
     if pg_pool:
         app.router.add_routes(analytics_routes)
         app.router.add_routes(radar_alerts_routes)

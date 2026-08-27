@@ -1,5 +1,6 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { Layout } from './components/Layout'
+import { ActiveCockpit } from './pages/ActiveCockpit'
 import { OptionsAnalytics } from './pages/OptionsAnalytics'
 import { SafetyLogs } from './pages/SafetyLogs'
 import { SniperHud } from './pages/SniperHud'
@@ -23,6 +24,7 @@ function App() {
       <Routes>
         <Route element={<Layout />}>
           <Route index element={<SniperHud />} />
+          <Route path="positions" element={<ActiveCockpit />} />
           <Route path="analytics" element={<OptionsAnalytics />} />
           <Route path="optimizer" element={<TheLab />} />
           <Route path="journal" element={<TheLedger />} />

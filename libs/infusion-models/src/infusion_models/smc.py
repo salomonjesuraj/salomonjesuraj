@@ -50,12 +50,12 @@ def _truthy(value: Any) -> bool:
     return value in (True, "True", "true", "1", 1)
 
 
-def nearest_ob_or_fvg_distance_pct(features: dict[str, Any], bearish: bool) -> float | None:
-    """% distance from LTP to the nearest validated, direction-aligned
-    Order Block or non-rebalanced Fair Value Gap's proximal line (the
-    edge price would touch first on a pullback into the zone). None
-    when no such zone currently exists -- never a fabricated 0.0 that
-    would misread as "sitting right at the zone."
+def nearest_ob_or_fvg_level(features: dict[str, Any], bearish: bool) -> float | None:
+    """The nearest validated, direction-aligned Order Block or non-
+    rebalanced Fair Value Gap's proximal line (the actual price level,
+    not a distance) -- the edge price would touch first on a pullback
+    into the zone. None when no such zone currently exists -- never a
+    fabricated level.
 
     Timeframe disclosure: these zones are feature-engine's own
     1-minute OB/FVG state (feature_engine/features/ict.py) -- there is
@@ -65,10 +65,6 @@ def nearest_ob_or_fvg_distance_pct(features: dict[str, Any], bearish: bool) -> f
     A 1m validated OB is still a real, close-confirmed institutional
     footprint, just a lower-timeframe one than an ideal build would use.
     """
-    ltp = _as_float(features.get("ltp")) or 0.0
-    if ltp <= 0:
-        return None
-
     candidates: list[float] = []
     if not bearish:
         if _truthy(features.get("order_block_bullish_validated")):
@@ -89,8 +85,24 @@ def nearest_ob_or_fvg_distance_pct(features: dict[str, Any], bearish: bool) -> f
 
     if not candidates:
         return None
-    nearest = min(candidates, key=lambda z: abs(z - ltp))
-    return abs(nearest - ltp) / ltp * 100.0
+    ltp = _as_float(features.get("ltp")) or 0.0
+    if ltp <= 0:
+        return candidates[0]
+    return min(candidates, key=lambda z: abs(z - ltp))
+
+
+def nearest_ob_or_fvg_distance_pct(features: dict[str, Any], bearish: bool) -> float | None:
+    """% distance from LTP to nearest_ob_or_fvg_level's own result --
+    see that function's docstring for the zone-selection rule and
+    timeframe disclosure. None when there's no zone or no live LTP to
+    measure the distance from, never a fabricated 0.0."""
+    ltp = _as_float(features.get("ltp")) or 0.0
+    if ltp <= 0:
+        return None
+    level = nearest_ob_or_fvg_level(features, bearish)
+    if level is None:
+        return None
+    return abs(level - ltp) / ltp * 100.0
 
 
 def is_price_compressed(features: dict[str, Any]) -> bool:
@@ -123,6 +135,45 @@ def order_flow_divergence(features: dict[str, Any], bearish: bool) -> bool:
         else imbalance < -ORDER_FLOW_DOMINANCE_THRESHOLD
     )
     return pressure_building and side_dominant
+
+
+def structural_invalidation(
+    *,
+    bullish: bool,
+    ltp: float,
+    support: float | None,
+    resistance: float | None,
+    channel_lower: float | None,
+    channel_upper: float | None,
+) -> list[str]:
+    """ "Terminal Edge & Analyst" sprint's Fast Exit Logic (2026-08-27),
+    promoted here (2026-08-27, "Broker Sync & Active Position
+    Intelligence") after a second real consumer needed the identical
+    rule api/trade_blueprint.py's build_trade_blueprint() had inline --
+    broker_sync.py's Reversal & Invalidation Watch checks a real broker
+    position the exact same way trade_blueprint.py already checks a
+    real journal position, so this is the shared, single-sourced rule
+    both call now instead of a second hand-copy.
+
+    STRUCTURAL_BREAK = the wider Donchian channel bound gave way (the
+    more extreme "something bigger changed" read); FAST_EXIT = the
+    nearer HTF support/resistance gave way (the more tactical, closer-
+    to-price read). Both are independent checks -- either, neither, or
+    both can fire. Any bound that's None (no data yet) is simply
+    skipped, never treated as broken.
+    """
+    tags: list[str] = []
+    if bullish:
+        if channel_lower is not None and ltp < channel_lower:
+            tags.append("STRUCTURAL_BREAK")
+        if support is not None and ltp < support:
+            tags.append("FAST_EXIT")
+    else:
+        if channel_upper is not None and ltp > channel_upper:
+            tags.append("STRUCTURAL_BREAK")
+        if resistance is not None and ltp > resistance:
+            tags.append("FAST_EXIT")
+    return tags
 
 
 def compute_warning_tags(

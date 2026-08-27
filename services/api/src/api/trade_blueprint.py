@@ -25,6 +25,7 @@ from infusion_models.smc import (
     compute_warning_tags,
     nearest_ob_or_fvg_distance_pct,
     order_flow_divergence,
+    structural_invalidation,
 )
 from infusion_models.trade_blueprint import TradeBlueprint, TradeStructure
 from infusion_models.trade_horizon import TradeHorizon
@@ -529,24 +530,22 @@ async def build_trade_blueprint(redis: Any, symbol: str) -> TradeBlueprint:
 
     # ── Fast Exit Logic -- an ACTIVE real journal position for this
     # symbol whose own direction has been invalidated by a real
-    # structural break. STRUCTURAL_BREAK = the wider Donchian channel
-    # bound gave way (the more extreme "something bigger changed"
-    # read); FAST_EXIT = the nearer HTF support/resistance gave way (the
-    # more tactical, closer-to-price read). Both can fire together --
-    # they're independent real checks, not mutually exclusive tiers.
+    # structural break. See infusion_models.smc.structural_invalidation's
+    # own docstring for the STRUCTURAL_BREAK vs FAST_EXIT rule -- shared
+    # with broker_sync.py's own Reversal & Invalidation Watch rather than
+    # a second hand-copy of the identical rule.
     active_position = await _load_active_position(redis, symbol)
     if active_position is not None and ltp_effective > 0:
-        position_bullish = "CE" in str(active_position.get("decision", ""))
-        if position_bullish:
-            if structure.channel_lower is not None and ltp_effective < structure.channel_lower:
-                warning_tags.append("STRUCTURAL_BREAK")
-            if structure.support is not None and ltp_effective < structure.support:
-                warning_tags.append("FAST_EXIT")
-        else:
-            if structure.channel_upper is not None and ltp_effective > structure.channel_upper:
-                warning_tags.append("STRUCTURAL_BREAK")
-            if structure.resistance is not None and ltp_effective > structure.resistance:
-                warning_tags.append("FAST_EXIT")
+        warning_tags.extend(
+            structural_invalidation(
+                bullish="CE" in str(active_position.get("decision", "")),
+                ltp=ltp_effective,
+                support=structure.support,
+                resistance=structure.resistance,
+                channel_lower=structure.channel_lower,
+                channel_upper=structure.channel_upper,
+            )
+        )
 
     return TradeBlueprint(
         symbol=symbol,

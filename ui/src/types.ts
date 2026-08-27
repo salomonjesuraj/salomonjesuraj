@@ -665,6 +665,129 @@ export interface DepthResponse {
   reason?: string
 }
 
+/* ── "Broker Sync & Active Position Intelligence" master sprint
+ * (2026-08-27) -- STRICT READ-ONLY: every one of these three endpoints
+ * is a GET against api/broker_sync.py's own real (never fabricated)
+ * Upstox reads. There is no order-placement capability anywhere in
+ * this app; trade execution stays 100% manual on the broker's own
+ * platform. See broker_sync.py's own module docstring for the real
+ * live-verification disclosure on field-name fidelity. ──────────────── */
+
+/** api/broker_sync.py's own real Position Decision & Horizon Engine
+ * output, nested onto every row of GET /api/broker/positions. */
+export interface PositionIntelligence {
+  underlying: string
+  direction: 'BULL' | 'BEAR'
+  dte_trading_days: number | null
+  theta_risk: 'LOW' | 'ACCELERATING' | 'SEVERE' | 'N/A'
+  expiry: string | null
+  structure: {
+    support: number | null
+    resistance: number | null
+    channel_upper: number | null
+    channel_lower: number | null
+    trend: string
+  }
+  target_primary: number | null
+  target_secondary: number | null
+  invalidation_level: number | null
+  nearest_ob_fvg_level: number | null
+  trend_aligned: boolean
+  warning_tags: string[]
+  holding_horizon: 'HOLD (2-3 DAYS)' | 'RUNNER (INTRADAY ONLY)' | 'TIGHTEN STOP' | 'EXIT IMMEDIATELY' | string
+}
+
+/** One row from GET /api/broker/positions -- Upstox's own real fields
+ * (only the ones this UI reads are typed; the real response carries
+ * more, see broker_sync.py's own docstring). `trading_symbol`/
+ * `tradingsymbol` are the same value duplicated by Upstox itself. */
+export interface BrokerPosition {
+  exchange: string
+  product: string
+  quantity: number
+  average_price: number
+  last_price: number
+  close_price: number
+  pnl: number
+  unrealised: number
+  realised: number
+  trading_symbol?: string
+  tradingsymbol?: string
+  instrument_token: string
+  intelligence: PositionIntelligence
+}
+
+export interface BrokerPortfolioSummary {
+  total_unrealized_pnl: number
+  total_realized_pnl: number
+  capital_deployed: number
+  // A structural-invalidation-distance proxy, NOT a literal "risk you
+  // set" -- these are the trader's own manually-placed broker
+  // positions with no planned stop this pipeline tracks. See
+  // broker_sync.py's own comment on why this is the honest number
+  // available instead of a fabricated "total risk".
+  structural_risk_estimate: number
+  structural_risk_known_for: number
+  structural_risk_total_positions: number
+}
+
+export interface BrokerPositionsResponse {
+  available: boolean
+  reason?: string
+  count?: number
+  positions?: BrokerPosition[]
+  portfolio?: BrokerPortfolioSummary
+}
+
+/** One row from GET /api/broker/holdings -- real delivery equity
+ * holdings, straight from Upstox. */
+export interface BrokerHolding {
+  company_name: string
+  trading_symbol?: string
+  tradingsymbol?: string
+  quantity: number
+  average_price: number
+  last_price: number
+  close_price: number
+  pnl: number
+  day_change_percentage: number
+  exchange: string
+}
+
+export interface BrokerHoldingsResponse {
+  available: boolean
+  reason?: string
+  count?: number
+  holdings?: BrokerHolding[]
+}
+
+/** One row from GET /api/broker/orders -- Upstox's own real order
+ * status strings passed through as-is (never remapped into an
+ * invented taxonomy). */
+export interface BrokerOrder {
+  trading_symbol?: string
+  tradingsymbol?: string
+  transaction_type: 'BUY' | 'SELL' | string
+  order_type: string
+  product: string
+  quantity: number
+  price: number
+  average_price: number
+  filled_quantity: number
+  pending_quantity: number
+  trigger_price: number
+  status: string
+  order_timestamp: string
+  exchange: string
+}
+
+export interface BrokerOrdersResponse {
+  available: boolean
+  reason?: string
+  count?: number
+  orders?: BrokerOrder[]
+}
+
 /** One entry from GET /api/alerts/log -- recent Telegram delivery log
  * (services/alerter/src/alerter/engine.py's `_log_delivery`). `outcome`
  * is a free-text delivery result (e.g. "sent", "throttled", "failed"),

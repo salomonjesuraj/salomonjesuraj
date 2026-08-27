@@ -2,6 +2,9 @@ import { demoBlueprint, demoOptionSummary, DEMO_SIGNALS, isDemoMode } from './de
 import type {
   AlertLogEntry,
   BacktestSummary,
+  BrokerHoldingsResponse,
+  BrokerOrdersResponse,
+  BrokerPositionsResponse,
   ChartBar,
   DepthResponse,
   ExecutionTicket,
@@ -252,4 +255,21 @@ export async function stageExecutionTicket(trade: Record<string, unknown>): Prom
  * execution having failed. */
 export async function logJournalTrade(payload: Record<string, unknown>): Promise<void> {
   await postJson('/api/journal/trades', payload)
+}
+
+// ── "Broker Sync & Active Position Intelligence" master sprint
+// (2026-08-27) -- all three are real GETs against api/routes/broker.py.
+// STRICT READ-ONLY: there is no order-placement function anywhere in
+// this file, and none is planned.
+
+export async function fetchBrokerPositions(): Promise<BrokerPositionsResponse> {
+  return getJson<BrokerPositionsResponse>('/api/broker/positions')
+}
+
+export async function fetchBrokerHoldings(): Promise<BrokerHoldingsResponse> {
+  return getJson<BrokerHoldingsResponse>('/api/broker/holdings')
+}
+
+export async function fetchBrokerOrders(): Promise<BrokerOrdersResponse> {
+  return getJson<BrokerOrdersResponse>('/api/broker/orders')
 }
