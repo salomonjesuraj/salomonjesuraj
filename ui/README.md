@@ -1,14 +1,23 @@
-# Sniper HUD
+# Command Center
 
-A clean, high-performance replacement for the legacy vanilla-JS dashboard
-(`services/dashboard/`) — no 208-symbol spreadsheet, no default view. The
-default view is either "Awaiting High Conviction Setups" or a grid of
-focused Action Cards, one per real, currently active signal.
+The unified frontend for this project (2026-08-27 restructure) — a clean,
+high-performance replacement for the legacy vanilla-JS dashboard
+(`services/dashboard/`, deleted outright; see git history if it's ever
+needed again). Five routes behind one persistent Sidebar + sticky Zone 1
+header: Sniper HUD (`/`, the original 4-Zone live dashboard, fully real)
+and four not-yet-wired tool skeletons (`/analytics`, `/optimizer`,
+`/journal`, `/safety`). Sniper HUD's own default view is either "Awaiting
+High Conviction Setups" or a grid of focused Action Cards, one per real,
+currently active or probability-surfaced signal — no 208-symbol
+spreadsheet, no default view that hides an empty state behind silence.
 
 ## Stack
 
-React 19 + TypeScript, Vite, Tailwind CSS v4, Zustand. No other runtime
-dependencies by design (see the "Sniper HUD" rebuild's own Phase 2 spec).
+React 19 + TypeScript, Vite, Tailwind CSS v4, Zustand, react-router-dom,
+lucide-react. Minimal runtime dependencies by design (see the original
+"Sniper HUD" rebuild's own Phase 2 spec) -- router and icons were the
+first two additions beyond that original list, added for the Command
+Center restructure.
 
 ## How this was scaffolded
 
@@ -74,27 +83,49 @@ network instead.
 
 ```
 src/
-  types.ts              Wire shapes for /api/signals, /api/trade-blueprint,
-                         /api/options/summary -- verified against real live
-                         responses, not just the Python models.
-  lib/api.ts             fetch() wrappers, one per endpoint.
-  hooks/usePolling.ts     Generic poll-on-an-interval hook.
-  hooks/useSignals.ts     Active-signal list (GET /api/signals, 3s).
-  store/useTickStore.ts   Zustand store for the live WS tick_batch feed.
-                          useLtp(symbol) is the localized selector every
-                          price display should use -- a tick for one
-                          symbol only re-renders components subscribed
-                          to THAT symbol's slice, not the whole tree.
+  types.ts                Wire shapes for /api/signals, /api/trade-blueprint,
+                           /api/options/summary -- verified against real live
+                           responses, not just the Python models.
+  lib/api.ts               fetch() wrappers, one per endpoint.
+  lib/candidates.ts         Normalizes SignalRow + SuppressedSignalRow into
+                            one Candidate shape (mergeCandidates()) so
+                            Sniper HUD's Zone 2 can render either uniformly.
+  hooks/usePolling.ts       Generic poll-on-an-interval hook.
+  hooks/useSignals.ts       Active-signal list (GET /api/signals, 3s).
+  hooks/useSuppressedSignals.ts  Suppressed-but-scoring list (3s).
+  store/useTickStore.ts     Zustand store for the live WS tick_batch feed.
+                            useLtp(symbol) is the localized selector every
+                            price display should use -- a tick for one
+                            symbol only re-renders components subscribed
+                            to THAT symbol's slice, not the whole tree.
   components/
-    ActionCard.tsx        Header (symbol, direction, trade_horizon,
-                           conviction, OI buildup) + DynamicTimeline +
-                           Microstructure Pill (POC/VAH, strike, spread,
-                           delta), one per active signal.
-    DynamicTimeline.tsx    SL/Entry/T1/T2/T3 plotted on a normalized
-                           risk-left/reward-right bar, live LTP marker
-                           sliding via CSS transition, highlighted when
-                           price is back inside the entry-zone band.
-  App.tsx                 Empty state vs. Action Card grid.
+    Layout.tsx              App shell: Sidebar + sticky Zone 1 header
+                             (Live Index Pulse) + per-route <Outlet>.
+                             Global demo-ticker/socket-connect side
+                             effect lives here, not in any one page.
+    Sidebar.tsx              Persistent, collapsible left nav (5 routes).
+    ToolPageShell.tsx        Shared skeleton for the four not-yet-wired
+                             tool routes -- header + metric placeholders
+                             + one empty-state card. No spreadsheet
+                             tables, per the Command Center restructure's
+                             own Phase 4 rule.
+    ActionCard.tsx           Header (symbol, direction, trade_horizon,
+                             win probability, R:R, warning-tag chips,
+                             OI buildup) + DynamicTimeline + Microstructure
+                             Pill (POC/VAH, strike, spread, delta), one
+                             per active-or-surfaced Candidate.
+    DynamicTimeline.tsx      SL/Entry/T1/T2/T3 plotted on a normalized
+                             risk-left/reward-right bar, live LTP marker
+                             sliding via CSS transition, highlighted when
+                             price is back inside the entry-zone band.
+  pages/
+    SniperHud.tsx            `/` -- the original 4-Zone dashboard's Zones
+                             2-4 (Zone 1 moved up into Layout.tsx).
+    OptionsAnalytics.tsx     `/analytics` -- skeleton, see ToolPageShell.
+    TheLab.tsx                `/optimizer` -- skeleton, see ToolPageShell.
+    TheLedger.tsx             `/journal` -- skeleton, see ToolPageShell.
+    SafetyLogs.tsx            `/safety` -- skeleton, see ToolPageShell.
+  App.tsx                   Router root: five routes behind one Layout.
 ```
 
 ## What's real vs. not verified yet

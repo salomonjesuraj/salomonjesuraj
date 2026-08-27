@@ -383,31 +383,12 @@ services:
     <<: *service-defaults
 
   # ════════════════════════════════════════════
-  # DASHBOARD
-  # ════════════════════════════════════════════
-
-  dashboard:
-    build:
-      context: services/dashboard
-      dockerfile: Dockerfile
-    ports:
-      - "3000:3000"
-    depends_on:
-      api:
-        condition: service_started
-      ws-gateway:
-        condition: service_started
-    deploy:
-      resources:
-        limits:
-          memory: 64M
-    <<: *service-defaults
-
-  # ════════════════════════════════════════════
-  # SNIPER HUD -- the ui/ rebuild, alongside the legacy dashboard above
-  # (not a replacement yet) on its own port until it's ready to take
-  # over. Same build-then-serve-behind-Nginx shape, own Dockerfile
-  # since it's a real Node build step rather than static files.
+  # COMMAND CENTER -- the unified React/Vite/Tailwind frontend (2026-08-27).
+  # Replaces the legacy vanilla-JS `dashboard` service outright (deleted,
+  # not archived -- see services/dashboard/ in git history if it's ever
+  # needed again) and now owns port 3000 alone. Same build-then-serve-
+  # behind-Nginx shape that service used, own Dockerfile since it's a
+  # real Node build step rather than static files.
   # ════════════════════════════════════════════
 
   ui:
@@ -415,7 +396,7 @@ services:
       context: ui
       dockerfile: Dockerfile
     ports:
-      - "3001:3001"
+      - "3000:3000"
     depends_on:
       api:
         condition: service_started
