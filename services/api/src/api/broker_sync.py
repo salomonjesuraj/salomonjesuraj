@@ -9,16 +9,19 @@ order. Trade execution stays 100% manual, on the broker's own platform
 real account state, never to act on it. There is no POST route
 anywhere in this file's call graph.
 
-Verification disclosure: the Upstox v2 portfolio/order endpoint field
-names below are implemented from Upstox's own documented API (the same
-UPSTOX_API_V2_BASE / Bearer-token / error-envelope pattern
-api/routes/market.py already uses for its own real option-chain calls),
-but this session had no live account with open positions, holdings, or
-pending orders to confirm every field name against a populated real
-response. Every read below is defensive (.get() with a safe default,
-never an assumed-present key) -- a field this code expected but Upstox
-didn't send just comes back None/0, not a crash. Worth a real check the
-first time a trader has an actual open position while this runs.
+Verification disclosure, updated: the Upstox v2 portfolio/order field
+names were implemented from Upstox's own documented API, then verified
+live against a real connected account with real open positions the same
+day this module was written -- positions, holdings, and orders all
+returned real, correctly-shaped data. One real bug WAS caught and fixed
+in that live pass: extract_expiry originally assumed a "DD MON YY"
+trading-symbol convention with a trailing year; Upstox's actual compact
+format has no year at all, and the old regex mistook a real strike price
+for one (see extract_expiry's own comment for the full story and the
+regression tests that lock in the fix). Every read is still defensive
+(.get() with a safe default, never an assumed-present key) for whatever
+real field variation this session's one live account didn't happen to
+exercise.
 """
 
 from __future__ import annotations
@@ -26,11 +29,15 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from datetime import date, datetime, timedelta
 from typing import Any
 
 import aiohttp
+from infusion_models.events import EventType
 from infusion_models.smc import nearest_ob_or_fvg_level, structural_invalidation
+from infusion_streams.codec import encode_event
+from infusion_streams.constants import MAXLEN_SIGNALS, STREAM_SCAN_SIGNALS
 
 Payload = dict[str, Any]
 
@@ -334,6 +341,73 @@ async def _feature_row(redis: Any, symbol: str) -> Payload:
     return out
 
 
+# "Omnipresent Alert Engine" sprint (2026-08-27) -- position warnings
+# publish onto the SAME real stream/event the alerter service already
+# consumes (api/routes/scanner.py's own /api/alerts/test uses the
+# identical encode_event/STREAM_SCAN_SIGNALS pattern), NOT a second,
+# separate Telegram HTTP client. The alerter's own DeliveryGate (grade/
+# mute/rate/burst limits) is built for a high-volume trading-signal
+# stream and would be the wrong thing to run a rare, already-urgent
+# position warning through -- alerter/engine.py's own
+# _deliver_position_warning bypasses that gate the same way its
+# existing recap/test_alert events already do. What this module DOES
+# own is the one piece that has to live at the source: a per-position
+# cooldown, so a position stuck in EXIT IMMEDIATELY doesn't get a fresh
+# Telegram alert on every 3s poll from the Active Cockpit -- one alert
+# on the state's onset, a reminder at most once per cooldown window
+# after that, never a spam loop.
+POSITION_WARNING_COOLDOWN_SEC = 30 * 60
+POSITION_WARNING_COOLDOWN_PREFIX = "infusion:alert:position-warning-cooldown:"
+ALERTABLE_HORIZONS = {"EXIT IMMEDIATELY"}
+ALERTABLE_TAGS = {"STRUCTURAL_BREAK", "FAST_EXIT"}
+
+
+async def _maybe_alert_position_warning(
+    redis: Any,
+    *,
+    instrument_token: str,
+    trading_symbol: str,
+    underlying: str,
+    ltp: float,
+    invalidation_level: float | None,
+    invalidation_tags: list[str],
+    holding_horizon: str,
+) -> None:
+    """Publishes a real position_warning event for the alerter to
+    deliver via Telegram -- only when this position is genuinely in an
+    alertable state (EXIT IMMEDIATELY, or carrying STRUCTURAL_BREAK/
+    FAST_EXIT) AND its own per-instrument cooldown has expired. Real
+    positions with no active tags never publish anything."""
+    if holding_horizon not in ALERTABLE_HORIZONS and not (set(invalidation_tags) & ALERTABLE_TAGS):
+        return
+
+    cooldown_key = f"{POSITION_WARNING_COOLDOWN_PREFIX}{instrument_token}"
+    if await redis.exists(cooldown_key):
+        return
+    await redis.set(cooldown_key, "1", ex=POSITION_WARNING_COOLDOWN_SEC)
+
+    tags_text = ", ".join(invalidation_tags) if invalidation_tags else holding_horizon
+    invalidation_text = f" Invalidation level {invalidation_level:.2f}." if invalidation_level is not None else ""
+    message = (
+        f"🚨 URGENT: {underlying} ({trading_symbol}) -- {tags_text}. "
+        f"{holding_horizon}. LTP {ltp:.2f}.{invalidation_text}"
+    )
+    now_us = int(time.time() * 1_000_000)
+    payload = {
+        "signal_id": f"position_warning_{instrument_token}_{now_us}",
+        "symbol": underlying,
+        "signal_type": "position_warning",
+        "message": message,
+        "tags": invalidation_tags,
+    }
+    await redis.xadd(
+        STREAM_SCAN_SIGNALS,
+        {"data": encode_event(EventType.SCAN_SIGNAL, payload, now_us)},
+        maxlen=MAXLEN_SIGNALS,
+        approximate=True,
+    )
+
+
 async def compute_position_intelligence(redis: Any, position: Payload) -> Payload:
     """Everything Phase 2 asked for, per real open position: DTE +
     theta risk, dynamic turning points (real HTF support/resistance +
@@ -396,6 +470,18 @@ async def compute_position_intelligence(redis: Any, position: Payload) -> Payloa
         trend_aligned=trend_aligned,
     )
 
+    invalidation_level = support if bullish else resistance
+    await _maybe_alert_position_warning(
+        redis,
+        instrument_token=str(position.get("instrument_token") or trading_symbol),
+        trading_symbol=trading_symbol,
+        underlying=underlying,
+        ltp=ltp,
+        invalidation_level=invalidation_level,
+        invalidation_tags=invalidation_tags,
+        holding_horizon=horizon,
+    )
+
     return {
         "underlying": underlying,
         "direction": "BULL" if bullish else "BEAR",
@@ -416,7 +502,7 @@ async def compute_position_intelligence(redis: Any, position: Payload) -> Payloa
         # structural_invalidation's FAST_EXIT check watches).
         "target_primary": resistance if bullish else support,
         "target_secondary": channel_upper if bullish else channel_lower,
-        "invalidation_level": support if bullish else resistance,
+        "invalidation_level": invalidation_level,
         "nearest_ob_fvg_level": ob_fvg_level,
         "trend_aligned": trend_aligned,
         "warning_tags": invalidation_tags,

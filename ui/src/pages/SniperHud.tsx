@@ -1,14 +1,22 @@
 import { X } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ActionCard } from '../components/ActionCard'
 import { LiveCandlestickChart } from '../components/LiveCandlestickChart'
 import { OrderBookLadder } from '../components/OrderBookLadder'
 import { PreBreakoutWatchlist } from '../components/PreBreakoutWatchlist'
 import { RadarScanningStrip } from '../components/RadarScanningStrip'
 import { SmartMoneyRadar } from '../components/SmartMoneyRadar'
+import { useAudioAlert } from '../hooks/useAudioAlert'
 import { useSignals } from '../hooks/useSignals'
 import { useSuppressedSignals } from '../hooks/useSuppressedSignals'
 import { mergeCandidates } from '../lib/candidates'
+
+// Same real threshold scanner/scoring.py's own grade_conviction() uses
+// for grade "A+" (score >= 85) -- reused verbatim, not an independently
+// invented number, so "high-conviction" means the identical thing here
+// and in the backend's own alerter pipeline (alerter/config.py's
+// alert_min_grade already delivers A+/A/B+ via Telegram by default).
+const HIGH_CONVICTION_THRESHOLD = 85
 
 /**
  * Sniper HUD (`/`) -- the original 4-Zone Trading Command Screen, now
@@ -40,6 +48,26 @@ export function SniperHud() {
     [signals, suppressed],
   )
 
+  // "Omnipresent Alert Engine" sprint (2026-08-27) -- Success Ping fires
+  // once per candidate's ONSET into high-conviction territory, not on
+  // every 3s poll it stays there (that would be a beep every 3 seconds
+  // for as long as the setup remains live, which is spam, not
+  // alerting). alertedRef persists across renders without itself
+  // triggering one.
+  const { playSuccessPing } = useAudioAlert()
+  const alertedHighConvictionRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    const currentKeys = new Set(
+      candidates.filter((c) => c.probability >= HIGH_CONVICTION_THRESHOLD).map((c) => c.symbol),
+    )
+    let firedNew = false
+    for (const key of currentKeys) {
+      if (!alertedHighConvictionRef.current.has(key)) firedNew = true
+    }
+    if (firedNew) playSuccessPing()
+    alertedHighConvictionRef.current = currentKeys
+  }, [candidates, playSuccessPing])
+
   return (
     <div className="flex flex-col gap-8">
       {/* Zone 2 */}
@@ -56,6 +84,7 @@ export function SniperHud() {
                 key={`${candidate.symbol}:${candidate.strategyId}`}
                 candidate={candidate}
                 isActive={candidate.symbol === activeSymbol}
+                isHighConviction={candidate.probability >= HIGH_CONVICTION_THRESHOLD}
                 onSelect={(symbol) =>
                   setActiveSymbol((current) => (current === symbol ? null : symbol))
                 }

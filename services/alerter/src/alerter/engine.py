@@ -87,6 +87,19 @@ class AlerterEngine:
             await self._deliver_test_alert(payload)
             return
 
+        # "Omnipresent Alert Engine" sprint (2026-08-27): a real broker
+        # position warning (EXIT IMMEDIATELY / STRUCTURAL_BREAK) from
+        # api/broker_sync.py's own Reversal & Invalidation Watch --
+        # bypasses the signal delivery gate the same way recap/
+        # test_alert already do, since this is a rare, urgent event
+        # broker_sync.py has already deduped at the source (its own
+        # per-position cooldown decides whether to publish at all, not
+        # this gate's grade/mute/rate/burst machinery built for a
+        # high-volume trading-signal stream).
+        if payload.get("signal_type") == "position_warning":
+            await self._deliver_position_warning(payload)
+            return
+
         enriched_payload = await self._enrich_direction_zone(payload, persist=False)
 
         # ── Evaluate delivery gate ─────────────────────
@@ -276,6 +289,51 @@ class AlerterEngine:
                 outcome="failed",
                 reason=outcome.error_msg,
                 extra=self._delivery_extra(enriched_payload, "test"),
+            )
+
+    async def _deliver_position_warning(self, payload: dict[str, Any]) -> None:
+        """Deliver a real broker position warning -- plain text, no
+        MarkdownV2 (the message is built in broker_sync.py, which
+        doesn't escape for Telegram's markdown dialect), same
+        parse_mode="" choice _deliver_recap already makes for the same
+        reason."""
+        signal_id = payload.get("signal_id", "")
+        symbol = payload.get("symbol", "")
+        text = payload.get("message", "")
+        if not text:
+            logger.warning("position_warning_empty_text", symbol=symbol)
+            return
+        outcome: DeliveryOutcome = await self.telegram.send_message(
+            chat_id=self._chat_id,
+            text=text,
+            parse_mode="",
+        )
+        if outcome.success:
+            self._alerts_sent += 1
+            logger.info("position_warning_delivered", signal_id=signal_id, symbol=symbol)
+            await self._log_delivery(
+                signal_id=signal_id,
+                symbol=symbol,
+                grade=payload.get("conviction_grade", ""),
+                outcome="delivered",
+                reason="position_warning",
+                extra={"tags": payload.get("tags", [])},
+            )
+        else:
+            self._failures_total += 1
+            logger.error(
+                "position_warning_delivery_failed",
+                signal_id=signal_id,
+                symbol=symbol,
+                error=outcome.error_msg,
+            )
+            await self._log_delivery(
+                signal_id=signal_id,
+                symbol=symbol,
+                grade=payload.get("conviction_grade", ""),
+                outcome="failed",
+                reason=outcome.error_msg,
+                extra={"tags": payload.get("tags", [])},
             )
 
     async def _enrich_direction_zone(

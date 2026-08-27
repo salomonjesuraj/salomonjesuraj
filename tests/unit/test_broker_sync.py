@@ -11,8 +11,10 @@ as tests/unit/test_trade_blueprint.py's own monkeypatch boundary.
 from __future__ import annotations
 
 from datetime import date
+from typing import Any
 
 import api.broker_sync as bs
+from infusion_streams.codec import decode_event
 
 
 def test_underlying_symbol_strips_option_expiry_and_strike() -> None:
@@ -156,3 +158,134 @@ def test_holding_horizon_tightens_stop_for_a_misaligned_delivery_position() -> N
         trend_aligned=False,
     )
     assert horizon == "TIGHTEN STOP"
+
+
+class _FakeRedis:
+    """Minimal fake standing in for the real async Redis client --
+    only the three calls `_maybe_alert_position_warning` actually makes
+    (exists/set/xadd), enough to prove the cooldown gate and the
+    publish-onto-the-real-stream behavior without touching a live
+    Redis. "Omnipresent Alert Engine" sprint (2026-08-27)."""
+
+    def __init__(self) -> None:
+        self.store: dict[str, str] = {}
+        self.xadd_calls: list[tuple[str, dict[str, Any]]] = []
+
+    async def exists(self, key: str) -> bool:
+        return key in self.store
+
+    async def set(self, key: str, value: str, ex: int | None = None) -> None:
+        self.store[key] = value
+
+    async def xadd(
+        self, stream: str, fields: dict[str, Any], *, maxlen: int, approximate: bool
+    ) -> None:
+        self.xadd_calls.append((stream, fields))
+
+
+def _decoded_alert_payloads(redis: _FakeRedis) -> list[dict[str, Any]]:
+    return [decode_event(fields["data"])[4] for _stream, fields in redis.xadd_calls]
+
+
+async def test_position_warning_does_not_fire_for_a_healthy_position() -> None:
+    redis = _FakeRedis()
+    await bs._maybe_alert_position_warning(
+        redis,
+        instrument_token="NSE_FO|1",
+        trading_symbol="POWERGRID26SEP280CE",
+        underlying="POWERGRID",
+        ltp=12.5,
+        invalidation_level=10.0,
+        invalidation_tags=[],
+        holding_horizon="HOLD (2-3 DAYS)",
+    )
+    assert redis.xadd_calls == []
+
+
+async def test_position_warning_fires_on_exit_immediately_horizon() -> None:
+    redis = _FakeRedis()
+    await bs._maybe_alert_position_warning(
+        redis,
+        instrument_token="NSE_FO|1",
+        trading_symbol="POWERGRID26SEP280CE",
+        underlying="POWERGRID",
+        ltp=12.5,
+        invalidation_level=10.0,
+        invalidation_tags=[],
+        holding_horizon="EXIT IMMEDIATELY",
+    )
+    payloads = _decoded_alert_payloads(redis)
+    assert len(payloads) == 1
+    assert payloads[0]["signal_type"] == "position_warning"
+    assert payloads[0]["symbol"] == "POWERGRID"
+    assert "EXIT IMMEDIATELY" in payloads[0]["message"]
+    assert "Invalidation level 10.00" in payloads[0]["message"]
+
+
+async def test_position_warning_fires_on_a_structural_break_tag_alone() -> None:
+    # A position can carry an alertable tag under a non-alertable
+    # horizon (e.g. a delivery position still inside "HOLD") -- the
+    # tag alone is enough to warrant an urgent alert.
+    redis = _FakeRedis()
+    await bs._maybe_alert_position_warning(
+        redis,
+        instrument_token="NSE_FO|2",
+        trading_symbol="KAYNES26SEP4200CE",
+        underlying="KAYNES",
+        ltp=55.0,
+        invalidation_level=None,
+        invalidation_tags=["STRUCTURAL_BREAK"],
+        holding_horizon="HOLD (2-3 DAYS)",
+    )
+    payloads = _decoded_alert_payloads(redis)
+    assert len(payloads) == 1
+    assert "STRUCTURAL_BREAK" in payloads[0]["message"]
+    # No invalidation level known -> the sentence fragment is omitted
+    # entirely rather than printed as a fabricated "None".
+    assert "Invalidation level" not in payloads[0]["message"]
+
+
+async def test_position_warning_respects_the_per_instrument_cooldown() -> None:
+    # The exact spam scenario this cooldown exists to prevent: the same
+    # instrument polled again (as the Active Cockpit does every 3s)
+    # while still in an alertable state must NOT re-publish.
+    redis = _FakeRedis()
+    kwargs = dict(
+        instrument_token="NSE_FO|1",
+        trading_symbol="POWERGRID26SEP280CE",
+        underlying="POWERGRID",
+        ltp=12.5,
+        invalidation_level=10.0,
+        invalidation_tags=["FAST_EXIT"],
+        holding_horizon="EXIT IMMEDIATELY",
+    )
+    await bs._maybe_alert_position_warning(redis, **kwargs)
+    await bs._maybe_alert_position_warning(redis, **kwargs)
+    assert len(redis.xadd_calls) == 1
+
+
+async def test_position_warning_cooldown_is_scoped_per_instrument() -> None:
+    # A second, distinct instrument in the same alertable state must
+    # still get its own alert -- the cooldown key is per-token, not global.
+    redis = _FakeRedis()
+    await bs._maybe_alert_position_warning(
+        redis,
+        instrument_token="NSE_FO|1",
+        trading_symbol="POWERGRID26SEP280CE",
+        underlying="POWERGRID",
+        ltp=12.5,
+        invalidation_level=10.0,
+        invalidation_tags=["FAST_EXIT"],
+        holding_horizon="EXIT IMMEDIATELY",
+    )
+    await bs._maybe_alert_position_warning(
+        redis,
+        instrument_token="NSE_FO|2",
+        trading_symbol="KAYNES26SEP4200CE",
+        underlying="KAYNES",
+        ltp=55.0,
+        invalidation_level=None,
+        invalidation_tags=["STRUCTURAL_BREAK"],
+        holding_horizon="EXIT IMMEDIATELY",
+    )
+    assert len(redis.xadd_calls) == 2

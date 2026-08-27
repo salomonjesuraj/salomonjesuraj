@@ -75,10 +75,18 @@ interface ActionCardProps {
    * candlestick panel below Zone 2 (2026-08-27 charting sprint) --
    * purely a selection ring, the card's own data is unaffected. */
   isActive?: boolean
+  /** "Omnipresent Alert Engine" sprint (2026-08-27) -- probability >=
+   * the same 85 threshold scanner/scoring.py's grade_conviction() uses
+   * for grade "A+". A green pulse/glow, purely visual -- the audio
+   * Success Ping (SniperHud.tsx) fires once per onset; this stays on
+   * for as long as the card qualifies, the correct behavior for a
+   * persistent visual indicator (unlike a sound, a glow isn't annoying
+   * to leave on). */
+  isHighConviction?: boolean
   onSelect?: (symbol: string) => void
 }
 
-export function ActionCard({ candidate, isActive, onSelect }: ActionCardProps) {
+export function ActionCard({ candidate, isActive, isHighConviction, onSelect }: ActionCardProps) {
   const symbol = candidate.symbol
   const ltp = useLtp(symbol)
 
@@ -147,7 +155,11 @@ export function ActionCard({ candidate, isActive, onSelect }: ActionCardProps) {
       className={
         'min-w-0 rounded-xl border bg-hud-panel p-4 shadow-lg shadow-black/30 transition-colors hover:bg-hud-panel-hover ' +
         (onSelect ? 'cursor-pointer ' : '') +
-        (isActive ? 'border-bull ring-1 ring-bull' : 'border-hud-border')
+        (isHighConviction
+          ? 'animate-pulse border-bull ring-4 ring-bull/60 shadow-[0_0_20px_rgba(57,255,138,0.35)]'
+          : isActive
+            ? 'border-bull ring-1 ring-bull'
+            : 'border-hud-border')
       }
     >
       {/* Header. min-w-0 on the left column + truncate on the symbol

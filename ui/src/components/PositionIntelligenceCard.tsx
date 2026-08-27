@@ -40,9 +40,23 @@ export function PositionIntelligenceCard({ position }: { position: BrokerPositio
   const thetaClass = THETA_CLASS[intel.theta_risk] || THETA_CLASS['N/A']
   const thetaFillPct = THETA_FILL_PCT[intel.theta_risk] ?? 0
   const horizonClass = HORIZON_CLASS[intel.holding_horizon] || 'bg-hud-muted/15 text-hud-muted ring-1 ring-hud-muted/30'
+  // "Omnipresent Alert Engine" sprint (2026-08-27): a red pulse/glow the
+  // moment this real position is telling the trader to exit -- derived
+  // straight from the same real intel object already on the card, no
+  // separate flag needed. Persistent (not one-shot) for the same reason
+  // ActionCard's green pulse is persistent: a glow left on while the
+  // condition holds isn't spam the way a repeating sound would be.
+  const isExitImmediate = intel.holding_horizon === 'EXIT IMMEDIATELY'
 
   return (
-    <article className="min-w-0 rounded-xl border border-hud-border bg-hud-panel p-4 shadow-lg shadow-black/30">
+    <article
+      className={
+        'min-w-0 rounded-xl border bg-hud-panel p-4 shadow-lg shadow-black/30 ' +
+        (isExitImmediate
+          ? 'animate-pulse border-bear ring-4 ring-bear/60 shadow-[0_0_20px_rgba(255,61,94,0.35)]'
+          : 'border-hud-border')
+      }
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="truncate font-mono text-sm font-bold tracking-tight text-hud-text">{symbol}</h3>

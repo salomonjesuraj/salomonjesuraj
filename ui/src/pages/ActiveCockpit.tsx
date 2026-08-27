@@ -1,9 +1,13 @@
 import { Wallet } from 'lucide-react'
+import { useEffect, useRef } from 'react'
 import { DASH, MetricCard } from '../components/MetricCard'
 import { PageHeader } from '../components/PageHeader'
 import { PositionIntelligenceCard } from '../components/PositionIntelligenceCard'
 import { useActivePositions, useHoldings, useOrderBook } from '../hooks/useBrokerState'
+import { useAudioAlert } from '../hooks/useAudioAlert'
 import type { BrokerHolding, BrokerOrder } from '../types'
+
+const ALERTABLE_TAGS = new Set(['STRUCTURAL_BREAK', 'FAST_EXIT'])
 
 function fmt(value: number | null | undefined, digits = 2): string {
   return value === null || value === undefined || Number.isNaN(value) ? DASH : value.toFixed(digits)
@@ -84,6 +88,37 @@ export function ActiveCockpit() {
   const portfolio = positionsData?.portfolio
   const orders = ordersData?.orders ?? []
   const holdings = holdingsData?.holdings ?? []
+
+  // "Omnipresent Alert Engine" sprint (2026-08-27) -- Warning Chime
+  // fires once per position's ONSET into an alertable state (EXIT
+  // IMMEDIATELY, or carrying STRUCTURAL_BREAK/FAST_EXIT), mirroring
+  // SniperHud's own Success Ping onset-only logic and the backend's own
+  // per-position Telegram cooldown (api/broker_sync.py) -- three
+  // independent layers all converging on the same "alert on the
+  // transition, not on every poll" principle, not a coincidence.
+  const { playWarningChime } = useAudioAlert()
+  const alertedPositionsRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    // Derives straight from `positionsData` rather than the outer
+    // `positions` (`?? []`-derived, a fresh array reference every
+    // render) so this effect's own dependency array can name a real,
+    // stable source instead of an inline-computed local.
+    const currentKeys = new Set(
+      (positionsData?.positions ?? [])
+        .filter(
+          (p) =>
+            p.intelligence.holding_horizon === 'EXIT IMMEDIATELY' ||
+            p.intelligence.warning_tags.some((tag) => ALERTABLE_TAGS.has(tag)),
+        )
+        .map((p) => p.instrument_token),
+    )
+    let firedNew = false
+    for (const key of currentKeys) {
+      if (!alertedPositionsRef.current.has(key)) firedNew = true
+    }
+    if (firedNew) playWarningChime()
+    alertedPositionsRef.current = currentKeys
+  }, [positionsData, playWarningChime])
 
   return (
     <div className="flex flex-1 flex-col gap-6">
