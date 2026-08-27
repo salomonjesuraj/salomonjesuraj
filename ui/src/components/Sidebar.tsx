@@ -72,8 +72,8 @@ export function Sidebar() {
       <div className="flex items-center gap-2 border-b border-hud-border px-4 py-4">
         <Radar className="h-5 w-5 shrink-0 text-bull" />
         {!collapsed && (
-          <span className="truncate font-mono text-xs font-bold uppercase tracking-[0.2em] text-hud-text">
-            Command Center
+          <span className="truncate bg-gradient-to-r from-slate-100 to-slate-400 bg-clip-text font-mono text-xs font-black uppercase tracking-widest text-transparent">
+            Diamond Sniper AI
           </span>
         )}
       </div>
