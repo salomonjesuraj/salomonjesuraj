@@ -1,6 +1,7 @@
 import { LineChart } from 'lucide-react'
 import { DASH, MetricCard, type MetricTone } from '../components/MetricCard'
 import { PageHeader } from '../components/PageHeader'
+import { PayoffChart } from '../components/PayoffChart'
 import { useOptionsAnalytics } from '../hooks/useOptionsAnalytics'
 import type { RankedStrategy } from '../types'
 
@@ -85,6 +86,7 @@ export function OptionsAnalytics() {
   const strategies = data?.strategySelector
   const summary = data?.summary
   const delta = summary?.upstox_option?.metrics?.delta
+  const topStrategy = strategies?.ready ? strategies.ranked_strategies?.[0] : undefined
 
   return (
     <div className="flex flex-1 flex-col gap-6">
@@ -182,6 +184,19 @@ export function OptionsAnalytics() {
           )}
         </div>
       </div>
+
+      {topStrategy?.legs?.length && chain?.spot ? (
+        <div className="rounded-xl border border-hud-border bg-hud-panel p-4">
+          <h2 className="text-xs font-bold uppercase tracking-wide text-hud-muted">
+            Payoff at Expiration -- {titleCase(topStrategy.strategy)}
+          </h2>
+          <p className="mt-1 text-[11px] text-hud-muted">
+            Top-ranked strategy's real legs (strike/premium/action), profit zone shaded green,
+            max-loss zone shaded red.
+          </p>
+          <PayoffChart legs={topStrategy.legs} spot={chain.spot} />
+        </div>
+      ) : null}
 
       <div>
         <h2 className="mb-3 text-xs font-bold uppercase tracking-wide text-hud-muted">

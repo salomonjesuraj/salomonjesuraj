@@ -4,6 +4,7 @@ import type { Candidate } from '../lib/candidates'
 import { useLtp } from '../store/useTickStore'
 import type { OIBuildupType, TradeHorizon } from '../types'
 import { DynamicTimeline } from './DynamicTimeline'
+import { ProximityBar } from './ProximityBar'
 
 const HORIZON_LABEL: Record<TradeHorizon, string> = {
   SCALP: 'SCALP · 15M-1H',
@@ -147,6 +148,12 @@ export function ActionCard({ candidate }: ActionCardProps) {
           ))}
         </div>
       )}
+
+      {/* Institutional base proximity -- ob_fvg_distance_pct, the same
+          real distance the LATE_ENTRY warning tag is computed from. */}
+      <div className="mt-2">
+        <ProximityBar distancePct={candidate.obFvgDistancePct} />
+      </div>
 
       {/* Live LTP line */}
       <div className="mt-2 flex flex-wrap items-baseline gap-2">

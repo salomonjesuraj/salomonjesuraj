@@ -20,6 +20,7 @@ import type {
   SuppressedSignalRow,
   TickRow,
   TradeBlueprint,
+  WalkforwardResult,
 } from '../types'
 
 async function getJson<T>(url: string): Promise<T> {
@@ -134,6 +135,17 @@ export async function fetchBacktestSummary(days = 60): Promise<BacktestSummary> 
  * separate, expensive endpoint this page deliberately never calls). */
 export async function fetchOptimizerProposal(): Promise<OptimizerProposal> {
   return getJson<OptimizerProposal>('/api/backtest/optimizer-proposal/latest')
+}
+
+/** GET /api/backtest/walkforward -- a real ~1,575-profile in-memory grid
+ * search, NOT cached server-side (unlike /api/backtest/summary). Call
+ * this sparingly -- see useLabScatter's own note on why it's fetched
+ * once per page visit rather than on the Lab's shared 30s poll. days=60
+ * matches the same window /api/backtest/summary already uses elsewhere
+ * on this page, smaller than the route's own 120-day default, to keep
+ * the row count (and therefore the grid search's real cost) down. */
+export async function fetchWalkforward(days = 60): Promise<WalkforwardResult> {
+  return getJson<WalkforwardResult>(`/api/backtest/walkforward?days=${days}`)
 }
 
 export async function fetchJournalTrades(limit = 40): Promise<JournalTrade[]> {

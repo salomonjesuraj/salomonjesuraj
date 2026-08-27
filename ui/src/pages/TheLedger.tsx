@@ -1,4 +1,5 @@
 import { BookOpen } from 'lucide-react'
+import { EquityCurveChart } from '../components/EquityCurveChart'
 import { DASH, MetricCard } from '../components/MetricCard'
 import { PageHeader } from '../components/PageHeader'
 import { useLedger } from '../hooks/useLedger'
@@ -133,6 +134,13 @@ export function TheLedger() {
           }
         />
         <MetricCard label="Entries Today" value={stats?.total_today?.toString() ?? DASH} />
+      </div>
+
+      <div className="rounded-xl border border-hud-border bg-hud-panel p-4">
+        <h2 className="mb-2 text-xs font-bold uppercase tracking-wide text-hud-muted">
+          Cumulative Equity (R-Multiples)
+        </h2>
+        <EquityCurveChart trades={trades} />
       </div>
 
       {staged && staged.count > 0 && (

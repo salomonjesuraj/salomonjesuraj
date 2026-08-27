@@ -365,6 +365,45 @@ export interface BacktestSummary {
   cached?: boolean
 }
 
+/** One evaluated parameter profile inside GET /api/backtest/walkforward's
+ * `candidates` (top 10 of a real ~1,575-combination grid search over
+ * min_score/min_rr/min_grade_rank/session filters, sorted best-utility-
+ * first). This is the one endpoint that computes win rate, avg R:R, AND
+ * Sharpe together per profile -- everywhere else in this backend has at
+ * most two of those three. */
+export interface WalkforwardProfile {
+  min_score: number
+  min_rr: number
+  min_grade_rank: number
+  sessions: string
+  label: string
+  test: {
+    wins: number
+    losses: number
+    decided: number
+    precision_pct: number | null
+    avg_rr: number | null
+  }
+  test_sharpe: { n: number; sharpe: number | null }
+  status: string
+  overfit_gap_pct: number | null
+  utility: number
+}
+
+/** GET /api/backtest/walkforward -- deliberately NOT part of the Lab's
+ * shared 30s poll (useLabData): this is a real, uncached, in-memory grid
+ * search over every archived row in the window (no Redis cache wraps it,
+ * unlike /api/backtest/summary's explicit 90s TTL), so it's fetched once
+ * per page visit on its own, much slower cadence instead. */
+export interface WalkforwardResult {
+  available: boolean
+  reason?: string
+  status?: string
+  total_decided?: number
+  candidates?: WalkforwardProfile[]
+  note?: string
+}
+
 /** GET /api/backtest/optimizer-proposal/latest -- last-written comparison
  * of the scanner's live precision_guard config against the nightly
  * walk-forward recommendation. `recommended.test_sharpe.sharpe` is the

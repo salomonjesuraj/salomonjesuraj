@@ -1,7 +1,9 @@
 import { FlaskConical } from 'lucide-react'
 import { DASH, MetricCard } from '../components/MetricCard'
+import { OptimizerScatterChart } from '../components/OptimizerScatterChart'
 import { PageHeader } from '../components/PageHeader'
 import { useLabData } from '../hooks/useLabData'
+import { useLabScatter } from '../hooks/useLabScatter'
 import type { BacktestBreakdownRow } from '../types'
 
 function fmt(value: number | null | undefined, digits = 1): string {
@@ -41,6 +43,7 @@ function BreakdownGrid({ title, rows }: { title: string; rows: BacktestBreakdown
  * run, not a page-load poll. */
 export function TheLab() {
   const { data } = useLabData()
+  const { data: scatter } = useLabScatter()
   const summary = data?.summary
   const proposal = data?.optimizerProposal
   const sharpe = proposal?.recommended?.test_sharpe?.sharpe
@@ -84,6 +87,24 @@ export function TheLab() {
           tone={sharpe === null || sharpe === undefined ? 'neutral' : sharpe > 0 ? 'good' : 'bad'}
           sublabel="Per-trade, R-multiple based"
         />
+      </div>
+
+      <div className="rounded-xl border border-hud-border bg-hud-panel p-4">
+        <h2 className="text-xs font-bold uppercase tracking-wide text-hud-muted">
+          Optimizer Efficient Frontier
+        </h2>
+        <p className="mt-1 text-[11px] text-hud-muted">
+          Each node is one evaluated SMC parameter profile from the real walk-forward grid search
+          -- win rate × avg R:R, colored/sized by per-trade Sharpe. Glow ring = clears its
+          out-of-sample target.
+        </p>
+        {scatter?.available && scatter.candidates?.length ? (
+          <OptimizerScatterChart profiles={scatter.candidates} />
+        ) : (
+          <p className="mt-3 text-xs text-hud-muted">
+            {scatter?.reason || scatter?.note || 'Not enough archived outcomes to run the grid search yet.'}
+          </p>
+        )}
       </div>
 
       <div className="rounded-xl border border-hud-border bg-hud-panel p-4">
