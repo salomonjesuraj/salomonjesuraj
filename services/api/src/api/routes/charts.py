@@ -16,6 +16,10 @@ from typing import Any, cast
 
 from aiohttp import web
 
+from api.routes.market import _default_symbol
+from api.routes.mtf import _load_bars
+from api.smc_geometry import compute_smc_geometry
+
 routes = web.RouteTableDef()
 Payload = dict[str, Any]
 Bar = dict[str, Any]
@@ -162,3 +166,39 @@ async def get_daily_chart(request: web.Request) -> web.Response:
             "bars": bars,
         }
     )
+
+
+@routes.get("/api/chart/smc")
+async def get_smc_geometry(request: web.Request) -> web.Response:
+    """ "Institutional Chart Overlay" sprint (2026-08-28): real BOS/CHOCH,
+    liquidity sweep, Order Block, and Fibonacci target-zone geometry for
+    the chart overlay -- see api/smc_geometry.py's own module docstring
+    for exactly what's computed and why it's a batch replay of
+    feature-engine's real rules rather than a live Redis read of the
+    hot-state hash (which only ever keeps the CURRENT trend/swing/OB
+    state and the single most recent break event, not the full history
+    a chart's markers need).
+
+    Always computed on the same real 1-minute bars feature-engine's own
+    structure.py/ict.py operate on (api/routes/mtf.py's own real
+    `_load_bars`, the same data /api/trade-blueprint's own structure
+    block already reads) -- independent of whatever timeframe the
+    caller's own candlestick series is currently displaying, so this
+    overlay's story never disagrees with the rest of the app's own
+    trend_text/last_event_label reporting for the same symbol. Accepts
+    any real F&O underlying via `_default_symbol()`'s own dynamic
+    lookup (most recent active signal, else best pre-breakout
+    candidate) when no `?symbol=` is given -- no hardcoded default.
+    """
+    redis = request.app["redis"]
+    symbol = request.query.get("symbol", "").upper().strip()
+    if not symbol:
+        symbol = await _default_symbol(redis)
+    if not symbol:
+        return web.json_response(
+            {"ready": False, "reason": "No symbol provided and no default symbol available."}
+        )
+
+    intraday, _daily, _nifty = await _load_bars(redis, symbol)
+    geometry = compute_smc_geometry(intraday)
+    return web.json_response({"symbol": symbol, **geometry})

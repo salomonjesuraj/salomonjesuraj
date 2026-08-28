@@ -783,6 +783,67 @@ export interface IntradayChartResponse {
   error?: string
 }
 
+/** GET /api/chart/smc -- "Institutional Chart Overlay" sprint
+ * (2026-08-28). See api/smc_geometry.py's own module docstring for what
+ * this is: a BATCH replay of feature-engine's real, already-shipped
+ * structure.py (fractal swing pivots + BOS/CHOCH) and ict.py (liquidity
+ * sweeps, Fair Value Gaps, Order Blocks) rules over a symbol's own real
+ * 1-minute OHLC history -- not a new algorithm, and not the live
+ * per-symbol hot-state hash (which only ever keeps the CURRENT state
+ * and the single most recent break event, never the full history a
+ * chart's markers need). `ready: false` (with `reason`) when there
+ * aren't yet enough closed bars to confirm even one pivot -- render
+ * nothing rather than a fabricated zero-geometry chart in that case. */
+export interface SmcBosChochEvent {
+  time: number
+  price: number
+  label: 'Bullish BOS' | 'Bullish CHOCH' | 'Bearish BOS' | 'Bearish CHOCH'
+  direction: 'bullish' | 'bearish'
+}
+
+export interface SmcLiquiditySweep {
+  time: number
+  side: 'buyside' | 'sellside'
+  price: number
+}
+
+export interface SmcOrderBlock {
+  low: number
+  high: number
+  validated: boolean
+}
+
+export interface SmcFvg {
+  bottom: number
+  top: number
+}
+
+export interface SmcTargetZones {
+  t2: number | null
+  t3: number | null
+  direction: 'bullish' | 'bearish' | null
+}
+
+export interface SmcGeometry {
+  symbol: string
+  ready: boolean
+  reason?: string
+  bar_count?: number
+  trend_state?: number
+  trend_text?: string
+  swing_high_1?: number | null
+  swing_high_2?: number | null
+  swing_low_1?: number | null
+  swing_low_2?: number | null
+  bos_choch_events?: SmcBosChochEvent[]
+  liquidity_sweeps?: SmcLiquiditySweep[]
+  order_block_bullish?: SmcOrderBlock | null
+  order_block_bearish?: SmcOrderBlock | null
+  fvg_bullish?: SmcFvg | null
+  fvg_bearish?: SmcFvg | null
+  target_zones?: SmcTargetZones
+}
+
 /** One real order-book level from GET /api/market/depth/{symbol} --
  * field names match upstox_codec.py's own MarketLevel quote parsing
  * (bidP/bidQ/askP/askQ) verbatim, not renamed. Each level carries BOTH

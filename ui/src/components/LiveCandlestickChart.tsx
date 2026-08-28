@@ -2,6 +2,7 @@ import {
   CandlestickSeries,
   ColorType,
   createChart,
+  createSeriesMarkers,
   CrosshairMode,
   HistogramSeries,
   LineStyle,
@@ -10,16 +11,35 @@ import {
   type IChartApi,
   type IPriceLine,
   type ISeriesApi,
+  type ISeriesMarkersPluginApi,
+  type SeriesMarker,
+  type Time,
   type UTCTimestamp,
 } from 'lightweight-charts'
 import { useEffect, useRef, type MutableRefObject } from 'react'
 import { useActivePosition } from '../hooks/useActivePosition'
 import { useHistoricalData } from '../hooks/useHistoricalData'
 import { usePolling } from '../hooks/usePolling'
-import { fetchTradeBlueprint, type ChartInterval } from '../lib/api'
+import { fetchSmcGeometry, fetchTradeBlueprint, type ChartInterval } from '../lib/api'
 import { CHART_BEAR, CHART_BULL } from '../lib/chartTheme'
 import { useUiEngineStore } from '../store/useUiEngineStore'
 import type { ChartBar } from '../types'
+
+// "Institutional Chart Overlay" sprint (2026-08-28) -- distinct from
+// CHART_BULL/CHART_BEAR (the candle body colors) so a liquidity-sweep
+// marker never reads as "just another candle color." Amber for a
+// liquidity sweep specifically (neither a clean bull nor bear signal --
+// it's a stop-run, direction TBD until price actually breaks
+// structure) matches this app's own established amber-for-caution use
+// (Screener.tsx's IV Rank "elevated" tier).
+const SWEEP_MARKER_COLOR = '#f59e0b' // Tailwind amber-400 -- see IV Rank badge, Screener.tsx
+const OB_BULLISH_COLOR = CHART_BULL
+const OB_BEARISH_COLOR = CHART_BEAR
+const FVG_BULLISH_COLOR = '#22d3ee' // matches --color-horizon-scalp -- a real, already-
+// established "context zone" hue in this app's own palette, distinct
+// from the bull/bear/entry/channel colors already on this chart.
+const FVG_BEARISH_COLOR = '#a78bfa' // matches --color-horizon-intraday, same reasoning
+const TARGET_ZONE_COLOR = '#fbbf24' // matches --color-horizon-btst
 
 const ENTRY_LINE_COLOR = '#FFFFFF'
 const CHANNEL_LINE_COLOR = '#6b7684' // matches --color-hud-muted -- deliberately
@@ -150,6 +170,19 @@ export function LiveCandlestickChart({
   const resistanceLineRef = useRef<IPriceLine | null>(null)
   const channelUpperLineRef = useRef<IPriceLine | null>(null)
   const channelLowerLineRef = useRef<IPriceLine | null>(null)
+  // "Institutional Chart Overlay" sprint (2026-08-28) -- lightweight-
+  // charts v5 moved markers out of the series itself: there's no
+  // `series.setMarkers()` anymore, only a `createSeriesMarkers(series)`
+  // plugin object that owns its own `.setMarkers()` (verified against
+  // this app's actual installed v5.2.1 typings, not assumed from
+  // memory of the older v3/v4 API the sprint's own instructions named).
+  const markersPluginRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null)
+  const obBullishLineRef = useRef<IPriceLine | null>(null)
+  const obBearishLineRef = useRef<IPriceLine | null>(null)
+  const fvgBullishLineRef = useRef<IPriceLine | null>(null)
+  const fvgBearishLineRef = useRef<IPriceLine | null>(null)
+  const targetT2LineRef = useRef<IPriceLine | null>(null)
+  const targetT3LineRef = useRef<IPriceLine | null>(null)
 
   const { bars, loading, error } = useHistoricalData(symbol, interval)
   const journalPosition = useActivePosition(symbol)
@@ -163,6 +196,15 @@ export function LiveCandlestickChart({
   // own "self-contained" shape.
   const { data: blueprint } = usePolling(() => fetchTradeBlueprint(symbol), 5000, [symbol])
   const structure = blueprint?.structure ?? null
+  // "Institutional Chart Overlay" sprint (2026-08-28) -- real SMC
+  // geometry, its own fetch keyed on symbol (refetches whenever the
+  // symbol prop changes, same shape as `blueprint` above). 20s, not 5s:
+  // this is a batch replay over ~3000 real 1-minute bars per call (see
+  // api/smc_geometry.py's own docstring) -- real BOS/CHOCH/OB state
+  // only ever changes once a full bar closes, so polling it as fast as
+  // the position blueprint would be pure added backend load for no
+  // fresher data.
+  const { data: smc } = usePolling(() => fetchSmcGeometry(symbol), 20000, [symbol])
 
   // Effect 1: create once, tear down on unmount. Wrapped in try/catch
   // purely to feed useUiEngineStore's real chart-health probe ("Terminal
@@ -208,6 +250,12 @@ export function LiveCandlestickChart({
       // bottom of the chart pane," read literally.
       chart.priceScale('volume').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } })
 
+      // "Institutional Chart Overlay" sprint (2026-08-28) -- v5's
+      // markers plugin, created once alongside the series it annotates
+      // (see markersPluginRef's own comment above for why this isn't
+      // `candleSeries.setMarkers()`).
+      markersPluginRef.current = createSeriesMarkers(candleSeries, [])
+
       chartRef.current = chart
       candleSeriesRef.current = candleSeries
       volumeSeriesRef.current = volumeSeries
@@ -233,6 +281,13 @@ export function LiveCandlestickChart({
       resistanceLineRef.current = null
       channelUpperLineRef.current = null
       channelLowerLineRef.current = null
+      markersPluginRef.current = null
+      obBullishLineRef.current = null
+      obBearishLineRef.current = null
+      fvgBullishLineRef.current = null
+      fvgBearishLineRef.current = null
+      targetT2LineRef.current = null
+      targetT3LineRef.current = null
     }
   }, [])
 
@@ -260,7 +315,17 @@ export function LiveCandlestickChart({
       if (resistanceLineRef.current) candleSeries.removePriceLine(resistanceLineRef.current)
       if (channelUpperLineRef.current) candleSeries.removePriceLine(channelUpperLineRef.current)
       if (channelLowerLineRef.current) candleSeries.removePriceLine(channelLowerLineRef.current)
+      if (obBullishLineRef.current) candleSeries.removePriceLine(obBullishLineRef.current)
+      if (obBearishLineRef.current) candleSeries.removePriceLine(obBearishLineRef.current)
+      if (fvgBullishLineRef.current) candleSeries.removePriceLine(fvgBullishLineRef.current)
+      if (fvgBearishLineRef.current) candleSeries.removePriceLine(fvgBearishLineRef.current)
+      if (targetT2LineRef.current) candleSeries.removePriceLine(targetT2LineRef.current)
+      if (targetT3LineRef.current) candleSeries.removePriceLine(targetT3LineRef.current)
     }
+    // The old symbol's BOS/CHOCH/sweep markers likewise belong to a
+    // different instrument -- clear immediately rather than leaving
+    // stale markers up until the new symbol's own SMC poll lands.
+    markersPluginRef.current?.setMarkers([])
     entryLineRef.current = null
     slLineRef.current = null
     targetLineRef.current = null
@@ -268,6 +333,12 @@ export function LiveCandlestickChart({
     resistanceLineRef.current = null
     channelUpperLineRef.current = null
     channelLowerLineRef.current = null
+    obBullishLineRef.current = null
+    obBearishLineRef.current = null
+    fvgBullishLineRef.current = null
+    fvgBearishLineRef.current = null
+    targetT2LineRef.current = null
+    targetT3LineRef.current = null
   }, [symbol, interval])
 
   // Effect 2: bind fetched bars into the series.
@@ -361,6 +432,113 @@ export function LiveCandlestickChart({
       title: 'CHANNEL LOWER',
     })
   }, [structure])
+
+  // Effect 5: "Institutional Chart Overlay" sprint (2026-08-28) -- real
+  // SMC geometry from GET /api/chart/smc (see SmcGeometry's own type
+  // comment and api/smc_geometry.py's module docstring for exactly
+  // what's real vs. disclosed-absent here). `smc?.ready` false (not
+  // enough closed bars yet, or no symbol resolvable) clears every
+  // marker/line from this effect rather than leaving a stale prior
+  // symbol's geometry on screen.
+  //
+  // Markers (BOS/CHOCH + liquidity sweeps): bullish events sit below
+  // the bar with an up arrow, bearish above with a down arrow -- this
+  // app's own established CHART_BULL/CHART_BEAR pair for direction;
+  // liquidity sweeps get their own amber circle (neither a clean bull
+  // nor bear signal by itself -- a stop-run, not yet a break) so they
+  // never read as a third BOS/CHOCH color. lightweight-charts requires
+  // markers sorted ascending by time -- both real lists already arrive
+  // that way from the backend's own chronological bar replay, merged
+  // here with a stable sort.
+  //
+  // Price lines (Order Blocks, FVGs as this sprint's own "Institutional
+  // Entry Levels," Target Zones): the SAME proximal-edge convention
+  // infusion_models.smc's own nearest_ob_or_fvg_level() already
+  // established elsewhere in this app (bullish zones quote their HIGH,
+  // bearish their LOW) -- one line per zone, not two, matching that
+  // real precedent instead of inventing a new one for this chart.
+  useEffect(() => {
+    const candleSeries = candleSeriesRef.current
+    const markersPlugin = markersPluginRef.current
+    if (!candleSeries || !markersPlugin) return
+
+    if (!smc?.ready) {
+      markersPlugin.setMarkers([])
+    } else {
+      // Sort the raw (plain-number `time`) events first, then map to
+      // SeriesMarker -- lightweight-charts' own `Time` union includes
+      // string/BusinessDay variants this chart never actually uses, so
+      // sorting on the already-numeric source field avoids an unsound
+      // `as number` cast on that wider union.
+      type RawEvent =
+        | { kind: 'bos'; time: number; direction: 'bullish' | 'bearish'; label: string }
+        | { kind: 'sweep'; time: number; side: 'buyside' | 'sellside' }
+      const raw: RawEvent[] = [
+        ...(smc.bos_choch_events ?? []).map(
+          (e): RawEvent => ({ kind: 'bos', time: e.time, direction: e.direction, label: e.label }),
+        ),
+        ...(smc.liquidity_sweeps ?? []).map(
+          (s): RawEvent => ({ kind: 'sweep', time: s.time, side: s.side }),
+        ),
+      ].sort((a, b) => a.time - b.time)
+
+      const markers: SeriesMarker<Time>[] = raw.map((e) =>
+        e.kind === 'bos'
+          ? {
+              time: e.time as UTCTimestamp,
+              position: e.direction === 'bullish' ? 'belowBar' : 'aboveBar',
+              color: e.direction === 'bullish' ? CHART_BULL : CHART_BEAR,
+              shape: e.direction === 'bullish' ? 'arrowUp' : 'arrowDown',
+              text: e.label,
+            }
+          : {
+              time: e.time as UTCTimestamp,
+              position: e.side === 'sellside' ? 'belowBar' : 'aboveBar',
+              color: SWEEP_MARKER_COLOR,
+              shape: 'circle',
+              text: e.side === 'sellside' ? 'Sellside Sweep' : 'Buyside Sweep',
+            },
+      )
+      markersPlugin.setMarkers(markers)
+    }
+
+    syncPriceLine(candleSeries, obBullishLineRef, smc?.ready ? smc.order_block_bullish?.high : null, {
+      color: OB_BULLISH_COLOR,
+      lineWidth: 2,
+      lineStyle: LineStyle.Solid,
+      title: 'Bullish OB High',
+    })
+    syncPriceLine(candleSeries, obBearishLineRef, smc?.ready ? smc.order_block_bearish?.low : null, {
+      color: OB_BEARISH_COLOR,
+      lineWidth: 2,
+      lineStyle: LineStyle.Solid,
+      title: 'Bearish OB Low',
+    })
+    syncPriceLine(candleSeries, fvgBullishLineRef, smc?.ready ? smc.fvg_bullish?.top : null, {
+      color: FVG_BULLISH_COLOR,
+      lineWidth: 1,
+      lineStyle: LineStyle.Dotted,
+      title: 'Bullish FVG',
+    })
+    syncPriceLine(candleSeries, fvgBearishLineRef, smc?.ready ? smc.fvg_bearish?.bottom : null, {
+      color: FVG_BEARISH_COLOR,
+      lineWidth: 1,
+      lineStyle: LineStyle.Dotted,
+      title: 'Bearish FVG',
+    })
+    syncPriceLine(candleSeries, targetT2LineRef, smc?.ready ? smc.target_zones?.t2 : null, {
+      color: TARGET_ZONE_COLOR,
+      lineWidth: 1,
+      lineStyle: LineStyle.Dashed,
+      title: 'T2 Target Zone',
+    })
+    syncPriceLine(candleSeries, targetT3LineRef, smc?.ready ? smc.target_zones?.t3 : null, {
+      color: TARGET_ZONE_COLOR,
+      lineWidth: 2,
+      lineStyle: LineStyle.Dashed,
+      title: 'T3 Target Zone',
+    })
+  }, [smc])
 
   return (
     <div

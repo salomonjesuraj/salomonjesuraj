@@ -26,6 +26,7 @@ import type {
   ScreenerOptionsSummaryMap,
   ScreenerStructureMap,
   SignalRow,
+  SmcGeometry,
   StagedTicketsResponse,
   StrategySelectorResult,
   SuppressedSignalRow,
@@ -273,6 +274,15 @@ export async function fetchIntradayChart(
   )
   if (body.error) throw new Error(body.error)
   return body.bars || []
+}
+
+// "Institutional Chart Overlay" sprint (2026-08-28) -- see
+// SmcGeometry's own type comment for what this really is (a batch
+// replay of feature-engine's real structure/ICT rules, not a new
+// algorithm and not the live per-symbol hot-state hash).
+export async function fetchSmcGeometry(symbol: string): Promise<SmcGeometry> {
+  if (isDemoMode()) return { symbol, ready: false, reason: 'Demo mode has no real bar history.' }
+  return getJson<SmcGeometry>(`/api/chart/smc?symbol=${encodeURIComponent(symbol)}`)
 }
 
 // ── Level 2 DOM ladder (2026-08-27 "Terminal Edge" sprint) ────────────

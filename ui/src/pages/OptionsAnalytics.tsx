@@ -1,6 +1,7 @@
 import { LineChart } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { DASH, MetricCard, type MetricTone } from '../components/MetricCard'
+import { LiveCandlestickChart } from '../components/LiveCandlestickChart'
 import { PageHeader } from '../components/PageHeader'
 import { PayoffChart } from '../components/PayoffChart'
 import { SymbolSelector } from '../components/SymbolSelector'
@@ -175,6 +176,16 @@ export function OptionsAnalytics() {
     setSearchParams(sym ? { symbol: sym } : {})
   }
 
+  // "Institutional Chart Overlay" sprint (2026-08-28): this page never
+  // embedded a candlestick chart before this sprint -- falls back to
+  // the backend's own resolved default symbol (summary.symbol, set by
+  // the same _default_symbol() every other symbol-less route on this
+  // page already defers to) so the chart, the option chain, and the
+  // Greeks above it all key off literally the same symbol the moment
+  // the page loads with no `?symbol=` yet, not a second independent
+  // default.
+  const chartSymbol = symbol ?? summary?.symbol
+
   return (
     <div className="flex flex-1 flex-col gap-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -213,6 +224,19 @@ export function OptionsAnalytics() {
           sublabel={chain?.spot ? `Spot ${fmt(chain.spot, 1)}` : undefined}
         />
         <MetricCard label="IV Rank" value={fmt(strategies?.iv_rank, 1)} />
+      </div>
+
+      <div>
+        <h2 className="mb-3 text-xs font-bold uppercase tracking-wide text-hud-muted">
+          Chart{chartSymbol ? ` -- ${chartSymbol}` : ''}
+        </h2>
+        {chartSymbol ? (
+          <LiveCandlestickChart symbol={chartSymbol} heightClassName="h-96" />
+        ) : (
+          <p className="rounded-xl border border-dashed border-hud-border bg-hud-panel/40 px-4 py-6 text-center text-xs text-hud-muted">
+            Waiting for a symbol context (active signal or pre-breakout candidate).
+          </p>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
