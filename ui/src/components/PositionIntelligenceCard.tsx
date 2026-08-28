@@ -2,7 +2,10 @@ import { AlertTriangle, Maximize2, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { LiveCandlestickChart } from './LiveCandlestickChart'
 import { DASH } from './MetricCard'
+import type { ChartInterval } from '../lib/api'
 import type { BrokerPosition } from '../types'
+
+const TIMEFRAMES: ChartInterval[] = ['1m', '5m', '15m', '1h', '4h']
 
 function fmt(value: number | null | undefined, digits = 2): string {
   return value === null || value === undefined || Number.isNaN(value) ? DASH : value.toFixed(digits)
@@ -110,6 +113,7 @@ export function PositionIntelligenceCard({ position }: { position: BrokerPositio
   // itself is stopped from bubbling to the backdrop so it doesn't
   // close while the trader is actually interacting with the chart.
   const [isChartExpanded, setIsChartExpanded] = useState(false)
+  const [expandedInterval, setExpandedInterval] = useState<ChartInterval>('1m')
   useEffect(() => {
     if (!isChartExpanded) return
     const onKeyDown = (e: KeyboardEvent) => {
@@ -196,17 +200,46 @@ export function PositionIntelligenceCard({ position }: { position: BrokerPositio
           role="dialog"
           aria-modal="true"
           aria-label={`${symbol} expanded chart`}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/95 p-8"
+          // Fully opaque, not the previous /95 -- a real bug caught
+          // live: at 95% opacity, this card's own content (still
+          // mounted in normal page flow directly behind the modal) was
+          // faintly visible through the backdrop, reading as a
+          // cluttered "ghost" overlay behind the big chart. Solid black
+          // removes any possibility of that regardless of what's
+          // actually behind it.
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950 p-8"
           onClick={() => setIsChartExpanded(false)}
         >
           <div
-            className="flex h-[85vh] w-full max-w-6xl flex-col"
+            className="flex h-[88vh] w-full max-w-6xl flex-col"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="mb-3 flex items-center justify-between">
+            {/* Minimal top bar only -- symbol, real timeframe toggles
+                (charts.py's own _aggregate() already turns real 1-min
+                bars into 5m/15m/1h/4h; this just exposes it), and
+                Close. No position data card, no PnL badge, no grid --
+                the ask was an unobstructed chart. */}
+            <div className="mb-3 flex items-center justify-between gap-3">
               <h3 className="font-mono text-sm font-bold uppercase tracking-wide text-hud-text">
                 {symbol}
               </h3>
+              <div className="flex items-center gap-1 rounded-lg bg-hud-panel p-1 ring-1 ring-hud-border">
+                {TIMEFRAMES.map((tf) => (
+                  <button
+                    key={tf}
+                    type="button"
+                    onClick={() => setExpandedInterval(tf)}
+                    className={
+                      'rounded px-2.5 py-1 text-[11px] font-bold uppercase transition-colors ' +
+                      (expandedInterval === tf
+                        ? 'bg-bull/15 text-bull'
+                        : 'text-hud-muted hover:bg-hud-panel-hover hover:text-hud-text')
+                    }
+                  >
+                    {tf}
+                  </button>
+                ))}
+              </div>
               <button
                 type="button"
                 onClick={() => setIsChartExpanded(false)}
@@ -222,6 +255,7 @@ export function PositionIntelligenceCard({ position }: { position: BrokerPositio
                 symbol={intel.underlying}
                 heightClassName="h-full"
                 brokerPosition={{ entry: effectiveEntry, stop, target1: t1 }}
+                interval={expandedInterval}
               />
             </div>
           </div>

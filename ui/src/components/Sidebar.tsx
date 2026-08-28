@@ -8,6 +8,7 @@ import {
   LineChart,
   Radar,
   ShieldAlert,
+  Table2,
   Wallet,
   type LucideIcon,
 } from 'lucide-react'
@@ -22,6 +23,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/', label: 'Sniper HUD', icon: Radar },
   { to: '/positions', label: 'Active Cockpit', icon: Wallet },
   { to: '/analytics', label: 'Options Analytics', icon: LineChart },
+  { to: '/screener', label: 'F&O Screener', icon: Table2 },
   { to: '/optimizer', label: 'The Lab', icon: FlaskConical },
   { to: '/journal', label: 'The Ledger', icon: BookOpen },
   { to: '/safety', label: 'Safety & Logs', icon: ShieldAlert },

@@ -346,6 +346,55 @@ export interface OptionsChainAnalytics {
   } | null
 }
 
+/** One symbol's own real fields off GET /api/symbols -- the actual
+ * F&O universe tracked by this pipeline (infusion:symbols in Redis),
+ * not a separate hand-maintained list. "Unified Screener & Deep-Dive
+ * Interactivity" sprint (2026-08-28). */
+export interface SymbolMeta {
+  symbol: string
+  sector_id: string
+  exchange: string
+  market_cap_tier: string
+  index_membership: string[]
+}
+
+/** One strike's real call/put snapshot off GET /api/options/chain --
+ * Upstox's own market_data + option_greeks fields, read verbatim (see
+ * api/routes/market.py's own _leg_snapshot docstring for why gamma/
+ * theta/vega are real here even though OptionsAnalytics' own Greeks
+ * Exposure card still only has Delta -- different endpoint, different
+ * scope). */
+export interface OptionChainLeg {
+  ltp: number
+  oi: number
+  volume: number
+  iv: number
+  delta: number
+  gamma: number
+  theta: number
+  vega: number
+}
+
+export interface OptionChainStrike {
+  strike_price: number
+  call: OptionChainLeg
+  put: OptionChainLeg
+}
+
+/** GET /api/options/chain?symbol=X -- the full per-strike chain,
+ * "Unified Screener & Deep-Dive Interactivity" sprint (2026-08-28). */
+export interface OptionChainResponse {
+  ready: boolean
+  reason?: string
+  symbol?: string
+  expiry?: string
+  spot?: number
+  pcr: OptionsChainAnalytics['pcr']
+  max_pain: OptionsChainAnalytics['max_pain']
+  oi_support_resistance: OptionsChainAnalytics['oi_support_resistance']
+  strikes?: OptionChainStrike[]
+}
+
 /** One leg inside a RankedStrategy's `legs` array
  * (api/options_strategies.py's `_leg()`). */
 export interface StrategyLeg {

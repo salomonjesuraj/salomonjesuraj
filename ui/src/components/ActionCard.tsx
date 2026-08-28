@@ -1,4 +1,5 @@
-import { Minus, Sparkles, TrendingDown, TrendingUp } from 'lucide-react'
+import { LineChart, Minus, Sparkles, TrendingDown, TrendingUp } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { fetchOptionSummary, fetchTradeBlueprint } from '../lib/api'
 import { useExecution } from '../hooks/useExecution'
 import { usePolling } from '../hooks/usePolling'
@@ -191,6 +192,21 @@ export function ActionCard({ candidate, isActive, isHighConviction, onSelect }: 
                 Candidate
               </span>
             )}
+            {/* "Unified Screener & Deep-Dive Interactivity" sprint
+                (2026-08-28) -- jumps to the full Options Analytics deep
+                dive for this exact symbol, distinct from the card's own
+                onClick (which opens the inline candlestick pane below).
+                stopPropagation so tapping this link doesn't also toggle
+                that inline pane on the way to navigating away. */}
+            <Link
+              to={`/analytics?symbol=${encodeURIComponent(symbol)}`}
+              onClick={(e) => e.stopPropagation()}
+              aria-label={`Deep dive ${symbol} in Options Analytics`}
+              title="Deep dive in Options Analytics"
+              className="shrink-0 rounded p-1 text-hud-muted transition-colors hover:bg-hud-panel-hover hover:text-bull"
+            >
+              <LineChart className="h-3.5 w-3.5" />
+            </Link>
           </div>
           <span
             className={

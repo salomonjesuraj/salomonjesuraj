@@ -17,6 +17,7 @@ import type {
   MarketBreadth,
   OiBuildupMap,
   OptimizerProposal,
+  OptionChainResponse,
   OptionsChainAnalytics,
   OptionSummary,
   PrebreakoutRow,
@@ -26,6 +27,7 @@ import type {
   StagedTicketsResponse,
   StrategySelectorResult,
   SuppressedSignalRow,
+  SymbolMeta,
   TickRow,
   TradeBlueprint,
   UpstoxAuthStatus,
@@ -144,6 +146,30 @@ export async function fetchStrategySelector(symbol?: string): Promise<StrategySe
   return getJson<StrategySelectorResult>(`/api/options/strategy-selector${qs}`)
 }
 
+// ── "Unified Screener & Deep-Dive Interactivity" sprint (2026-08-28) ──
+
+/** GET /api/symbols -- the real F&O universe this pipeline actually
+ * tracks (infusion:symbols in Redis), used for the searchable symbol
+ * selector and the F&O Screener alike, not a second hand-maintained
+ * list. */
+export async function fetchSymbols(): Promise<SymbolMeta[]> {
+  const body = await getJson<{ count: number; symbols: SymbolMeta[] }>('/api/symbols')
+  return body.symbols || []
+}
+
+/** GET /api/options/chain -- full per-strike chain (real strikes, PCR,
+ * Max Pain, and Greeks straight off Upstox's own real payload). Reuses
+ * the exact same full-chain fetch fetchOptionsChainAnalytics's summary
+ * numbers already come from -- see api/routes/market.py's own
+ * options_chain() docstring. */
+export async function fetchOptionChain(symbol?: string): Promise<OptionChainResponse> {
+  if (isDemoMode()) {
+    return { ready: false, reason: 'Not available in demo mode.', pcr: null, max_pain: null, oi_support_resistance: null }
+  }
+  const qs = symbol ? `?symbol=${encodeURIComponent(symbol)}` : ''
+  return getJson<OptionChainResponse>(`/api/options/chain${qs}`)
+}
+
 /** GET /api/backtest/summary -- server-cached 90s, so client polling
  * faster than that just re-reads the same cached row. */
 export async function fetchBacktestSummary(days = 60): Promise<BacktestSummary> {
@@ -206,10 +232,20 @@ export async function fetchAlertLog(): Promise<AlertLogEntry[]> {
 // (api/routes/charts.py) -- 1-min OHLC bars from feature-engine's own
 // bar_builder, keyed off infusion:ohlc:{symbol}:1m. No new backend
 // route was needed for this sprint.
+//
+// "Unified Screener & Deep-Dive Interactivity" sprint (2026-08-28):
+// the route already aggregates real 1m bars into 5m/15m/1h/4h
+// (charts.py's own `_aggregate()`) -- it was just never given an
+// `interval` param by any caller until now. Real aggregation of real
+// bars, not a second data source.
+export type ChartInterval = '1m' | '5m' | '15m' | '1h' | '4h'
 
-export async function fetchIntradayChart(symbol: string): Promise<ChartBar[]> {
+export async function fetchIntradayChart(
+  symbol: string,
+  interval: ChartInterval = '1m',
+): Promise<ChartBar[]> {
   const body = await getJson<IntradayChartResponse>(
-    `/api/chart/${encodeURIComponent(symbol)}/intraday?interval=1m`,
+    `/api/chart/${encodeURIComponent(symbol)}/intraday?interval=${interval}`,
   )
   if (body.error) throw new Error(body.error)
   return body.bars || []

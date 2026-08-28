@@ -1,21 +1,11 @@
 import { useMemo } from 'react'
 import { fetchAllTicks, fetchOiBuildupMap } from '../lib/api'
 import { usePolling } from '../hooks/usePolling'
+import { BEAR_OI, BULL_OI, OI_LABEL } from '../lib/oiBuildup'
 import type { OIBuildupType, TickRow } from '../types'
 
 const DASH = '—'
 const MAX_ROWS = 8
-
-const BULL_OI: OIBuildupType[] = ['LONG_BUILDUP', 'SHORT_COVERING']
-const BEAR_OI: OIBuildupType[] = ['SHORT_BUILDUP', 'LONG_UNWINDING']
-
-const OI_LABEL: Record<OIBuildupType, string> = {
-  LONG_BUILDUP: 'LONG BUILDUP',
-  SHORT_COVERING: 'SHORT COVERING',
-  SHORT_BUILDUP: 'SHORT BUILDUP',
-  LONG_UNWINDING: 'LONG UNWINDING',
-  NEUTRAL: 'NEUTRAL',
-}
 
 interface Row {
   tick: TickRow

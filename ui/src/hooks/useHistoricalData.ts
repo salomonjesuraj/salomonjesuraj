@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { fetchIntradayChart } from '../lib/api'
+import { fetchIntradayChart, type ChartInterval } from '../lib/api'
 import type { ChartBar } from '../types'
 
 export interface HistoricalDataResult {
@@ -24,21 +24,27 @@ const POLL_MS = 10000
  * symbol's bars immediately, or the chart would keep rendering one
  * symbol's real candles under a different symbol's label while the new
  * fetch is in flight, which is actively misleading, not just stale. */
-export function useHistoricalData(symbol: string | null): HistoricalDataResult {
+export function useHistoricalData(
+  symbol: string | null,
+  interval: ChartInterval = '1m',
+): HistoricalDataResult {
   // React's own documented pattern for resetting state when a prop
   // changes ("Adjusting state when a prop changes", react.dev): setState
-  // during render, not inside an effect, so switching symbols clears
-  // stale bars before this hook's caller ever paints them under the
-  // wrong label. Every setState below the effect boundary only ever
-  // runs from inside tick()'s async continuation, never synchronously
-  // in the effect body, matching usePolling's own established shape.
-  const [prevSymbol, setPrevSymbol] = useState(symbol)
+  // during render, not inside an effect, so switching symbols (or,
+  // "Unified Screener & Deep-Dive Interactivity" sprint, switching
+  // timeframe) clears stale bars before this hook's caller ever paints
+  // them under the wrong label/candle width. Every setState below the
+  // effect boundary only ever runs from inside tick()'s async
+  // continuation, never synchronously in the effect body, matching
+  // usePolling's own established shape.
+  const [prevKey, setPrevKey] = useState(`${symbol ?? ''}:${interval}`)
   const [bars, setBars] = useState<ChartBar[]>([])
   const [error, setError] = useState<Error | null>(null)
   const [loading, setLoading] = useState(false)
 
-  if (symbol !== prevSymbol) {
-    setPrevSymbol(symbol)
+  const key = `${symbol ?? ''}:${interval}`
+  if (key !== prevKey) {
+    setPrevKey(key)
     setBars([])
     setError(null)
     setLoading(Boolean(symbol))
@@ -50,7 +56,7 @@ export function useHistoricalData(symbol: string | null): HistoricalDataResult {
 
     const tick = async () => {
       try {
-        const result = await fetchIntradayChart(symbol)
+        const result = await fetchIntradayChart(symbol, interval)
         if (!cancelled) {
           setBars(result)
           setError(null)
@@ -68,7 +74,7 @@ export function useHistoricalData(symbol: string | null): HistoricalDataResult {
       cancelled = true
       window.clearInterval(timer)
     }
-  }, [symbol])
+  }, [symbol, interval])
 
   return { bars, loading, error }
 }

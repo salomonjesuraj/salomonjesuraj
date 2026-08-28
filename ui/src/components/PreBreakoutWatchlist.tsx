@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { fetchAllTicks, fetchPrebreakout } from '../lib/api'
 import { usePolling } from '../hooks/usePolling'
 import type { PrebreakoutRow, TickRow } from '../types'
@@ -39,10 +40,17 @@ function fmt(v: number | undefined, digits = 2): string {
  * available in bulk (only a qualitative atr_state string), so distance
  * is shown in % only -- an ATR-multiple column would have to be a
  * guess, so it's left out rather than fabricated.
+ *
+ * "Unified Screener & Deep-Dive Interactivity" sprint (2026-08-28):
+ * every row now navigates to the full Options Analytics deep dive for
+ * its own symbol -- a real Link on the symbol cell for proper
+ * semantics (middle-click/ctrl-click open in a new tab), plus a click
+ * handler on the whole row for convenience.
  */
 export function PreBreakoutWatchlist() {
   const { data: prebreakout } = usePolling(fetchPrebreakout, 5000, [])
   const { data: ticks } = usePolling(fetchAllTicks, 5000, [])
+  const navigate = useNavigate()
 
   const rows = useMemo(() => {
     if (!prebreakout) return [] as Row[]
@@ -89,8 +97,20 @@ export function PreBreakoutWatchlist() {
               </tr>
             ) : (
               rows.map(({ pb, trigger, distancePct }) => (
-                <tr key={pb.symbol}>
-                  <td className="px-3 py-2 font-mono font-bold text-hud-text">{pb.symbol}</td>
+                <tr
+                  key={pb.symbol}
+                  onClick={() => navigate(`/analytics?symbol=${encodeURIComponent(pb.symbol)}`)}
+                  className="cursor-pointer transition-colors hover:bg-hud-panel-hover"
+                >
+                  <td className="px-3 py-2 font-mono font-bold text-hud-text">
+                    <Link
+                      to={`/analytics?symbol=${encodeURIComponent(pb.symbol)}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="hover:text-bull hover:underline"
+                    >
+                      {pb.symbol}
+                    </Link>
+                  </td>
                   <td className="px-3 py-2 text-hud-muted">
                     {STATE_LABEL[pb.state] ?? pb.state.toUpperCase()}
                   </td>

@@ -1,9 +1,11 @@
 import { LineChart } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
 import { DASH, MetricCard, type MetricTone } from '../components/MetricCard'
 import { PageHeader } from '../components/PageHeader'
 import { PayoffChart } from '../components/PayoffChart'
+import { SymbolSelector } from '../components/SymbolSelector'
 import { useOptionsAnalytics } from '../hooks/useOptionsAnalytics'
-import type { RankedStrategy } from '../types'
+import type { OptionChainStrike, RankedStrategy } from '../types'
 
 function fmt(value: number | null | undefined, digits = 2): string {
   return value === null || value === undefined || Number.isNaN(value) ? DASH : value.toFixed(digits)
@@ -19,6 +21,73 @@ function sentimentTone(sentiment: string | null | undefined): MetricTone {
   if (sentiment.includes('bullish')) return 'good'
   if (sentiment.includes('bearish')) return 'bad'
   return 'neutral'
+}
+
+function fmtOi(value: number): string {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`
+  return value.toFixed(0)
+}
+
+/** Full per-strike option chain, "Unified Screener & Deep-Dive
+ * Interactivity" sprint (2026-08-28) -- real GET /api/options/chain
+ * rows, calls on the left, puts on the right, the classic layout. The
+ * strike nearest real spot gets a highlighted row (ATM), not a
+ * fabricated "the" ATM strike when spot itself isn't known. */
+function OptionChainTable({ strikes, spot }: { strikes: OptionChainStrike[]; spot?: number }) {
+  const atmStrike =
+    spot && strikes.length > 0
+      ? strikes.reduce((closest, s) =>
+          Math.abs(s.strike_price - spot) < Math.abs(closest.strike_price - spot) ? s : closest,
+        ).strike_price
+      : null
+
+  return (
+    <div className="max-h-[480px] overflow-auto rounded-xl border border-hud-border bg-hud-panel">
+      <table className="w-full min-w-[820px] text-center text-[11px]">
+        <thead className="sticky top-0 bg-hud-panel">
+          <tr className="border-b border-hud-border text-[10px] uppercase tracking-wide text-hud-muted">
+            <th colSpan={4} className="px-2 py-2 font-bold text-bull">
+              Calls
+            </th>
+            <th className="px-2 py-2 font-bold">Strike</th>
+            <th colSpan={4} className="px-2 py-2 font-bold text-bear">
+              Puts
+            </th>
+          </tr>
+          <tr className="border-b border-hud-border text-[10px] uppercase tracking-wide text-hud-muted">
+            <th className="px-2 py-1.5">OI</th>
+            <th className="px-2 py-1.5">LTP</th>
+            <th className="px-2 py-1.5">IV</th>
+            <th className="px-2 py-1.5">Delta</th>
+            <th className="px-2 py-1.5" />
+            <th className="px-2 py-1.5">Delta</th>
+            <th className="px-2 py-1.5">IV</th>
+            <th className="px-2 py-1.5">LTP</th>
+            <th className="px-2 py-1.5">OI</th>
+          </tr>
+        </thead>
+        <tbody className="tnum divide-y divide-hud-border font-mono">
+          {strikes.map((s) => (
+            <tr
+              key={s.strike_price}
+              className={s.strike_price === atmStrike ? 'bg-horizon-btst/10' : ''}
+            >
+              <td className="px-2 py-1.5 text-hud-text">{fmtOi(s.call.oi)}</td>
+              <td className="px-2 py-1.5 text-hud-text">{s.call.ltp.toFixed(2)}</td>
+              <td className="px-2 py-1.5 text-hud-muted">{s.call.iv.toFixed(1)}</td>
+              <td className="px-2 py-1.5 text-hud-muted">{s.call.delta.toFixed(2)}</td>
+              <td className="px-2 py-1.5 font-bold text-hud-text">{s.strike_price.toFixed(0)}</td>
+              <td className="px-2 py-1.5 text-hud-muted">{s.put.delta.toFixed(2)}</td>
+              <td className="px-2 py-1.5 text-hud-muted">{s.put.iv.toFixed(1)}</td>
+              <td className="px-2 py-1.5 text-hud-text">{s.put.ltp.toFixed(2)}</td>
+              <td className="px-2 py-1.5 text-hud-text">{fmtOi(s.put.oi)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
 }
 
 function StrategyCard({ strategy }: { strategy: RankedStrategy }) {
@@ -74,31 +143,56 @@ function StrategyCard({ strategy }: { strategy: RankedStrategy }) {
 
 /** `/analytics` -- Options Analytics, wired to real backend routes
  * (2026-08-27 data-wiring sprint). Honest gap, disclosed rather than
- * papered over: this backend scores exactly one live option Greek
- * (Delta) anywhere in its code -- api/routes/market.py's
- * _score_option_leg reads `iv` and `delta` off Upstox's option_greeks
- * payload and nothing else. Gamma/Theta/Vega are never read out of that
- * same payload by any route, so there is no real number to show for
- * them; this page says so instead of inventing one. */
+ * papered over: this page's own Greeks Exposure card scores exactly
+ * one live option Greek (Delta) anywhere in its code -- api/routes/
+ * market.py's _score_option_leg reads `iv` and `delta` off Upstox's
+ * option_greeks payload and nothing else for its signal-gating model.
+ * That's a separate concern from the real per-strike Option Chain
+ * table below, which DOES show real gamma/theta/vega straight off
+ * Upstox's own payload -- see OptionChainStrike's own type comment.
+ *
+ * "Unified Screener & Deep-Dive Interactivity" sprint (2026-08-28): the
+ * page now has its own symbol selector, synced to the URL's `?symbol=`
+ * query param (react-router's useSearchParams, not local-only state) so
+ * a deep link from the Screener, Pre-Breakout Watchlist, or Sniper HUD
+ * lands here with the right symbol already loaded, and the page's own
+ * URL stays shareable/bookmarkable. No symbol picked yet keeps the
+ * original default-symbol behavior (most recent active signal, else
+ * best pre-breakout candidate) exactly as before this sprint. */
 export function OptionsAnalytics() {
-  const { data } = useOptionsAnalytics()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const symbol = searchParams.get('symbol')?.toUpperCase() || undefined
+
+  const { data } = useOptionsAnalytics(symbol)
   const chain = data?.chainAnalytics
   const strategies = data?.strategySelector
   const summary = data?.summary
+  const fullChain = data?.chain
   const delta = summary?.upstox_option?.metrics?.delta
   const topStrategy = strategies?.ready ? strategies.ranked_strategies?.[0] : undefined
 
+  const handleSelectSymbol = (sym: string) => {
+    setSearchParams(sym ? { symbol: sym } : {})
+  }
+
   return (
     <div className="flex flex-1 flex-col gap-6">
-      <PageHeader
-        icon={LineChart}
-        title="Options Analytics"
-        subtitle={
-          summary?.symbol
-            ? `Live chain read for ${summary.symbol} · ${summary.bias ?? 'WAIT'}`
-            : 'Waiting for a symbol context (active signal or pre-breakout candidate)'
-        }
-      />
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <PageHeader
+          icon={LineChart}
+          title="Options Analytics"
+          subtitle={
+            summary?.symbol
+              ? `Live chain read for ${summary.symbol} · ${summary.bias ?? 'WAIT'}`
+              : 'Waiting for a symbol context (active signal or pre-breakout candidate)'
+          }
+        />
+        <SymbolSelector
+          value={symbol}
+          onSelect={handleSelectSymbol}
+          placeholder="Jump to F&O symbol…"
+        />
+      </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <MetricCard
@@ -183,6 +277,20 @@ export function OptionsAnalytics() {
             </p>
           )}
         </div>
+      </div>
+
+      <div>
+        <h2 className="mb-3 text-xs font-bold uppercase tracking-wide text-hud-muted">
+          Option Chain{fullChain?.symbol ? ` -- ${fullChain.symbol}` : ''}
+          {fullChain?.expiry ? ` (${fullChain.expiry})` : ''}
+        </h2>
+        {fullChain?.ready && fullChain.strikes?.length ? (
+          <OptionChainTable strikes={fullChain.strikes} spot={fullChain.spot} />
+        ) : (
+          <p className="rounded-xl border border-dashed border-hud-border bg-hud-panel/40 px-4 py-6 text-center text-xs text-hud-muted">
+            {fullChain?.reason || 'No option chain read yet.'}
+          </p>
+        )}
       </div>
 
       {topStrategy?.legs?.length && chain?.spot ? (

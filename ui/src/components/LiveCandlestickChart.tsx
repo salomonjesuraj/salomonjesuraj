@@ -16,7 +16,7 @@ import { useEffect, useRef, type MutableRefObject } from 'react'
 import { useActivePosition } from '../hooks/useActivePosition'
 import { useHistoricalData } from '../hooks/useHistoricalData'
 import { usePolling } from '../hooks/usePolling'
-import { fetchTradeBlueprint } from '../lib/api'
+import { fetchTradeBlueprint, type ChartInterval } from '../lib/api'
 import { CHART_BEAR, CHART_BULL } from '../lib/chartTheme'
 import { useUiEngineStore } from '../store/useUiEngineStore'
 import type { ChartBar } from '../types'
@@ -101,6 +101,14 @@ interface LiveCandlestickChartProps {
   // this, so it keeps resolving those lines from the journal exactly
   // as it did before this prop existed.
   brokerPosition?: PositionOverlay | null
+  // "Unified Screener & Deep-Dive Interactivity" sprint (2026-08-28) --
+  // controlled, not internal state: the caller owns which timeframe is
+  // selected (and renders whatever toggle UI makes sense for its own
+  // layout, e.g. the fullscreen chart modal's own top bar) rather than
+  // this component inventing its own toggle chrome for every context it
+  // might be embedded in. Defaults to '1m', matching every caller from
+  // before this prop existed.
+  interval?: ChartInterval
 }
 
 /** Live 1-min candlestick chart for the Sniper HUD (2026-08-27 charting
@@ -127,6 +135,7 @@ export function LiveCandlestickChart({
   symbol,
   heightClassName = 'h-80',
   brokerPosition,
+  interval = '1m',
 }: LiveCandlestickChartProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
@@ -142,7 +151,7 @@ export function LiveCandlestickChart({
   const channelUpperLineRef = useRef<IPriceLine | null>(null)
   const channelLowerLineRef = useRef<IPriceLine | null>(null)
 
-  const { bars, loading, error } = useHistoricalData(symbol)
+  const { bars, loading, error } = useHistoricalData(symbol, interval)
   const journalPosition = useActivePosition(symbol)
   // A real broker position (when passed) is ground truth for its own
   // entry/stop/target and takes precedence over the journal lookup --
@@ -227,9 +236,11 @@ export function LiveCandlestickChart({
     }
   }, [])
 
-  // Reset the incremental-update bookkeeping whenever the symbol itself
-  // changes -- the next `bars` payload is for a different instrument
-  // and must fully replace what's drawn, never partially patch onto it.
+  // Reset the incremental-update bookkeeping whenever the symbol OR the
+  // selected timeframe changes -- either one means the next `bars`
+  // payload is a different dataset (different instrument, or the same
+  // instrument at a different candle width) that must fully replace
+  // what's drawn, never partially patch onto it.
   useEffect(() => {
     isFirstLoadRef.current = true
     lastBarTimeRef.current = null
@@ -257,7 +268,7 @@ export function LiveCandlestickChart({
     resistanceLineRef.current = null
     channelUpperLineRef.current = null
     channelLowerLineRef.current = null
-  }, [symbol])
+  }, [symbol, interval])
 
   // Effect 2: bind fetched bars into the series.
   useEffect(() => {

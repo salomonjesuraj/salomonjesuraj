@@ -802,6 +802,94 @@ async def compute_options_chain_analytics(redis: Any, symbol: str) -> Payload:
     }
 
 
+def _num_or_zero(source: Payload, key: str) -> float:
+    try:
+        return float(source.get(key) or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _leg_snapshot(row: Payload, leg_name: str) -> Payload:
+    """One side (call_options/put_options) of one strike row -- real
+    Upstox market_data + option_greeks fields, nothing computed or
+    guessed. Gamma/Theta/Vega are read here for the first time anywhere
+    in this codebase: they're genuinely present in Upstox's own real
+    option_greeks payload, just never extracted before now --
+    market.py's own _score_option_leg only ever needed iv/delta for its
+    signal-gating model, which is a scope choice about what that one
+    scoring function reads, not evidence the other three don't exist in
+    the real data. compute_options_chain_analytics's own
+    OptionsAnalytics.tsx page still correctly discloses that ITS
+    Greeks Exposure card only has Delta -- this is a separate, new
+    per-strike table, not a change to that card."""
+    leg = row.get(leg_name) or {}
+    market = leg.get("market_data") or {}
+    greeks = leg.get("option_greeks") or {}
+    return {
+        "ltp": _num_or_zero(market, "ltp"),
+        "oi": _num_or_zero(market, "oi"),
+        "volume": _num_or_zero(market, "volume"),
+        "iv": _num_or_zero(greeks, "iv"),
+        "delta": _num_or_zero(greeks, "delta"),
+        "gamma": _num_or_zero(greeks, "gamma"),
+        "theta": _num_or_zero(greeks, "theta"),
+        "vega": _num_or_zero(greeks, "vega"),
+    }
+
+
+@routes.get("/api/options/chain")
+async def options_chain(request: web.Request) -> web.Response:
+    """Full per-strike option chain for one symbol -- "Unified Screener
+    & Deep-Dive Interactivity" sprint (2026-08-28). Reuses
+    _fetch_full_option_chain() (the same real, already-cached fetch
+    compute_options_chain_analytics's own PCR/Max-Pain summary already
+    calls) rather than a second Upstox call path; this route is simply
+    the first place any of it exposes the real PER-STRIKE rows instead
+    of discarding them after computing summary stats. Accepts any real
+    F&O underlying Upstox has an instrument key for -- see
+    _instrument_key_for_symbol()'s own real infusion:symbols lookup,
+    not a hardcoded allowlist."""
+    redis = request.app["redis"]
+    symbol = request.query.get("symbol", "").upper().strip()
+    if not symbol:
+        symbol = await _default_symbol(redis)
+    if not symbol:
+        return web.json_response(
+            {"ready": False, "reason": "No symbol provided and no default symbol available."}
+        )
+
+    chain = await _fetch_full_option_chain(redis, symbol)
+    if not chain.get("ready"):
+        return web.json_response(chain)
+
+    rows = cast(OptionRows, chain["rows"])
+    strikes = sorted(
+        (
+            {
+                "strike_price": float(row.get("strike_price") or 0),
+                "call": _leg_snapshot(row, "call_options"),
+                "put": _leg_snapshot(row, "put_options"),
+            }
+            for row in rows
+        ),
+        key=lambda s: cast(float, s["strike_price"]),
+    )
+
+    return web.json_response(
+        {
+            "ready": True,
+            "symbol": symbol,
+            "expiry": chain.get("expiry"),
+            "spot": chain.get("spot"),
+            "pcr": compute_pcr(rows),
+            "max_pain": compute_max_pain(rows),
+            "oi_support_resistance": compute_oi_support_resistance(rows),
+            "strikes": strikes,
+            "cached": bool(chain.get("cached")),
+        }
+    )
+
+
 async def _upstox_option_context(
     redis: Any,
     symbol: str,
