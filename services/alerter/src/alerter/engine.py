@@ -35,6 +35,28 @@ from alerter.telegram import DeliveryOutcome, TelegramClient
 
 logger = structlog.get_logger()
 
+# P0/P1 audit fix (2026-08-28) -- defence-in-depth, not a replacement for
+# api/broker_sync.py's own real cooldown (POSITION_WARNING_COOLDOWN_PREFIX,
+# 30 min, keyed by instrument_token, set BEFORE that module ever publishes
+# a position_warning event). That single check is normally sufficient --
+# see this class's own process_signal docstring comment on why
+# _deliver_position_warning bypasses DeliveryGate entirely. This second,
+# independent gate exists for the failure mode that check can't cover on
+# its own: at-least-once stream redelivery (a consumer-group crash/
+# restart between publish and ack replays the exact same message; a
+# manual re-publish onto the stream during an incident) would reach this
+# method a second time with broker_sync's own state untouched -- nothing
+# upstream would stop a second Telegram send in that case. Deliberately a
+# DIFFERENT Redis key from broker_sync's own (this module's real
+# "infusion:" prefix convention, not the bare "alert:" a first draft of
+# this fix used -- see infusion_streams.constants.KEY_ALERT_LOG for the
+# same convention) and keyed by symbol, not instrument_token, since this
+# gate's only job is "don't send Telegram for this symbol twice in a
+# short window," independent of whichever position/instrument triggered
+# it.
+POSITION_WARNING_REDUNDANT_COOLDOWN_PREFIX = "infusion:alert:pos-warning-cooldown-redundant:"
+POSITION_WARNING_REDUNDANT_COOLDOWN_SEC = 30 * 60
+
 
 class AlerterEngine:
     """Orchestrates delivery gate evaluation, formatting, and sending."""
@@ -343,6 +365,23 @@ class AlerterEngine:
         if not text:
             logger.warning("position_warning_empty_text", symbol=symbol)
             return
+
+        # P0/P1 audit fix (2026-08-28): redundant cooldown gate, this
+        # class's own second layer independent of broker_sync.py's real
+        # one -- see POSITION_WARNING_REDUNDANT_COOLDOWN_PREFIX's own
+        # module-level comment for why this exists despite that upstream
+        # check normally being sufficient. `exists` then `setex` (not one
+        # atomic SET NX EX) matches this engine's own established
+        # cooldown-check idiom elsewhere in this class (DeliveryGate's own
+        # rate-limit checks) -- a benign race between two workers isn't a
+        # concern this single-consumer alerter process needs to guard
+        # against.
+        cooldown_key = f"{POSITION_WARNING_REDUNDANT_COOLDOWN_PREFIX}{symbol}"
+        if await self.redis.exists(cooldown_key):
+            logger.info("position_warning_redundant_cooldown_blocked", symbol=symbol)
+            return
+        await self.redis.setex(cooldown_key, POSITION_WARNING_REDUNDANT_COOLDOWN_SEC, "1")
+
         outcome: DeliveryOutcome = await self.telegram.send_message(
             chat_id=self._chat_id,
             text=text,

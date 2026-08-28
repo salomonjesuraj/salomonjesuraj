@@ -57,6 +57,15 @@ SCALP_MIN_RVOL = 2.5
 SCALP_MAX_WALL_PCT = 1.0
 BTST_MIN_WALL_PCT = 1.5
 BTST_CUTOFF_HOUR_IST = 14.0
+
+# P0 audit fix (2026-08-28) -- same golden-ratio extension
+# api/broker_sync.py's own FIB_EXTENSION_T3 already uses for the Position
+# Intelligence Card's T3, duplicated as a literal here rather than
+# cross-imported (matches this module's own established "small constant,
+# not worth a shared import" precedent above). See
+# _t3_fallback_from_risk's docstring for why this module needs its own
+# fallback distinct from broker_sync's Donchian-channel one.
+FIB_EXTENSION_T3 = 2.618
 # "Closing near Day High/Low" -- within this fraction of the day's own
 # high-low range from the relevant extreme.
 BTST_NEAR_EXTREME_FRACTION = 0.15
@@ -79,6 +88,61 @@ def _compute_risk_reward(entry: float, invalidation: float, target: float) -> fl
     if risk <= 0 or reward <= 0:
         return 0.0
     return round(reward / risk, 2)
+
+
+def _t3_fallback_from_risk(
+    *, bullish: bool, entry: float, invalidation: float, real_t2: float
+) -> float:
+    """P0 audit fix (2026-08-28): real T3 derived from the signal's own
+    measured risk (entry to stop-loss) when features_snapshot doesn't
+    carry a t3_price -- the normal case, since engine.py's signal write
+    path only ever populates t3_price for a subset of strategies. The
+    previous code silently set target_3_fib = target_2_fib in that case,
+    so T2 and T3 rendered as the identical number for most signals.
+
+    This uses entry/stop-loss risk, not broker_sync.py's Donchian-channel
+    swing range (_fib_extension_targets there) -- deliberately: this
+    function runs before this module's own compute_mtf() call (mtf isn't
+    fetched until later in build_trade_blueprint, only when a
+    trade_horizon classification needs it), and entry/invalidation are
+    already real, already-live scanner values at this point in the
+    function, so reusing them needs no extra Redis round-trip and no
+    reordering of this function's existing call sequence. Same
+    FIB_EXTENSION_T3 = 2.618 golden-ratio convention as broker_sync.py;
+    only the measured range differs by design (risk vs. Donchian swing).
+
+    Monotonicity guard, found live during this fix's own verification
+    (not something the audit's spec anticipated): real_t2 comes from an
+    entirely different formula -- scanner/pine_confidence.py's
+    confluence-cluster extension (cluster_center + span * ratio), a
+    different anchor AND span than entry-to-stop risk -- so nothing
+    guarantees entry + risk*2.618 lands beyond it. A live check against
+    a real signal shape (entry 1000, stop 990, real t2_price 1035) had
+    this fallback land T3 at 1026.18 -- BEHIND T2, a target ladder that
+    goes backward, which is a worse and newly-introduced defect than the
+    T2-collapse bug this function replaces. Guarded by construction: if
+    the risk-based number doesn't clear real_t2 in the trade's favorable
+    direction, project one further risk-multiple past real_t2 instead
+    (FIB_EXTENSION_T3 - 1.618 == 1.0, the same T2->T3 fib step
+    pine_confidence.py's own cluster-extension mode uses) -- always
+    strictly beyond T2, never a number smaller than what a real T3
+    should be relative to a real T2.
+
+    Zero (not a fabricated positive number) when risk itself is
+    non-positive (invalid/missing entry-SL pair) -- callers fall back to
+    real_t2 in that case."""
+    risk = (entry - invalidation) if bullish else (invalidation - entry)
+    if risk <= 0:
+        return real_t2
+    candidate = entry + risk * FIB_EXTENSION_T3 if bullish else entry - risk * FIB_EXTENSION_T3
+    beyond_t2 = candidate > real_t2 if bullish else candidate < real_t2
+    if beyond_t2:
+        return candidate
+    return (
+        real_t2 + risk * (FIB_EXTENSION_T3 - 1.618)
+        if bullish
+        else real_t2 - risk * (FIB_EXTENSION_T3 - 1.618)
+    )
 
 
 def _decode_hash(raw: Payload) -> Payload:
@@ -317,11 +381,23 @@ async def build_trade_blueprint(redis: Any, symbol: str) -> TradeBlueprint:
         target_2_fib = _f(signal_row, "t2_price")
         # t3_price only lives inside features_snapshot's own JSON blob,
         # not as a top-level hash field -- see engine.py's own signal
-        # write path.
-        target_3_fib = target_2_fib
+        # write path. P0 audit fix (2026-08-28): when it's missing (the
+        # normal case), derive a real, mathematically distinct T3 from
+        # the signal's own risk via _t3_fallback_from_risk -- NOT a bare
+        # copy of T2, which silently collapsed T2 and T3 to the
+        # identical number for most signals. See that function's own
+        # docstring.
+        target_3_fib = _t3_fallback_from_risk(
+            bullish=direction == "BULL",
+            entry=entry_price,
+            invalidation=invalidation_sl,
+            real_t2=target_2_fib,
+        )
         try:
             snapshot = json.loads(signal_row.get("features_snapshot") or "{}")
-            target_3_fib = float(snapshot.get("t3_price") or target_2_fib)
+            t3_raw = snapshot.get("t3_price")
+            if t3_raw not in (None, "", 0, 0.0):
+                target_3_fib = float(t3_raw)
         except (json.JSONDecodeError, TypeError, ValueError):
             pass
         target_method = str(signal_row.get("target_method") or "unavailable")

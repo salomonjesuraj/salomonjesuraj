@@ -109,6 +109,112 @@ async def test_bearish_signal_sets_direction_bear() -> None:
     assert blueprint.direction == "BEAR"
 
 
+async def test_t3_is_a_real_fib_extension_not_a_bare_copy_of_t2_when_snapshot_lacks_it() -> None:
+    """P0 audit fix (2026-08-28): features_snapshot with no t3_price key
+    at all -- the normal case, since engine.py only ever writes t3_price
+    for a subset of strategies. Previously target_3_fib silently fell
+    back to target_2_fib here; it must now be the real entry-risk 2.618
+    extension instead."""
+    redis = _FakeRedis(
+        {
+            "infusion:signal:RELIANCE": {
+                "signal_type": "bullish",
+                "strategy_id": "vol_vwap_breakout",
+                "entry_price": "1300.0",
+                "invalidation_price": "1290.0",
+                "target_price": "1320.0",
+                # Deliberately below the entry-risk 2.618 extension
+                # (1326.18) so this test exercises the plain formula, not
+                # the monotonicity guard -- see
+                # test_t3_fallback_never_lands_behind_a_wider_real_t2 for
+                # that separate case.
+                "t2_price": "1325.0",
+                "features_snapshot": "{}",
+            }
+        }
+    )
+    blueprint = await tb.build_trade_blueprint(redis, "RELIANCE")
+    assert blueprint.target_2_fib == 1325.0
+    assert blueprint.target_3_fib != blueprint.target_2_fib
+    # entry + (entry - stop_loss) * 2.618
+    assert blueprint.target_3_fib == pytest.approx(1300.0 + (1300.0 - 1290.0) * 2.618)
+
+
+async def test_t3_is_a_real_fib_extension_when_features_snapshot_is_entirely_missing() -> None:
+    """Same bug, other trigger: no features_snapshot field on the signal
+    hash at all (json.loads("{}") path), not just an empty/absent key
+    inside it."""
+    redis = _FakeRedis(
+        {
+            "infusion:signal:RELIANCE": {
+                "signal_type": "bearish",
+                "strategy_id": "options_first_hybrid",
+                "entry_price": "1300.0",
+                "invalidation_price": "1310.0",
+                "target_price": "1280.0",
+                # Deliberately above the entry-risk 2.618 extension
+                # (1273.82) so this test exercises the plain formula, not
+                # the monotonicity guard -- see
+                # test_t3_fallback_never_lands_behind_a_wider_real_t2 for
+                # that separate case.
+                "t2_price": "1275.0",
+            }
+        }
+    )
+    blueprint = await tb.build_trade_blueprint(redis, "RELIANCE")
+    assert blueprint.target_2_fib == 1275.0
+    assert blueprint.target_3_fib != blueprint.target_2_fib
+    # entry - (stop_loss - entry) * 2.618
+    assert blueprint.target_3_fib == pytest.approx(1300.0 - (1310.0 - 1300.0) * 2.618)
+
+
+async def test_t3_fallback_never_lands_behind_a_wider_real_t2() -> None:
+    """Regression for a real bug this fix's own live verification found
+    (not in the audit's original spec): real t2_price comes from
+    scanner/pine_confidence.py's confluence-cluster extension -- a
+    different anchor and span than entry-to-stop risk -- so a naive
+    entry + risk*2.618 fallback can land BEHIND a real T2 that used a
+    wider span. This exact shape (entry 1000, stop 990, real t2_price
+    1035) sent T3 to 1026.18 before the monotonicity guard: behind T2, a
+    target ladder that goes backward."""
+    redis = _FakeRedis(
+        {
+            "infusion:signal:RELIANCE": {
+                "signal_type": "bullish",
+                "strategy_id": "vol_vwap_breakout",
+                "entry_price": "1000.0",
+                "invalidation_price": "990.0",
+                "target_price": "1010.0",
+                "t2_price": "1035.0",
+                "features_snapshot": "{}",
+            }
+        }
+    )
+    blueprint = await tb.build_trade_blueprint(redis, "RELIANCE")
+    assert blueprint.target_2_fib == 1035.0
+    assert blueprint.target_3_fib > blueprint.target_2_fib
+
+
+async def test_t3_fallback_never_lands_ahead_of_a_wider_real_t2_bearish() -> None:
+    """Bearish counterpart of the monotonicity-guard regression above."""
+    redis = _FakeRedis(
+        {
+            "infusion:signal:RELIANCE": {
+                "signal_type": "bearish",
+                "strategy_id": "options_first_hybrid",
+                "entry_price": "1000.0",
+                "invalidation_price": "1010.0",
+                "target_price": "990.0",
+                "t2_price": "965.0",
+                "features_snapshot": "{}",
+            }
+        }
+    )
+    blueprint = await tb.build_trade_blueprint(redis, "RELIANCE")
+    assert blueprint.target_2_fib == 965.0
+    assert blueprint.target_3_fib < blueprint.target_2_fib
+
+
 async def test_retest_status_read_from_the_live_feature_hash() -> None:
     redis = _FakeRedis(
         {"infusion:feature:RELIANCE": {"retest_status": "RETEST_HELD", "retest_level": "1305.5"}}
