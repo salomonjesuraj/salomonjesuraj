@@ -67,6 +67,7 @@ from api.routes.radar_alerts import routes as radar_alerts_routes
 from api.routes.risk import routes as risk_routes
 from api.routes.safety import routes as safety_routes
 from api.routes.scanner import routes as scanner_routes
+from api.routes.screener import routes as screener_routes
 from api.routes.sentiment import routes as sentiment_routes
 from api.routes.shadow_validation import routes as shadow_validation_routes
 from api.routes.strategy_selector import routes as strategy_selector_routes
@@ -134,6 +135,7 @@ async def main() -> None:
     app.router.add_routes(charts_routes)
     app.router.add_routes(verify_routes)
     app.router.add_routes(market_routes)
+    app.router.add_routes(screener_routes)
     app.router.add_routes(ai_routes)
     app.router.add_routes(trigger_routes)
     app.router.add_routes(auth_routes)

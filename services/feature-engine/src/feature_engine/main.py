@@ -185,6 +185,28 @@ async def main() -> None:
         "last_event_label",
         "swing_high_1",
         "swing_low_1",
+        # "Unified Omni-Screener & Deep-Dive Interactivity" sprint
+        # (2026-08-28) -- real bug found live, not new to this sprint:
+        # features/ict.py's own update_ict()/ict_snapshot() has always
+        # computed these six fields into ml_features, but nothing ever
+        # promoted them into THIS hot-state hash, so every reader of it
+        # (infusion_models.smc's nearest_ob_or_fvg_level -- both
+        # api/broker_sync.py's own Position Intelligence "Nearest
+        # OB/FVG" field for real open positions, shipped two sprints
+        # ago, and this sprint's new Screener "OB/FVG Proximity"
+        # column) always read a bare `{}` and honestly, silently
+        # reported "no zone" for every symbol -- indistinguishable from
+        # the genuine "no validated zone right now" case the codebase's
+        # own "never fabricate" discipline is built to allow, which is
+        # exactly why this went unnoticed until this sprint's own live
+        # verification checked the raw Redis hash directly instead of
+        # trusting the honest-looking None.
+        "order_block_bullish_validated",
+        "order_block_bullish_high",
+        "fvg_bullish_top",
+        "order_block_bearish_validated",
+        "order_block_bearish_low",
+        "fvg_bearish_bottom",
     )
 
     async def on_feature(fv: Any) -> None:

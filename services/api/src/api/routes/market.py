@@ -31,6 +31,17 @@ OptionRows = list[Payload]
 
 UPSTOX_API_BASE = "https://api.upstox.com/v3"
 UPSTOX_API_V2_BASE = "https://api.upstox.com/v2"
+
+# "Unified Omni-Screener & Deep-Dive Interactivity" sprint (2026-08-28)
+# -- bulk-readable cache api/routes/screener.py's own
+# /api/screener/options-summary route reads. TTL is deliberately short
+# relative to KEY_AUTH_UPSTOX-style long-lived state: this is a live
+# market reading (PCR/Max Pain), only trustworthy if recent. 5 minutes
+# comfortably survives a couple of option_chain_queue.py refresh cycles
+# (~45s each) even if a symbol briefly drops out of the candidate set,
+# without silently going stale for the rest of a trading session.
+OPTIONS_SUMMARY_PREFIX = "infusion:screener:options-summary:"
+OPTIONS_SUMMARY_TTL_SEC = 5 * 60
 UPSTOX_INDEX_MAP = {
     "NIFTY50": "NSE_INDEX|Nifty 50",
     "NIFTYBANK": "NSE_INDEX|Nifty Bank",
@@ -959,6 +970,33 @@ async def _upstox_option_context(
     spot = float(rows[0].get("underlying_spot_price") or 0)
     if spot <= 0:
         return {"ready": False, "reason": "Upstox option chain missing underlying spot price."}
+
+    # "Unified Omni-Screener & Deep-Dive Interactivity" sprint
+    # (2026-08-28) -- real PCR/Max-Pain/OI-S-R for the Screener's
+    # Options Data columns, computed from these SAME real `rows` this
+    # function already fetched for its own near-ATM scoring below --
+    # zero additional Upstox calls. This is the only place in the
+    # codebase this queue's own already-throttled background refresh
+    # (option_chain_queue.py, ~28 candidates every ~45s) touches the
+    # real broker API for these symbols, so piggybacking here instead
+    # of a second live fetch keeps this sprint's new Screener columns
+    # at zero marginal real-world API cost. See api/routes/screener.py's
+    # own module docstring for the read side and why this is never a
+    # live per-request fetch for the whole 200+ symbol universe.
+    with contextlib.suppress(Exception):
+        summary = {
+            "symbol": symbol,
+            "spot": spot,
+            "pcr": compute_pcr(rows),
+            "max_pain": compute_max_pain(rows),
+            "oi_support_resistance": compute_oi_support_resistance(rows),
+            "updated_at": time.time(),
+        }
+        await redis.setex(
+            f"{OPTIONS_SUMMARY_PREFIX}{symbol}",
+            OPTIONS_SUMMARY_TTL_SEC,
+            json.dumps(summary, default=str),
+        )
 
     leg_name = "call_options" if bias == "CE" else "put_options"
     levels = _underlying_levels(features or {}, signal or {}, bias, spot)

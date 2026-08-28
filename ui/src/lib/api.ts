@@ -23,6 +23,8 @@ import type {
   PrebreakoutRow,
   RiskSettings,
   SafetyStatus,
+  ScreenerOptionsSummaryMap,
+  ScreenerStructureMap,
   SignalRow,
   StagedTicketsResponse,
   StrategySelectorResult,
@@ -168,6 +170,28 @@ export async function fetchOptionChain(symbol?: string): Promise<OptionChainResp
   }
   const qs = symbol ? `?symbol=${encodeURIComponent(symbol)}` : ''
   return getJson<OptionChainResponse>(`/api/options/chain${qs}`)
+}
+
+/** GET /api/screener/structure -- real bulk Order Block/FVG proximity
+ * for the whole F&O universe in one Redis round-trip. */
+export async function fetchScreenerStructure(): Promise<ScreenerStructureMap> {
+  if (isDemoMode()) return {}
+  const body = await getJson<{ count: number; structure: ScreenerStructureMap }>(
+    '/api/screener/structure',
+  )
+  return body.structure || {}
+}
+
+/** GET /api/screener/options-summary -- real PCR/Max Pain for whichever
+ * symbols the background option-chain queue has actually refreshed
+ * recently, never a live per-request fetch for the whole universe --
+ * see api/routes/screener.py's own module docstring for why. */
+export async function fetchScreenerOptionsSummary(): Promise<ScreenerOptionsSummaryMap> {
+  if (isDemoMode()) return {}
+  const body = await getJson<{ count: number; summary: ScreenerOptionsSummaryMap }>(
+    '/api/screener/options-summary',
+  )
+  return body.summary || {}
 }
 
 /** GET /api/backtest/summary -- server-cached 90s, so client polling

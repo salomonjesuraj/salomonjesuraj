@@ -395,6 +395,32 @@ export interface OptionChainResponse {
   strikes?: OptionChainStrike[]
 }
 
+/** GET /api/screener/structure -- "Unified Omni-Screener & Deep-Dive
+ * Interactivity" sprint (2026-08-28). One entry per symbol that
+ * currently has a real, validated Order Block or FVG zone; a symbol
+ * with neither simply has no key here (never a fabricated 0). */
+export interface ScreenerStructureEntry {
+  ob_fvg_level: number
+  distance_pct: number | null
+}
+export type ScreenerStructureMap = Record<string, ScreenerStructureEntry>
+
+/** GET /api/screener/options-summary -- real PCR/Max Pain, but only
+ * for whichever symbols api/option_chain_queue.py's own background
+ * loop has actually refreshed recently (see that route's own module
+ * docstring for why this is never bulk-fetched live for the whole
+ * universe). A symbol not in this map just hasn't been touched by that
+ * rotating candidate refresh recently -- shown as unavailable, not 0. */
+export interface ScreenerOptionsSummaryEntry {
+  symbol: string
+  spot: number
+  pcr: OptionsChainAnalytics['pcr']
+  max_pain: OptionsChainAnalytics['max_pain']
+  oi_support_resistance: OptionsChainAnalytics['oi_support_resistance']
+  updated_at: number
+}
+export type ScreenerOptionsSummaryMap = Record<string, ScreenerOptionsSummaryEntry>
+
 /** One leg inside a RankedStrategy's `legs` array
  * (api/options_strategies.py's `_leg()`). */
 export interface StrategyLeg {
