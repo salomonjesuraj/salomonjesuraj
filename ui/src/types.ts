@@ -417,6 +417,16 @@ export interface ScreenerOptionsSummaryEntry {
   pcr: OptionsChainAnalytics['pcr']
   max_pain: OptionsChainAnalytics['max_pain']
   oi_support_resistance: OptionsChainAnalytics['oi_support_resistance']
+  // Phase 4 audit fix (2026-08-28): real blended ATM IV Rank -- the
+  // plain average of the nearest-strike call/put leg's own real,
+  // 60-daily-observation rolling IV Rank (api/routes/market.py's own
+  // _iv_rank(), the same function the Options Analytics deep-dive's
+  // scoring already used per-contract). null (not 0) until 60 days of
+  // history exist for at least one of those two legs -- the honest,
+  // expected state for the first two months after this metric started
+  // being recorded, never a fabricated placeholder.
+  iv_rank: number | null
+  iv_rank_history_count: number
   updated_at: number
 }
 export type ScreenerOptionsSummaryMap = Record<string, ScreenerOptionsSummaryEntry>

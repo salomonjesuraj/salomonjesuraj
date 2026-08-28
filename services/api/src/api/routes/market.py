@@ -404,6 +404,51 @@ async def _iv_rank(redis: Any, contract_key: str, current_iv: float) -> tuple[fl
     return round(max(0.0, min(100.0, rank)), 2), len(vals)
 
 
+async def _blended_atm_iv_rank(
+    redis: Any, rows: OptionRows, spot: float
+) -> tuple[float | None, int]:
+    """ "Unified Omni-Screener" Phase 4 (2026-08-28): one real, per-symbol
+    IV Rank for the Screener's Options Data column -- the audit's own
+    "synthesized blended near-term ATM iv_rank" ask. Reuses _iv_rank()
+    verbatim (same rolling 60-daily-observation history, same
+    infusion:option-iv-history:{contract_key} keys the per-strike option
+    scoring loop below already reads/writes for whichever contracts it
+    touches) rather than a second, parallel IV-history mechanism --
+    calling it twice more for the same contract on the same day is a
+    no-op write (its own `seen_key` dedup already handles that), so this
+    adds no extra Upstox calls and no extra daily history noise.
+
+    "Near-term" = this same chain's own nearest resolved expiry (the one
+    `rows` was already fetched for). "ATM" = the single strike nearest
+    spot, not the scoring loop's wider +/-6% band -- a screener column
+    needs one representative contract per symbol, not a graded list.
+    "Blended" = the plain average of the call and put leg's own real IV
+    Rank at that one strike, when both have enough history; a lone side
+    is used alone if only one has enough history, and None (never a
+    fabricated number) when neither does -- the normal state for the
+    first ~60 days after this metric started being recorded, disclosed
+    in api/routes/screener.py's own module docstring."""
+    if spot <= 0 or not rows:
+        return None, 0
+    atm_row = min(rows, key=lambda r: abs(float(r.get("strike_price") or 0) - spot))
+    ranks: list[float] = []
+    history_counts: list[int] = []
+    for leg_name in ("call_options", "put_options"):
+        leg_raw = atm_row.get(leg_name)
+        leg = cast(Payload, leg_raw) if isinstance(leg_raw, dict) else {}
+        greeks_raw = leg.get("option_greeks")
+        greeks = cast(Payload, greeks_raw) if isinstance(greeks_raw, dict) else {}
+        contract_key = str(leg.get("instrument_key") or "")
+        current_iv = float(greeks.get("iv") or 0)
+        rank, history_count = await _iv_rank(redis, contract_key, current_iv)
+        history_counts.append(history_count)
+        if rank is not None:
+            ranks.append(rank)
+    if not ranks:
+        return None, max(history_counts, default=0)
+    return round(sum(ranks) / len(ranks), 2), max(history_counts)
+
+
 def _underlying_levels(features: Payload, signal: Payload, bias: str, spot: float) -> Payload:
     atr = _num(features.get("atr_14"), max(spot * 0.006, 0.05))
     atr = atr if atr > 0 else max(spot * 0.006, 0.05)
@@ -984,12 +1029,19 @@ async def _upstox_option_context(
     # own module docstring for the read side and why this is never a
     # live per-request fetch for the whole 200+ symbol universe.
     with contextlib.suppress(Exception):
+        # Phase 4 audit fix (2026-08-28): real blended ATM IV Rank, added
+        # to this same piggybacked cache -- see _blended_atm_iv_rank's
+        # own docstring for what "blended near-term ATM" means and why
+        # it's None (not fabricated) until 60 days of history exist.
+        iv_rank, iv_history_count = await _blended_atm_iv_rank(redis, rows, spot)
         summary = {
             "symbol": symbol,
             "spot": spot,
             "pcr": compute_pcr(rows),
             "max_pain": compute_max_pain(rows),
             "oi_support_resistance": compute_oi_support_resistance(rows),
+            "iv_rank": iv_rank,
+            "iv_rank_history_count": iv_history_count,
             "updated_at": time.time(),
         }
         await redis.setex(

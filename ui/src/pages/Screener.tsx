@@ -30,7 +30,7 @@ const SQUEEZE_STATE_LABEL: Record<string, string> = {
   triggered: 'TRIGGERED',
 }
 
-type SortKey = 'symbol' | 'rvol' | 'readiness' | 'pcr'
+type SortKey = 'symbol' | 'rvol' | 'readiness' | 'pcr' | 'iv_rank'
 type QuickFilter = 'high_rvol' | 'squeeze' | 'bullish_buildup' | 'high_pcr'
 type MaxPainShift = 'up' | 'down' | null
 
@@ -48,8 +48,18 @@ interface ScreenerRow {
   pcrSentiment: string | null
   maxPainStrike: number | null
   maxPainShift: MaxPainShift
+  ivRank: number | null
+  ivRankHistoryCount: number
   optionsRecent: boolean
 }
+
+// Same real thresholds api/option_reality.py's own iv_rank_gate() uses
+// to gate live option entries -- reused here rather than invented, so
+// the Screener's badge colors mean the same thing the deep-dive's own
+// gate already means: >80 is "buying into crush," 60-80 is "elevated,"
+// below 60 is the real gate's own PASS band.
+const IV_RANK_AVOID = 80
+const IV_RANK_ELEVATED = 60
 
 function fmt(v: number | null | undefined, digits = 1): string {
   return v === null || v === undefined || Number.isNaN(v) ? DASH : v.toFixed(digits)
@@ -66,11 +76,11 @@ function fmt(v: number | null | undefined, digits = 1): string {
  *   - Order Block / FVG proximity: GET /api/screener/structure (new --
  *     real feature-engine OB/FVG state, zero live broker calls)
  *   - RVOL, Squeeze Readiness: GET /api/ticks + GET /api/prebreakout
- *   - PCR Sentiment, Max Pain: GET /api/screener/options-summary (new)
+ *   - PCR Sentiment, Max Pain, IV Rank: GET /api/screener/options-summary
  *
- * Disclosed, not silent, about the two real constraints on the Options
+ * Disclosed, not silent, about the real constraints on the Options
  * Data columns:
- *   - PCR/Max Pain are only real for whichever symbols
+ *   - PCR/Max Pain/IV Rank are only real for whichever symbols
  *     option_chain_queue.py's own background loop has actually
  *     refreshed recently (a rotating ~28-symbol candidate subset) --
  *     never a live per-request fetch for the whole universe (this
@@ -78,14 +88,18 @@ function fmt(v: number | null | undefined, digits = 1): string {
  *     Upstox's real rate limit while testing this exact sprint
  *     confirmed why). A symbol outside that subset shows an honest
  *     dash, not a stale or fabricated number.
- *   - IV Rank is not shown at all here: unlike PCR/Max Pain (chain-
- *     wide), a real IV Rank is inherently CONTRACT-scoped (api/routes/
- *     market.py's own _iv_rank() ranks one specific contract's current
- *     IV against ITS OWN stored history) -- there's no single "the
- *     symbol's IV Rank" to cache in bulk without first choosing a
- *     contract per symbol and maintaining its history, a materially
- *     bigger piece of infrastructure than this sprint's scope. Open
- *     any symbol's own deep dive for its real Greeks Exposure card.
+ *   - IV Rank (P0 audit Phase 4, 2026-08-28): a real IV Rank is
+ *     inherently CONTRACT-scoped (api/routes/market.py's own
+ *     _iv_rank() ranks one specific contract's current IV against ITS
+ *     OWN stored history) -- so this column is a "blended near-term
+ *     ATM" synthesis, the plain average of the nearest-strike call and
+ *     put leg's own real IV Rank (_blended_atm_iv_rank() in
+ *     market.py), not a single all-purpose number. Also null (an
+ *     honest dash, same as an unrefreshed PCR) until 60 days of daily
+ *     history accumulate for at least one of those two legs -- the
+ *     expected state for roughly the first two months this metric is
+ *     live, not a bug. Open any symbol's own deep dive for that
+ *     contract's real Greeks Exposure card in the meantime.
  *   - "Max Pain shift" is a session-local up/down arrow against the
  *     LAST poll this page itself saw, not a persisted multi-day trend
  *     -- this pipeline doesn't store historical Max Pain snapshots, so
@@ -163,6 +177,8 @@ export function Screener() {
         pcrSentiment: opt?.pcr?.sentiment ?? null,
         maxPainStrike: opt?.max_pain?.max_pain_strike ?? null,
         maxPainShift: maxPainShifts.get(s.symbol) ?? null,
+        ivRank: opt?.iv_rank ?? null,
+        ivRankHistoryCount: opt?.iv_rank_history_count ?? 0,
         optionsRecent: opt !== undefined,
       }
     })
@@ -181,6 +197,7 @@ export function Screener() {
       if (sortKey === 'symbol') return a.symbol.localeCompare(b.symbol)
       if (sortKey === 'rvol') return (a.rvol ?? -1) - (b.rvol ?? -1)
       if (sortKey === 'pcr') return (a.pcr ?? -1) - (b.pcr ?? -1)
+      if (sortKey === 'iv_rank') return (a.ivRank ?? -1) - (b.ivRank ?? -1)
       return (a.readiness ?? -1) - (b.readiness ?? -1)
     })
     return sortDesc ? sorted.reverse() : sorted
@@ -254,7 +271,7 @@ export function Screener() {
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-hud-border bg-hud-panel">
-        <table className="w-full min-w-[1180px] text-left text-xs">
+        <table className="w-full min-w-[1320px] text-left text-xs">
           <thead>
             <tr className="border-b border-hud-border text-[10px] uppercase tracking-wide text-hud-muted">
               <th
@@ -294,12 +311,21 @@ export function Screener() {
                 </span>
               </th>
               <th className="px-3 py-2 font-bold">Max Pain</th>
+              <th
+                className="cursor-pointer select-none px-3 py-2 font-bold"
+                onClick={() => toggleSort('iv_rank')}
+                title="Blended near-term ATM IV Rank (avg. of the nearest-strike call/put leg's own real 60-day rolling rank) -- only for recently-refreshed candidates, and null until 60 days of history exist. See this page's own module docstring."
+              >
+                <span className="inline-flex items-center gap-1">
+                  IV Rank {sortKey === 'iv_rank' && <SortIcon className="h-3 w-3" />}
+                </span>
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-hud-border">
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-3 py-6 text-center text-hud-muted">
+                <td colSpan={8} className="px-3 py-6 text-center text-hud-muted">
                   {rows.length === 0 ? 'Loading symbol universe…' : 'No symbols match these filters.'}
                 </td>
               </tr>
@@ -396,6 +422,39 @@ export function Screener() {
                       </>
                     ) : (
                       <span className="text-hud-muted">{DASH}</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2">
+                    {r.ivRank !== null ? (
+                      <span
+                        title={`Blended ATM IV Rank: ${r.ivRank.toFixed(0)}% (call+put avg., ${r.ivRankHistoryCount}-session history)`}
+                        className={
+                          'tnum inline-block rounded px-1.5 py-0.5 font-mono font-bold ' +
+                          (r.ivRank > IV_RANK_AVOID
+                            ? 'bg-bear/15 text-bear'
+                            : r.ivRank >= IV_RANK_ELEVATED
+                              ? // No dedicated "warning" color token exists in
+                                // index.css's own --color-* palette (just bull/
+                                // bear) -- Tailwind's built-in amber scale for
+                                // this one elevated-but-not-extreme tier rather
+                                // than stretching bull/bear's binary meaning.
+                                'bg-amber-400/15 text-amber-400'
+                              : 'bg-bull/15 text-bull')
+                        }
+                      >
+                        {r.ivRank.toFixed(0)}%
+                      </span>
+                    ) : (
+                      <span
+                        title={
+                          r.ivRankHistoryCount > 0
+                            ? `Building history: ${r.ivRankHistoryCount}/60 sessions recorded`
+                            : 'No recent option-chain refresh, or history not started yet'
+                        }
+                        className="text-hud-muted"
+                      >
+                        {DASH}
+                      </span>
                     )}
                   </td>
                 </tr>
