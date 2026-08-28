@@ -168,10 +168,14 @@ async def get_daily_chart(request: web.Request) -> web.Response:
     )
 
 
+SMC_INTERVAL_MINUTES = {"1m": 1, "5m": 5, "15m": 15, "1h": 60, "4h": 240}
+
+
 @routes.get("/api/chart/smc")
 async def get_smc_geometry(request: web.Request) -> web.Response:
-    """ "Institutional Chart Overlay" sprint (2026-08-28): real BOS/CHOCH,
-    liquidity sweep, Order Block, and Fibonacci target-zone geometry for
+    """ "Institutional Chart Overlay" sprint (2026-08-28), made timeframe-
+    aware by "TradingView Parity" (2026-08-29): real BOS/CHOCH, liquidity
+    sweep, Order Block, Fibonacci target-zone, and trendline geometry for
     the chart overlay -- see api/smc_geometry.py's own module docstring
     for exactly what's computed and why it's a batch replay of
     feature-engine's real rules rather than a live Redis read of the
@@ -179,16 +183,27 @@ async def get_smc_geometry(request: web.Request) -> web.Response:
     state and the single most recent break event, not the full history
     a chart's markers need).
 
-    Always computed on the same real 1-minute bars feature-engine's own
-    structure.py/ict.py operate on (api/routes/mtf.py's own real
-    `_load_bars`, the same data /api/trade-blueprint's own structure
-    block already reads) -- independent of whatever timeframe the
-    caller's own candlestick series is currently displaying, so this
-    overlay's story never disagrees with the rest of the app's own
-    trend_text/last_event_label reporting for the same symbol. Accepts
-    any real F&O underlying via `_default_symbol()`'s own dynamic
-    lookup (most recent active signal, else best pre-breakout
-    candidate) when no `?symbol=` is given -- no hardcoded default.
+    `?interval=` (1m/5m/15m/1h/4h, default 1m) selects which candle
+    width the geometry is computed ON, aggregating the SAME real 1-minute
+    bars via charts.py's own `_aggregate()` -- the identical real
+    aggregation the candlestick series itself renders, not a second
+    approximation. This is a genuine behavior change from this route's
+    first version, which always computed on 1-minute bars regardless of
+    the caller's own displayed timeframe: at `1m` (the default), this
+    overlay's trend/swing story still matches the rest of the app's own
+    1-minute trend_text/last_event_label reporting for the same symbol
+    exactly as before; at any other interval, it's now a REAL higher-
+    timeframe read, intentionally different from the 1-minute one --
+    that divergence is what multi-timeframe analysis is supposed to show,
+    not a bug. Honest `ready: false` at the wider timeframes (1h/4h) is
+    expected, not a defect: `_load_bars`' own real lookback is 10 days of
+    1-minute history (mtf.py's own real constant), which aggregates down
+    to too few 4H bars to confirm even one fractal pivot -- widening that
+    lookback is a real, separate piece of work this route doesn't take on.
+
+    Accepts any real F&O underlying via `_default_symbol()`'s own dynamic
+    lookup (most recent active signal, else best pre-breakout candidate)
+    when no `?symbol=` is given -- no hardcoded default.
     """
     redis = request.app["redis"]
     symbol = request.query.get("symbol", "").upper().strip()
@@ -199,6 +214,12 @@ async def get_smc_geometry(request: web.Request) -> web.Response:
             {"ready": False, "reason": "No symbol provided and no default symbol available."}
         )
 
+    interval = request.query.get("interval", "1m").lower()
+    interval_minutes = SMC_INTERVAL_MINUTES.get(interval)
+    if interval_minutes is None:
+        return web.json_response({"ready": False, "reason": f"Unsupported interval: {interval}"})
+
     intraday, _daily, _nifty = await _load_bars(redis, symbol)
-    geometry = compute_smc_geometry(intraday)
-    return web.json_response({"symbol": symbol, **geometry})
+    bars = _aggregate(intraday, interval_minutes)
+    geometry = compute_smc_geometry(bars)
+    return web.json_response({"symbol": symbol, "interval": interval, **geometry})

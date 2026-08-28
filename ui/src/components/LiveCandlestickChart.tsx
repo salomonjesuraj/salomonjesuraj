@@ -5,13 +5,16 @@ import {
   createSeriesMarkers,
   CrosshairMode,
   HistogramSeries,
+  LineSeries,
   LineStyle,
+  TickMarkType,
   type CandlestickData,
   type HistogramData,
   type IChartApi,
   type IPriceLine,
   type ISeriesApi,
   type ISeriesMarkersPluginApi,
+  type LineData,
   type SeriesMarker,
   type Time,
   type UTCTimestamp,
@@ -25,6 +28,78 @@ import { CHART_BEAR, CHART_BULL } from '../lib/chartTheme'
 import { useUiEngineStore } from '../store/useUiEngineStore'
 import type { ChartBar } from '../types'
 
+// "TradingView Parity" sprint (2026-08-29): the NSE session (09:15-
+// 15:30) is defined in IST -- this chart must read in IST regardless of
+// the viewer's own browser/OS timezone (this app's own backend already
+// treats IST as the one true clock everywhere, e.g. trade_blueprint.py's
+// `_IST = ZoneInfo("Asia/Kolkata")`; the frontend axis had never
+// actually enforced the same thing, just inherited whatever timezone
+// the browser happened to be in). lightweight-charts' own `Time` union
+// includes string/BusinessDay variants this chart never actually
+// produces -- every bar this app ever sets is a plain Unix-seconds
+// UTCTimestamp, so this narrows to that one real case rather than
+// handling all three.
+function istDate(time: Time): Date | null {
+  return typeof time === 'number' ? new Date(time * 1000) : null
+}
+
+const IST_TIME_ZONE = 'Asia/Kolkata'
+const IST_HHMM = new Intl.DateTimeFormat('en-GB', {
+  timeZone: IST_TIME_ZONE,
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+})
+const IST_DAY_MONTH = new Intl.DateTimeFormat('en-GB', {
+  timeZone: IST_TIME_ZONE,
+  day: '2-digit',
+  month: 'short',
+})
+const IST_MONTH_YEAR = new Intl.DateTimeFormat('en-GB', {
+  timeZone: IST_TIME_ZONE,
+  month: 'short',
+  year: '2-digit',
+})
+const IST_YEAR = new Intl.DateTimeFormat('en-GB', {
+  timeZone: IST_TIME_ZONE,
+  year: 'numeric',
+})
+const IST_CROSSHAIR = new Intl.DateTimeFormat('en-GB', {
+  timeZone: IST_TIME_ZONE,
+  day: '2-digit',
+  month: 'short',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+})
+
+// The actual VISIBLE x-axis ticks -- lightweight-charts' own
+// `localization.timeFormatter` (below) only overrides the crosshair
+// tooltip, not the axis itself; this app's ask ("the x-axis always
+// aligns with IST") needs `timeScale.tickMarkFormatter` too, or the
+// tooltip would read IST while the axis underneath it kept reading
+// browser-local time.
+function istTickMarkFormatter(time: Time, tickMarkType: TickMarkType): string | null {
+  const date = istDate(time)
+  if (!date) return null
+  switch (tickMarkType) {
+    case TickMarkType.Year:
+      return IST_YEAR.format(date)
+    case TickMarkType.Month:
+      return IST_MONTH_YEAR.format(date)
+    case TickMarkType.DayOfMonth:
+      return IST_DAY_MONTH.format(date)
+    default:
+      return IST_HHMM.format(date)
+  }
+}
+
+function istCrosshairTimeFormatter(time: Time): string {
+  const date = istDate(time)
+  return date ? IST_CROSSHAIR.format(date) : ''
+}
+
 // "Institutional Chart Overlay" sprint (2026-08-28) -- distinct from
 // CHART_BULL/CHART_BEAR (the candle body colors) so a liquidity-sweep
 // marker never reads as "just another candle color." Amber for a
@@ -36,6 +111,13 @@ const SWEEP_MARKER_COLOR = '#f59e0b' // Tailwind amber-400 -- see IV Rank badge,
 const OB_BULLISH_COLOR = CHART_BULL
 const OB_BEARISH_COLOR = CHART_BEAR
 const TARGET_ZONE_COLOR = '#fbbf24' // matches --color-horizon-btst
+// "TradingView Parity" sprint (2026-08-29) -- a subtler hue than the
+// solid CHART_BULL/CHART_BEAR candle colors ("subtle green/red," per
+// this sprint's own ask): the trendline is a projection, not a real
+// price level the way an Order Block or target zone is, so it reads as
+// a lighter-weight, deliberately less assertive line on the chart.
+const TRENDLINE_BULLISH_COLOR = '#4ade80' // Tailwind green-400
+const TRENDLINE_BEARISH_COLOR = '#f87171' // Tailwind red-400
 
 const ENTRY_LINE_COLOR = '#FFFFFF'
 const CHANNEL_LINE_COLOR = '#6b7684' // matches --color-hud-muted -- deliberately
@@ -176,6 +258,24 @@ export function LiveCandlestickChart({
   const obBullishLineRef = useRef<IPriceLine | null>(null)
   const obBearishLineRef = useRef<IPriceLine | null>(null)
   const targetT2LineRef = useRef<IPriceLine | null>(null)
+  // "TradingView Parity" sprint (2026-08-29) -- v5's real line-series
+  // API is `chart.addSeries(LineSeries, options)`, matching this file's
+  // own already-established CandlestickSeries/HistogramSeries pattern
+  // (NOT `chart.addLineSeries()`, the removed v3/v4 method the sprint's
+  // own instructions named -- same situation as createSeriesMarkers
+  // above). Created lazily (on first real trendline data), since unlike
+  // the candle/volume series this one doesn't always exist.
+  const trendlineSeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
+  // Perfect-fit, once per symbol/interval: fitContent() already runs
+  // once when bars first load (Effect 2 below); this fires it ONE more
+  // time after the SMC markers/trendline first arrive for this same
+  // symbol/interval, in case that poll resolves after the bars did and
+  // a trendline's own projected value sits outside the candles' own
+  // price range. Deliberately NOT on every subsequent 20s SMC poll --
+  // that would yank the user's own zoom/pan back to fit-all on every
+  // routine refresh, undoing Effect 2's own careful update()-not-
+  // setData() UX.
+  const hasFitSmcRef = useRef(false)
 
   const { bars, loading, error } = useHistoricalData(symbol, interval)
   const journalPosition = useActivePosition(symbol)
@@ -196,8 +296,16 @@ export function LiveCandlestickChart({
   // api/smc_geometry.py's own docstring) -- real BOS/CHOCH/OB state
   // only ever changes once a full bar closes, so polling it as fast as
   // the position blueprint would be pure added backend load for no
-  // fresher data.
-  const { data: smc } = usePolling(() => fetchSmcGeometry(symbol), 20000, [symbol])
+  // fresher data. "TradingView Parity" sprint (2026-08-29): now also
+  // keyed on `interval`, matching `bars` above -- the backend aggregates
+  // to that same timeframe before recomputing geometry (see
+  // fetchSmcGeometry's own comment), so switching the timeframe toggle
+  // refetches BOTH the candles and a genuinely different structural
+  // read, trendlines included.
+  const { data: smc } = usePolling(() => fetchSmcGeometry(symbol, interval), 20000, [
+    symbol,
+    interval,
+  ])
 
   // Effect 1: create once, tear down on unmount. Wrapped in try/catch
   // purely to feed useUiEngineStore's real chart-health probe ("Terminal
@@ -222,7 +330,18 @@ export function LiveCandlestickChart({
         },
         crosshair: { mode: CrosshairMode.Normal },
         rightPriceScale: { borderVisible: false },
-        timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false },
+        // "TradingView Parity" sprint (2026-08-29): strictly IST,
+        // regardless of the viewer's own browser/OS timezone -- see
+        // istTickMarkFormatter's own comment for why BOTH of these are
+        // needed (timeFormatter alone only overrides the crosshair
+        // tooltip, not the visible axis ticks underneath it).
+        localization: { timeFormatter: istCrosshairTimeFormatter },
+        timeScale: {
+          borderVisible: false,
+          timeVisible: true,
+          secondsVisible: false,
+          tickMarkFormatter: istTickMarkFormatter,
+        },
       })
 
       const candleSeries = chart.addSeries(CandlestickSeries, {
@@ -278,6 +397,7 @@ export function LiveCandlestickChart({
       obBullishLineRef.current = null
       obBearishLineRef.current = null
       targetT2LineRef.current = null
+      trendlineSeriesRef.current = null
     }
   }, [])
 
@@ -309,10 +429,12 @@ export function LiveCandlestickChart({
       if (obBearishLineRef.current) candleSeries.removePriceLine(obBearishLineRef.current)
       if (targetT2LineRef.current) candleSeries.removePriceLine(targetT2LineRef.current)
     }
-    // The old symbol's BOS/CHOCH/sweep markers likewise belong to a
-    // different instrument -- clear immediately rather than leaving
-    // stale markers up until the new symbol's own SMC poll lands.
+    // The old symbol's BOS/CHOCH/sweep markers and trendline likewise
+    // belong to a different instrument/timeframe -- clear immediately
+    // rather than leaving stale ones up until the new SMC poll lands.
     markersPluginRef.current?.setMarkers([])
+    trendlineSeriesRef.current?.setData([])
+    hasFitSmcRef.current = false
     entryLineRef.current = null
     slLineRef.current = null
     targetLineRef.current = null
@@ -514,6 +636,48 @@ export function LiveCandlestickChart({
       lineStyle: LineStyle.Dashed,
       title: 'T2 Target Zone',
     })
+
+    // "TradingView Parity" sprint (2026-08-29): the trendline itself --
+    // real API is `chart.addSeries(LineSeries, options)` (see
+    // trendlineSeriesRef's own comment for why this isn't
+    // `addLineSeries()`), created lazily the first time a real
+    // trendline exists rather than up front in Effect 1, since unlike
+    // the candle/volume series a symbol in RANGE state has none at all.
+    // At most one trendline ever comes back (see SmcTrendline's own
+    // type comment) -- its color is re-applied on every update since
+    // the SAME series is reused across a bullish<->bearish flip, not
+    // recreated.
+    const trendline = smc?.ready ? smc.trendlines?.[0] : undefined
+    if (!trendline) {
+      trendlineSeriesRef.current?.setData([])
+    } else {
+      if (!trendlineSeriesRef.current) {
+        trendlineSeriesRef.current = chartRef.current?.addSeries(LineSeries, {
+          lineWidth: 2,
+          lineStyle: LineStyle.Dashed,
+          lastValueVisible: false,
+          priceLineVisible: false,
+        }) ?? null
+      }
+      const trendlineSeries = trendlineSeriesRef.current
+      if (trendlineSeries) {
+        trendlineSeries.applyOptions({
+          color: trendline.direction === 'bullish' ? TRENDLINE_BULLISH_COLOR : TRENDLINE_BEARISH_COLOR,
+        })
+        const data: LineData<Time>[] = trendline.points.map((p) => ({
+          time: p.time as UTCTimestamp,
+          value: p.value,
+        }))
+        trendlineSeries.setData(data)
+      }
+    }
+
+    // Perfect-fit, once per symbol/interval -- see hasFitSmcRef's own
+    // comment for why this doesn't run on every subsequent poll.
+    if (smc?.ready && !hasFitSmcRef.current) {
+      chartRef.current?.timeScale().fitContent()
+      hasFitSmcRef.current = true
+    }
   }, [smc])
 
   return (

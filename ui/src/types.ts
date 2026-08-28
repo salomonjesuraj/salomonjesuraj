@@ -824,6 +824,22 @@ export interface SmcTargetZones {
   direction: 'bullish' | 'bearish' | null
 }
 
+/** "TradingView Parity" sprint (2026-08-29) -- a single real line
+ * through the current trend's own two most recent confirmed swing
+ * points (lows for an uptrend, highs for a downtrend), extended to the
+ * final bar. Exactly 2 points: the older real pivot, and that same
+ * slope projected forward to "now" -- see api/smc_geometry.py's own
+ * _trendline() docstring. */
+export interface SmcTrendlinePoint {
+  time: number
+  value: number
+}
+
+export interface SmcTrendline {
+  direction: 'bullish' | 'bearish'
+  points: [SmcTrendlinePoint, SmcTrendlinePoint]
+}
+
 export interface SmcGeometry {
   symbol: string
   ready: boolean
@@ -842,6 +858,10 @@ export interface SmcGeometry {
   fvg_bullish?: SmcFvg | null
   fvg_bearish?: SmcFvg | null
   target_zones?: SmcTargetZones
+  // Real 0-or-1-element list (see SmcTrendline's own comment) -- an
+  // array, not a nullable single object, so a future multi-trendline
+  // read doesn't need a breaking type change.
+  trendlines?: SmcTrendline[]
 }
 
 /** One real order-book level from GET /api/market/depth/{symbol} --

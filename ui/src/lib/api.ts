@@ -279,10 +279,23 @@ export async function fetchIntradayChart(
 // "Institutional Chart Overlay" sprint (2026-08-28) -- see
 // SmcGeometry's own type comment for what this really is (a batch
 // replay of feature-engine's real structure/ICT rules, not a new
-// algorithm and not the live per-symbol hot-state hash).
-export async function fetchSmcGeometry(symbol: string): Promise<SmcGeometry> {
+// algorithm and not the live per-symbol hot-state hash). "TradingView
+// Parity" sprint (2026-08-29) added `interval`: the backend now
+// aggregates the same real 1-minute bars to this timeframe before
+// computing geometry, so switching timeframes recalculates real
+// higher-timeframe structure (swings/BOS-CHOCH/trendlines), not just a
+// relabeled 1-minute read -- see the backend route's own docstring for
+// the disclosed trade-off (1m matches the rest of the app's canonical
+// state; other intervals are a genuine, intentionally different MTF
+// read).
+export async function fetchSmcGeometry(
+  symbol: string,
+  interval: ChartInterval = '1m',
+): Promise<SmcGeometry> {
   if (isDemoMode()) return { symbol, ready: false, reason: 'Demo mode has no real bar history.' }
-  return getJson<SmcGeometry>(`/api/chart/smc?symbol=${encodeURIComponent(symbol)}`)
+  return getJson<SmcGeometry>(
+    `/api/chart/smc?symbol=${encodeURIComponent(symbol)}&interval=${interval}`,
+  )
 }
 
 // ── Level 2 DOM ladder (2026-08-27 "Terminal Edge" sprint) ────────────

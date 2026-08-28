@@ -4,6 +4,13 @@ Blocks, and Fibonacci target zones -- computed in one BATCH pass over a
 symbol's historical 1-minute OHLC bars, for the chart overlay's own
 `GET /api/chart/smc` route (api/routes/charts.py).
 
+"TradingView Parity" sprint (2026-08-29) added `trendlines`: a single
+line through the current trend's own two most recent real confirmed
+swing points (see _trendline's own docstring), extended to the final
+bar -- not a new pivot-detection pass, built on the exact same
+swing_high_1/2 / swing_low_1/2 state the BOS/CHOCH detection below
+already maintains.
+
 This is not a new SMC algorithm: it mirrors feature-engine's own real,
 already-shipped definitions bar-for-bar --
 feature_engine.features.structure.update_structure (fractal swing
@@ -134,6 +141,72 @@ def _target_zones(
     }
 
 
+def _trendline(
+    trend_state: int,
+    swing_high_1: float | None,
+    swing_high_1_time: int | None,
+    swing_high_2: float | None,
+    swing_high_2_time: int | None,
+    swing_low_1: float | None,
+    swing_low_1_time: int | None,
+    swing_low_2: float | None,
+    swing_low_2_time: int | None,
+    final_bar_time: int,
+) -> list[Payload]:
+    """ "TradingView Parity" sprint (2026-08-29): an algorithmic trendline
+    through the two most recent REAL confirmed swing points on the
+    current trend's own side -- swing lows for an uptrend (an ascending
+    support line), swing highs for a downtrend (a descending resistance
+    line) -- the standard, most literal reading of "connect the last two
+    higher-lows" / "connect the last two lower-highs." Mirrors this
+    module's own real fractal pivots (the exact same swing_high_1/2 and
+    swing_low_1/2 the BOS/CHOCH detection above already confirmed), not
+    a second, separate line-fitting algorithm.
+
+    Returns a 2-point line: the OLDER of the two real pivots (its own
+    real time and price, unmoved) and that same slope projected forward
+    to `final_bar_time` -- i.e. the real line extended to "now," which
+    is what a trendline drawn through two points and dragged to the
+    right edge of a chart actually shows. An empty list (never a
+    fabricated single-point "line") when the trend is RANGE, or fewer
+    than two real confirmed pivots exist yet on the relevant side."""
+    if trend_state == 1:
+        p1_time, p1_value, p2_time, p2_value = (
+            swing_low_2_time,
+            swing_low_2,
+            swing_low_1_time,
+            swing_low_1,
+        )
+        direction = "bullish"
+    elif trend_state == -1:
+        p1_time, p1_value, p2_time, p2_value = (
+            swing_high_2_time,
+            swing_high_2,
+            swing_high_1_time,
+            swing_high_1,
+        )
+        direction = "bearish"
+    else:
+        return []
+
+    if p1_time is None or p2_time is None or p1_value is None or p2_value is None:
+        return []
+    if p1_time == p2_time:
+        return []  # can't derive a slope from two points at the same time
+
+    slope = (p2_value - p1_value) / (p2_time - p1_time)
+    projected_value = p1_value + slope * (final_bar_time - p1_time)
+    return [
+        {
+            "direction": direction,
+            "points": [
+                {"time": p1_time, "value": round(p1_value, 2)},
+                {"time": final_bar_time, "value": round(projected_value, 2)},
+            ],
+        }
+    ]
+
+
 def compute_smc_geometry(
     bars: list[Bar], *, left: int = DEFAULT_LEFT, right: int = DEFAULT_RIGHT
 ) -> Payload:
@@ -159,6 +232,13 @@ def compute_smc_geometry(
     swing_high_2: float | None = None
     swing_low_1: float | None = None
     swing_low_2: float | None = None
+    # Bar timestamps of each swing point above -- needed only for the
+    # trendline projection below (a price alone can't anchor a line in
+    # time). Set alongside the price on the exact same assignment.
+    swing_high_1_time: int | None = None
+    swing_high_2_time: int | None = None
+    swing_low_1_time: int | None = None
+    swing_low_2_time: int | None = None
     trend_state = 0
     last_break_high: float | None = None
     last_break_low: float | None = None
@@ -208,11 +288,13 @@ def compute_smc_geometry(
             lows = [float(b["low"]) for b in win]
 
             if cand_high == max(highs) and highs.count(cand_high) == 1:
-                swing_high_2 = swing_high_1
+                swing_high_2, swing_high_2_time = swing_high_1, swing_high_1_time
                 swing_high_1 = cand_high
+                swing_high_1_time = int(bars[candidate_idx]["time"])
             if cand_low == min(lows) and lows.count(cand_low) == 1:
-                swing_low_2 = swing_low_1
+                swing_low_2, swing_low_2_time = swing_low_1, swing_low_1_time
                 swing_low_1 = cand_low
+                swing_low_1_time = int(bars[candidate_idx]["time"])
 
             buf = max(atr, 0.0) * BREAK_BUFFER_ATR
             bullish_break = swing_high_1 is not None and close > swing_high_1 + buf
@@ -316,6 +398,7 @@ def compute_smc_geometry(
                     if close > mean_threshold:
                         order_block_bearish = None
 
+    final_bar_time = int(bars[-1]["time"])
     return {
         "ready": True,
         "bar_count": len(bars),
@@ -327,6 +410,18 @@ def compute_smc_geometry(
         "swing_low_2": swing_low_2,
         "bos_choch_events": bos_choch_events[-MAX_EVENTS:],
         "liquidity_sweeps": liquidity_sweeps[-MAX_EVENTS:],
+        "trendlines": _trendline(
+            trend_state,
+            swing_high_1,
+            swing_high_1_time,
+            swing_high_2,
+            swing_high_2_time,
+            swing_low_1,
+            swing_low_1_time,
+            swing_low_2,
+            swing_low_2_time,
+            final_bar_time,
+        ),
         "order_block_bullish": _ob_payload(order_block_bullish),
         "order_block_bearish": _ob_payload(order_block_bearish),
         "fvg_bullish": _fvg_payload(fvg_bullish),

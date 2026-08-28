@@ -71,6 +71,10 @@ def test_range_state_never_fabricates_a_directional_target_zone() -> None:
     assert result["target_zones"] == {"t2": None, "t3": None, "direction": None}
     assert result["bos_choch_events"] == []
     assert result["order_block_bullish"] is None
+    # Both swing lows are known here (95 at bar 2, and only one so far --
+    # swing_low_2 is still None) -- a real trendline needs TWO points on
+    # the relevant side; RANGE state alone already rules it out honestly.
+    assert result["trendlines"] == []
 
 
 def test_full_bullish_scenario_detects_bos_sweep_ob_and_targets() -> None:
@@ -101,6 +105,24 @@ def test_full_bullish_scenario_detects_bos_sweep_ob_and_targets() -> None:
     assert target_zones["t2"] == round(90 + 30 * 1.618, 2)
     assert target_zones["t3"] == round(90 + 30 * 2.618, 2)
 
+    # "TradingView Parity" sprint (2026-08-29): ascending trendline
+    # through the two most recent real confirmed swing LOWS -- bar 2's
+    # 95 (t=1120, the older, now swing_low_2) and bar 8's 90 (t=1480,
+    # confirmed as the new swing_low_1 by bar 10's own pivot check),
+    # projected forward to the final bar (t=1600).
+    assert result["trendlines"] == [
+        {
+            "direction": "bullish",
+            "points": [
+                {"time": 1120, "value": 95.0},
+                {
+                    "time": 1600,
+                    "value": round(95.0 + (90.0 - 95.0) / (1480 - 1120) * (1600 - 1120), 2),
+                },
+            ],
+        }
+    ]
+
 
 # Continues _IMPULSE_BARS with a genuine reversal: price holds near the
 # breakout (11-13, none of which disturb swing_low_1=90) then crashes
@@ -121,6 +143,29 @@ def test_two_real_break_events_both_appear_uncapped() -> None:
     result = compute_smc_geometry(_RANGE_BARS + _IMPULSE_BARS + _REVERSAL_BARS)
     assert result["trend_state"] == -1
     assert [e["label"] for e in result["bos_choch_events"]] == ["Bullish BOS", "Bearish CHOCH"]
+
+
+def test_bearish_trendline_uses_the_two_most_recent_swing_highs() -> None:
+    """Mirror of the bullish trendline case: once the reversal flips
+    trend_state to -1, the relevant side becomes swing HIGHS -- bar 5's
+    120 (t=1300, the older, now swing_high_2) and bar 10's 125 (t=1600,
+    confirmed as the new swing_high_1), projected to the final bar
+    (t=1840)."""
+    result = compute_smc_geometry(_RANGE_BARS + _IMPULSE_BARS + _REVERSAL_BARS)
+    assert result["swing_high_1"] == 125
+    assert result["swing_high_2"] == 120
+    assert result["trendlines"] == [
+        {
+            "direction": "bearish",
+            "points": [
+                {"time": 1300, "value": 120.0},
+                {
+                    "time": 1840,
+                    "value": round(120.0 + (125.0 - 120.0) / (1600 - 1300) * (1840 - 1300), 2),
+                },
+            ],
+        }
+    ]
 
 
 def test_event_lists_are_capped_to_the_most_recent_max_events(monkeypatch) -> None:
