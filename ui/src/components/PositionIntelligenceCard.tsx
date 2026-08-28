@@ -1,4 +1,5 @@
-import { AlertTriangle } from 'lucide-react'
+import { AlertTriangle, Maximize2, X } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { LiveCandlestickChart } from './LiveCandlestickChart'
 import { DASH } from './MetricCard'
 import type { BrokerPosition } from '../types'
@@ -78,14 +79,19 @@ export function PositionIntelligenceCard({ position }: { position: BrokerPositio
 
   const ltp = position.last_price
   const stop = intel.invalidation_level
-  // "Current Live Risk:Reward Ratio (based on LTP vs Stop/Target)" --
-  // read literally: reward/risk from where price actually is right
-  // now, against T1 (the nearest, soonest-reachable target) and the
-  // real invalidation level, not the original entry's own planned R:R.
-  // Honestly DASH (never a fabricated ratio) when either level is
-  // unavailable or LTP already sits exactly on the stop.
+  // Real bug fix (2026-08-28): for an OPTION position, `ltp` is the
+  // option's own PREMIUM (e.g. Rs 116.00), while `stop`/T1 are levels
+  // on the UNDERLYING's own spot chart (e.g. Rs 4,011.50) -- the exact
+  // same premium-vs-spot unit mismatch already fixed for Structural
+  // Risk Est., missed here the first time even though it's the
+  // identical bug class. Dividing one by the other produced a
+  // coincidentally plausible-looking ratio (often near 1:1) that was
+  // never a real number -- mixed-unit junk math, not a rounding
+  // artifact. Never computed for an option position now; only a plain
+  // equity position (where ltp/stop/T1 are all genuinely the same
+  // spot-price unit) gets a real ratio here.
   const liveRiskReward =
-    stop !== null && t1 !== null && Math.abs(ltp - stop) > 0
+    !intel.is_option && stop !== null && t1 !== null && Math.abs(ltp - stop) > 0
       ? Math.abs(t1 - ltp) / Math.abs(ltp - stop)
       : null
 
@@ -96,6 +102,22 @@ export function PositionIntelligenceCard({ position }: { position: BrokerPositio
   // Deployed sum, so this card and that master strip can never disagree
   // about what this position's own real entry was.
   const effectiveEntry = intel.effective_entry_price
+
+  // Full-screen chart modal (2026-08-28) -- the embedded chart's own
+  // h-48 footprint is deliberately compact for the grid layout, too
+  // small for real technical analysis on demand. Escape closes it the
+  // same way a click on the backdrop does; a click on the chart panel
+  // itself is stopped from bubbling to the backdrop so it doesn't
+  // close while the trader is actually interacting with the chart.
+  const [isChartExpanded, setIsChartExpanded] = useState(false)
+  useEffect(() => {
+    if (!isChartExpanded) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsChartExpanded(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [isChartExpanded])
 
   return (
     <article
@@ -152,13 +174,59 @@ export function PositionIntelligenceCard({ position }: { position: BrokerPositio
         </div>
       )}
 
-      <div className="mt-3">
+      <div className="relative mt-3">
         <LiveCandlestickChart
           symbol={intel.underlying}
           heightClassName="h-48"
           brokerPosition={{ entry: effectiveEntry, stop, target1: t1 }}
         />
+        <button
+          type="button"
+          onClick={() => setIsChartExpanded(true)}
+          aria-label="Expand chart"
+          title="Expand chart"
+          className="absolute right-2 top-2 z-10 flex items-center justify-center rounded-md bg-hud-bg/80 p-1.5 text-hud-muted ring-1 ring-hud-border backdrop-blur transition-colors hover:bg-hud-panel-hover hover:text-hud-text"
+        >
+          <Maximize2 className="h-3.5 w-3.5" />
+        </button>
       </div>
+
+      {isChartExpanded && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${symbol} expanded chart`}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/95 p-8"
+          onClick={() => setIsChartExpanded(false)}
+        >
+          <div
+            className="flex h-[85vh] w-full max-w-6xl flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="font-mono text-sm font-bold uppercase tracking-wide text-hud-text">
+                {symbol}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsChartExpanded(false)}
+                aria-label="Close"
+                className="flex items-center gap-1.5 rounded-lg bg-hud-panel px-3 py-1.5 text-xs font-bold text-hud-text ring-1 ring-hud-border transition-colors hover:bg-hud-panel-hover"
+              >
+                <X className="h-3.5 w-3.5" />
+                Close
+              </button>
+            </div>
+            <div className="min-h-0 flex-1">
+              <LiveCandlestickChart
+                symbol={intel.underlying}
+                heightClassName="h-full"
+                brokerPosition={{ entry: effectiveEntry, stop, target1: t1 }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Institutional data grid ("Visual Tracking & Lifecycle" sprint,
           2026-08-27) -- replaces the earlier "How Far Can It
@@ -180,10 +248,14 @@ export function PositionIntelligenceCard({ position }: { position: BrokerPositio
           </div>
         )}
         <div className="mt-2 flex items-center justify-between border-t border-hud-border pt-2">
-          <span className="text-hud-muted">Live R:R (LTP-based)</span>
-          <span className="tnum font-mono font-bold text-hud-text">
-            {liveRiskReward !== null ? `1:${liveRiskReward.toFixed(2)}` : DASH}
-          </span>
+          <span className="text-hud-muted">{intel.is_option ? 'Premium R:R' : 'Live R:R (LTP-based)'}</span>
+          {intel.is_option ? (
+            <span className="text-[10px] italic text-hud-muted">Awaiting Options Analytics</span>
+          ) : (
+            <span className="tnum font-mono font-bold text-hud-text">
+              {liveRiskReward !== null ? `1:${liveRiskReward.toFixed(2)}` : DASH}
+            </span>
+          )}
         </div>
         <div className="mt-2 border-t border-hud-border pt-2">
           {/* "Strict Quant & Option Logic" sprint (2026-08-28): labeled
@@ -209,9 +281,13 @@ export function PositionIntelligenceCard({ position }: { position: BrokerPositio
           </div>
         </div>
         {intel.is_option && (
-          <div className="mt-2 flex items-center justify-between border-t border-hud-border pt-2">
-            <span className="text-hud-muted">Spot Required for Breakeven</span>
-            <span className="tnum font-mono font-bold text-hud-text">{fmt(intel.spot_breakeven)}</span>
+          <div className="mt-2 flex items-center justify-between rounded-lg border-t border-hud-border bg-horizon-btst/10 px-2 py-1.5 ring-1 ring-horizon-btst/30">
+            <span className="text-[10px] font-bold uppercase tracking-wide text-horizon-btst">
+              Spot Required for Breakeven
+            </span>
+            <span className="tnum font-mono text-sm font-black text-horizon-btst">
+              {fmt(intel.spot_breakeven)}
+            </span>
           </div>
         )}
       </div>
