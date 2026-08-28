@@ -220,9 +220,17 @@ export function PositionIntelligenceCard({ position }: { position: BrokerPositio
                 Close. No position data card, no PnL badge, no grid --
                 the ask was an unobstructed chart. */}
             <div className="mb-3 flex items-center justify-between gap-3">
-              <h3 className="font-mono text-sm font-bold uppercase tracking-wide text-hud-text">
-                {symbol}
-              </h3>
+              <div className="flex items-baseline gap-2">
+                <h3 className="font-mono text-sm font-bold uppercase tracking-wide text-hud-text">
+                  {symbol}
+                </h3>
+                {/* "UI Cleanup, Symbol Sync & SMC Clutter Filtering" sprint
+                    (2026-08-28): the modal's own top bar previously had no
+                    LTP -- position.last_price was already computed in this
+                    component's own scope (used elsewhere on the card), just
+                    never surfaced up here. */}
+                <span className="tnum font-mono text-xs text-hud-muted">{fmt(ltp)}</span>
+              </div>
               <div className="flex items-center gap-1 rounded-lg bg-hud-panel p-1 ring-1 ring-hud-border">
                 {TIMEFRAMES.map((tf) => (
                   <button

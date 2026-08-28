@@ -71,10 +71,18 @@ FIB_EXTENSION_T2 = 1.618
 FIB_EXTENSION_T3 = 2.618
 
 # A chart-payload/marker-clutter cap, not a real data limit -- only the
-# most recent N events of each kind are returned. Matches this
+# most recent N events of each kind are returned. "UI Cleanup, Symbol
+# Sync & SMC Clutter Filtering" sprint (2026-08-28): lowered from 50 --
+# a live chart with 3000+ real bars of history genuinely can produce
+# that many real BOS/CHOCH/sweep events, and rendering all 50 as
+# overlapping markers on one candlestick pane was unreadable, not
+# incorrect. 8 keeps only the handful of MOST RECENT structural events
+# actually relevant to current price action -- still real, chronological
+# events (never re-ranked by a fabricated "importance" score this
+# codebase has no real data to back), just fewer of them. Matches this
 # codebase's own established "cap for payload size" precedent (e.g.
 # api/routes/mtf.py keeping the last 260 bars per timeframe).
-MAX_EVENTS = 50
+MAX_EVENTS = 8
 
 
 def _trend_text(trend_state: int) -> str:

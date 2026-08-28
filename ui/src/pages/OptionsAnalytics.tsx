@@ -35,7 +35,15 @@ function fmtOi(value: number): string {
  * rows, calls on the left, puts on the right, the classic layout. The
  * strike nearest real spot gets a highlighted row (ATM), not a
  * fabricated "the" ATM strike when spot itself isn't known. */
-function OptionChainTable({ strikes, spot }: { strikes: OptionChainStrike[]; spot?: number }) {
+function OptionChainTable({
+  symbol,
+  strikes,
+  spot,
+}: {
+  symbol: string
+  strikes: OptionChainStrike[]
+  spot?: number
+}) {
   const atmStrike =
     spot && strikes.length > 0
       ? strikes.reduce((closest, s) =>
@@ -44,7 +52,16 @@ function OptionChainTable({ strikes, spot }: { strikes: OptionChainStrike[]; spo
       : null
 
   return (
-    <div className="max-h-[480px] overflow-auto rounded-xl border border-hud-border bg-hud-panel">
+    // data-symbol: an explicit, verifiable anchor that these rows really
+    // are this exact symbol's own strikes -- not load-bearing for
+    // rendering (the parent's own currentOnly() guard already stops a
+    // stale cross-symbol fullChain from ever reaching this component),
+    // but a real DOM fact a test or a screenshot diff can check directly
+    // rather than trusting the heading text above it matches.
+    <div
+      data-symbol={symbol}
+      className="max-h-[480px] overflow-auto rounded-xl border border-hud-border bg-hud-panel"
+    >
       <table className="w-full min-w-[820px] text-center text-[11px]">
         <thead className="sticky top-0 bg-hud-panel">
           <tr className="border-b border-hud-border text-[10px] uppercase tracking-wide text-hud-muted">
@@ -160,31 +177,53 @@ function StrategyCard({ strategy }: { strategy: RankedStrategy }) {
  * URL stays shareable/bookmarkable. No symbol picked yet keeps the
  * original default-symbol behavior (most recent active signal, else
  * best pre-breakout candidate) exactly as before this sprint. */
+/** True cross-symbol staleness guard -- "UI Cleanup, Symbol Sync & SMC
+ * Clutter Filtering" sprint (2026-08-28). useOptionsAnalytics's own
+ * usePolling (like every usePolling in this app) keeps the LAST GOOD
+ * `data` on screen across a symbol change until the new fetch actually
+ * resolves -- correct for "a dropped poll shouldn't blank a working
+ * card," wrong for "the user just picked a different symbol": for that
+ * brief in-flight window, every card below was still rendering the
+ * PREVIOUS symbol's real numbers under the NEW symbol's own header
+ * (this page's own real, verified bug behind what looked like a
+ * hardcoded fallback -- searched the whole repo for the literal symbol
+ * the report named; it appears nowhere, it's just whichever real
+ * symbol happened to be showing when the next one hadn't loaded yet).
+ * Each of the four backend payloads below carries its own real
+ * `symbol` field; this drops a payload the instant it's confirmed
+ * stale rather than trusting "whatever's in `data` right now must be
+ * current." Passes a payload through unchanged when it has no
+ * `symbol` field to check (never seen in practice, but not proof of
+ * staleness either) -- only a genuine mismatch hides it. */
+function currentOnly<T extends { symbol?: string }>(
+  payload: T | undefined,
+  activeSymbol: string | undefined,
+): T | undefined {
+  if (!payload || !activeSymbol || !payload.symbol) return payload
+  return payload.symbol.toUpperCase() === activeSymbol.toUpperCase() ? payload : undefined
+}
+
 export function OptionsAnalytics() {
   const [searchParams, setSearchParams] = useSearchParams()
   const symbol = searchParams.get('symbol')?.toUpperCase() || undefined
 
   const { data } = useOptionsAnalytics(symbol)
-  const chain = data?.chainAnalytics
-  const strategies = data?.strategySelector
-  const summary = data?.summary
-  const fullChain = data?.chain
+  // No `?symbol=` yet: activeSymbol defers to the backend's OWN
+  // resolved default (data.summary.symbol, unfiltered -- see
+  // currentOnly's own doc for why filtering happens after this, not
+  // before) so a first-ever page load isn't immediately flagged stale
+  // against itself.
+  const activeSymbol = symbol ?? data?.summary?.symbol
+  const chain = currentOnly(data?.chainAnalytics, activeSymbol)
+  const strategies = currentOnly(data?.strategySelector, activeSymbol)
+  const summary = currentOnly(data?.summary, activeSymbol)
+  const fullChain = currentOnly(data?.chain, activeSymbol)
   const delta = summary?.upstox_option?.metrics?.delta
   const topStrategy = strategies?.ready ? strategies.ranked_strategies?.[0] : undefined
 
   const handleSelectSymbol = (sym: string) => {
     setSearchParams(sym ? { symbol: sym } : {})
   }
-
-  // "Institutional Chart Overlay" sprint (2026-08-28): this page never
-  // embedded a candlestick chart before this sprint -- falls back to
-  // the backend's own resolved default symbol (summary.symbol, set by
-  // the same _default_symbol() every other symbol-less route on this
-  // page already defers to) so the chart, the option chain, and the
-  // Greeks above it all key off literally the same symbol the moment
-  // the page loads with no `?symbol=` yet, not a second independent
-  // default.
-  const chartSymbol = symbol ?? summary?.symbol
 
   return (
     <div className="flex flex-1 flex-col gap-6">
@@ -228,10 +267,10 @@ export function OptionsAnalytics() {
 
       <div>
         <h2 className="mb-3 text-xs font-bold uppercase tracking-wide text-hud-muted">
-          Chart{chartSymbol ? ` -- ${chartSymbol}` : ''}
+          Chart{activeSymbol ? ` -- ${activeSymbol}` : ''}
         </h2>
-        {chartSymbol ? (
-          <LiveCandlestickChart symbol={chartSymbol} heightClassName="h-96" />
+        {activeSymbol ? (
+          <LiveCandlestickChart symbol={activeSymbol} heightClassName="h-96" />
         ) : (
           <p className="rounded-xl border border-dashed border-hud-border bg-hud-panel/40 px-4 py-6 text-center text-xs text-hud-muted">
             Waiting for a symbol context (active signal or pre-breakout candidate).
@@ -308,8 +347,13 @@ export function OptionsAnalytics() {
           Option Chain{fullChain?.symbol ? ` -- ${fullChain.symbol}` : ''}
           {fullChain?.expiry ? ` (${fullChain.expiry})` : ''}
         </h2>
-        {fullChain?.ready && fullChain.strikes?.length ? (
-          <OptionChainTable strikes={fullChain.strikes} spot={fullChain.spot} />
+        {fullChain?.ready && fullChain.strikes?.length && activeSymbol ? (
+          <OptionChainTable
+            key={activeSymbol}
+            symbol={activeSymbol}
+            strikes={fullChain.strikes}
+            spot={fullChain.spot}
+          />
         ) : (
           <p className="rounded-xl border border-dashed border-hud-border bg-hud-panel/40 px-4 py-6 text-center text-xs text-hud-muted">
             {fullChain?.reason || 'No option chain read yet.'}
