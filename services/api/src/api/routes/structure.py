@@ -1,18 +1,35 @@
-"""Structure & Breakout Suite routes -- Phase 1/2 (2026-08-29).
+"""Structure & Breakout Suite routes -- Phase 1/2 (2026-08-29) live
+signal routes, Phase 3 (2026-08-29) historical replay backtest routes.
 
-Both routes are computed on request, mirroring GET /api/screener/
-structure's own pattern -- no new background hydration loop for this
-phase (see api.structure_signal's own module docstring for what's
-reused and what Phase 3 still owes: a historical replay backtester and
-auto-optimizer, deliberately not built here).
+GET /api/structure/signal and GET /api/structure/universe are computed
+on request, mirroring GET /api/screener/structure's own pattern -- no
+background hydration loop.
+
+POST /api/structure/backtest/run and GET /api/structure/backtest/
+{run_id} front api.structure_backtest's own real replay engine -- see
+that module's own docstring for the exact reuse map and disclosed
+scope limits (real ~1yr daily / ~1mo intraday data depth, single-leg
+exit simulation, R-multiple-primary P&L). The run itself executes as a
+background asyncio task (same shape as every other long-running sweep
+in this service) so the POST returns immediately with a run_id rather
+than blocking on what can be minutes of replay work.
 """
 
 from __future__ import annotations
 
-from typing import Any
+import asyncio
+import datetime as dt
+from typing import Any, cast
 
 from aiohttp import web
 
+from api.structure_backtest import (
+    CostAssumptions,
+    Side,
+    create_backtest_run,
+    get_backtest_run,
+    run_structure_backtest,
+)
 from api.structure_signal import (
     TIMEFRAME_MINUTES,
     StructureSignalConfig,
@@ -24,6 +41,7 @@ routes = web.RouteTableDef()
 Payload = dict[str, Any]
 
 DEFAULT_TIMEFRAME = "15m"
+VALID_SIDES = ("LONG_ONLY", "SHORT_ONLY", "BOTH")
 
 
 def _config_from_query(request: web.Request) -> StructureSignalConfig:
@@ -89,3 +107,140 @@ async def structure_universe(request: web.Request) -> web.Response:
     config = _config_from_query(request)
     result = await compute_structure_universe(redis, timeframe, config)
     return web.json_response(result)
+
+
+def _config_from_body(body: Payload) -> StructureSignalConfig:
+    defaults = StructureSignalConfig()
+    return StructureSignalConfig(
+        min_setup_quality=int(body.get("min_setup_quality", defaults.min_setup_quality)),
+        min_bias_edge=int(body.get("min_bias_edge", defaults.min_bias_edge)),
+        fast_trigger_lookback=int(
+            body.get("fast_trigger_lookback", defaults.fast_trigger_lookback)
+        ),
+        atr_breakout_buffer=float(body.get("atr_breakout_buffer", defaults.atr_breakout_buffer)),
+        strict_stop_max_atr=float(body.get("strict_stop_max_atr", defaults.strict_stop_max_atr)),
+        tp1_r=float(body.get("tp1_r", defaults.tp1_r)),
+        tp2_r=float(body.get("tp2_r", defaults.tp2_r)),
+        tp3_r=float(body.get("tp3_r", defaults.tp3_r)),
+        trade_mode=str(body.get("trade_mode") or defaults.trade_mode).upper(),
+        vwap_enabled=bool(body.get("vwap_enabled", defaults.vwap_enabled)),
+    )
+
+
+@routes.post("/api/structure/backtest/run")
+async def structure_backtest_run(request: web.Request) -> web.Response:
+    """Kicks off a real historical replay -- see api.structure_backtest's
+    own module docstring for exactly what "real" means here (actual
+    Redis-stored OHLC, actual bar-by-bar signal recomputation, actual
+    simulated fills) and its disclosed scope limits. Returns a run_id
+    immediately; poll GET /api/structure/backtest/{run_id} for status
+    and, once DONE, the real computed metrics."""
+    pg_pool = request.app.get("pg_pool")
+    if not pg_pool:
+        return web.json_response(
+            {"available": False, "reason": "Postgres analytics pool is not available."},
+            status=200,
+        )
+
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"available": False, "reason": "Request body must be JSON."})
+
+    symbols = [str(s).upper().strip() for s in (body.get("symbols") or []) if str(s).strip()]
+    timeframes = [str(t).lower().strip() for t in (body.get("timeframes") or []) if str(t).strip()]
+    if not symbols:
+        return web.json_response({"available": False, "reason": "At least one symbol is required."})
+    if not timeframes:
+        return web.json_response(
+            {"available": False, "reason": "At least one timeframe is required."}
+        )
+    bad_timeframes = [t for t in timeframes if t not in TIMEFRAME_MINUTES]
+    if bad_timeframes:
+        return web.json_response(
+            {
+                "available": False,
+                "reason": f"Unsupported timeframe(s) {bad_timeframes}. Use one of {sorted(TIMEFRAME_MINUTES)}.",
+            }
+        )
+
+    side_raw = str(body.get("side") or "BOTH").upper()
+    if side_raw not in VALID_SIDES:
+        return web.json_response(
+            {"available": False, "reason": f"side must be one of {VALID_SIDES}, got {side_raw!r}."}
+        )
+    side = cast(Side, side_raw)
+
+    try:
+        start_date = dt.date.fromisoformat(str(body.get("start_date")))
+        end_date = dt.date.fromisoformat(str(body.get("end_date")))
+    except (TypeError, ValueError):
+        return web.json_response(
+            {"available": False, "reason": "start_date/end_date must be YYYY-MM-DD strings."}
+        )
+    if end_date < start_date:
+        return web.json_response({"available": False, "reason": "end_date must be >= start_date."})
+
+    config = _config_from_body(body)
+    cost_body = body.get("cost_assumptions") or {}
+    costs = CostAssumptions(
+        slippage_bps=float(cost_body.get("slippage_bps", CostAssumptions().slippage_bps)),
+        brokerage_per_trade=float(
+            cost_body.get("brokerage_per_trade", CostAssumptions().brokerage_per_trade)
+        ),
+    )
+
+    run_id = await create_backtest_run(
+        pg_pool,
+        symbols=symbols,
+        timeframes=timeframes,
+        start_date=start_date,
+        end_date=end_date,
+        side=side,
+        config=config,
+        costs=costs,
+    )
+
+    redis = request.app["redis"]
+    # asyncio's own docs warn that a fire-and-forget task with no
+    # surviving reference can be garbage-collected mid-run -- every
+    # OTHER background task in this service is created once in main()'s
+    # own long-lived scope, but a replay kicked off from inside a
+    # request handler has no such natural home. Pin it on request.app
+    # (which outlives any single request) with a done-callback to
+    # discard it once finished, so the set doesn't grow unbounded.
+    background_tasks: set[asyncio.Task[None]] = request.app.setdefault(
+        "structure_backtest_tasks", set()
+    )
+    task = asyncio.create_task(
+        run_structure_backtest(
+            pg_pool,
+            redis,
+            run_id=run_id,
+            symbols=symbols,
+            timeframes=timeframes,
+            start_date=start_date,
+            end_date=end_date,
+            side=side,
+            config=config,
+            costs=costs,
+        )
+    )
+    background_tasks.add(task)
+    task.add_done_callback(background_tasks.discard)
+
+    return web.json_response({"available": True, "run_id": run_id, "status": "RUNNING"})
+
+
+@routes.get("/api/structure/backtest/{run_id}")
+async def structure_backtest_get(request: web.Request) -> web.Response:
+    pg_pool = request.app.get("pg_pool")
+    if not pg_pool:
+        return web.json_response(
+            {"available": False, "reason": "Postgres analytics pool is not available."}
+        )
+    run_id = request.match_info["run_id"]
+    run = await get_backtest_run(pg_pool, run_id)
+    if run is None:
+        return web.json_response({"available": False, "reason": f"No run found for {run_id!r}."})
+    return web.json_response({"available": True, **run})

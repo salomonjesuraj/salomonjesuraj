@@ -656,34 +656,38 @@ def _suggested_usage(timeframe: str, dominant_bias: str) -> str:
     return "INTRADAY"
 
 
-async def compute_structure_signal(
-    redis: Any,
+def compute_structure_signal_from_bars(
+    *,
     symbol: str,
-    timeframe: str = "15m",
-    config: StructureSignalConfig = DEFAULT_CONFIG,
+    timeframe: str,
+    htf: str,
+    bars: list[Bar],
+    htf_bars: list[Bar],
+    daily_asof: list[Bar],
+    intraday_1m_asof: list[Bar],
+    include_vwap: bool,
+    config: StructureSignalConfig,
 ) -> Payload:
-    """The full Phase 1/2 composite for one symbol/timeframe -- Sections
-    A through F assembled from real, reused reads. See this module's own
-    header for exactly what's reused vs. new."""
-    # Deferred import: api.smc_geometry has no dependency the rest of
-    # this module doesn't already carry, but importing it at module
-    # scope alongside api.routes.mtf/charts/screener risks a future
-    # circular import if any of those ever grows a reason to import
-    # smc_geometry themselves -- cheap to keep local, matching this
-    # codebase's own occasional deferred-import precedent for exactly
-    # this kind of defensive isolation.
+    """The pure Phase 1/2 core -- Sections A through F, assembled purely
+    from bar windows already handed to it. No Redis, no lookahead of its
+    own: every argument must already be trimmed to "as of" whatever
+    point is being evaluated.
+
+    Extracted (Phase 3, 2026-08-29) out of compute_structure_signal()
+    so the live route and the historical replay backtester share this
+    ONE real implementation instead of two copies that could quietly
+    diverge -- compute_structure_signal() below is now a thin Redis-
+    fetching wrapper around this function; structure_backtest.py's own
+    replay loop calls it directly with each step's own trimmed windows.
+    `daily_asof`/`intraday_1m_asof` are separate from `bars`/`htf_bars`
+    because squeeze/RVOL/session-VWAP are deliberately always computed
+    from DAILY (or intraday-session) bars regardless of the requested
+    primary timeframe, per this module's own established Phase 1/2
+    design -- see compute_rvol/compute_squeeze_readiness's own callers
+    below for exactly where that split matters for lookahead safety
+    during a replay."""
     from api.smc_geometry import compute_smc_geometry
 
-    symbol = symbol.upper().strip()
-    timeframe = timeframe.lower().strip()
-    if timeframe not in TIMEFRAME_MINUTES:
-        return {
-            "ready": False,
-            "reason": f"Unsupported timeframe: {timeframe}. Use one of {sorted(TIMEFRAME_MINUTES)}.",
-        }
-
-    intraday_1m, daily, _nifty = await _load_bars(redis, symbol)
-    bars = _bars_for_timeframe(timeframe, intraday_1m, daily)
     if not bars:
         return {
             "ready": False,
@@ -692,10 +696,6 @@ async def compute_structure_signal(
             "reason": "No historical bar history yet.",
         }
 
-    htf = _htf_for(timeframe)
-    htf_bars = _bars_for_timeframe(htf, intraday_1m, daily)
-
-    include_vwap = config.vwap_enabled and _is_intraday_timeframe(timeframe)
     pack: IndicatorPack | None = _indicators(bars, include_vwap)
     if pack is None:
         return {
@@ -709,9 +709,9 @@ async def compute_structure_signal(
     htf_geometry = compute_smc_geometry(htf_bars) if htf_bars else {"trend_state": 0}
 
     mfi = _mfi(bars)
-    squeeze_readiness = compute_squeeze_readiness(daily) if daily else None
-    rvol = compute_rvol(daily) if daily else None
-    vwap = _vwap_session(intraday_1m) if include_vwap else pack.vwap
+    squeeze_readiness = compute_squeeze_readiness(daily_asof) if daily_asof else None
+    rvol = compute_rvol(daily_asof) if daily_asof else None
+    vwap = _vwap_session(intraday_1m_asof) if include_vwap else pack.vwap
 
     # bb_width_expanding: a real, cheap proxy from the SAME squeeze
     # readiness number rather than a second Bollinger pass -- a falling
@@ -721,8 +721,8 @@ async def compute_structure_signal(
     # earlier." None-safe: no signal either way when either side is
     # unavailable yet, never a fabricated True.
     bb_width_expanding = False
-    if daily and len(daily) >= 22:
-        prior_readiness = compute_squeeze_readiness(daily[:-1])
+    if daily_asof and len(daily_asof) >= 22:
+        prior_readiness = compute_squeeze_readiness(daily_asof[:-1])
         if prior_readiness is not None and squeeze_readiness is not None:
             bb_width_expanding = squeeze_readiness < prior_readiness
 
@@ -830,6 +830,42 @@ async def compute_structure_signal(
         },
         "disclaimer": DISCLAIMER,
     }
+
+
+async def compute_structure_signal(
+    redis: Any,
+    symbol: str,
+    timeframe: str = "15m",
+    config: StructureSignalConfig = DEFAULT_CONFIG,
+) -> Payload:
+    """Thin Redis-fetching wrapper around compute_structure_signal_from_bars()
+    -- the full Phase 1/2 composite for one symbol/timeframe, live. See
+    this module's own header for exactly what's reused vs. new."""
+    symbol = symbol.upper().strip()
+    timeframe = timeframe.lower().strip()
+    if timeframe not in TIMEFRAME_MINUTES:
+        return {
+            "ready": False,
+            "reason": f"Unsupported timeframe: {timeframe}. Use one of {sorted(TIMEFRAME_MINUTES)}.",
+        }
+
+    intraday_1m, daily, _nifty = await _load_bars(redis, symbol)
+    bars = _bars_for_timeframe(timeframe, intraday_1m, daily)
+    htf = _htf_for(timeframe)
+    htf_bars = _bars_for_timeframe(htf, intraday_1m, daily)
+    include_vwap = config.vwap_enabled and _is_intraday_timeframe(timeframe)
+
+    return compute_structure_signal_from_bars(
+        symbol=symbol,
+        timeframe=timeframe,
+        htf=htf,
+        bars=bars,
+        htf_bars=htf_bars,
+        daily_asof=daily,
+        intraday_1m_asof=intraday_1m,
+        include_vwap=include_vwap,
+        config=config,
+    )
 
 
 async def compute_structure_universe(
