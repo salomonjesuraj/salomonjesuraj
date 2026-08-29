@@ -87,6 +87,13 @@ Bar = dict[str, float]
 # definition of each key lives there to avoid a circular import.
 OPTIONS_UNIVERSE_TTL_SEC = 15 * 60
 HYDRATE_INTERVAL_SEC = 60
+# SMC_UNIVERSE_KEY previously had no expiry at all -- if this loop ever
+# stops or fails repeatedly, /api/screener/fno would keep serving
+# arbitrarily stale SMC/RVOL/OB-FVG data forever instead of the honest
+# "hasn't hydrated recently" gap a short TTL gives it. Conservative
+# (2 real hydration cycles), not tight -- a single slow/failed cycle
+# shouldn't itself expire otherwise-fresh data.
+SMC_UNIVERSE_TTL_SEC = 2 * HYDRATE_INTERVAL_SEC
 
 _IST = ZoneInfo("Asia/Kolkata")
 _SESSION_OPEN = dt_time(9, 15)
@@ -265,6 +272,7 @@ async def hydrate_smc_universe(redis: Any) -> Payload:
             SMC_UNIVERSE_KEY,
             mapping={sym: json.dumps(row, default=str) for sym, row in rows.items()},
         )
+    write_pipe.expire(SMC_UNIVERSE_KEY, SMC_UNIVERSE_TTL_SEC)
     await write_pipe.execute()
 
     return {"symbols": len(symbols), "populated": populated, "updated_at": time.time()}

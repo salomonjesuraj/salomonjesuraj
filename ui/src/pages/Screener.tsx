@@ -329,7 +329,7 @@ export function Screener() {
           <tbody className="divide-y divide-hud-border">
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-3 py-6 text-center text-hud-muted">
+                <td colSpan={9} className="px-3 py-6 text-center text-hud-muted">
                   {rows.length === 0 ? 'Loading symbol universe…' : 'No symbols match these filters.'}
                 </td>
               </tr>
