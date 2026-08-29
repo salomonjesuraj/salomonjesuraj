@@ -5,11 +5,12 @@ import { ErrorBoundary } from '../components/ErrorBoundary'
 import { LiveCandlestickChart } from '../components/LiveCandlestickChart'
 import { PageHeader } from '../components/PageHeader'
 import { PayoffChart } from '../components/PayoffChart'
+import { StrategyCard } from '../components/StrategyCard'
 import { SymbolSelector } from '../components/SymbolSelector'
 import { useOptionsAnalytics } from '../hooks/useOptionsAnalytics'
 import { usePolling } from '../hooks/usePolling'
 import { fetchSmcGeometry } from '../lib/api'
-import type { OptionChainStrike, RankedStrategy, SmcGeometry } from '../types'
+import type { OptionChainStrike, SmcGeometry } from '../types'
 
 // "Option Bias Alignment" fix (2026-08-29): the same real strategy ->
 // direction map api/options_strategies.py's own _STRATEGY_CLASS uses to
@@ -120,83 +121,6 @@ function OptionChainTable({
           ))}
         </tbody>
       </table>
-    </div>
-  )
-}
-
-function StrategyCard({
-  strategy,
-  smcAligned,
-}: {
-  strategy: RankedStrategy
-  // "Option Bias Alignment" fix (2026-08-29): a subtle green ring, not a
-  // re-sort of this grid -- the shortlist's own real fit-score order
-  // (api/options_strategies.py's own MTF-based ranking) is left exactly
-  // as the backend returned it; this only marks which card(s), if any,
-  // also happen to match the chart's own current SMC bias.
-  smcAligned?: boolean
-}) {
-  const netKind = strategy.net_debit !== undefined ? 'Net Debit' : 'Net Credit'
-  const netValue = strategy.net_debit ?? strategy.net_credit
-  return (
-    <div
-      className={
-        'rounded-xl border bg-hud-panel p-4 ' +
-        (smcAligned ? 'border-bull/50 ring-1 ring-bull/30' : 'border-hud-border')
-      }
-    >
-      <div className="flex items-start justify-between gap-3">
-        <h3 className="font-mono text-sm font-bold text-hud-text">
-          {titleCase(strategy.strategy)}
-          {smcAligned && (
-            <span
-              className="ml-1.5 align-middle text-[9px] font-bold uppercase tracking-wide text-bull"
-              title="This strategy's own directional class matches the chart's current SMC bias"
-            >
-              · SMC
-            </span>
-          )}
-        </h3>
-        <span className="tnum shrink-0 rounded bg-bull/10 px-1.5 py-0.5 text-xs font-bold text-bull">
-          {fmt(strategy.fit_score, 0)}
-        </span>
-      </div>
-      <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
-        {strategy.legs?.map((leg, i) => (
-          <span
-            key={i}
-            className={
-              'rounded px-1.5 py-0.5 font-mono ' +
-              (leg.action === 'BUY' ? 'bg-bull/10 text-bull' : 'bg-bear/10 text-bear')
-            }
-          >
-            {leg.action} {leg.type} {fmt(leg.strike, 0)}
-          </span>
-        ))}
-      </div>
-      <div className="tnum mt-3 grid grid-cols-3 gap-2 text-[11px] text-hud-muted">
-        <div>
-          Max P&L
-          <div className="text-hud-text">
-            +₹{fmt(strategy.max_profit)} / -₹{fmt(strategy.max_loss)}
-          </div>
-        </div>
-        <div>
-          Breakeven
-          <div className="text-hud-text">
-            {strategy.breakeven?.map((b) => fmt(b, 1)).join(', ') || DASH}
-          </div>
-        </div>
-        <div>
-          {netKind}
-          <div className="text-hud-text">{netValue !== undefined ? `₹${fmt(netValue)}` : DASH}</div>
-        </div>
-      </div>
-      <ul className="mt-3 space-y-1 border-t border-hud-border pt-2 text-[11px] text-hud-muted">
-        <li>{strategy.components.directional.reason}</li>
-        <li>{strategy.components.pcr.reason}</li>
-        <li>{strategy.components.max_pain.reason}</li>
-      </ul>
     </div>
   )
 }
