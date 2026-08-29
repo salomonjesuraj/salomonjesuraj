@@ -459,6 +459,77 @@ export interface ScreenerFnoEntry {
 }
 export type ScreenerFnoMap = Record<string, ScreenerFnoEntry>
 
+/** GET /api/structure/signal -- "Structure & Breakout Suite" Phase 1/2
+ * (2026-08-29): the NSE Pro Smart Structure & Breakout Suite PineScript
+ * port's live per-symbol composite. A decision-support read, never a
+ * guarantee -- `disclaimer` carries that same real text the backend
+ * response itself returns, not paraphrased client-side copy. */
+export interface StructureSignal {
+  ready: boolean
+  reason?: string
+  symbol: string
+  timeframe: string
+  htf_timeframe: string
+  htf_is_self: boolean
+  ltp: number
+  bull_score: number
+  bear_score: number
+  dominant_bias: 'BULLISH' | 'BEARISH' | 'NO_CLEAR_BIAS'
+  trade_readiness: 'BUY_ARMED' | 'SELL_ARMED' | 'WAIT' | 'NO_CLEAR_BIAS' | 'LOW_QUALITY'
+  trigger_price: number | null
+  trigger_side: 'BUY_ABOVE' | 'SELL_BELOW' | null
+  trigger_source: 'fast_range' | 'swing_zone' | 'trendline' | null
+  momentum_watch: boolean
+  candle_confirmed: boolean
+  entry: number | null
+  sl: number | null
+  tp1: number | null
+  tp2: number | null
+  tp3: number | null
+  risk_per_share: number | null
+  travel_status:
+    | 'WAITING'
+    | 'ARMED'
+    | 'TRAIL_AFTER_TP1'
+    | 'TRAIL_TO_TP3'
+    | 'TP3_HIT'
+    | 'EXIT_PROTECT'
+  visual_markers: {
+    dot: 'GREEN' | 'RED' | 'GRAY'
+    momentum_diamond: 'GREEN' | 'RED' | null
+    breakout_triangle: 'GREEN' | 'RED' | null
+  }
+  interpretation_label: string[]
+  suggested_usage: 'SCALP' | 'INTRADAY' | 'BOTH' | 'WAIT'
+  indicators: {
+    ema200: number | null
+    rsi14: number | null
+    mfi: number | null
+    supertrend: string
+    vwap: number | null
+    atr: number | null
+    squeeze_readiness: number | null
+    rvol: number | null
+    htf_trend_state: number
+  }
+  disclaimer: string
+}
+
+/** GET /api/structure/universe -- bulk bias/readiness watchlist read,
+ * one row per symbol (never the full per-symbol composite -- that's
+ * GET /api/structure/signal, one symbol at a time). */
+export interface StructureUniverseRow {
+  dominant_bias: StructureSignal['dominant_bias']
+  trade_readiness: StructureSignal['trade_readiness']
+  travel_status: StructureSignal['travel_status']
+  bull_score: number
+  bear_score: number
+  trigger_price: number | null
+  trigger_side: StructureSignal['trigger_side']
+  suggested_usage: StructureSignal['suggested_usage']
+}
+export type StructureUniverseMap = Record<string, StructureUniverseRow>
+
 /** One leg inside a RankedStrategy's `legs` array
  * (api/options_strategies.py's `_leg()`). */
 export interface StrategyLeg {

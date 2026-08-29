@@ -30,6 +30,8 @@ import type {
   SmcGeometry,
   StagedTicketsResponse,
   StrategySelectorResult,
+  StructureSignal,
+  StructureUniverseMap,
   SuppressedSignalRow,
   SymbolMeta,
   TickRow,
@@ -207,6 +209,29 @@ export async function fetchScreenerFno(): Promise<ScreenerFnoMap> {
   if (isDemoMode()) return {}
   const body = await getJson<{ count: number; options_recent_count: number; rows: ScreenerFnoMap }>(
     '/api/screener/fno',
+  )
+  return body.rows || {}
+}
+
+/** GET /api/structure/signal -- "Structure & Breakout Suite" Phase 1/2
+ * (2026-08-29). One symbol/timeframe's full bias/trigger/risk composite,
+ * computed on request from already-cached OHLC + indicator history --
+ * no new background loop. */
+export async function fetchStructureSignal(
+  symbol: string,
+  timeframe: string,
+): Promise<StructureSignal> {
+  return getJson<StructureSignal>(
+    `/api/structure/signal?symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(timeframe)}`,
+  )
+}
+
+/** GET /api/structure/universe -- bulk bias/readiness watchlist read for
+ * every tracked symbol at one timeframe, same per-request (not
+ * background-hydrated) shape as GET /api/screener/structure. */
+export async function fetchStructureUniverse(timeframe: string): Promise<StructureUniverseMap> {
+  const body = await getJson<{ count: number; rows: StructureUniverseMap }>(
+    `/api/structure/universe?timeframe=${encodeURIComponent(timeframe)}`,
   )
   return body.rows || {}
 }

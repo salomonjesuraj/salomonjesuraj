@@ -5,6 +5,7 @@ import { OptionsAnalytics } from './pages/OptionsAnalytics'
 import { SafetyLogs } from './pages/SafetyLogs'
 import { Screener } from './pages/Screener'
 import { SniperHud } from './pages/SniperHud'
+import { StructureBreakout } from './pages/StructureBreakout'
 import { TheLab } from './pages/TheLab'
 import { TheLedger } from './pages/TheLedger'
 
@@ -28,6 +29,7 @@ function App() {
           <Route path="positions" element={<ActiveCockpit />} />
           <Route path="analytics" element={<OptionsAnalytics />} />
           <Route path="screener" element={<Screener />} />
+          <Route path="structure" element={<StructureBreakout />} />
           <Route path="optimizer" element={<TheLab />} />
           <Route path="journal" element={<TheLedger />} />
           <Route path="safety" element={<SafetyLogs />} />

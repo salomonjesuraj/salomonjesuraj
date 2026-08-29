@@ -71,6 +71,7 @@ from api.routes.screener import routes as screener_routes
 from api.routes.sentiment import routes as sentiment_routes
 from api.routes.shadow_validation import routes as shadow_validation_routes
 from api.routes.strategy_selector import routes as strategy_selector_routes
+from api.routes.structure import routes as structure_routes
 from api.routes.system import routes as system_routes
 from api.routes.ticks import routes as ticks_routes
 from api.routes.trade_blueprint import routes as trade_blueprint_routes
@@ -149,6 +150,7 @@ async def main() -> None:
     app.router.add_routes(safety_routes)
     app.router.add_routes(events_routes)
     app.router.add_routes(strategy_selector_routes)
+    app.router.add_routes(structure_routes)
     app.router.add_routes(system_routes)
     app.router.add_routes(futures_routes)
     app.router.add_routes(options_dynamics_routes)
