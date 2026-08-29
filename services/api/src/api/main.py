@@ -77,6 +77,7 @@ from api.routes.trade_blueprint import routes as trade_blueprint_routes
 from api.routes.triggers import routes as trigger_routes
 from api.routes.upstox_news import routes as upstox_news_routes
 from api.routes.verify import routes as verify_routes
+from api.screener_hydrator import screener_hydrator_loop
 from api.sentiment_queue import sentiment_cache_loop
 
 logger = structlog.get_logger()
@@ -180,6 +181,7 @@ async def main() -> None:
     sentiment_cache_task = asyncio.create_task(sentiment_cache_loop(app))
     portfolio_risk_task = asyncio.create_task(portfolio_risk_loop(app))
     lifecycle_monitor_task = asyncio.create_task(lifecycle_monitor_loop(app))
+    screener_hydrator_task = asyncio.create_task(screener_hydrator_loop(app))
 
     # Run forever
     try:
@@ -198,6 +200,7 @@ async def main() -> None:
         sentiment_cache_task.cancel()
         portfolio_risk_task.cancel()
         lifecycle_monitor_task.cancel()
+        screener_hydrator_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await option_queue_task
         with contextlib.suppress(asyncio.CancelledError):
@@ -218,6 +221,8 @@ async def main() -> None:
             await portfolio_risk_task
         with contextlib.suppress(asyncio.CancelledError):
             await lifecycle_monitor_task
+        with contextlib.suppress(asyncio.CancelledError):
+            await screener_hydrator_task
         await health.stop()
         await runner.cleanup()
         if pg_pool:

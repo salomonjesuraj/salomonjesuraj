@@ -29,10 +29,37 @@ the /screener page's merge of Smart Money geometry and Options data:
     subset simply aren't in this route's response; the Screener itself
     shows those honestly as unavailable rather than fabricating a
     number or stalling the page waiting on 200 live fetches.
+
+  - GET /api/screener/fno: "Full Universe Batch Hydration Engine"
+    sprint (2026-08-29), Phase 3. A single, cheap composite read of the
+    two Redis hashes api.screener_hydrator's own background loop
+    already writes every HYDRATE_INTERVAL_SEC: SMC_UNIVERSE_KEY (real
+    Squeeze Readiness + RVOL computed fresh from daily bars, merged
+    with Smart Money Flow/OB-FVG proximity reused from this same
+    module) and OPTIONS_UNIVERSE_KEY (a pure republish of whatever
+    /api/screener/options-summary's own OPTIONS_SUMMARY_PREFIX cache
+    already holds). Two HGETALLs and a per-symbol merge -- no per-
+    request computation, no live Upstox calls. "Zero nulls for symbols
+    with existing OHLC history" (this sprint's own explicit ask)
+    applies to the SMC-side fields (squeeze_readiness/rvol/oi_buildup/
+    ob_fvg_level) -- those are real once bar_count is sufficient. The
+    options-side fields (pcr/max_pain/iv_rank) stay honestly null for
+    any symbol option_chain_queue.py's own rotating ~28-candidate sweep
+    hasn't reached recently -- see screener_hydrator.py's own module
+    docstring for the disclosed, calculated reason true 208-symbol
+    options coverage isn't attempted here.
+
+    SMC_UNIVERSE_KEY/OPTIONS_UNIVERSE_KEY are defined HERE (not
+    imported from api.screener_hydrator) because that module already
+    imports _symbol_universe/_nearest_ob_fvg_either_direction FROM this
+    one -- importing back would be a circular import. screener_hydrator
+    imports these two constants from here instead, so there is exactly
+    one real definition of each key, not a duplicated literal.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
@@ -45,6 +72,12 @@ from api.routes.ticks import _decode_hash
 
 routes = web.RouteTableDef()
 Payload = dict[str, Any]
+
+# Real Redis hash keys api.screener_hydrator.py's own background loop
+# writes into every HYDRATE_INTERVAL_SEC -- defined here, not there,
+# to avoid a circular import; see this module's own docstring above.
+SMC_UNIVERSE_KEY = "fno:screener:smc_universe"
+OPTIONS_UNIVERSE_KEY = "fno:screener:options_universe"
 
 
 async def _symbol_universe(redis: Any) -> list[str]:
@@ -142,3 +175,58 @@ async def screener_options_summary(request: web.Request) -> web.Response:
             break
 
     return web.json_response({"count": len(out), "summary": out})
+
+
+def _decode_universe_hash(raw: Payload) -> Payload:
+    """HGETALL on a universe key returns {symbol_bytes: json_bytes} --
+    unlike ticks.py's own _decode_hash (a flat field->float hash), each
+    value here is a whole JSON-encoded composite row, so this decodes
+    the outer hash AND parses each inner JSON payload. A row that fails
+    to parse (should not happen for anything the hydrator itself wrote)
+    is skipped rather than surfaced as a fabricated empty row."""
+    out: Payload = {}
+    for key, value in raw.items():
+        try:
+            symbol = key.decode() if isinstance(key, bytes) else key
+            text = value.decode() if isinstance(value, bytes) else value
+            out[symbol] = json.loads(text)
+        except Exception:
+            continue
+    return out
+
+
+@routes.get("/api/screener/fno")
+async def screener_fno(request: web.Request) -> web.Response:
+    """Phase 3: the unified composite payload -- SMC_UNIVERSE_KEY merged
+    with OPTIONS_UNIVERSE_KEY, both already fully computed by
+    api.screener_hydrator's background loop. Pure Redis reads, no
+    per-request computation. See this module's own docstring for the
+    "zero nulls" scope (SMC fields only) and why options fields stay
+    honestly null outside the existing rate-limited candidate subset."""
+    redis = request.app["redis"]
+    smc_raw, options_raw = await asyncio.gather(
+        redis.hgetall(SMC_UNIVERSE_KEY), redis.hgetall(OPTIONS_UNIVERSE_KEY)
+    )
+    smc_rows = _decode_universe_hash(smc_raw)
+    options_rows = _decode_universe_hash(options_raw)
+
+    merged: Payload = {}
+    for symbol, row in smc_rows.items():
+        opt = options_rows.get(symbol)
+        merged[symbol] = {
+            **row,
+            "pcr": opt.get("pcr") if opt else None,
+            "max_pain": opt.get("max_pain") if opt else None,
+            "oi_support_resistance": opt.get("oi_support_resistance") if opt else None,
+            "iv_rank": opt.get("iv_rank") if opt else None,
+            "iv_rank_history_count": opt.get("iv_rank_history_count", 0) if opt else 0,
+            "options_updated_at": opt.get("updated_at") if opt else None,
+        }
+
+    return web.json_response(
+        {
+            "count": len(merged),
+            "options_recent_count": sum(1 for s in merged if s in options_rows),
+            "rows": merged,
+        }
+    )

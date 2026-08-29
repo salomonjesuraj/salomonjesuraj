@@ -431,6 +431,34 @@ export interface ScreenerOptionsSummaryEntry {
 }
 export type ScreenerOptionsSummaryMap = Record<string, ScreenerOptionsSummaryEntry>
 
+/** GET /api/screener/fno -- "Full Universe Batch Hydration Engine"
+ * sprint (2026-08-29). One composite row per symbol, pre-computed by
+ * api.screener_hydrator's background loop and merged server-side --
+ * SMC fields (squeeze_readiness/rvol/oi_buildup/ob_fvg_*) are real
+ * whenever bar_count is sufficient (the sprint's own "zero nulls for
+ * symbols with existing OHLC history"); the options fields
+ * (pcr/max_pain/iv_rank) stay honestly null for any symbol outside
+ * option_chain_queue.py's own rotating ~28-candidate refresh -- same
+ * disclosed constraint ScreenerOptionsSummaryEntry already carries. */
+export interface ScreenerFnoEntry {
+  symbol: string
+  ltp: number | null
+  squeeze_readiness: number | null
+  rvol: number | null
+  rvol_session: 'live' | 'last_close'
+  oi_buildup: OIBuildupType | null
+  ob_fvg_level: number | null
+  ob_fvg_distance_pct: number | null
+  bar_count: number
+  pcr: OptionsChainAnalytics['pcr']
+  max_pain: OptionsChainAnalytics['max_pain']
+  oi_support_resistance: OptionsChainAnalytics['oi_support_resistance']
+  iv_rank: number | null
+  iv_rank_history_count: number
+  options_updated_at: number | null
+}
+export type ScreenerFnoMap = Record<string, ScreenerFnoEntry>
+
 /** One leg inside a RankedStrategy's `legs` array
  * (api/options_strategies.py's `_leg()`). */
 export interface StrategyLeg {

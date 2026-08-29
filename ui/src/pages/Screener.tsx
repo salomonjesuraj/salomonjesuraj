@@ -2,32 +2,29 @@ import { ArrowDown, ArrowUp, Filter, Radar } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { PageHeader } from '../components/PageHeader'
-import {
-  fetchAllTicks,
-  fetchOiBuildupMap,
-  fetchPrebreakout,
-  fetchScreenerOptionsSummary,
-  fetchScreenerStructure,
-  fetchSymbols,
-} from '../lib/api'
+import { fetchAllTicks, fetchScreenerFno, fetchSymbols } from '../lib/api'
 import { BULL_OI, OI_LABEL } from '../lib/oiBuildup'
 import { usePolling } from '../hooks/usePolling'
-import type {
-  OIBuildupType,
-  PrebreakoutRow,
-  ScreenerOptionsSummaryMap,
-  ScreenerStructureMap,
-  SymbolMeta,
-  TickRow,
-} from '../types'
+import type { OIBuildupType, ScreenerFnoMap, SymbolMeta, TickRow } from '../types'
 
 const DASH = '—'
 
-const SQUEEZE_STATE_LABEL: Record<string, string> = {
-  coiled: 'SQUEEZE',
-  accumulating: 'ACCUMULATION',
-  compressing: 'COILING',
-  triggered: 'TRIGGERED',
+// Squeeze Readiness (api.screener_hydrator's real TTM Squeeze ratio,
+// 0-100) has no separate candle-persistence STATE the way scanner's own
+// pre_breakout.py state machine does -- this sprint deliberately reuses
+// the single real number rather than rebuilding that state machine (see
+// screener_hydrator.py's own module docstring). These are real,
+// disclosed threshold buckets of that one number, the same pattern this
+// file already uses for IV_RANK_AVOID/ELEVATED and the PCR>1.0/<0.7
+// color bands below -- never a fabricated distinct state.
+const SQUEEZE_READY_THRESHOLD = 80
+const SQUEEZE_COILING_THRESHOLD = 50
+
+function squeezeLabel(readiness: number | null): string | null {
+  if (readiness === null) return null
+  if (readiness >= SQUEEZE_READY_THRESHOLD) return 'SQUEEZE'
+  if (readiness >= SQUEEZE_COILING_THRESHOLD) return 'COILING'
+  return null
 }
 
 type SortKey = 'symbol' | 'rvol' | 'readiness' | 'pcr' | 'iv_rank'
@@ -65,41 +62,52 @@ function fmt(v: number | null | undefined, digits = 1): string {
   return v === null || v === undefined || Number.isNaN(v) ? DASH : v.toFixed(digits)
 }
 
-/** `/screener` -- Unified Omni-Screener, "Unified Omni-Screener &
- * Deep-Dive Interactivity" sprint (2026-08-28). Merges Smart Money
- * geometry and Options data across the real 200+ symbol F&O universe,
- * each column reusing a real bulk-cheap source, joined client-side by
- * symbol (the same shape PreBreakoutWatchlist.tsx/SmartMoneyRadar.tsx
- * already use):
- *   - Symbol & Sector, Current LTP: GET /api/symbols + GET /api/ticks
- *   - Smart Money Flow: GET /api/futures/oi-buildup-map
- *   - Order Block / FVG proximity: GET /api/screener/structure (new --
- *     real feature-engine OB/FVG state, zero live broker calls)
- *   - RVOL, Squeeze Readiness: GET /api/ticks + GET /api/prebreakout
- *   - PCR Sentiment, Max Pain, IV Rank: GET /api/screener/options-summary
+/** `/screener` -- Unified Omni-Screener. Originally built in the
+ * "Unified Omni-Screener & Deep-Dive Interactivity" sprint (2026-08-28)
+ * on four separately-polled, per-request-computed endpoints; rebuilt in
+ * the "Full Universe Batch Hydration Engine" sprint (2026-08-29) on ONE
+ * pre-hydrated composite source (api.screener_hydrator's background
+ * loop, merged server-side by GET /api/screener/fno) because the prior
+ * per-request sources were confirmed genuinely degenerate: RVOL came
+ * from GET /api/ticks' own rel_vol field (scanner's live-tick pipeline,
+ * confirmed via live redis-cli inspection to sit at a universal 0.0 on
+ * a closed/quiet market) and Squeeze Readiness came from GET
+ * /api/prebreakout (scanner's own infusion:prebreak:* keys, confirmed
+ * via a real SCAN to number zero at the time of that investigation --
+ * short TTLs plus a wall-clock-timeout state machine with no live ticks
+ * to drive it). Both are now computed fresh from this service's own
+ * already-stored DAILY OHLC bars (robust to the market being closed or
+ * the scanner's live-tick pipeline being idle) -- see
+ * screener_hydrator.py's own module docstring for the full real
+ * investigation trail:
+ *   - Symbol & Sector, Current LTP (live, 5s): GET /api/symbols + GET
+ *     /api/ticks
+ *   - Everything else -- Smart Money Flow, OB/FVG proximity, RVOL,
+ *     Squeeze Readiness, PCR Sentiment, Max Pain, IV Rank: GET
+ *     /api/screener/fno, one pre-computed composite row per symbol
  *
- * Disclosed, not silent, about the real constraints on the Options
- * Data columns:
+ * Disclosed, not silent, about the real constraints that remain:
  *   - PCR/Max Pain/IV Rank are only real for whichever symbols
  *     option_chain_queue.py's own background loop has actually
  *     refreshed recently (a rotating ~28-symbol candidate subset) --
  *     never a live per-request fetch for the whole universe (this
  *     codebase's own architecture avoids that everywhere, and hitting
- *     Upstox's real rate limit while testing this exact sprint
- *     confirmed why). A symbol outside that subset shows an honest
- *     dash, not a stale or fabricated number.
- *   - IV Rank (P0 audit Phase 4, 2026-08-28): a real IV Rank is
- *     inherently CONTRACT-scoped (api/routes/market.py's own
+ *     Upstox's real rate limit while testing a prior sprint confirmed
+ *     why). A symbol outside that subset shows an honest dash, not a
+ *     stale or fabricated number.
+ *   - IV Rank is inherently CONTRACT-scoped (api/routes/market.py's own
  *     _iv_rank() ranks one specific contract's current IV against ITS
  *     OWN stored history) -- so this column is a "blended near-term
  *     ATM" synthesis, the plain average of the nearest-strike call and
- *     put leg's own real IV Rank (_blended_atm_iv_rank() in
- *     market.py), not a single all-purpose number. Also null (an
- *     honest dash, same as an unrefreshed PCR) until 60 days of daily
- *     history accumulate for at least one of those two legs -- the
- *     expected state for roughly the first two months this metric is
- *     live, not a bug. Open any symbol's own deep dive for that
+ *     put leg's own real IV Rank, not a single all-purpose number. Also
+ *     null until 60 days of daily history accumulate for at least one
+ *     of those two legs. Open any symbol's own deep dive for that
  *     contract's real Greeks Exposure card in the meantime.
+ *   - Squeeze Readiness has no separate candle-persistence STATE the
+ *     way scanner's own pre_breakout.py does -- see squeezeLabel()'s
+ *     own comment above for why the SQUEEZE/COILING labels here are
+ *     real threshold buckets of the one real number, not a rebuilt
+ *     state machine.
  *   - "Max Pain shift" is a session-local up/down arrow against the
  *     LAST poll this page itself saw, not a persisted multi-day trend
  *     -- this pipeline doesn't store historical Max Pain snapshots, so
@@ -107,10 +115,7 @@ function fmt(v: number | null | undefined, digits = 1): string {
 export function Screener() {
   const { data: symbols } = usePolling(fetchSymbols, 60000, [])
   const { data: ticks } = usePolling(fetchAllTicks, 5000, [])
-  const { data: buildupMap } = usePolling(fetchOiBuildupMap, 5000, [])
-  const { data: prebreakout } = usePolling(fetchPrebreakout, 5000, [])
-  const { data: structure } = usePolling(fetchScreenerStructure, 15000, [])
-  const { data: optionsSummary } = usePolling(fetchScreenerOptionsSummary, 15000, [])
+  const { data: fno } = usePolling(fetchScreenerFno, 15000, [])
   const navigate = useNavigate()
 
   // Session-local Max Pain shift tracking -- see this component's own
@@ -122,16 +127,16 @@ export function Screener() {
   // changed, never inside a useEffect (React's own compiler-safety
   // lint flags both effect-based setState-to-derive-a-value AND
   // reading/writing a ref during render, so a plain second useState
-  // "what was optionsSummary last render" is the one shape that
-  // satisfies both rules at once).
-  const [prevOptionsSummary, setPrevOptionsSummary] = useState(optionsSummary)
+  // "what was fno last render" is the one shape that satisfies both
+  // rules at once).
+  const [prevFno, setPrevFno] = useState(fno)
   const [maxPainShifts, setMaxPainShifts] = useState<Map<string, MaxPainShift>>(new Map())
-  if (optionsSummary !== prevOptionsSummary) {
-    setPrevOptionsSummary(optionsSummary)
+  if (fno !== prevFno) {
+    setPrevFno(fno)
     const shifts = new Map<string, MaxPainShift>()
-    for (const [symbol, entry] of Object.entries(optionsSummary ?? {})) {
+    for (const [symbol, entry] of Object.entries(fno ?? {})) {
       const current = entry.max_pain?.max_pain_strike
-      const before = prevOptionsSummary?.[symbol]?.max_pain?.max_pain_strike
+      const before = prevFno?.[symbol]?.max_pain?.max_pain_strike
       if (
         current !== null &&
         current !== undefined &&
@@ -145,49 +150,48 @@ export function Screener() {
     setMaxPainShifts(shifts)
   }
 
-  const [sortKey, setSortKey] = useState<SortKey>('rvol')
+  const [sortKey, setSortKey] = useState<SortKey>('readiness')
   const [sortDesc, setSortDesc] = useState(true)
   const [activeFilters, setActiveFilters] = useState<Set<QuickFilter>>(new Set())
 
   const rows = useMemo<ScreenerRow[]>(() => {
     const tickBySymbol = new Map<string, TickRow>((ticks ?? []).map((t) => [t.symbol, t]))
-    const prebreakBySymbol = new Map<string, PrebreakoutRow>(
-      (prebreakout ?? []).map((p) => [p.symbol, p]),
-    )
-    const buildup = buildupMap ?? {}
-    const structureMap: ScreenerStructureMap = structure ?? {}
-    const optionsMap: ScreenerOptionsSummaryMap = optionsSummary ?? {}
+    const fnoMap: ScreenerFnoMap = fno ?? {}
 
     return (symbols ?? []).map((s: SymbolMeta) => {
       const tick = tickBySymbol.get(s.symbol)
-      const pb = prebreakBySymbol.get(s.symbol)
-      const struct = structureMap[s.symbol]
-      const opt = optionsMap[s.symbol]
+      const entry = fnoMap[s.symbol]
+      const readiness = entry?.squeeze_readiness ?? null
       return {
         symbol: s.symbol,
         sector: s.sector_id || DASH,
-        ltp: tick?.ltp ?? null,
-        buildup: buildup[s.symbol] ?? null,
-        obFvgLevel: struct?.ob_fvg_level ?? null,
-        obFvgDistancePct: struct?.distance_pct ?? null,
-        rvol: tick?.rel_vol ?? null,
-        squeezeState: pb?.state ?? null,
-        readiness: pb?.readiness_score ?? null,
-        pcr: opt?.pcr?.pcr ?? null,
-        pcrSentiment: opt?.pcr?.sentiment ?? null,
-        maxPainStrike: opt?.max_pain?.max_pain_strike ?? null,
+        // Live 5s tick first (freshest); the hydrator's own ltp (up to
+        // HYDRATE_INTERVAL_SEC=60s old) only backstops a symbol with no
+        // recent live tick yet.
+        ltp: tick?.ltp ?? entry?.ltp ?? null,
+        buildup: entry?.oi_buildup ?? null,
+        obFvgLevel: entry?.ob_fvg_level ?? null,
+        obFvgDistancePct: entry?.ob_fvg_distance_pct ?? null,
+        rvol: entry?.rvol ?? null,
+        squeezeState: squeezeLabel(readiness),
+        readiness,
+        pcr: entry?.pcr?.pcr ?? null,
+        pcrSentiment: entry?.pcr?.sentiment ?? null,
+        maxPainStrike: entry?.max_pain?.max_pain_strike ?? null,
         maxPainShift: maxPainShifts.get(s.symbol) ?? null,
-        ivRank: opt?.iv_rank ?? null,
-        ivRankHistoryCount: opt?.iv_rank_history_count ?? 0,
-        optionsRecent: opt !== undefined,
+        ivRank: entry?.iv_rank ?? null,
+        ivRankHistoryCount: entry?.iv_rank_history_count ?? 0,
+        optionsRecent: entry?.options_updated_at !== null && entry?.options_updated_at !== undefined,
       }
     })
-  }, [symbols, ticks, buildupMap, prebreakout, structure, optionsSummary, maxPainShifts])
+  }, [symbols, ticks, fno, maxPainShifts])
 
   const filtered = useMemo(() => {
     let out = rows
-    if (activeFilters.has('high_rvol')) out = out.filter((r) => (r.rvol ?? 0) > 3)
-    if (activeFilters.has('squeeze')) out = out.filter((r) => r.squeezeState === 'coiled')
+    if (activeFilters.has('high_rvol')) out = out.filter((r) => (r.rvol ?? 0) > 1.0)
+    if (activeFilters.has('squeeze')) {
+      out = out.filter((r) => (r.readiness ?? 0) >= SQUEEZE_COILING_THRESHOLD)
+    }
     if (activeFilters.has('bullish_buildup')) {
       out = out.filter((r) => r.buildup !== null && BULL_OI.includes(r.buildup))
     }
@@ -223,7 +227,7 @@ export function Screener() {
   const SortIcon = sortDesc ? ArrowDown : ArrowUp
 
   const FILTER_LABEL: Record<QuickFilter, string> = {
-    high_rvol: 'High RVOL (>3x)',
+    high_rvol: 'High RVOL (>1.0x)',
     squeeze: 'Squeeze Coiling',
     bullish_buildup: 'Bullish Buildup',
     high_pcr: 'High PCR (>1.0)',
@@ -236,7 +240,7 @@ export function Screener() {
       <PageHeader
         icon={Radar}
         title="F&O Omni-Screener"
-        subtitle={`${rows.length} real F&O symbols · Smart Money + Options merged -- Options Data live for ${optionsRecentCount} recently-refreshed candidates`}
+        subtitle={`${rows.length} real F&O symbols · Real-Time Universe Engine Active -- Options Data live for ${optionsRecentCount} recently-refreshed candidates`}
       />
 
       <div className="flex flex-wrap items-center gap-2">
@@ -383,11 +387,13 @@ export function Screener() {
                     {r.rvol !== null ? `${fmt(r.rvol)}x` : DASH}
                   </td>
                   <td className="px-3 py-2">
-                    {r.squeezeState ? (
+                    {r.readiness !== null ? (
                       <span className="tnum font-mono text-hud-text">
-                        {SQUEEZE_STATE_LABEL[r.squeezeState] ?? r.squeezeState.toUpperCase()}
+                        {r.squeezeState && <span>{r.squeezeState}</span>}
                         {r.readiness !== null && (
-                          <span className="ml-1.5 text-hud-muted">{fmt(r.readiness, 0)}</span>
+                          <span className={r.squeezeState ? 'ml-1.5 text-hud-muted' : ''}>
+                            {fmt(r.readiness, 0)}
+                          </span>
                         )}
                       </span>
                     ) : (

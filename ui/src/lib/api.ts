@@ -23,6 +23,7 @@ import type {
   PrebreakoutRow,
   RiskSettings,
   SafetyStatus,
+  ScreenerFnoMap,
   ScreenerOptionsSummaryMap,
   ScreenerStructureMap,
   SignalRow,
@@ -193,6 +194,21 @@ export async function fetchScreenerOptionsSummary(): Promise<ScreenerOptionsSumm
     '/api/screener/options-summary',
   )
   return body.summary || {}
+}
+
+/** GET /api/screener/fno -- "Full Universe Batch Hydration Engine"
+ * sprint (2026-08-29). The unified composite payload -- real Squeeze
+ * Readiness/RVOL/Smart Money Flow/OB-FVG for every symbol with enough
+ * daily bar history, merged server-side with whatever Options data the
+ * existing rate-limited candidate queue has cached -- pre-computed by
+ * api.screener_hydrator's background loop, so this is one cheap Redis
+ * read, not a per-request computation. */
+export async function fetchScreenerFno(): Promise<ScreenerFnoMap> {
+  if (isDemoMode()) return {}
+  const body = await getJson<{ count: number; options_recent_count: number; rows: ScreenerFnoMap }>(
+    '/api/screener/fno',
+  )
+  return body.rows || {}
 }
 
 /** GET /api/backtest/summary -- server-cached 90s, so client polling
