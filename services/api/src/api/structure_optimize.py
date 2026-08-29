@@ -22,38 +22,63 @@ _purge_and_embargo() / _compute_dsr()):
     tested in Phase 3, reused for both the train and test metrics here.
 
 REAL, DISCLOSED COMPUTE CONSTRAINT (checked by reasoning about the
-actual cost, not assumed): unlike api.routes.backtest's own optimizer
-(which only ever re-filters already-computed archived signal rows --
-cheap), most of this module's own parameters
+actual cost, not assumed): most of this module's own parameters
 (min_setup_quality/min_bias_edge/fast_trigger_lookback/
-atr_breakout_buffer/strict_stop_max_atr/tp_ratios/trade_mode) change
-what the SIGNAL ENGINE ITSELF decides -- a different lookback produces
-different trigger prices and therefore entirely different trades, not
-a filterable subset of one baseline replay's trades. A true evaluation
-of one parameter combination requires a full bar-by-bar replay (Phase
-3's own `_replay_symbol_timeframe`), and the spec's full named grid is
-4x3x5x5x5x2x2x3 = 18,000 combinations -- literally exhaustive-replaying
-all 18,000 against even a few symbols of real daily history would take
-on the order of hours in pure Python, not something a request (even a
-backgrounded one meant to finish before a human loses interest) should
-attempt. This module therefore uses SEEDED RANDOM SEARCH over the full
-grid (Bergstra & Bengio 2012 -- a well-established, real alternative to
-exhaustive grid search when the full grid is computationally
-prohibitive, not an invented shortcut), capped at `max_combinations`
-(default below), with the full grid size and the actual sampled count
-both reported honestly in the response -- never silently presented as
-if the whole grid were searched. `trigger_source` is the one dimension
-that IS a cheap post-hoc filter (it doesn't change signal generation,
-only which already-generated trades count) -- combinations that only
-differ by trigger_source share one real replay, refiltered, instead of
-re-running it 3 times.
+atr_breakout_buffer/strict_stop_max_atr/tp_ratios/trade_mode/
+trigger_source) change what the SIGNAL ENGINE ITSELF decides -- a
+different lookback produces different trigger prices and therefore
+entirely different trades, not a filterable subset of one baseline
+replay's trades. A true evaluation of one parameter combination
+requires a full bar-by-bar decision replay, and the spec's full named
+grid is 4x3x5x5x5x2x2x3 = 18,000 combinations -- literally exhaustive-
+replaying all 18,000 against even a few symbols of real daily history
+would take on the order of hours in pure Python, not something a
+request (even a backgrounded one meant to finish before a human loses
+interest) should attempt. This module therefore uses SEEDED RANDOM
+SEARCH over the full grid (Bergstra & Bengio 2012 -- a well-established,
+real alternative to exhaustive grid search when the full grid is
+computationally prohibitive, not an invented shortcut), capped at
+`max_combinations` (default below, tighter for intraday runs -- see
+DEFAULT_MAX_COMBINATIONS_INTRADAY), with the full grid size and the
+actual sampled count both reported honestly in the response -- never
+silently presented as if the whole grid were searched.
+
+REAL FIX, not a redesign (review, 2026-08-29): `trigger_source` used to
+be treated as a cheap post-hoc filter -- `replay_key()` deliberately
+excluded it so combos differing only by trigger_source shared ONE
+"hybrid" (closest-wins) replay, refiltered afterward. Because swing_
+zone's own pivot levels are systematically closer to price than a
+12-bar rolling range or a trendline projection in real data, hybrid
+mode almost always won with swing_zone -- so a "fast_range" or
+"trendline" combo silently tested hybrid mode and then discarded every
+trade that wasn't swing_zone (confirmed live: 0 trades for almost every
+non-swing_zone combo). `trigger_source` is now real, per api.
+structure_signal.StructureSignalConfig's own `trigger_source_mode`
+field -- each combo's OWN replay only ever considers its own trigger
+source (see ParamCombo.to_config() and select_breakout_trigger()).
+
+REAL PERFORMANCE FIX (review, 2026-08-29), not a redesign: every one of
+the parameters above changes only the CHEAP decision layer (a bias-
+threshold comparison, a trigger price calc, candle confirmation, a risk
+calc) -- the EXPENSIVE layer underneath it (indicators, SMC geometry,
+MFI, squeeze/RVOL, the seven-condition bull/bear subscore reads) is the
+same for every combo tested against the same (symbol, timeframe) bars.
+This module now calls api.structure_backtest.precompute_replay_features()
+ONCE per (symbol, timeframe) pair in a run and replays every sampled
+combo against that one precomputed feature set via _replay_with_
+precomputed() -- turning an O(N_combos * n^2) replay cost into
+O(n^2 + N_combos * n), where n is bar count. See api.structure_signal.
+compute_bar_features()'s own docstring for exactly what's cacheable and
+why (nothing swept by this module's own grid affects it).
 """
 
 from __future__ import annotations
 
+import asyncio
 import itertools
 import json
 import random
+import time
 import uuid
 from dataclasses import dataclass
 from typing import Any
@@ -64,13 +89,16 @@ from api.statistics_utils import expected_max_sharpe, probabilistic_sharpe_ratio
 from api.structure_backtest import (
     DEFAULT_COSTS,
     CostAssumptions,
+    PrecomputedReplay,
+    ReplayDiagnostics,
     Side,
     SimulatedTrade,
     _load_symbol_history,
-    _replay_symbol_timeframe,
+    _replay_with_precomputed,
+    precompute_replay_features,
     summarize_trades,
 )
-from api.structure_signal import StructureSignalConfig
+from api.structure_signal import DEFAULT_CONFIG, StructureSignalConfig, _is_intraday_timeframe
 
 logger = structlog.get_logger()
 Payload = dict[str, Any]
@@ -79,6 +107,35 @@ DISCLAIMER = (
     "Statistically stronger setup candidate, evaluated out-of-sample -- "
     "never a perfect or guaranteed setup."
 )
+
+# In-memory, process-local progress store -- Task 3's own "return
+# progress information so the UI does not feel stuck" ask. Deliberately
+# not persisted (an optimizer run is re-runnable from scratch; losing
+# progress on a process restart is an honest "start over," not silent
+# data loss of anything the run itself produced). Polled by GET
+# /api/structure/optimize/{run_id}/progress while the main (blocking)
+# GET /api/structure/optimize/{run_id} call is still in flight -- the
+# event loop stays responsive to that poll because of the same
+# `asyncio.sleep(0)` yields the replay loop already uses (Phase 4 fix).
+_progress_store: dict[str, Payload] = {}
+
+
+def get_optimize_progress(run_id: str) -> Payload | None:
+    """Reads back the current progress snapshot for an in-flight (or
+    just-finished) optimizer run. None when no run with this id has
+    ever reported progress in this process -- an honest "nothing to
+    show," not a fabricated 0%."""
+    snapshot = _progress_store.get(run_id)
+    return dict(snapshot) if snapshot is not None else None
+
+
+def _set_progress(run_id: str | None, **fields: Any) -> None:
+    if not run_id:
+        return
+    current = _progress_store.setdefault(run_id, {})
+    current.update(fields)
+    current["updated_at"] = time.time()
+
 
 # The spec's own literal grid.
 MIN_SETUP_QUALITY_GRID = [4, 5, 6, 7]
@@ -106,6 +163,16 @@ FULL_GRID_SIZE = (
 assert FULL_GRID_SIZE == 18_000, f"grid size drifted from the spec's own 18,000: {FULL_GRID_SIZE}"
 
 DEFAULT_MAX_COMBINATIONS = 60  # see this module's own header for why not the full 18,000
+# Real, hard guard (Task 3's own "add a hard runtime guard or max-
+# combinations guard for intraday runs" ask): an intraday replay bar
+# count can run into the thousands (a month of 1-minute history
+# aggregated to 3m/5m/15m) vs. a daily replay's ~250 bars -- even after
+# the precompute fix above, the per-combo decision pass is still O(n),
+# and n is an order of magnitude larger for intraday. Both guards are
+# enforced together, whichever trips first wins (see
+# optimize_structure_backtest's own use of them).
+DEFAULT_MAX_COMBINATIONS_INTRADAY = 20
+DEFAULT_MAX_RUNTIME_SEC_INTRADAY = 90.0
 DEFAULT_TRAIN_PCT = 0.70
 DEFAULT_EMBARGO_SEC = 86_400.0  # 1 real trading day -- generous relative to daily-bar entries
 MIN_TEST_TRADES = 10
@@ -136,22 +203,14 @@ class ParamCombo:
             tp2_r=self.tp2_r,
             tp3_r=self.tp3_r,
             trade_mode=self.trade_mode,
-        )
-
-    def replay_key(self) -> tuple[Any, ...]:
-        """Everything EXCEPT trigger_source -- combos differing only by
-        trigger_source share one real replay, refiltered afterward (see
-        this module's own header)."""
-        return (
-            self.min_setup_quality,
-            self.min_bias_edge,
-            self.fast_trigger_lookback,
-            self.atr_breakout_buffer,
-            self.strict_stop_max_atr,
-            self.tp1_r,
-            self.tp2_r,
-            self.tp3_r,
-            self.trade_mode,
+            # Real fix (review, 2026-08-29): this used to be omitted
+            # entirely -- trigger_source was ONLY ever applied as a
+            # post-hoc filter on a shared "hybrid" replay (see this
+            # module's own header for the swing_zone-dominance bug that
+            # caused). Now threaded straight into the signal engine's
+            # own trigger_source_mode so a "fast_range"/"trendline"
+            # combo's replay never even considers the other sources.
+            trigger_source_mode=self.trigger_source,
         )
 
     def as_dict(self) -> Payload:
@@ -293,9 +352,16 @@ def _evaluate_combo(
     train_pct: float,
     embargo_sec: float,
 ) -> Payload:
-    """One combo's full evaluation: refilter by trigger_source, purge/
-    embargo split, train/test metrics, consistency, robustness score,
-    and every real rejection rule the spec names."""
+    """One combo's full evaluation: purge/embargo split, train/test
+    metrics, consistency, robustness score, and every real rejection
+    rule the spec names. The trigger_source filter below is now a
+    defensive safety net, not the primary mechanism (review, 2026-08-29)
+    -- `replay_trades` already comes from a replay whose OWN signal
+    engine was restricted to combo.trigger_source (see ParamCombo.
+    to_config()'s own trigger_source_mode), so every trade here should
+    already match; this guards against a future regression re-
+    introducing a shared/hybrid replay rather than doing any real
+    filtering work today."""
     filtered = [
         t for t in replay_trades if t.params_used.get("trigger_source") == combo.trigger_source
     ]
@@ -416,6 +482,26 @@ def _compute_dsr(profiles: list[Payload], recommended: Payload | None) -> Payloa
     }
 
 
+def _trigger_source_breakdown(profiles: list[Payload]) -> Payload:
+    """Task 4's own "trigger-source breakdown" / "trade count by trigger
+    source" UI ask -- real per-source tallies from the profiles actually
+    produced this run, not a derived guess. Reads combos_tested/
+    total_test_trades/survivors per trigger_source so the UI can show,
+    at a glance, whether fast_range/trendline are really being tested
+    (and producing trades) independently of swing_zone."""
+    breakdown: Payload = {}
+    for p in profiles:
+        source = p["params"]["trigger_source"]
+        row = breakdown.setdefault(
+            source, {"combos_tested": 0, "total_test_trades": 0, "survivors": 0}
+        )
+        row["combos_tested"] += 1
+        row["total_test_trades"] += p["test_metrics"].get("trade_count", 0) or 0
+        if not p["rejected"]:
+            row["survivors"] += 1
+    return breakdown
+
+
 async def optimize_structure_backtest(
     redis: Any,
     *,
@@ -429,59 +515,116 @@ async def optimize_structure_backtest(
     train_pct: float = DEFAULT_TRAIN_PCT,
     embargo_sec: float = DEFAULT_EMBARGO_SEC,
     seed: int = 42,
+    run_id: str | None = None,
 ) -> Payload:
-    """The actual search: samples the grid, replays each unique
-    (non-trigger-source) parameter combination once against real
-    history, refilters by trigger_source, evaluates every resulting
-    profile out-of-sample, and ranks the survivors. Never picks the
-    highest raw P&L -- ranks by the real robustness score, and a
-    profile that fails ANY of the spec's own rejection rules is marked
-    rejected and excluded from ever being "recommended," regardless of
-    how good its raw numbers look."""
-    combos, full_grid_size = sample_param_grid(max_combinations, seed)
+    """The actual search: samples the grid, precomputes the expensive
+    (combo-invariant) feature set once per (symbol, timeframe), replays
+    every sampled combo against it, evaluates every resulting profile
+    out-of-sample, and ranks the survivors. Never picks the highest raw
+    P&L -- ranks by the real robustness score, and a profile that fails
+    ANY of the spec's own rejection rules is marked rejected and
+    excluded from ever being "recommended," regardless of how good its
+    raw numbers look. `run_id`, when given, publishes live progress via
+    get_optimize_progress() -- see this module's own header for the
+    real O(N_combos * n^2) -> O(n^2 + N_combos * n) cost this restructure
+    achieves, and DEFAULT_MAX_COMBINATIONS_INTRADAY/
+    DEFAULT_MAX_RUNTIME_SEC_INTRADAY for the hard guard applied below."""
+    is_intraday = any(_is_intraday_timeframe(tf) for tf in timeframes)
+    effective_max_combinations = (
+        min(max_combinations, DEFAULT_MAX_COMBINATIONS_INTRADAY)
+        if is_intraday
+        else max_combinations
+    )
+    combos, full_grid_size = sample_param_grid(effective_max_combinations, seed)
+    started_at = time.monotonic()
+    _set_progress(
+        run_id,
+        phase="loading_history",
+        combos_done=0,
+        combos_total=len(combos),
+        is_intraday=is_intraday,
+        elapsed_sec=0.0,
+    )
 
     # Real history fetched ONCE per symbol and reused across every
-    # sampled combination -- only the (cheap) pure replay computation
-    # repeats per combo, not the Redis I/O.
+    # sampled combination and every (symbol, timeframe) precompute.
     history: dict[str, tuple[list[Any], list[Any]]] = {}
     for symbol in symbols:
         history[symbol] = await _load_symbol_history(redis, symbol, start_ts, end_ts)
 
-    replay_cache: dict[tuple[Any, ...], list[SimulatedTrade]] = {}
-    profiles: list[Payload] = []
-    replays_executed = 0
+    # Precompute the expensive, combo-invariant feature set ONCE per
+    # (symbol, timeframe) pair -- see this module's own header. Any
+    # combo's config would produce identical features here (none of the
+    # swept fields affect compute_bar_features()); DEFAULT_CONFIG is used
+    # directly so this doesn't even depend on iteration order over combos.
+    pairs = [(s, tf) for s in symbols for tf in timeframes]
+    precomputed: dict[tuple[str, str], PrecomputedReplay | None] = {}
+    _set_progress(run_id, phase="precomputing_features", pairs_done=0, pairs_total=len(pairs))
+    for pair_idx, (symbol, timeframe) in enumerate(pairs):
+        daily_full, intraday_full = history[symbol]
+        precomputed[(symbol, timeframe)] = await precompute_replay_features(
+            symbol=symbol,
+            timeframe=timeframe,
+            daily_full=daily_full,
+            intraday_full=intraday_full,
+            config=DEFAULT_CONFIG,
+        )
+        _set_progress(
+            run_id,
+            pairs_done=pair_idx + 1,
+            elapsed_sec=round(time.monotonic() - started_at, 1),
+        )
 
-    for combo in combos:
-        key = combo.replay_key()
-        if key not in replay_cache:
-            trades: list[SimulatedTrade] = []
-            config = combo.to_config()
-            for symbol in symbols:
-                daily_full, intraday_full = history[symbol]
-                for timeframe in timeframes:
-                    trades.extend(
-                        await _replay_symbol_timeframe(
-                            symbol=symbol,
-                            timeframe=timeframe,
-                            daily_full=daily_full,
-                            intraday_full=intraday_full,
-                            side=side,
-                            config=config,
-                            costs=costs,
-                        )
-                    )
-            replay_cache[key] = trades
-            replays_executed += 1
+    profiles: list[Payload] = []
+    combos_evaluated = 0
+    runtime_guard_triggered = False
+    _set_progress(run_id, phase="evaluating_combos", combos_done=0)
+
+    for combo_idx, combo in enumerate(combos):
+        elapsed = time.monotonic() - started_at
+        if is_intraday and elapsed > DEFAULT_MAX_RUNTIME_SEC_INTRADAY:
+            runtime_guard_triggered = True
+            logger.warning(
+                "structure_optimize_runtime_guard_triggered",
+                run_id=run_id,
+                elapsed_sec=round(elapsed, 1),
+                combos_evaluated=combos_evaluated,
+                combos_sampled=len(combos),
+            )
+            break
+
+        config = combo.to_config()
+        trades: list[SimulatedTrade] = []
+        diagnostics: list[ReplayDiagnostics] = []
+        for symbol, timeframe in pairs:
+            pre = precomputed.get((symbol, timeframe))
+            if pre is None:
+                continue
+            combo_trades, diag = await _replay_with_precomputed(
+                pre, side=side, config=config, costs=costs
+            )
+            trades.extend(combo_trades)
+            diagnostics.append(diag)
 
         profile = _evaluate_combo(
             combo,
-            replay_cache[key],
+            trades,
             requested_symbols=symbols,
             requested_timeframes=timeframes,
             train_pct=train_pct,
             embargo_sec=embargo_sec,
         )
+        profile["trigger_diagnostics"] = ReplayDiagnostics.merge(diagnostics)
         profiles.append(profile)
+        combos_evaluated += 1
+
+        if combo_idx % 5 == 0:
+            await asyncio.sleep(0)  # same responsiveness fix as the replay loop itself
+        _set_progress(
+            run_id,
+            combos_done=combos_evaluated,
+            elapsed_sec=round(time.monotonic() - started_at, 1),
+        )
 
     survivors = [p for p in profiles if not p["rejected"]]
     survivors.sort(key=lambda p: p["robustness_score"], reverse=True)
@@ -490,6 +633,7 @@ async def optimize_structure_backtest(
         p["rank"] = i + 1
 
     dsr = _compute_dsr(profiles, recommended)
+    total_elapsed = round(time.monotonic() - started_at, 1)
 
     note = (
         f"Recommended profile ranked #1 of {len(survivors)} candidate(s) that survived every "
@@ -497,17 +641,33 @@ async def optimize_structure_backtest(
         "negative out-of-sample expectancy)."
         if recommended
         else (
-            f"No profile among the {len(combos)} tested survived the rejection rules -- "
+            f"No profile among the {len(profiles)} tested survived the rejection rules -- "
             "none of them is a statistically stronger setup candidate yet. Do not treat any "
             "candidate below as safe to use; collect more real history or widen the search."
         )
+    )
+    if runtime_guard_triggered:
+        note += (
+            f" Runtime guard stopped this run early after {total_elapsed}s "
+            f"({combos_evaluated} of {len(combos)} sampled combos evaluated) -- an intraday "
+            "run's own bar count makes the full sample too slow to finish inline; results "
+            "above reflect only the combos actually evaluated."
+        )
+
+    _set_progress(
+        run_id,
+        phase="DONE",
+        combos_done=combos_evaluated,
+        elapsed_sec=total_elapsed,
+        runtime_guard_triggered=runtime_guard_triggered,
     )
 
     return {
         "available": True,
         "full_grid_size": full_grid_size,
         "sampled_combinations": len(combos),
-        "unique_replays_executed": replays_executed,
+        "combos_evaluated": combos_evaluated,
+        "feature_precompute_pairs": len(pairs),
         "symbols": symbols,
         "timeframes": timeframes,
         "side": side,
@@ -517,7 +677,15 @@ async def optimize_structure_backtest(
         "candidates": sorted(profiles, key=lambda p: p["robustness_score"], reverse=True)[:20],
         "rejected_count": sum(1 for p in profiles if p["rejected"]),
         "survivor_count": len(survivors),
+        "trigger_source_breakdown": _trigger_source_breakdown(profiles),
         "dsr": dsr,
+        "runtime": {
+            "elapsed_sec": total_elapsed,
+            "is_intraday": is_intraday,
+            "max_combinations_applied": effective_max_combinations,
+            "max_runtime_sec_guard": (DEFAULT_MAX_RUNTIME_SEC_INTRADAY if is_intraday else None),
+            "runtime_guard_triggered": runtime_guard_triggered,
+        },
         "note": note,
         "disclaimer": DISCLAIMER,
     }
@@ -527,7 +695,13 @@ async def persist_optimized_profiles(pg_pool: Any, run_id: str, result: Payload)
     """Stores every candidate profile (not just the recommended one) so
     a run's own optimizer output can be audited later -- rank is set
     only for real survivors, per structure_optimized_profiles' own
-    schema comment."""
+    schema comment. Also persists the run-LEVEL summary (grid size,
+    trigger-source breakdown, runtime guard info, DSR) into
+    structure_optimize_runs_meta -- real gap found this same review: the
+    ORIGINAL Phase 4 get_cached_optimize_result() already dropped these
+    on a cache-hit read, so a page revisit after the first run would
+    silently lose them; fixed here rather than repeated for the new
+    Task 2/4 fields (see migrations/014_structure_optimize_diagnostics.sql)."""
     ranked_by_params = {
         json.dumps(p["params"], sort_keys=True): p["rank"]
         for p in result["candidates"]
@@ -551,20 +725,45 @@ async def persist_optimized_profiles(pg_pool: Any, run_id: str, result: Payload)
                 p["rejected"],
                 p["rejection_reasons"],
                 ranked_by_params.get(params_key),
+                json.dumps(p.get("trigger_diagnostics"), default=str),
             )
         )
-    if not rows:
-        return
     async with pg_pool.acquire() as conn:
-        await conn.executemany(
+        if rows:
+            await conn.executemany(
+                """
+                INSERT INTO structure_optimized_profiles
+                    (id, run_id, params, train_metrics, test_metrics, consistency_symbols,
+                     consistency_timeframes, overfit_gap_r, robustness_score, confidence,
+                     rejected, rejection_reasons, rank, trigger_diagnostics)
+                VALUES ($1,$2,$3::jsonb,$4::jsonb,$5::jsonb,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb)
+                """,
+                rows,
+            )
+        await conn.execute(
             """
-            INSERT INTO structure_optimized_profiles
-                (id, run_id, params, train_metrics, test_metrics, consistency_symbols,
-                 consistency_timeframes, overfit_gap_r, robustness_score, confidence,
-                 rejected, rejection_reasons, rank)
-            VALUES ($1,$2,$3::jsonb,$4::jsonb,$5::jsonb,$6,$7,$8,$9,$10,$11,$12,$13)
+            INSERT INTO structure_optimize_runs_meta
+                (run_id, full_grid_size, sampled_combinations, combos_evaluated,
+                 feature_precompute_pairs, trigger_source_breakdown, runtime, dsr)
+            VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8::jsonb)
+            ON CONFLICT (run_id) DO UPDATE SET
+                full_grid_size = EXCLUDED.full_grid_size,
+                sampled_combinations = EXCLUDED.sampled_combinations,
+                combos_evaluated = EXCLUDED.combos_evaluated,
+                feature_precompute_pairs = EXCLUDED.feature_precompute_pairs,
+                trigger_source_breakdown = EXCLUDED.trigger_source_breakdown,
+                runtime = EXCLUDED.runtime,
+                dsr = EXCLUDED.dsr,
+                created_at = now()
             """,
-            rows,
+            run_id,
+            result.get("full_grid_size"),
+            result.get("sampled_combinations"),
+            result.get("combos_evaluated"),
+            result.get("feature_precompute_pairs"),
+            json.dumps(result.get("trigger_source_breakdown"), default=str),
+            json.dumps(result.get("runtime"), default=str),
+            json.dumps(result.get("dsr"), default=str),
         )
 
 
@@ -577,10 +776,19 @@ async def get_cached_optimize_result(pg_pool: Any, run_id: str) -> Payload | Non
             """
             SELECT params, train_metrics, test_metrics, consistency_symbols,
                    consistency_timeframes, overfit_gap_r, robustness_score, confidence,
-                   rejected, rejection_reasons, rank, created_at
+                   rejected, rejection_reasons, rank, created_at, trigger_diagnostics
             FROM structure_optimized_profiles
             WHERE run_id = $1
             ORDER BY robustness_score DESC
+            """,
+            run_id,
+        )
+        meta = await conn.fetchrow(
+            """
+            SELECT full_grid_size, sampled_combinations, combos_evaluated,
+                   feature_precompute_pairs, trigger_source_breakdown, runtime, dsr
+            FROM structure_optimize_runs_meta
+            WHERE run_id = $1
             """,
             run_id,
         )
@@ -590,7 +798,7 @@ async def get_cached_optimize_result(pg_pool: Any, run_id: str) -> Payload | Non
     candidates: list[Payload] = []
     for r in rows:
         d = dict(r)
-        for key in ("params", "train_metrics", "test_metrics"):
+        for key in ("params", "train_metrics", "test_metrics", "trigger_diagnostics"):
             if isinstance(d.get(key), str):
                 d[key] = json.loads(d[key])
         d["created_at"] = d["created_at"].isoformat() if d["created_at"] else None
@@ -610,7 +818,18 @@ async def get_cached_optimize_result(pg_pool: Any, run_id: str) -> Payload | Non
 
     recommended = next((c for c in candidates if c.get("rank") == 1), None)
     survivor_count = sum(1 for c in candidates if not c["rejected"])
+    meta_dict = dict(meta) if meta else {}
+    for key in ("trigger_source_breakdown", "runtime", "dsr"):
+        if isinstance(meta_dict.get(key), str):
+            meta_dict[key] = json.loads(meta_dict[key])
     return {
+        "full_grid_size": meta_dict.get("full_grid_size"),
+        "sampled_combinations": meta_dict.get("sampled_combinations"),
+        "combos_evaluated": meta_dict.get("combos_evaluated"),
+        "feature_precompute_pairs": meta_dict.get("feature_precompute_pairs"),
+        "trigger_source_breakdown": meta_dict.get("trigger_source_breakdown"),
+        "runtime": meta_dict.get("runtime"),
+        "dsr": meta_dict.get("dsr"),
         "recommended": recommended,
         "candidates": candidates[:20],
         "rejected_count": sum(1 for c in candidates if c["rejected"]),

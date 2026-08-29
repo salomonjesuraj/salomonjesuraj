@@ -553,6 +553,26 @@ export interface StructureBacktestMetricsGroup {
   exit_reason_breakdown?: Record<string, number>
 }
 
+/** api.structure_backtest.ReplayDiagnostics.as_dict() -- Task 2
+ * (2026-08-29): "understand whether the strategy is too strict, the
+ * trigger is wrong, or candle confirmation blocks too much." Every
+ * field below is a real per-bar tally from the replay itself, not
+ * derived after the fact from the trade list -- the buckets other than
+ * `bars_evaluated`/`trigger_source_mode` sum to `bars_evaluated`. */
+export interface StructureTriggerDiagnostics {
+  trigger_source_mode: string
+  bars_evaluated: number
+  insufficient_bars: number
+  no_bias: number
+  low_quality: number
+  no_trigger: number
+  candle_not_confirmed: number
+  session_close_exits: number
+  candidate_trigger_levels: number
+  armed_setups: number
+  confirmed_trades: number
+}
+
 export interface StructureBacktestRun {
   available: boolean
   reason?: string
@@ -572,6 +592,7 @@ export interface StructureBacktestRun {
     by_timeframe: Record<string, StructureBacktestMetricsGroup>
     by_setup_quality: Record<string, StructureBacktestMetricsGroup>
     bars_available: Record<string, { daily_bars: number; intraday_1m_bars: number }>
+    trigger_diagnostics?: StructureTriggerDiagnostics
   } | null
 }
 
@@ -601,6 +622,28 @@ export interface StructureOptimizedProfile {
   rejected: boolean
   rejection_reasons: string[]
   rank?: number | null
+  trigger_diagnostics?: StructureTriggerDiagnostics
+}
+
+/** Task 4 (2026-08-29): "Trigger-source breakdown; Trade count by
+ * trigger source" -- real per-source tallies over every combo actually
+ * sampled this run, keyed by trigger_source ("fast_range"/"swing_zone"/
+ * "trendline"). See api.structure_optimize._trigger_source_breakdown(). */
+export type StructureTriggerSourceBreakdown = Record<
+  string,
+  { combos_tested: number; total_test_trades: number; survivors: number }
+>
+
+/** Task 3 (2026-08-29): "add a hard runtime guard or max-combinations
+ * guard for intraday runs" -- reports what was actually applied and
+ * whether the guard cut the run short, so the UI can show an honest
+ * runtime warning instead of a silently-partial result. */
+export interface StructureOptimizeRuntime {
+  elapsed_sec: number
+  is_intraday: boolean
+  max_combinations_applied: number
+  max_runtime_sec_guard: number | null
+  runtime_guard_triggered: boolean
 }
 
 export interface StructureOptimizeResult {
@@ -610,12 +653,37 @@ export interface StructureOptimizeResult {
   run_id?: string
   full_grid_size?: number
   sampled_combinations?: number
+  combos_evaluated?: number
+  feature_precompute_pairs?: number
   recommended: StructureOptimizedProfile | null
   candidates: StructureOptimizedProfile[]
   rejected_count?: number
   survivor_count?: number
+  trigger_source_breakdown?: StructureTriggerSourceBreakdown
+  runtime?: StructureOptimizeRuntime
   note: string
   disclaimer: string
+}
+
+/** GET /api/structure/optimize/{run_id}/progress -- Task 3's own "return
+ * progress information so the UI does not feel stuck" ask. Polled from a
+ * separate request while the main GET call above may still be blocked on
+ * a fresh search; `available: false` means no progress has been recorded
+ * for this run_id in this backend process yet (never started, or it
+ * finished before a process restart). */
+export interface StructureOptimizeProgress {
+  available: boolean
+  reason?: string
+  run_id?: string
+  phase?: 'loading_history' | 'precomputing_features' | 'evaluating_combos' | 'DONE'
+  combos_done?: number
+  combos_total?: number
+  pairs_done?: number
+  pairs_total?: number
+  is_intraday?: boolean
+  elapsed_sec?: number
+  runtime_guard_triggered?: boolean
+  updated_at?: number
 }
 
 /** One leg inside a RankedStrategy's `legs` array

@@ -24,6 +24,7 @@ from api.structure_signal import (
     compute_dominant_bias,
     compute_risk_levels,
     compute_setup_scores,
+    select_breakout_trigger,
 )
 
 CONFIG = StructureSignalConfig()
@@ -205,6 +206,69 @@ def test_trendline_trigger_does_not_offer_the_wrong_direction() -> None:
     fabricated from the one real line that exists for the other side."""
     geo = compute_smc_geometry(_DOWNTREND_BARS)
     assert _trendline_trigger(geo, ltp=95.0, bullish=False) is None
+
+
+def test_select_breakout_trigger_fast_range_mode_never_considers_other_sources() -> None:
+    """Real fix (review, 2026-08-29): a "fast_range" combo must get ONLY
+    the fast_range candidate, even though swing_zone/trendline levels
+    exist on this same real fixture and are closer to LTP -- the exact
+    bug that made fast_range/trendline combos silently test hybrid mode
+    and then get refiltered down to ~0 trades."""
+    geo = compute_smc_geometry(_DOWNTREND_BARS)
+    config = StructureSignalConfig(trigger_source_mode="fast_range")
+    trigger = select_breakout_trigger(
+        bars=_DOWNTREND_BARS, geometry=geo, atr=1.0, ltp=95.0, bullish=True, config=config
+    )
+    assert trigger == _fast_range_trigger(_DOWNTREND_BARS, atr=1.0, bullish=True, config=config)
+    assert trigger is not None and trigger.source == "fast_range"
+
+
+def test_select_breakout_trigger_swing_zone_mode_never_considers_other_sources() -> None:
+    geo = compute_smc_geometry(_DOWNTREND_BARS)
+    config = StructureSignalConfig(trigger_source_mode="swing_zone")
+    trigger = select_breakout_trigger(
+        bars=_DOWNTREND_BARS, geometry=geo, atr=1.0, ltp=95.0, bullish=True, config=config
+    )
+    assert trigger == Trigger("BUY_ABOVE", round(105.0 + 1.0 * 0.20, 2), "swing_zone")
+
+
+def test_select_breakout_trigger_trendline_mode_never_considers_other_sources() -> None:
+    geo = compute_smc_geometry(_DOWNTREND_BARS)
+    config = StructureSignalConfig(trigger_source_mode="trendline")
+    trigger = select_breakout_trigger(
+        bars=_DOWNTREND_BARS, geometry=geo, atr=1.0, ltp=95.0, bullish=True, config=config
+    )
+    assert trigger == Trigger("BUY_ABOVE", 101.67, "trendline")
+
+
+def test_select_breakout_trigger_trendline_mode_is_none_when_no_valid_trendline_exists() -> None:
+    """The one real trendline in this fixture is bearish (a BUY_ABOVE
+    candidate only) -- restricted to trendline mode, a SELL_BELOW
+    request must honestly return None, never fall back to swing_zone or
+    fast_range under the covers."""
+    geo = compute_smc_geometry(_DOWNTREND_BARS)
+    config = StructureSignalConfig(trigger_source_mode="trendline")
+    trigger = select_breakout_trigger(
+        bars=_DOWNTREND_BARS, geometry=geo, atr=1.0, ltp=95.0, bullish=False, config=config
+    )
+    assert trigger is None
+
+
+def test_select_breakout_trigger_hybrid_mode_keeps_the_original_closest_wins_behavior() -> None:
+    """Regression guard: "hybrid" is the one mode that must still compute
+    all three candidates and pick whichever is closest to LTP -- the
+    ORIGINAL behavior, now kept as its own explicit named value instead
+    of being the accidental default every trigger_source combo used to
+    get (see StructureSignalConfig.trigger_source_mode's own docstring).
+    Real candidates at ltp=95 on this fixture: fast_range=110.20 (diff
+    15.20), swing_zone=105.20 (diff 10.20), trendline=101.67 (diff
+    6.67) -- trendline is genuinely closest."""
+    geo = compute_smc_geometry(_DOWNTREND_BARS)
+    config = StructureSignalConfig(trigger_source_mode="hybrid")
+    trigger = select_breakout_trigger(
+        bars=_DOWNTREND_BARS, geometry=geo, atr=1.0, ltp=95.0, bullish=True, config=config
+    )
+    assert trigger == Trigger("BUY_ABOVE", 101.67, "trendline")
 
 
 # ─────────────────────── C. Candle Structure Confirmation ───────────────────────

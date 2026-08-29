@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from api.structure_backtest import (
     CostAssumptions,
+    ReplayDiagnostics,
     SimulatedTrade,
     _brokerage_per_unit,
     _check_exit,
@@ -233,3 +234,51 @@ def test_max_drawdown_r_tracks_the_real_peak_to_trough_equity_dip() -> None:
 def test_max_consecutive_losses_counts_the_real_longest_losing_streak() -> None:
     trades = [_trade(1.0), _trade(-1.0), _trade(-1.0), _trade(-1.0), _trade(2.0), _trade(-1.0)]
     assert _max_consecutive_losses(trades) == 3
+
+
+# ─────────────────────── ReplayDiagnostics (Task 2, 2026-08-29) ───────────────────────
+
+
+def test_replay_diagnostics_as_dict_reports_every_named_bucket() -> None:
+    diag = ReplayDiagnostics(
+        trigger_source_mode="fast_range",
+        bars_evaluated=100,
+        insufficient_bars=10,
+        no_bias=40,
+        low_quality=20,
+        no_trigger=15,
+        candle_not_confirmed=10,
+        session_close_exits=2,
+        candidate_trigger_levels=25,
+        armed_setups=5,
+        confirmed_trades=3,
+    )
+    d = diag.as_dict()
+    assert d["trigger_source_mode"] == "fast_range"
+    assert d["bars_evaluated"] == 100
+    assert d["no_bias"] == 40
+    assert d["armed_setups"] == 5
+    assert d["confirmed_trades"] == 3
+
+
+def test_replay_diagnostics_merge_sums_across_replays() -> None:
+    a = ReplayDiagnostics(trigger_source_mode="swing_zone", bars_evaluated=50, no_bias=10)
+    b = ReplayDiagnostics(trigger_source_mode="swing_zone", bars_evaluated=30, no_bias=5)
+    merged = ReplayDiagnostics.merge([a, b])
+    assert merged["trigger_source_mode"] == "swing_zone"
+    assert merged["bars_evaluated"] == 80
+    assert merged["no_bias"] == 15
+
+
+def test_replay_diagnostics_merge_reports_mixed_when_modes_differ() -> None:
+    a = ReplayDiagnostics(trigger_source_mode="fast_range", bars_evaluated=10)
+    b = ReplayDiagnostics(trigger_source_mode="trendline", bars_evaluated=10)
+    merged = ReplayDiagnostics.merge([a, b])
+    assert merged["trigger_source_mode"] == "mixed"
+    assert merged["bars_evaluated"] == 20
+
+
+def test_replay_diagnostics_merge_of_empty_list_is_an_honest_none_mode() -> None:
+    merged = ReplayDiagnostics.merge([])
+    assert merged["trigger_source_mode"] == "none"
+    assert merged["bars_evaluated"] == 0

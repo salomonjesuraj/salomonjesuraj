@@ -31,6 +31,7 @@ import type {
   StagedTicketsResponse,
   StrategySelectorResult,
   StructureBacktestRun,
+  StructureOptimizeProgress,
   StructureOptimizeResult,
   StructureSignal,
   StructureUniverseMap,
@@ -267,6 +268,18 @@ export async function fetchStructureOptimize(
   const qs = forceRefresh ? '?refresh=1' : ''
   return getJson<StructureOptimizeResult>(
     `/api/structure/optimize/${encodeURIComponent(runId)}${qs}`,
+  )
+}
+
+/** GET /api/structure/optimize/{run_id}/progress -- Task 3's own "return
+ * progress information so the UI does not feel stuck" ask. Safe to poll
+ * frequently while a fresh search is in flight; `available: false` is an
+ * honest "nothing recorded yet," not an error. */
+export async function fetchStructureOptimizeProgress(
+  runId: string,
+): Promise<StructureOptimizeProgress> {
+  return getJson<StructureOptimizeProgress>(
+    `/api/structure/optimize/${encodeURIComponent(runId)}/progress`,
   )
 }
 

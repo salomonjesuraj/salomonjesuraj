@@ -84,12 +84,16 @@ def test_a_real_combo_round_trips_through_its_own_config() -> None:
     assert config.tp1_r == 1.5
 
 
-def test_replay_key_excludes_trigger_source_so_only_it_can_differ() -> None:
-    a = ParamCombo(6, 1, 12, 0.20, 1.15, 1.5, 2.5, 3.5, "BALANCED", "swing_zone")
-    b = ParamCombo(6, 1, 12, 0.20, 1.15, 1.5, 2.5, 3.5, "BALANCED", "trendline")
-    c = ParamCombo(5, 1, 12, 0.20, 1.15, 1.5, 2.5, 3.5, "BALANCED", "swing_zone")
-    assert a.replay_key() == b.replay_key()
-    assert a.replay_key() != c.replay_key()
+def test_to_config_threads_trigger_source_into_a_real_trigger_source_mode() -> None:
+    """Real fix (review, 2026-08-29): trigger_source used to be dropped
+    entirely by to_config() -- only ever applied as a post-hoc filter on
+    a shared "hybrid" replay (the swing_zone-dominance bug). Each combo's
+    own trigger_source must now reach the signal engine as its real
+    trigger_source_mode, so a "fast_range"/"trendline" combo's replay
+    genuinely never considers the other sources."""
+    for source in ("fast_range", "swing_zone", "trendline"):
+        combo = ParamCombo(6, 1, 12, 0.20, 1.15, 1.5, 2.5, 3.5, "BALANCED", source)
+        assert combo.to_config().trigger_source_mode == source
 
 
 # ─────────────────────── purge/embargo ───────────────────────

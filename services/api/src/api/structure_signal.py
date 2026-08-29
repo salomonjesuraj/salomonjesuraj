@@ -127,6 +127,23 @@ class StructureSignalConfig:
     momentum_watch_atr: float = DEFAULT_MOMENTUM_WATCH_ATR
     trade_mode: str = "BALANCED"  # "BALANCED" | "STRICT"
     vwap_enabled: bool = True
+    # Real fix (review, 2026-08-29): trigger_source used to be evaluated
+    # by computing ALL THREE candidates and keeping whichever was
+    # closest to LTP ("hybrid"), then -- only in the optimizer -- post-
+    # hoc filtering trades by whichever source happened to win. Since
+    # swing_zone's own pivot levels are systematically closer to price
+    # than a 12-bar rolling range or a trendline projection in real
+    # data, hybrid mode almost always picks swing_zone -- so a
+    # "fast_range" or "trendline" combo was silently testing hybrid
+    # mode and then discarding every trade that wasn't swing_zone,
+    # confirmed live: 0 trades for every non-swing_zone-sourced
+    # optimizer combo. Now a REAL config knob: "fast_range"/
+    # "swing_zone"/"trendline" restrict select_breakout_trigger() to
+    # computing ONLY that one candidate; "hybrid" is the original
+    # closest-wins behavior, kept as its own explicit named value per
+    # this review's own instruction rather than silently reusing
+    # "swing_zone" or another name for it.
+    trigger_source_mode: str = "hybrid"  # "fast_range"|"swing_zone"|"trendline"|"hybrid"
 
 
 DEFAULT_CONFIG = StructureSignalConfig()
@@ -282,16 +299,28 @@ def bearish_subscores(r: SubscoreReads, config: StructureSignalConfig) -> list[b
     ]
 
 
+def _combine_subscores(subscores: list[bool], config: StructureSignalConfig) -> int:
+    """The `trade_mode` half of the x/7 score, split out (review,
+    2026-08-29) so the optimizer's fast per-combo path can re-run just
+    this cheap sum/strict-all decision against an already-computed
+    subscore list instead of recomputing the whole 7-condition read
+    (EMA/HTF/Supertrend/momentum/volatility/RVOL/VWAP) per combo -- see
+    compute_bar_features()'s own docstring for the real cost this
+    avoids. STRICT mode collapses to 7 (all seven of that side's own
+    conditions agree) or 0, per the approved spec's own Trade Mode
+    rule; BALANCED is the plain subscore count."""
+    if config.trade_mode == "STRICT":
+        return 7 if all(subscores) else 0
+    return sum(subscores)
+
+
 def compute_setup_scores(r: SubscoreReads, config: StructureSignalConfig) -> tuple[int, int]:
-    """The literal x/7 scores. STRICT mode collapses each side to 7 (all
-    seven of that side's own conditions agree) or 0 -- "require all
-    selected filters to agree," per the approved spec's own Trade Mode
-    rule -- BALANCED mode is the plain subscore count."""
+    """The literal x/7 scores -- unchanged public behavior, now expressed
+    as bullish_subscores/bearish_subscores (the expensive read) combined
+    by _combine_subscores (the cheap, trade_mode-dependent part)."""
     bull = bullish_subscores(r, config)
     bear = bearish_subscores(r, config)
-    if config.trade_mode == "STRICT":
-        return (7 if all(bull) else 0), (7 if all(bear) else 0)
-    return sum(bull), sum(bear)
+    return _combine_subscores(bull, config), _combine_subscores(bear, config)
 
 
 def compute_dominant_bias(bull_score: int, bear_score: int, config: StructureSignalConfig) -> str:
@@ -408,16 +437,23 @@ def select_breakout_trigger(
 ) -> Trigger | None:
     """Closest valid breakout level to LTP, in the bias direction --
     "use the closest valid breakout level in the direction of bias,"
-    per the approved spec."""
-    candidates = [
-        t
-        for t in (
-            _fast_range_trigger(bars, atr, bullish, config),
-            _swing_zone_trigger(geometry, atr, bullish, config),
-            _trendline_trigger(geometry, ltp, bullish),
-        )
-        if t is not None
-    ]
+    per the approved spec -- but ONLY among the sources
+    `config.trigger_source_mode` actually allows. Real fix (review,
+    2026-08-29): a caller asking for `fast_range` or `trendline`
+    specifically must get ONLY that source considered, never a
+    swing_zone level computed and silently preferred underneath it --
+    see StructureSignalConfig.trigger_source_mode's own comment for
+    the real bug this replaces (swing_zone dominating "hybrid" mode
+    regardless of what the caller asked for)."""
+    mode = config.trigger_source_mode
+    raw_candidates: list[Trigger | None] = []
+    if mode in ("fast_range", "hybrid"):
+        raw_candidates.append(_fast_range_trigger(bars, atr, bullish, config))
+    if mode in ("swing_zone", "hybrid"):
+        raw_candidates.append(_swing_zone_trigger(geometry, atr, bullish, config))
+    if mode in ("trendline", "hybrid"):
+        raw_candidates.append(_trendline_trigger(geometry, ltp, bullish))
+    candidates = [t for t in raw_candidates if t is not None]
     if not candidates:
         return None
     return min(candidates, key=lambda t: abs(t.price - ltp))
@@ -656,54 +692,86 @@ def _suggested_usage(timeframe: str, dominant_bias: str) -> str:
     return "INTRADAY"
 
 
-def compute_structure_signal_from_bars(
+@dataclass(frozen=True)
+class BarFeatures:
+    """Everything about one bar window that is genuinely independent of
+    every parameter Phase 4's optimizer actually sweeps (min_setup_
+    quality, min_bias_edge, fast_trigger_lookback, atr_breakout_buffer,
+    strict_stop_max_atr, tp1/2/3_r, trade_mode, trigger_source_mode) --
+    computed ONCE per (symbol, timeframe, bar index) and reused across
+    every sampled combination in one optimizer run instead of recomputed
+    from scratch per combo.
+
+    Real, measured perf root cause (review, 2026-08-29): compute_smc_
+    geometry() alone is O(window length) and was being recomputed on a
+    GROWING window at every one of dozens of sampled combos' own replay
+    of the identical bars -- an O(N_combos * n^2) cost where only the
+    cheap decision layer below (bias-threshold comparison, trigger
+    price/candle-confirm/risk calc) actually varies per combo. See
+    compute_bar_features() and api.structure_optimize's own precomputed
+    replay path for where this is actually exploited; the plain (single-
+    combo) live route and backtest run through compute_structure_signal_
+    from_bars() as before and pay this cost once regardless, same as
+    always."""
+
+    ready: bool
+    reason: str | None
+    close: float | None
+    atr: float | None
+    geometry: Payload
+    reads: SubscoreReads | None
+    bull_subscores: list[bool]
+    bear_subscores: list[bool]
+    market_phase: str
+
+
+def compute_bar_features(
     *,
-    symbol: str,
-    timeframe: str,
-    htf: str,
     bars: list[Bar],
     htf_bars: list[Bar],
     daily_asof: list[Bar],
     intraday_1m_asof: list[Bar],
     include_vwap: bool,
     config: StructureSignalConfig,
-) -> Payload:
-    """The pure Phase 1/2 core -- Sections A through F, assembled purely
-    from bar windows already handed to it. No Redis, no lookahead of its
-    own: every argument must already be trimmed to "as of" whatever
-    point is being evaluated.
-
-    Extracted (Phase 3, 2026-08-29) out of compute_structure_signal()
-    so the live route and the historical replay backtester share this
-    ONE real implementation instead of two copies that could quietly
-    diverge -- compute_structure_signal() below is now a thin Redis-
-    fetching wrapper around this function; structure_backtest.py's own
-    replay loop calls it directly with each step's own trimmed windows.
-    `daily_asof`/`intraday_1m_asof` are separate from `bars`/`htf_bars`
-    because squeeze/RVOL/session-VWAP are deliberately always computed
-    from DAILY (or intraday-session) bars regardless of the requested
-    primary timeframe, per this module's own established Phase 1/2
-    design -- see compute_rvol/compute_squeeze_readiness's own callers
-    below for exactly where that split matters for lookahead safety
-    during a replay."""
+) -> BarFeatures:
+    """The expensive stage: indicators, SMC geometry (own + HTF), MFI,
+    squeeze/RVOL, session VWAP, and the seven-condition bull/bear
+    subscore reads. `config` is only used here for the handful of fixed
+    threshold fields (rsi_bullish_min, rsi_bearish_max, rvol_confirm_min,
+    squeeze_energy_min, vwap_enabled) that the optimizer's own
+    ParamCombo never overrides (see structure_optimize.ParamCombo.
+    to_config()) -- callers precomputing this once per (symbol,
+    timeframe) for a whole optimizer run may pass any one combo's config
+    and get byte-identical results to passing every combo's own,
+    because none of the SWEPT fields are read below."""
     from api.smc_geometry import compute_smc_geometry
 
     if not bars:
-        return {
-            "ready": False,
-            "symbol": symbol,
-            "timeframe": timeframe,
-            "reason": "No historical bar history yet.",
-        }
+        return BarFeatures(
+            ready=False,
+            reason="No historical bar history yet.",
+            close=None,
+            atr=None,
+            geometry={},
+            reads=None,
+            bull_subscores=[],
+            bear_subscores=[],
+            market_phase="WARMING_UP",
+        )
 
     pack: IndicatorPack | None = _indicators(bars, include_vwap)
     if pack is None:
-        return {
-            "ready": False,
-            "symbol": symbol,
-            "timeframe": timeframe,
-            "reason": "Not enough bars for indicators yet.",
-        }
+        return BarFeatures(
+            ready=False,
+            reason="Not enough bars for indicators yet.",
+            close=None,
+            atr=None,
+            geometry={},
+            reads=None,
+            bull_subscores=[],
+            bear_subscores=[],
+            market_phase="WARMING_UP",
+        )
 
     geometry = compute_smc_geometry(bars)
     htf_geometry = compute_smc_geometry(htf_bars) if htf_bars else {"trend_state": 0}
@@ -738,11 +806,58 @@ def compute_structure_signal_from_bars(
         rvol=rvol,
         vwap=vwap,
     )
-    bull_score, bear_score = compute_setup_scores(reads, config)
+    return BarFeatures(
+        ready=True,
+        reason=None,
+        close=pack.close,
+        atr=pack.atr,
+        geometry=geometry,
+        reads=reads,
+        bull_subscores=bullish_subscores(reads, config),
+        bear_subscores=bearish_subscores(reads, config),
+        market_phase=(
+            str(geometry.get("trend_text") or "RANGE / UNDEFINED")
+            if geometry.get("ready")
+            else "WARMING_UP"
+        ),
+    )
+
+
+def decide_structure_signal(
+    *,
+    symbol: str,
+    timeframe: str,
+    htf: str,
+    bars: list[Bar],
+    features: BarFeatures,
+    config: StructureSignalConfig,
+) -> Payload:
+    """The cheap decision stage: everything that actually depends on a
+    swept optimizer parameter (bias-edge threshold, trigger source/
+    lookback/buffer, candle confirmation, stop/TP risk calc, setup-
+    quality gate). Takes an already-computed BarFeatures instead of raw
+    bars -- this is the literal same decision code compute_structure_
+    signal_from_bars() below runs for the live route and the plain
+    backtest, and api.structure_optimize's own fast replay path runs
+    directly against a precomputed feature list, so a combo's decision
+    is never a second, divergent implementation (see this module's own
+    header for why that reuse matters)."""
+    if not features.ready or features.reads is None:
+        return {
+            "ready": False,
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "reason": features.reason or "Not ready.",
+        }
+
+    reads = features.reads
+    geometry = features.geometry
+    bull_score = _combine_subscores(features.bull_subscores, config)
+    bear_score = _combine_subscores(features.bear_subscores, config)
     dominant_bias = compute_dominant_bias(bull_score, bear_score, config)
 
-    ltp = pack.close
-    atr = pack.atr
+    ltp = features.close if features.close is not None else reads.close
+    atr = features.atr
     trigger: Trigger | None = None
     candle_confirmed = False
     risk: RiskLevels | None = None
@@ -817,19 +932,70 @@ def compute_structure_signal_from_bars(
         "visual_markers": markers,
         "interpretation_label": interpretation,
         "suggested_usage": _suggested_usage(timeframe, dominant_bias),
+        # Performance fix (review, 2026-08-29): real trend_text computed
+        # once by compute_bar_features() (BarFeatures.market_phase), read
+        # off it here instead of running a second, redundant
+        # compute_smc_geometry() pass over the same bars just to get the
+        # same real trend classification a second time.
+        "market_phase": features.market_phase,
         "indicators": {
-            "ema200": pack.ema200,
-            "rsi14": pack.rsi14,
-            "mfi": mfi,
-            "supertrend": pack.supertrend,
-            "vwap": vwap,
+            "ema200": reads.ema200,
+            "rsi14": reads.rsi14,
+            "mfi": reads.mfi,
+            "supertrend": reads.supertrend,
+            "vwap": reads.vwap,
             "atr": atr,
-            "squeeze_readiness": squeeze_readiness,
-            "rvol": rvol,
+            "squeeze_readiness": reads.squeeze_readiness,
+            "rvol": reads.rvol,
             "htf_trend_state": reads.htf_trend_state,
         },
         "disclaimer": DISCLAIMER,
     }
+
+
+def compute_structure_signal_from_bars(
+    *,
+    symbol: str,
+    timeframe: str,
+    htf: str,
+    bars: list[Bar],
+    htf_bars: list[Bar],
+    daily_asof: list[Bar],
+    intraday_1m_asof: list[Bar],
+    include_vwap: bool,
+    config: StructureSignalConfig,
+) -> Payload:
+    """The pure Phase 1/2 core -- Sections A through F, assembled purely
+    from bar windows already handed to it. No Redis, no lookahead of its
+    own: every argument must already be trimmed to "as of" whatever
+    point is being evaluated.
+
+    Extracted (Phase 3, 2026-08-29) out of compute_structure_signal() so
+    the live route and the historical replay backtester share this ONE
+    real implementation instead of two copies that could quietly
+    diverge; further split (review, 2026-08-29) into compute_bar_
+    features() (expensive, per-combo-invariant) + decide_structure_
+    signal() (cheap, per-combo decision) so api.structure_optimize's own
+    fast replay path can reuse the SAME decision function against a
+    precomputed feature list without duplicating any of this logic --
+    this function itself is now just that same composition, unchanged
+    for every existing caller (live route, plain single-combo backtest).
+    `daily_asof`/`intraday_1m_asof` are separate from `bars`/`htf_bars`
+    because squeeze/RVOL/session-VWAP are deliberately always computed
+    from DAILY (or intraday-session) bars regardless of the requested
+    primary timeframe, per this module's own established Phase 1/2
+    design."""
+    features = compute_bar_features(
+        bars=bars,
+        htf_bars=htf_bars,
+        daily_asof=daily_asof,
+        intraday_1m_asof=intraday_1m_asof,
+        include_vwap=include_vwap,
+        config=config,
+    )
+    return decide_structure_signal(
+        symbol=symbol, timeframe=timeframe, htf=htf, bars=bars, features=features, config=config
+    )
 
 
 async def compute_structure_signal(

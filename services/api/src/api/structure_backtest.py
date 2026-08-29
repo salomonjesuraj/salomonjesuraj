@@ -88,10 +88,13 @@ from api.statistics_utils import sharpe_stats
 from api.structure_signal import (
     DEFAULT_CONFIG,
     TIMEFRAME_MINUTES,
+    BarFeatures,
     StructureSignalConfig,
     _htf_for,
     _is_intraday_timeframe,
+    compute_bar_features,
     compute_structure_signal_from_bars,
+    decide_structure_signal,
 )
 
 logger = structlog.get_logger()
@@ -158,6 +161,71 @@ class SimulatedTrade:
     setup_quality_at_entry: int
     market_phase_at_entry: str
     params_used: Payload = field(default_factory=dict)
+
+
+@dataclass
+class ReplayDiagnostics:
+    """Review fix (2026-08-29): "understand whether the strategy is too
+    strict, the trigger is wrong, or candle confirmation blocks too
+    much" -- a real per-bar tally through one replay, not derived after
+    the fact from the trade list alone (a bar that never became a trade
+    leaves no trade row to inspect otherwise). Every bar counted in
+    exactly one bucket below (mutually exclusive, in the same order the
+    real decision pipeline actually short-circuits), so the buckets sum
+    to `bars_evaluated`."""
+
+    trigger_source_mode: str
+    bars_evaluated: int = 0
+    insufficient_bars: int = 0  # compute_structure_signal_from_bars() returned ready=False
+    no_bias: int = 0  # dominant_bias == NO_CLEAR_BIAS
+    low_quality: int = 0  # trade_readiness == LOW_QUALITY
+    no_trigger: int = 0  # a real bias existed but no valid trigger price at all
+    candle_not_confirmed: int = 0  # a real trigger existed but the candle didn't confirm it
+    session_close_exits: int = 0  # open positions force-closed at session end
+    candidate_trigger_levels: int = 0  # bars where select_breakout_trigger() returned a real price
+    armed_setups: int = 0  # bars where the signal itself said BUY_ARMED/SELL_ARMED
+    confirmed_trades: int = (
+        0  # trades actually opened (can be < armed_setups: one position at a time)
+    )
+
+    def as_dict(self) -> Payload:
+        return {
+            "trigger_source_mode": self.trigger_source_mode,
+            "bars_evaluated": self.bars_evaluated,
+            "insufficient_bars": self.insufficient_bars,
+            "no_bias": self.no_bias,
+            "low_quality": self.low_quality,
+            "no_trigger": self.no_trigger,
+            "candle_not_confirmed": self.candle_not_confirmed,
+            "session_close_exits": self.session_close_exits,
+            "candidate_trigger_levels": self.candidate_trigger_levels,
+            "armed_setups": self.armed_setups,
+            "confirmed_trades": self.confirmed_trades,
+        }
+
+    @staticmethod
+    def merge(diags: list[ReplayDiagnostics]) -> Payload:
+        """Sums every real per-run diagnostic across however many
+        symbol/timeframe replays contributed to one backtest or
+        optimizer combo -- `trigger_source_mode` is reported as the
+        shared value when every replay used the same one (always true
+        within a single optimizer combo's own evaluation), else 'mixed'."""
+        if not diags:
+            return ReplayDiagnostics(trigger_source_mode="none").as_dict()
+        modes = {d.trigger_source_mode for d in diags}
+        out = ReplayDiagnostics(trigger_source_mode=modes.pop() if len(modes) == 1 else "mixed")
+        for d in diags:
+            out.bars_evaluated += d.bars_evaluated
+            out.insufficient_bars += d.insufficient_bars
+            out.no_bias += d.no_bias
+            out.low_quality += d.low_quality
+            out.no_trigger += d.no_trigger
+            out.candle_not_confirmed += d.candle_not_confirmed
+            out.session_close_exits += d.session_close_exits
+            out.candidate_trigger_levels += d.candidate_trigger_levels
+            out.armed_setups += d.armed_setups
+            out.confirmed_trades += d.confirmed_trades
+        return out.as_dict()
 
 
 def _entry_fill_price(raw_price: float, bullish: bool, costs: CostAssumptions) -> float:
@@ -287,15 +355,13 @@ def _bars_for_timeframe(timeframe: str, intraday_1m: list[Bar], daily: list[Bar]
     return _aggregate(intraday_1m, minutes)
 
 
-def _market_phase_at(bars_window: list[Bar]) -> str:
-    """Real trend_text as of the entry bar, reused verbatim from
-    api.smc_geometry -- not a new phase taxonomy, and not the LIVE
-    infusion:regime hash (which only ever holds TODAY's value, useless
-    for a historical entry from a year ago)."""
-    from api.smc_geometry import compute_smc_geometry
-
-    geo = compute_smc_geometry(bars_window)
-    return str(geo.get("trend_text") or "RANGE / UNDEFINED") if geo.get("ready") else "WARMING_UP"
+# Performance fix (review, 2026-08-29): market_phase used to be read via
+# a SECOND, separate compute_smc_geometry(window) call in this module
+# (a real, confirmed 2x-per-bar geometry cost on top of the one
+# compute_structure_signal_from_bars() already does internally) -- now
+# read directly off that function's own `market_phase` field (added to
+# its return dict this same review), one real geometry pass per bar,
+# not two.
 
 
 async def _replay_symbol_timeframe(
@@ -307,13 +373,20 @@ async def _replay_symbol_timeframe(
     side: Side,
     config: StructureSignalConfig,
     costs: CostAssumptions,
-) -> list[SimulatedTrade]:
-    """The actual bar-by-bar replay for one symbol/timeframe. One open
-    position at a time -- see this module's own header for why
-    overlapping/pyramided positions aren't simulated."""
+) -> tuple[list[SimulatedTrade], ReplayDiagnostics]:
+    """The actual bar-by-bar replay for one symbol/timeframe -- fresh,
+    non-cached (recomputes geometry/indicators every bar). Used by
+    Phase 3's own single-combo GET /api/structure/backtest/run, where
+    that cost is paid exactly once. api.structure_optimize's own
+    replay -- dozens of combos over the SAME bars -- uses the cached
+    precompute_replay_features()/_decide_from_precomputed() path below
+    instead (see this module's own header for the real Nx cost this
+    avoids). One open position at a time -- see this module's own
+    header for why overlapping/pyramided positions aren't simulated."""
     bars = _bars_for_timeframe(timeframe, intraday_full, daily_full)
+    diag = ReplayDiagnostics(trigger_source_mode=config.trigger_source_mode)
     if len(bars) < MIN_WARMUP_BARS:
-        return []
+        return [], diag
 
     htf = _htf_for(timeframe)
     htf_bars_full = _bars_for_timeframe(htf, intraday_full, daily_full)
@@ -340,6 +413,7 @@ async def _replay_symbol_timeframe(
             await asyncio.sleep(0)
         bar = bars[i]
         bar_time = float(bar["time"])
+        diag.bars_evaluated += 1
 
         if open_position is not None:
             exit_hit = _check_exit(open_position, bar, costs)
@@ -348,6 +422,7 @@ async def _replay_symbol_timeframe(
                 trades.append(
                     _finalize_trade(open_position, bar_time, exit_price, exit_reason, costs)
                 )
+                diag.confirmed_trades += 1
                 open_position = None
                 continue
             if intraday_session:
@@ -358,6 +433,8 @@ async def _replay_symbol_timeframe(
                             open_position, bar_time, float(bar["close"]), "SESSION_CLOSE", costs
                         )
                     )
+                    diag.confirmed_trades += 1
+                    diag.session_close_exits += 1
                     open_position = None
             continue
 
@@ -381,10 +458,24 @@ async def _replay_symbol_timeframe(
             config=config,
         )
         if not signal.get("ready"):
+            diag.insufficient_bars += 1
             continue
+        if signal["dominant_bias"] == "NO_CLEAR_BIAS":
+            diag.no_bias += 1
+            continue
+        if signal["trigger_price"] is not None:
+            diag.candidate_trigger_levels += 1
         readiness = signal["trade_readiness"]
-        if readiness not in ("BUY_ARMED", "SELL_ARMED"):
+        if readiness == "LOW_QUALITY":
+            diag.low_quality += 1
             continue
+        if signal["trigger_price"] is None:
+            diag.no_trigger += 1
+            continue
+        if readiness not in ("BUY_ARMED", "SELL_ARMED"):
+            diag.candle_not_confirmed += 1
+            continue
+        diag.armed_setups += 1
         bullish = readiness == "BUY_ARMED"
         if side == "LONG_ONLY" and not bullish:
             continue
@@ -405,7 +496,7 @@ async def _replay_symbol_timeframe(
             tp2=float(signal["tp2"]),
             tp3=float(signal["tp3"]),
             setup_quality_at_entry=signal["bull_score"] if bullish else signal["bear_score"],
-            market_phase_at_entry=_market_phase_at(window),
+            market_phase_at_entry=str(signal.get("market_phase") or "WARMING_UP"),
             params_used={
                 "min_setup_quality": config.min_setup_quality,
                 "min_bias_edge": config.min_bias_edge,
@@ -432,8 +523,237 @@ async def _replay_symbol_timeframe(
                 costs,
             )
         )
+        diag.confirmed_trades += 1
+        diag.session_close_exits += 1
 
-    return trades
+    return trades, diag
+
+
+@dataclass
+class PrecomputedReplay:
+    """Output of precompute_replay_features(): the real, expensive part
+    of one (symbol, timeframe) replay -- indicators/geometry/MFI/
+    squeeze/RVOL/subscore reads for every bar -- computed ONCE and
+    reused by _replay_with_precomputed() across every sampled
+    combination in one optimizer run. See api.structure_signal.
+    compute_bar_features()'s own docstring for why this is safe (none
+    of it depends on a swept optimizer parameter) and structure_
+    optimize.py's own header for the real O(N_combos * n^2) cost this
+    replaces with O(n^2 + N_combos * n)."""
+
+    symbol: str
+    timeframe: str
+    htf: str
+    bars: list[Bar]
+    intraday_session: bool
+    features_by_index: dict[int, BarFeatures]
+
+
+async def precompute_replay_features(
+    *,
+    symbol: str,
+    timeframe: str,
+    daily_full: list[Bar],
+    intraday_full: list[Bar],
+    config: StructureSignalConfig,
+) -> PrecomputedReplay | None:
+    """Runs the expensive compute_bar_features() stage once per bar --
+    identical inputs to what _replay_symbol_timeframe's own loop already
+    built per bar, just not paired with a decision this time. `config`
+    only matters here for its fixed threshold fields (rsi_bullish_min,
+    rvol_confirm_min, squeeze_energy_min, vwap_enabled, ...) that
+    api.structure_optimize's own ParamCombo.to_config() never overrides
+    -- any one combo's config produces the identical features any other
+    combo's would (see compute_bar_features()'s own docstring). Returns
+    None when there isn't even enough history to warm up, same as
+    _replay_symbol_timeframe's own early return."""
+    bars = _bars_for_timeframe(timeframe, intraday_full, daily_full)
+    if len(bars) < MIN_WARMUP_BARS:
+        return None
+
+    htf = _htf_for(timeframe)
+    htf_bars_full = _bars_for_timeframe(htf, intraday_full, daily_full)
+    include_vwap = config.vwap_enabled and _is_intraday_timeframe(timeframe)
+    intraday_session = _is_intraday_timeframe(timeframe)
+
+    features_by_index: dict[int, BarFeatures] = {}
+    for i in range(MIN_WARMUP_BARS, len(bars)):
+        # Tighter cadence than the fresh single-combo replay loop's own
+        # every-20 (real live finding, Task 5's own verification pass,
+        # 2026-08-29): this loop's own per-call cost (compute_bar_
+        # features -- geometry/indicators) GROWS with the window, so the
+        # last iterations before this loop finishes are the most
+        # expensive ones -- 20 of them back-to-back on a real multi-
+        # thousand-bar intraday window measurably blocked the event loop
+        # for multi-second stretches (confirmed live: /api/market/indices
+        # calls made mid-run took up to ~7s instead of the real ~150ms
+        # baseline). Every 5 bars keeps each blocked stretch short
+        # without materially slowing the precompute pass itself.
+        if i % 5 == 0:
+            await asyncio.sleep(0)
+        bar_time = float(bars[i]["time"])
+        window = bars[: i + 1]
+        daily_asof = [d for d in daily_full if float(d["time"]) <= bar_time]
+        htf_asof = [h for h in htf_bars_full if float(h["time"]) <= bar_time]
+        intraday_asof = (
+            [m for m in intraday_full if float(m["time"]) <= bar_time] if include_vwap else []
+        )
+        features_by_index[i] = compute_bar_features(
+            bars=window,
+            htf_bars=htf_asof,
+            daily_asof=daily_asof,
+            intraday_1m_asof=intraday_asof,
+            include_vwap=include_vwap,
+            config=config,
+        )
+
+    return PrecomputedReplay(
+        symbol=symbol,
+        timeframe=timeframe,
+        htf=htf,
+        bars=bars,
+        intraday_session=intraday_session,
+        features_by_index=features_by_index,
+    )
+
+
+async def _replay_with_precomputed(
+    precomputed: PrecomputedReplay,
+    *,
+    side: Side,
+    config: StructureSignalConfig,
+    costs: CostAssumptions,
+) -> tuple[list[SimulatedTrade], ReplayDiagnostics]:
+    """The cheap per-combo half: re-runs decide_structure_signal() --
+    the literal same decision function compute_structure_signal_from_
+    bars() calls for the live route and the fresh single-combo replay
+    above -- against an already-computed BarFeatures per bar, so this
+    combo's own trigger-source/bias-edge/quality/risk parameters are
+    evaluated without a single geometry or indicator recomputation.
+    Trade simulation (SL/TP/session-close bookkeeping) is identical to
+    _replay_symbol_timeframe's own loop; only the signal source
+    differs. Real live finding (Task 5's own "confirm API remains
+    responsive" verification, 2026-08-29): even this cheap per-combo
+    loop blocked the event loop for multi-second stretches on a real
+    intraday (thousands-of-bars) replay with no yield of its own --
+    the outer per-combo loop in api.structure_optimize only yields
+    BETWEEN combos, not within one. Same minimal `asyncio.sleep(0)`
+    fix as the fresh replay loop and the precompute loop above."""
+    bars = precomputed.bars
+    diag = ReplayDiagnostics(trigger_source_mode=config.trigger_source_mode)
+    trades: list[SimulatedTrade] = []
+    open_position: _OpenPosition | None = None
+
+    for i in range(MIN_WARMUP_BARS, len(bars)):
+        if i % 50 == 0:
+            await asyncio.sleep(0)
+        bar = bars[i]
+        bar_time = float(bar["time"])
+        diag.bars_evaluated += 1
+
+        if open_position is not None:
+            exit_hit = _check_exit(open_position, bar, costs)
+            if exit_hit is not None:
+                exit_price, exit_reason = exit_hit
+                trades.append(
+                    _finalize_trade(open_position, bar_time, exit_price, exit_reason, costs)
+                )
+                diag.confirmed_trades += 1
+                open_position = None
+                continue
+            if precomputed.intraday_session:
+                next_time = float(bars[i + 1]["time"]) if i + 1 < len(bars) else None
+                if _is_session_close_bar(bar_time, next_time):
+                    trades.append(
+                        _finalize_trade(
+                            open_position, bar_time, float(bar["close"]), "SESSION_CLOSE", costs
+                        )
+                    )
+                    diag.confirmed_trades += 1
+                    diag.session_close_exits += 1
+                    open_position = None
+            continue
+
+        features = precomputed.features_by_index.get(i)
+        if features is None or not features.ready:
+            diag.insufficient_bars += 1
+            continue
+
+        signal = decide_structure_signal(
+            symbol=precomputed.symbol,
+            timeframe=precomputed.timeframe,
+            htf=precomputed.htf,
+            bars=bars[: i + 1],
+            features=features,
+            config=config,
+        )
+        if not signal.get("ready"):
+            diag.insufficient_bars += 1
+            continue
+        if signal["dominant_bias"] == "NO_CLEAR_BIAS":
+            diag.no_bias += 1
+            continue
+        if signal["trigger_price"] is not None:
+            diag.candidate_trigger_levels += 1
+        readiness = signal["trade_readiness"]
+        if readiness == "LOW_QUALITY":
+            diag.low_quality += 1
+            continue
+        if signal["trigger_price"] is None:
+            diag.no_trigger += 1
+            continue
+        if readiness not in ("BUY_ARMED", "SELL_ARMED"):
+            diag.candle_not_confirmed += 1
+            continue
+        diag.armed_setups += 1
+        bullish = readiness == "BUY_ARMED"
+        if side == "LONG_ONLY" and not bullish:
+            continue
+        if side == "SHORT_ONLY" and bullish:
+            continue
+        if signal["entry"] is None or signal["sl"] is None:
+            continue
+
+        entry_fill = _entry_fill_price(float(signal["entry"]), bullish, costs)
+        open_position = _OpenPosition(
+            symbol=precomputed.symbol,
+            timeframe=precomputed.timeframe,
+            direction="LONG" if bullish else "SHORT",
+            entry_time=bar_time,
+            entry_price=entry_fill,
+            sl=float(signal["sl"]),
+            tp1=float(signal["tp1"]),
+            tp2=float(signal["tp2"]),
+            tp3=float(signal["tp3"]),
+            setup_quality_at_entry=signal["bull_score"] if bullish else signal["bear_score"],
+            market_phase_at_entry=str(signal.get("market_phase") or "WARMING_UP"),
+            params_used={
+                "min_setup_quality": config.min_setup_quality,
+                "min_bias_edge": config.min_bias_edge,
+                "fast_trigger_lookback": config.fast_trigger_lookback,
+                "atr_breakout_buffer": config.atr_breakout_buffer,
+                "strict_stop_max_atr": config.strict_stop_max_atr,
+                "tp1_r": config.tp1_r,
+                "tp2_r": config.tp2_r,
+                "tp3_r": config.tp3_r,
+                "trigger_source": signal["trigger_source"],
+            },
+        )
+
+    if open_position is not None:
+        trades.append(
+            _finalize_trade(
+                open_position,
+                float(bars[-1]["time"]),
+                float(bars[-1]["close"]),
+                "SESSION_CLOSE",
+                costs,
+            )
+        )
+        diag.confirmed_trades += 1
+        diag.session_close_exits += 1
+
+    return trades, diag
 
 
 # ─────────────────────────── metrics ───────────────────────────
@@ -647,6 +967,7 @@ async def run_structure_backtest(
     start_ts = _date_to_ts(start_date)
     end_ts = _date_to_ts(end_date, end_of_day=True)
     all_trades: list[SimulatedTrade] = []
+    all_diagnostics: list[ReplayDiagnostics] = []
     bars_available: Payload = {}
 
     try:
@@ -657,7 +978,7 @@ async def run_structure_backtest(
                 "intraday_1m_bars": len(intraday_full),
             }
             for timeframe in timeframes:
-                trades = await _replay_symbol_timeframe(
+                trades, diag = await _replay_symbol_timeframe(
                     symbol=symbol,
                     timeframe=timeframe,
                     daily_full=daily_full,
@@ -667,10 +988,16 @@ async def run_structure_backtest(
                     costs=costs,
                 )
                 all_trades.extend(trades)
+                all_diagnostics.append(diag)
 
         await _persist_trades(pg_pool, run_id, all_trades)
         metrics = compute_full_metrics(all_trades)
         metrics["bars_available"] = bars_available
+        # Review's own diagnostics ask (2026-08-29): "understand whether
+        # the strategy is too strict, the trigger is wrong, or candle
+        # confirmation blocks too much" -- real per-bar tallies, not
+        # derived after the fact from the trade list alone.
+        metrics["trigger_diagnostics"] = ReplayDiagnostics.merge(all_diagnostics)
         metrics["requested_start_date"] = start_date.isoformat()
         metrics["requested_end_date"] = end_date.isoformat()
 

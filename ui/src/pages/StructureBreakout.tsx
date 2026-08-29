@@ -8,6 +8,7 @@ import { usePolling } from '../hooks/usePolling'
 import {
   fetchStructureBacktestRun,
   fetchStructureOptimize,
+  fetchStructureOptimizeProgress,
   fetchStructureSignal,
   postStructureBacktestRun,
 } from '../lib/api'
@@ -15,6 +16,7 @@ import type { ChartInterval } from '../lib/api'
 import type {
   StructureBacktestRun,
   StructureOptimizedProfile,
+  StructureOptimizeProgress,
   StructureOptimizeResult,
   StructureSignal,
 } from '../types'
@@ -359,6 +361,18 @@ function BacktestOptimizerPanel({ symbol, timeframe }: { symbol: string; timefra
     [runId],
   )
 
+  // Task 3's own "return progress information so the UI does not feel
+  // stuck" ask -- polled from a SEPARATE request while the optimize
+  // fetch below may still be blocked on a fresh search; the backend's
+  // own periodic `asyncio.sleep(0)` yields keep it able to answer this
+  // even mid-search. Only polls while `optimizing` is true, and stops
+  // the moment it is (see the cleanup below).
+  const { data: progress } = usePolling<StructureOptimizeProgress | null>(
+    async () => (optimizing && runId ? fetchStructureOptimizeProgress(runId) : null),
+    1500,
+    [optimizing, runId],
+  )
+
   // One-shot optimize fetch the moment the backtest itself finishes --
   // not on every 3s poll tick (the optimizer's own real search, or even
   // its cached read, is real work not worth repeating every poll).
@@ -430,17 +444,97 @@ function BacktestOptimizerPanel({ symbol, timeframe }: { symbol: string; timefra
         </div>
       )}
 
-      {optimizing && <p className="mt-3 text-xs text-hud-muted">Searching real settings…</p>}
+      {optimizing && (
+        <p className="mt-3 text-xs text-hud-muted">
+          {progress?.available && progress.phase === 'precomputing_features'
+            ? `Precomputing features -- ${progress.pairs_done ?? 0}/${progress.pairs_total ?? '?'} symbol/timeframe pair(s)…`
+            : progress?.available && progress.phase === 'evaluating_combos'
+              ? `Evaluating combinations -- ${progress.combos_done ?? 0}/${progress.combos_total ?? '?'} (${progress.elapsed_sec ?? 0}s elapsed)…`
+              : 'Searching real settings…'}
+        </p>
+      )}
 
       {optimize && (
         <div className="mt-4 flex flex-col gap-4 border-t border-hud-border pt-4">
           <p className="text-xs text-hud-muted">{optimize.note}</p>
 
+          {optimize.runtime?.is_intraday && (
+            <div
+              className={
+                'rounded-lg px-3 py-2 text-xs ' +
+                (optimize.runtime.runtime_guard_triggered
+                  ? 'bg-amber-400/10 text-amber-400'
+                  : 'bg-hud-panel-hover text-hud-muted')
+              }
+            >
+              Intraday optimizer run -- {optimize.runtime.elapsed_sec}s elapsed,{' '}
+              {optimize.runtime.max_combinations_applied} combination(s) capped
+              {optimize.runtime.max_runtime_sec_guard != null &&
+                ` (${optimize.runtime.max_runtime_sec_guard}s hard runtime guard)`}
+              .
+              {optimize.runtime.runtime_guard_triggered &&
+                ' The runtime guard stopped this run early -- results reflect only the combinations actually evaluated.'}
+            </div>
+          )}
+
+          {!!optimize.trigger_source_breakdown &&
+            Object.keys(optimize.trigger_source_breakdown).length > 0 && (
+              <div>
+                <h3 className="mb-1 text-[10px] font-bold uppercase tracking-wide text-hud-muted">
+                  Trigger-Source Breakdown
+                </h3>
+                <div className="grid grid-cols-4 gap-2 text-[10px] font-bold uppercase text-hud-muted">
+                  <span>Source</span>
+                  <span>Combos Tested</span>
+                  <span>Test Trades</span>
+                  <span>Survivors</span>
+                </div>
+                {Object.entries(optimize.trigger_source_breakdown).map(([source, row]) => (
+                  <div
+                    key={source}
+                    className="grid grid-cols-4 gap-2 border-t border-hud-border py-1.5 text-xs first:border-t-0"
+                  >
+                    <span className="font-mono text-hud-text">{source}</span>
+                    <span className="tnum font-mono text-hud-text">{row.combos_tested}</span>
+                    <span className="tnum font-mono text-hud-text">{row.total_test_trades}</span>
+                    <span className="tnum font-mono text-hud-text">{row.survivors}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
           {!recommended ? (
-            <div className="rounded-lg bg-bear/10 px-3 py-2 text-xs font-medium text-bear">
-              No profile is safe enough to recommend yet. Do not treat any tested candidate as a
-              statistically stronger setup candidate -- widen the search or collect more real
-              history.
+            <div className="flex flex-col gap-2">
+              <div className="rounded-lg bg-bear/10 px-3 py-2 text-xs font-medium text-bear">
+                No acceptable profile yet. Do not treat any tested candidate as a statistically
+                stronger setup candidate -- widen the search or collect more real history.
+              </div>
+              {optimize.candidates.length > 0 && (
+                <div>
+                  <h3 className="mb-1 text-[10px] font-bold uppercase tracking-wide text-hud-muted">
+                    Why profiles were rejected (top {Math.min(3, optimize.candidates.length)} by
+                    robustness score)
+                  </h3>
+                  <div className="flex flex-col gap-2">
+                    {optimize.candidates.slice(0, 3).map((c, i) => (
+                      <div
+                        key={i}
+                        className="rounded-lg border border-hud-border px-3 py-2 text-[11px]"
+                      >
+                        <div className="font-mono text-hud-muted">
+                          {c.params.trigger_source} · quality≥{c.params.min_setup_quality} ·{' '}
+                          {c.params.trade_mode}
+                        </div>
+                        <ul className="mt-1 list-inside list-disc text-hud-muted">
+                          {c.rejection_reasons.map((reason, j) => (
+                            <li key={j}>{reason}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <>

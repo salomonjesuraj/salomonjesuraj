@@ -34,6 +34,7 @@ from api.structure_backtest import (
 from api.structure_optimize import (
     DEFAULT_MAX_COMBINATIONS,
     get_cached_optimize_result,
+    get_optimize_progress,
     optimize_structure_backtest,
     persist_optimized_profiles,
 )
@@ -314,6 +315,31 @@ async def structure_optimize_get(request: web.Request) -> web.Response:
         end_ts=_date_to_ts(end_date, end_of_day=True),
         costs=costs,
         max_combinations=max_combinations,
+        run_id=run_id,
     )
     await persist_optimized_profiles(pg_pool, run_id, result)
     return web.json_response({"available": True, "cached": False, "run_id": run_id, **result})
+
+
+@routes.get("/api/structure/optimize/{run_id}/progress")
+async def structure_optimize_progress(request: web.Request) -> web.Response:
+    """Task 3's own "return progress information so the UI does not feel
+    stuck" ask -- pollable from a SEPARATE request while GET /api/
+    structure/optimize/{run_id} is still blocked on a fresh search, since
+    the replay/evaluate loop's own periodic `asyncio.sleep(0)` yields
+    (Phase 4's fix) keep this process' event loop free to answer it.
+    Returns an honest "no progress recorded yet" rather than a fabricated
+    0% when this run_id has never started a fresh search in this
+    process."""
+    run_id = request.match_info["run_id"]
+    progress = get_optimize_progress(run_id)
+    if progress is None:
+        return web.json_response(
+            {
+                "available": False,
+                "reason": f"No in-flight or completed optimizer progress recorded for {run_id!r} "
+                "in this process yet -- either it hasn't started, or it finished before this "
+                "process last restarted.",
+            }
+        )
+    return web.json_response({"available": True, "run_id": run_id, **progress})
