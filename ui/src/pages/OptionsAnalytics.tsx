@@ -1,12 +1,28 @@
 import { LineChart } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { DASH, MetricCard, type MetricTone } from '../components/MetricCard'
+import { ErrorBoundary } from '../components/ErrorBoundary'
 import { LiveCandlestickChart } from '../components/LiveCandlestickChart'
 import { PageHeader } from '../components/PageHeader'
 import { PayoffChart } from '../components/PayoffChart'
 import { SymbolSelector } from '../components/SymbolSelector'
 import { useOptionsAnalytics } from '../hooks/useOptionsAnalytics'
-import type { OptionChainStrike, RankedStrategy } from '../types'
+import { usePolling } from '../hooks/usePolling'
+import { fetchSmcGeometry } from '../lib/api'
+import type { OptionChainStrike, RankedStrategy, SmcGeometry } from '../types'
+
+// "Option Bias Alignment" fix (2026-08-29): the same real strategy ->
+// direction map api/options_strategies.py's own _STRATEGY_CLASS uses to
+// SCORE the ranked shortlist (bull_call_spread/bear_put_spread are the
+// only two of the six catalog strategies with a real directional
+// class this page can use, `neutral`/`neutral_bullish`/`volatility` per
+// that module's own scoring have no single SMC-bias side to align to).
+// Duplicated as a literal here rather than a cross-service import --
+// this app's own established convention.
+const STRATEGY_SMC_DIRECTION: Record<string, 'bullish' | 'bearish'> = {
+  bull_call_spread: 'bullish',
+  bear_put_spread: 'bearish',
+}
 
 function fmt(value: number | null | undefined, digits = 2): string {
   return value === null || value === undefined || Number.isNaN(value) ? DASH : value.toFixed(digits)
@@ -108,13 +124,39 @@ function OptionChainTable({
   )
 }
 
-function StrategyCard({ strategy }: { strategy: RankedStrategy }) {
+function StrategyCard({
+  strategy,
+  smcAligned,
+}: {
+  strategy: RankedStrategy
+  // "Option Bias Alignment" fix (2026-08-29): a subtle green ring, not a
+  // re-sort of this grid -- the shortlist's own real fit-score order
+  // (api/options_strategies.py's own MTF-based ranking) is left exactly
+  // as the backend returned it; this only marks which card(s), if any,
+  // also happen to match the chart's own current SMC bias.
+  smcAligned?: boolean
+}) {
   const netKind = strategy.net_debit !== undefined ? 'Net Debit' : 'Net Credit'
   const netValue = strategy.net_debit ?? strategy.net_credit
   return (
-    <div className="rounded-xl border border-hud-border bg-hud-panel p-4">
+    <div
+      className={
+        'rounded-xl border bg-hud-panel p-4 ' +
+        (smcAligned ? 'border-bull/50 ring-1 ring-bull/30' : 'border-hud-border')
+      }
+    >
       <div className="flex items-start justify-between gap-3">
-        <h3 className="font-mono text-sm font-bold text-hud-text">{titleCase(strategy.strategy)}</h3>
+        <h3 className="font-mono text-sm font-bold text-hud-text">
+          {titleCase(strategy.strategy)}
+          {smcAligned && (
+            <span
+              className="ml-1.5 align-middle text-[9px] font-bold uppercase tracking-wide text-bull"
+              title="This strategy's own directional class matches the chart's current SMC bias"
+            >
+              · SMC
+            </span>
+          )}
+        </h3>
         <span className="tnum shrink-0 rounded bg-bull/10 px-1.5 py-0.5 text-xs font-bold text-bull">
           {fmt(strategy.fit_score, 0)}
         </span>
@@ -159,24 +201,6 @@ function StrategyCard({ strategy }: { strategy: RankedStrategy }) {
   )
 }
 
-/** `/analytics` -- Options Analytics, wired to real backend routes
- * (2026-08-27 data-wiring sprint). Honest gap, disclosed rather than
- * papered over: this page's own Greeks Exposure card scores exactly
- * one live option Greek (Delta) anywhere in its code -- api/routes/
- * market.py's _score_option_leg reads `iv` and `delta` off Upstox's
- * option_greeks payload and nothing else for its signal-gating model.
- * That's a separate concern from the real per-strike Option Chain
- * table below, which DOES show real gamma/theta/vega straight off
- * Upstox's own payload -- see OptionChainStrike's own type comment.
- *
- * "Unified Screener & Deep-Dive Interactivity" sprint (2026-08-28): the
- * page now has its own symbol selector, synced to the URL's `?symbol=`
- * query param (react-router's useSearchParams, not local-only state) so
- * a deep link from the Screener, Pre-Breakout Watchlist, or Sniper HUD
- * lands here with the right symbol already loaded, and the page's own
- * URL stays shareable/bookmarkable. No symbol picked yet keeps the
- * original default-symbol behavior (most recent active signal, else
- * best pre-breakout candidate) exactly as before this sprint. */
 /** True cross-symbol staleness guard -- "UI Cleanup, Symbol Sync & SMC
  * Clutter Filtering" sprint (2026-08-28). useOptionsAnalytics's own
  * usePolling (like every usePolling in this app) keeps the LAST GOOD
@@ -203,6 +227,31 @@ function currentOnly<T extends { symbol?: string }>(
   return payload.symbol.toUpperCase() === activeSymbol.toUpperCase() ? payload : undefined
 }
 
+/** `/analytics` -- Options Analytics, wired to real backend routes
+ * (2026-08-27 data-wiring sprint). Honest gap, disclosed rather than
+ * papered over: this page's own Greeks Exposure card scores exactly
+ * one live option Greek (Delta) anywhere in its code -- api/routes/
+ * market.py's _score_option_leg reads `iv` and `delta` off Upstox's
+ * option_greeks payload and nothing else for its signal-gating model.
+ * That's a separate concern from the real per-strike Option Chain
+ * table below, which DOES show real gamma/theta/vega straight off
+ * Upstox's own payload -- see OptionChainStrike's own type comment.
+ *
+ * "Unified Screener & Deep-Dive Interactivity" sprint (2026-08-28): the
+ * page now has its own symbol selector, synced to the URL's `?symbol=`
+ * query param (react-router's useSearchParams, not local-only state) so
+ * a deep link from the Screener, Pre-Breakout Watchlist, or Sniper HUD
+ * lands here with the right symbol already loaded, and the page's own
+ * URL stays shareable/bookmarkable. No symbol picked yet keeps the
+ * original default-symbol behavior (most recent active signal, else
+ * best pre-breakout candidate) exactly as before this sprint.
+ *
+ * "Black Screen Crash" fix (2026-08-29): wrapped in its own
+ * ErrorBoundary (page-level), plus dedicated ones around the Chart and
+ * Option Chain Table -- the two widgets most likely to see a genuinely
+ * malformed value (lightweight-charts' own strict coordinate
+ * validation; a strike row missing a field) -- see ErrorBoundary.tsx's
+ * own docstring for why this app had none at all before now. */
 export function OptionsAnalytics() {
   const [searchParams, setSearchParams] = useSearchParams()
   const symbol = searchParams.get('symbol')?.toUpperCase() || undefined
@@ -219,180 +268,255 @@ export function OptionsAnalytics() {
   const summary = currentOnly(data?.summary, activeSymbol)
   const fullChain = currentOnly(data?.chain, activeSymbol)
   const delta = summary?.upstox_option?.metrics?.delta
-  const topStrategy = strategies?.ready ? strategies.ranked_strategies?.[0] : undefined
+
+  // "Option Bias Alignment" fix (2026-08-29): real bug found live --
+  // the ranked shortlist's own top pick is scored against mtf.py's
+  // compute_mtf trade_bias (a multi-timeframe read), which is a
+  // DIFFERENT real signal than the 1-minute SMC structure the chart
+  // above actually shows (api/smc_geometry.py's own trend_state, the
+  // same BOS/CHOCH engine this page's own chart already polls) -- the
+  // two can genuinely disagree, and when they did, this page kept
+  // featuring whichever strategy ranked #1 by the OTHER signal, reading
+  // as "the recommendation contradicts the chart." Not a re-ranking of
+  // the backend's own real scoring (that MTF-based logic is left
+  // untouched) -- just which ALREADY-RANKED real strategy this page
+  // chooses to feature, preferring one whose own real directional class
+  // (bull_call_spread/bear_put_spread) matches the chart's current SMC
+  // bias when one exists in the shortlist.
+  const { data: smc } = usePolling<SmcGeometry>(
+    async () =>
+      activeSymbol ? fetchSmcGeometry(activeSymbol) : { symbol: '', ready: false },
+    20000,
+    [activeSymbol],
+  )
+  const smcBias: 'bullish' | 'bearish' | null =
+    smc?.ready && smc.trend_state === 1
+      ? 'bullish'
+      : smc?.ready && smc.trend_state === -1
+        ? 'bearish'
+        : null
+  const smcAlignedStrategy = smcBias
+    ? strategies?.ranked_strategies?.find((s) => STRATEGY_SMC_DIRECTION[s.strategy] === smcBias)
+    : undefined
+  const topStrategy = strategies?.ready
+    ? (smcAlignedStrategy ?? strategies.ranked_strategies?.[0])
+    : undefined
+  const topStrategyIsSmcAligned = Boolean(smcAlignedStrategy && topStrategy === smcAlignedStrategy)
 
   const handleSelectSymbol = (sym: string) => {
     setSearchParams(sym ? { symbol: sym } : {})
   }
 
   return (
-    <div className="flex flex-1 flex-col gap-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <PageHeader
-          icon={LineChart}
-          title="Options Analytics"
-          subtitle={
-            summary?.symbol
-              ? `Live chain read for ${summary.symbol} · ${summary.bias ?? 'WAIT'}`
-              : 'Waiting for a symbol context (active signal or pre-breakout candidate)'
-          }
-        />
-        <SymbolSelector
-          value={symbol}
-          onSelect={handleSelectSymbol}
-          placeholder="Jump to F&O symbol…"
-        />
-      </div>
-
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <MetricCard
-          label="Delta"
-          value={fmt(delta, 3)}
-          tone={delta === undefined || delta === null ? 'neutral' : delta > 0 ? 'good' : 'bad'}
-          sublabel={summary?.suggested_contract || undefined}
-        />
-        <MetricCard
-          label="PCR Sentiment"
-          value={titleCase(chain?.pcr?.sentiment)}
-          tone={sentimentTone(chain?.pcr?.sentiment)}
-          sublabel={chain?.pcr ? `PCR ${fmt(chain.pcr.pcr, 2)}` : undefined}
-        />
-        <MetricCard
-          label="Max Pain"
-          value={fmt(chain?.max_pain?.max_pain_strike, 0)}
-          sublabel={chain?.spot ? `Spot ${fmt(chain.spot, 1)}` : undefined}
-        />
-        <MetricCard label="IV Rank" value={fmt(strategies?.iv_rank, 1)} />
-      </div>
-
-      <div>
-        <h2 className="mb-3 text-xs font-bold uppercase tracking-wide text-hud-muted">
-          Chart{activeSymbol ? ` -- ${activeSymbol}` : ''}
-        </h2>
-        {activeSymbol ? (
-          <LiveCandlestickChart symbol={activeSymbol} heightClassName="h-96" />
-        ) : (
-          <p className="rounded-xl border border-dashed border-hud-border bg-hud-panel/40 px-4 py-6 text-center text-xs text-hud-muted">
-            Waiting for a symbol context (active signal or pre-breakout candidate).
-          </p>
-        )}
-      </div>
-
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-        <div className="rounded-xl border border-hud-border bg-hud-panel p-4 lg:col-span-1">
-          <h2 className="text-xs font-bold uppercase tracking-wide text-hud-muted">
-            Greeks Exposure
-          </h2>
-          <div className="tnum mt-3 text-3xl font-bold text-hud-text">{fmt(delta, 3)}</div>
-          <div className="text-[10px] uppercase tracking-wide text-hud-muted">Delta</div>
-          <div className="mt-4 grid grid-cols-3 gap-2 text-center">
-            {(['Gamma', 'Theta', 'Vega'] as const).map((label) => (
-              <div key={label}>
-                <div className="tnum font-mono text-lg font-bold text-hud-muted">{DASH}</div>
-                <div className="text-[10px] uppercase tracking-wide text-hud-muted">{label}</div>
-              </div>
-            ))}
-          </div>
-          <p className="mt-4 text-[11px] leading-relaxed text-hud-muted">
-            Gamma/Theta/Vega are not computed anywhere in this backend yet -- only Delta is
-            scored. Disclosed gap, not a fabricated reading.
-          </p>
+    <ErrorBoundary label="Options Analytics">
+      <div className="flex flex-1 flex-col gap-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <PageHeader
+            icon={LineChart}
+            title="Options Analytics"
+            subtitle={
+              summary?.symbol
+                ? `Live chain read for ${summary.symbol} · ${summary.bias ?? 'WAIT'}` +
+                  (smcBias ? ` · Spot SMC: ${smcBias === 'bullish' ? 'Bullish' : 'Bearish'}` : '')
+                : 'Waiting for a symbol context (active signal or pre-breakout candidate)'
+            }
+          />
+          <SymbolSelector
+            value={symbol}
+            onSelect={handleSelectSymbol}
+            placeholder="Jump to F&O symbol…"
+          />
         </div>
 
-        <div className="rounded-xl border border-hud-border bg-hud-panel p-4 lg:col-span-2">
-          <h2 className="text-xs font-bold uppercase tracking-wide text-hud-muted">
-            OI Support / Resistance
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <MetricCard
+            label="Delta"
+            value={fmt(delta, 3)}
+            tone={delta === undefined || delta === null ? 'neutral' : delta > 0 ? 'good' : 'bad'}
+            sublabel={summary?.suggested_contract || undefined}
+          />
+          <MetricCard
+            label="PCR Sentiment"
+            value={titleCase(chain?.pcr?.sentiment)}
+            tone={sentimentTone(chain?.pcr?.sentiment)}
+            sublabel={chain?.pcr ? `PCR ${fmt(chain.pcr.pcr, 2)}` : undefined}
+          />
+          <MetricCard
+            label="Max Pain"
+            value={fmt(chain?.max_pain?.max_pain_strike, 0)}
+            sublabel={chain?.spot ? `Spot ${fmt(chain.spot, 1)}` : undefined}
+          />
+          <MetricCard label="IV Rank" value={fmt(strategies?.iv_rank, 1)} />
+        </div>
+
+        <div>
+          <h2 className="mb-3 text-xs font-bold uppercase tracking-wide text-hud-muted">
+            Chart{activeSymbol ? ` -- ${activeSymbol}` : ''}
           </h2>
-          {chain?.oi_support_resistance ? (
-            <div className="tnum mt-3 grid grid-cols-2 gap-4 sm:grid-cols-4">
-              <div>
-                <div className="text-lg font-bold text-bull">
-                  {fmt(chain.oi_support_resistance.support, 0)}
-                </div>
-                <div className="text-[10px] uppercase tracking-wide text-hud-muted">Support</div>
-              </div>
-              <div>
-                <div className="text-lg font-bold text-bear">
-                  {fmt(chain.oi_support_resistance.resistance, 0)}
-                </div>
-                <div className="text-[10px] uppercase tracking-wide text-hud-muted">
-                  Resistance
-                </div>
-              </div>
-              <div>
-                <div className="text-lg font-bold text-hud-text">
-                  {fmt(chain?.max_pain?.max_pain_strike, 0)}
-                </div>
-                <div className="text-[10px] uppercase tracking-wide text-hud-muted">Max Pain</div>
-              </div>
-              <div>
-                <div className="text-lg font-bold text-hud-text">
-                  {chain?.strikes_in_chain ?? DASH}
-                </div>
-                <div className="text-[10px] uppercase tracking-wide text-hud-muted">
-                  Strikes in Chain
-                </div>
-              </div>
-            </div>
+          {activeSymbol ? (
+            // "Black Screen Crash" fix (2026-08-29): its own boundary,
+            // separate from the page-level one -- a chart-rendering
+            // crash (lightweight-charts is the one piece of this page
+            // manipulating raw canvas state outside React's own render
+            // cycle) shouldn't take the option chain/Greeks/strategy
+            // cards below it down too. Keyed on activeSymbol so
+            // switching to a different symbol remounts fresh and
+            // retries automatically, rather than staying stuck on a
+            // crashed prior symbol's fallback.
+            <ErrorBoundary label="Chart" key={activeSymbol}>
+              <LiveCandlestickChart symbol={activeSymbol} heightClassName="h-96" />
+            </ErrorBoundary>
           ) : (
-            <p className="mt-3 text-xs text-hud-muted">
-              {chain?.reason || 'No option chain read yet.'}
+            <p className="rounded-xl border border-dashed border-hud-border bg-hud-panel/40 px-4 py-6 text-center text-xs text-hud-muted">
+              Waiting for a symbol context (active signal or pre-breakout candidate).
             </p>
           )}
         </div>
-      </div>
 
-      <div>
-        <h2 className="mb-3 text-xs font-bold uppercase tracking-wide text-hud-muted">
-          Option Chain{fullChain?.symbol ? ` -- ${fullChain.symbol}` : ''}
-          {fullChain?.expiry ? ` (${fullChain.expiry})` : ''}
-        </h2>
-        {fullChain?.ready && fullChain.strikes?.length && activeSymbol ? (
-          <OptionChainTable
-            key={activeSymbol}
-            symbol={activeSymbol}
-            strikes={fullChain.strikes}
-            spot={fullChain.spot}
-          />
-        ) : (
-          <p className="rounded-xl border border-dashed border-hud-border bg-hud-panel/40 px-4 py-6 text-center text-xs text-hud-muted">
-            {fullChain?.reason || 'No option chain read yet.'}
-          </p>
-        )}
-      </div>
-
-      {topStrategy?.legs?.length && chain?.spot ? (
-        <div className="rounded-xl border border-hud-border bg-hud-panel p-4">
-          <h2 className="text-xs font-bold uppercase tracking-wide text-hud-muted">
-            Payoff at Expiration -- {titleCase(topStrategy.strategy)}
-          </h2>
-          <p className="mt-1 text-[11px] text-hud-muted">
-            Top-ranked strategy's real legs (strike/premium/action), profit zone shaded green,
-            max-loss zone shaded red.
-          </p>
-          <PayoffChart legs={topStrategy.legs} spot={chain.spot} />
-        </div>
-      ) : null}
-
-      <div>
-        <h2 className="mb-3 text-xs font-bold uppercase tracking-wide text-hud-muted">
-          Strategy Selector
-        </h2>
-        {strategies?.ready && strategies.ranked_strategies?.length ? (
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {strategies.ranked_strategies.map((s) => (
-              <StrategyCard key={s.strategy} strategy={s} />
-            ))}
-          </div>
-        ) : (
-          <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-hud-border bg-hud-panel/40 px-6 py-12 text-center">
-            <LineChart className="h-6 w-6 text-hud-muted" />
-            <p className="max-w-md text-xs text-hud-muted">
-              {strategies?.reason || 'No ranked strategy shortlist available yet.'}
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+          <div className="rounded-xl border border-hud-border bg-hud-panel p-4 lg:col-span-1">
+            <h2 className="text-xs font-bold uppercase tracking-wide text-hud-muted">
+              Greeks Exposure
+            </h2>
+            <div className="tnum mt-3 text-3xl font-bold text-hud-text">{fmt(delta, 3)}</div>
+            <div className="text-[10px] uppercase tracking-wide text-hud-muted">Delta</div>
+            <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+              {(['Gamma', 'Theta', 'Vega'] as const).map((label) => (
+                <div key={label}>
+                  <div className="tnum font-mono text-lg font-bold text-hud-muted">{DASH}</div>
+                  <div className="text-[10px] uppercase tracking-wide text-hud-muted">{label}</div>
+                </div>
+              ))}
+            </div>
+            <p className="mt-4 text-[11px] leading-relaxed text-hud-muted">
+              Gamma/Theta/Vega are not computed anywhere in this backend yet -- only Delta is
+              scored. Disclosed gap, not a fabricated reading.
             </p>
           </div>
-        )}
+
+          <div className="rounded-xl border border-hud-border bg-hud-panel p-4 lg:col-span-2">
+            <h2 className="text-xs font-bold uppercase tracking-wide text-hud-muted">
+              OI Support / Resistance
+            </h2>
+            {chain?.oi_support_resistance ? (
+              <div className="tnum mt-3 grid grid-cols-2 gap-4 sm:grid-cols-4">
+                <div>
+                  <div className="text-lg font-bold text-bull">
+                    {fmt(chain.oi_support_resistance.support, 0)}
+                  </div>
+                  <div className="text-[10px] uppercase tracking-wide text-hud-muted">Support</div>
+                </div>
+                <div>
+                  <div className="text-lg font-bold text-bear">
+                    {fmt(chain.oi_support_resistance.resistance, 0)}
+                  </div>
+                  <div className="text-[10px] uppercase tracking-wide text-hud-muted">
+                    Resistance
+                  </div>
+                </div>
+                <div>
+                  <div className="text-lg font-bold text-hud-text">
+                    {fmt(chain?.max_pain?.max_pain_strike, 0)}
+                  </div>
+                  <div className="text-[10px] uppercase tracking-wide text-hud-muted">Max Pain</div>
+                </div>
+                <div>
+                  <div className="text-lg font-bold text-hud-text">
+                    {chain?.strikes_in_chain ?? DASH}
+                  </div>
+                  <div className="text-[10px] uppercase tracking-wide text-hud-muted">
+                    Strikes in Chain
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <p className="mt-3 text-xs text-hud-muted">
+                {chain?.reason || 'No option chain read yet.'}
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div>
+          <h2 className="mb-3 text-xs font-bold uppercase tracking-wide text-hud-muted">
+            Option Chain{fullChain?.symbol ? ` -- ${fullChain.symbol}` : ''}
+            {fullChain?.expiry ? ` (${fullChain.expiry})` : ''}
+          </h2>
+          {fullChain?.ready && fullChain.strikes?.length && activeSymbol ? (
+            // "Black Screen Crash" fix (2026-08-29): its own boundary,
+            // same reasoning as the Chart's above -- a malformed strike
+            // row shouldn't take the rest of the page down with it.
+            <ErrorBoundary label="Option Chain" key={activeSymbol}>
+              <OptionChainTable
+                symbol={activeSymbol}
+                strikes={fullChain.strikes}
+                spot={fullChain.spot}
+              />
+            </ErrorBoundary>
+          ) : activeSymbol && !fullChain?.reason ? (
+            // "Black Screen Crash" fix (2026-08-29): a real activeSymbol
+            // with no explicit unavailable-reason yet is the genuine
+            // "still in flight" case (a fresh symbol switch, or the
+            // first poll after page load) -- a pulsing skeleton instead
+            // of a static sentence makes that read as loading, not
+            // broken. A real `reason` string (CHAIN_PENDING, an auth
+            // error, etc.) always wins below -- that's an honest,
+            // specific answer, not a loading state.
+            <div className="animate-pulse space-y-2 rounded-xl border border-hud-border bg-hud-panel p-4">
+              {[100, 90, 95, 85, 92].map((pct, i) => (
+                <div key={i} className="h-4 rounded bg-hud-panel-hover" style={{ width: `${pct}%` }} />
+              ))}
+            </div>
+          ) : (
+            <p className="rounded-xl border border-dashed border-hud-border bg-hud-panel/40 px-4 py-6 text-center text-xs text-hud-muted">
+              {fullChain?.reason || 'No option chain read yet.'}
+            </p>
+          )}
+        </div>
+
+        {topStrategy?.legs?.length && chain?.spot ? (
+          <div className="rounded-xl border border-hud-border bg-hud-panel p-4">
+            <h2 className="text-xs font-bold uppercase tracking-wide text-hud-muted">
+              Payoff at Expiration -- {titleCase(topStrategy.strategy)}
+              {topStrategyIsSmcAligned && (
+                <span className="ml-2 rounded bg-bull/15 px-1.5 py-0.5 text-[10px] font-bold normal-case text-bull">
+                  SMC-Aligned
+                </span>
+              )}
+            </h2>
+            <p className="mt-1 text-[11px] text-hud-muted">
+              {topStrategyIsSmcAligned
+                ? `Featured because its own real directional class matches the chart's current ${smcBias} SMC bias -- not simply this shortlist's #1 rank by score.`
+                : "Top-ranked strategy's real legs (strike/premium/action), profit zone shaded green, max-loss zone shaded red."}
+            </p>
+            <PayoffChart legs={topStrategy.legs} spot={chain.spot} />
+          </div>
+        ) : null}
+
+        <div>
+          <h2 className="mb-3 text-xs font-bold uppercase tracking-wide text-hud-muted">
+            Strategy Selector
+          </h2>
+          {strategies?.ready && strategies.ranked_strategies?.length ? (
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {strategies.ranked_strategies.map((s) => (
+                <StrategyCard
+                  key={s.strategy}
+                  strategy={s}
+                  smcAligned={smcBias !== null && STRATEGY_SMC_DIRECTION[s.strategy] === smcBias}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-hud-border bg-hud-panel/40 px-6 py-12 text-center">
+              <LineChart className="h-6 w-6 text-hud-muted" />
+              <p className="max-w-md text-xs text-hud-muted">
+                {strategies?.reason || 'No ranked strategy shortlist available yet.'}
+              </p>
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+    </ErrorBoundary>
   )
 }

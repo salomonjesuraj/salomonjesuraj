@@ -168,6 +168,72 @@ async def test_t3_is_a_real_fib_extension_when_features_snapshot_is_entirely_mis
     assert blueprint.target_3_fib == pytest.approx(1300.0 - (1310.0 - 1300.0) * 2.618)
 
 
+async def test_t2_corrected_when_it_lands_behind_t1_bullish() -> None:
+    """P0 audit fix (2026-08-29): real bug found live -- target_price
+    (T1) and t2_price (T2) come from two independent upstream
+    calculations with no cross-validation. Here t2_price (1310) sits
+    BEHIND target_price/T1 (1320) for a bullish setup -- corrected to
+    project one fib-step (0.618) beyond T1 using the signal's own real
+    risk (entry 1300, stop 1290 -> risk 10)."""
+    redis = _FakeRedis(
+        {
+            "infusion:signal:RELIANCE": {
+                "signal_type": "bullish",
+                "strategy_id": "vol_vwap_breakout",
+                "entry_price": "1300.0",
+                "invalidation_price": "1290.0",
+                "target_price": "1320.0",
+                "t2_price": "1310.0",  # behind T1 -- the real bug shape
+            }
+        }
+    )
+    blueprint = await tb.build_trade_blueprint(redis, "RELIANCE")
+    assert blueprint.target_1_fib == 1320.0
+    assert blueprint.target_2_fib > blueprint.target_1_fib
+    assert blueprint.target_2_fib == pytest.approx(1320.0 + 10.0 * (1.618 - 1.0))
+
+
+async def test_t2_corrected_when_it_lands_ahead_of_t1_bearish() -> None:
+    """Bearish mirror: t2_price (1290) sits AHEAD of (above) target_price/
+    T1 (1280) -- for a bearish setup T2 must be strictly below T1, so
+    this is the same inversion in the opposite direction."""
+    redis = _FakeRedis(
+        {
+            "infusion:signal:RELIANCE": {
+                "signal_type": "bearish",
+                "strategy_id": "options_first_hybrid",
+                "entry_price": "1300.0",
+                "invalidation_price": "1310.0",
+                "target_price": "1280.0",
+                "t2_price": "1290.0",  # ahead of T1 -- inverted for a bearish setup
+            }
+        }
+    )
+    blueprint = await tb.build_trade_blueprint(redis, "RELIANCE")
+    assert blueprint.target_1_fib == 1280.0
+    assert blueprint.target_2_fib < blueprint.target_1_fib
+    assert blueprint.target_2_fib == pytest.approx(1280.0 - 10.0 * (1.618 - 1.0))
+
+
+async def test_t2_left_unchanged_when_already_correctly_ordered() -> None:
+    """The common, non-buggy case -- a real t2_price that's already
+    beyond T1 must pass through untouched, never nudged."""
+    redis = _FakeRedis(
+        {
+            "infusion:signal:RELIANCE": {
+                "signal_type": "bullish",
+                "strategy_id": "vol_vwap_breakout",
+                "entry_price": "1300.0",
+                "invalidation_price": "1290.0",
+                "target_price": "1320.0",
+                "t2_price": "1335.0",  # already correctly ahead of T1
+            }
+        }
+    )
+    blueprint = await tb.build_trade_blueprint(redis, "RELIANCE")
+    assert blueprint.target_2_fib == 1335.0
+
+
 async def test_t3_fallback_never_lands_behind_a_wider_real_t2() -> None:
     """Regression for a real bug this fix's own live verification found
     (not in the audit's original spec): real t2_price comes from

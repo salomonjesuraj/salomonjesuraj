@@ -65,6 +65,7 @@ BTST_CUTOFF_HOUR_IST = 14.0
 # not worth a shared import" precedent above). See
 # _t3_fallback_from_risk's docstring for why this module needs its own
 # fallback distinct from broker_sync's Donchian-channel one.
+FIB_EXTENSION_T2 = 1.618
 FIB_EXTENSION_T3 = 2.618
 # "Closing near Day High/Low" -- within this fraction of the day's own
 # high-low range from the relevant extreme.
@@ -123,7 +124,7 @@ def _t3_fallback_from_risk(
     T2-collapse bug this function replaces. Guarded by construction: if
     the risk-based number doesn't clear real_t2 in the trade's favorable
     direction, project one further risk-multiple past real_t2 instead
-    (FIB_EXTENSION_T3 - 1.618 == 1.0, the same T2->T3 fib step
+    (FIB_EXTENSION_T3 - FIB_EXTENSION_T2 == 1.0, the same T2->T3 fib step
     pine_confidence.py's own cluster-extension mode uses) -- always
     strictly beyond T2, never a number smaller than what a real T3
     should be relative to a real T2.
@@ -139,9 +140,47 @@ def _t3_fallback_from_risk(
     if beyond_t2:
         return candidate
     return (
-        real_t2 + risk * (FIB_EXTENSION_T3 - 1.618)
+        real_t2 + risk * (FIB_EXTENSION_T3 - FIB_EXTENSION_T2)
         if bullish
-        else real_t2 - risk * (FIB_EXTENSION_T3 - 1.618)
+        else real_t2 - risk * (FIB_EXTENSION_T3 - FIB_EXTENSION_T2)
+    )
+
+
+def _t2_correction_if_inverted(
+    *, bullish: bool, entry: float, invalidation: float, real_t1: float, real_t2: float
+) -> float:
+    """P0 audit fix (2026-08-29): real bug found live, one step earlier
+    in the same ladder _t3_fallback_from_risk above already guards --
+    target_1_fib (the signal's own `target_price`, an ATR/practical-
+    target calculation) and target_2_fib (the signal's own `t2_price`,
+    a SEPARATE Fibonacci confluence-cluster calculation -- see
+    scanner/pine_confidence.py's compute_fib_targets) are read from two
+    entirely independent upstream sources with no cross-validation
+    between them. Nothing guaranteed real_t2 actually sits beyond
+    real_t1 in the trade's favorable direction -- for a real bullish
+    setup this let T2 render behind T1 (in the worst case, even behind
+    the entry/stop-loss pair itself: a "T2 Target Zone" that reads as
+    upside-down against the very setup it's supposed to describe).
+
+    Same real entry-to-stop risk anchor _t3_fallback_from_risk already
+    uses, not a second, competing calculation. Guarded by construction:
+    if real_t2 doesn't already clear real_t1, project one fib-step
+    beyond T1 instead (FIB_EXTENSION_T2 - 1.0 == 0.618, the golden-ratio
+    gap the 1.0/1.618/2.618 sequence itself implies) -- always strictly
+    beyond T1, never a number smaller than what a real T2 should be
+    relative to a real T1. Returns real_t2 unchanged when it's already
+    correctly ordered, or when risk itself is non-positive (invalid/
+    missing entry-SL pair -- nothing real to correct against)."""
+    risk = (entry - invalidation) if bullish else (invalidation - entry)
+    if risk <= 0:
+        return real_t2
+    beyond_t1 = real_t2 > real_t1 if bullish else real_t2 < real_t1
+    if beyond_t1:
+        return real_t2
+    return (
+        real_t1 + risk * (FIB_EXTENSION_T2 - 1.0)
+        if bullish
+        else real_t1 - risk * (FIB_EXTENSION_T2 - 1.0)
     )
 
 
@@ -379,6 +418,18 @@ async def build_trade_blueprint(redis: Any, symbol: str) -> TradeBlueprint:
         invalidation_sl = _f(signal_row, "invalidation_price")
         target_1_fib = _f(signal_row, "target_price")  # T1
         target_2_fib = _f(signal_row, "t2_price")
+        # P0 audit fix (2026-08-29): target_price (T1) and t2_price (T2)
+        # come from two independent upstream calculations with no
+        # cross-validation -- see _t2_correction_if_inverted's own
+        # docstring for the real bug this closes (T2 rendering behind
+        # T1, sometimes even behind entry/stop-loss itself).
+        target_2_fib = _t2_correction_if_inverted(
+            bullish=direction == "BULL",
+            entry=entry_price,
+            invalidation=invalidation_sl,
+            real_t1=target_1_fib,
+            real_t2=target_2_fib,
+        )
         # t3_price only lives inside features_snapshot's own JSON blob,
         # not as a top-level hash field -- see engine.py's own signal
         # write path. P0 audit fix (2026-08-28): when it's missing (the

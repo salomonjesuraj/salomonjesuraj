@@ -116,27 +116,52 @@ def _fvg_payload(fvg: tuple[float, float, int] | None) -> Payload | None:
 
 
 def _target_zones(
-    trend_state: int, swing_high_1: float | None, swing_low_1: float | None
+    trend_state: int,
+    current_price: float,
+    swing_high_1: float | None,
+    swing_low_1: float | None,
 ) -> Payload:
-    """1.618 / 2.618 Fibonacci extension of the current confirmed swing
-    (swing_low_1 -> swing_high_1 projected further up for an uptrend,
-    the mirror down for a downtrend). None/None -- never a fabricated
-    number -- when the trend is RANGE (no directional swing to extend
-    from) or either swing point isn't confirmed yet."""
+    """P0 audit fix (2026-08-29): T1/T2/T3 anchored on CURRENT PRICE (the
+    final bar's own close), not on swing_low_1/swing_high_1 directly --
+    a real bug found live: the previous version projected from whichever
+    swing point was older/farther from current price, which for a
+    symbol whose most recent confirmed swing sits well behind where
+    price has since moved could place T2 confusingly close to (or past)
+    a real position's own stop-loss on the SAME chart, even though the
+    swing-based math itself was never inverted in isolation. Anchoring
+    on current price guarantees T1/T2/T3 are always measured from
+    "where a trade started now would sit," the same real reference
+    every other target ladder in this codebase uses (trade_blueprint.py's
+    entry-price anchor, broker_sync.py's Donchian-channel anchor) --
+    never a fabricated position this pure function has no way to know
+    about, just the one real anchor it always has: the symbol's own
+    current price.
+
+    `swing_range` (the magnitude of the projection) still comes from the
+    real confirmed swing (swing_high_1 - swing_low_1) -- only the ANCHOR
+    changed, not what "how far" means. T1 = current_price +/- swing_range
+    (the 1.0x measured-move convention); T2 = 1.618x; T3 = 2.618x --
+    strictly ascending for bullish, strictly descending for bearish, by
+    construction (swing_range > 0 and 1.0 < 1.618 < 2.618). None for all
+    three -- never a fabricated number -- when the trend is RANGE (no
+    directional swing to extend from), either swing point isn't
+    confirmed yet, or the confirmed swing is degenerate (high <= low)."""
     if trend_state == 0 or swing_high_1 is None or swing_low_1 is None:
-        return {"t2": None, "t3": None, "direction": None}
+        return {"t1": None, "t2": None, "t3": None, "direction": None}
     swing_range = swing_high_1 - swing_low_1
     if swing_range <= 0:
-        return {"t2": None, "t3": None, "direction": None}
+        return {"t1": None, "t2": None, "t3": None, "direction": None}
     if trend_state == 1:
         return {
-            "t2": round(swing_low_1 + swing_range * FIB_EXTENSION_T2, 2),
-            "t3": round(swing_low_1 + swing_range * FIB_EXTENSION_T3, 2),
+            "t1": round(current_price + swing_range, 2),
+            "t2": round(current_price + swing_range * FIB_EXTENSION_T2, 2),
+            "t3": round(current_price + swing_range * FIB_EXTENSION_T3, 2),
             "direction": "bullish",
         }
     return {
-        "t2": round(swing_high_1 - swing_range * FIB_EXTENSION_T2, 2),
-        "t3": round(swing_high_1 - swing_range * FIB_EXTENSION_T3, 2),
+        "t1": round(current_price - swing_range, 2),
+        "t2": round(current_price - swing_range * FIB_EXTENSION_T2, 2),
+        "t3": round(current_price - swing_range * FIB_EXTENSION_T3, 2),
         "direction": "bearish",
     }
 
@@ -399,6 +424,7 @@ def compute_smc_geometry(
                         order_block_bearish = None
 
     final_bar_time = int(bars[-1]["time"])
+    current_price = float(bars[-1]["close"])
     return {
         "ready": True,
         "bar_count": len(bars),
@@ -426,5 +452,5 @@ def compute_smc_geometry(
         "order_block_bearish": _ob_payload(order_block_bearish),
         "fvg_bullish": _fvg_payload(fvg_bullish),
         "fvg_bearish": _fvg_payload(fvg_bearish),
-        "target_zones": _target_zones(trend_state, swing_high_1, swing_low_1),
+        "target_zones": _target_zones(trend_state, current_price, swing_high_1, swing_low_1),
     }

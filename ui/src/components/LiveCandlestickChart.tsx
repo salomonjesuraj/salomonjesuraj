@@ -143,17 +143,42 @@ function toCandle(bar: ChartBar): CandlestickData<UTCTimestamp> {
   }
 }
 
-/** Shared by Effects 3 and 4 below (previously a local closure only
- * Effect 4 had) -- a null/undefined price removes that specific line
- * rather than drawing a fabricated one at 0, the same honesty rule both
- * the position overlay and the MTF structure overlay need. */
+/** "Black Screen Crash" fix (2026-08-29): a bar with any non-finite
+ * OHLC/time field (NaN, +/-Infinity -- e.g. a genuinely malformed
+ * upstream reading, or a symbol switch resolving an in-flight fetch
+ * for a stale request) would make `candleSeries.setData()`/`update()`
+ * throw synchronously; that throw, uncaught inside this render effect,
+ * used to unmount the whole page before this sprint's own
+ * ErrorBoundary existed. Dropping the bad bar here is the honest fix
+ * either way -- a fabricated candle isn't the alternative to a crash. */
+function isFiniteBar(bar: ChartBar): boolean {
+  return (
+    Number.isFinite(bar.time) &&
+    Number.isFinite(bar.open) &&
+    Number.isFinite(bar.high) &&
+    Number.isFinite(bar.low) &&
+    Number.isFinite(bar.close) &&
+    Number.isFinite(bar.volume)
+  )
+}
+
+/** Shared by Effects 3-5 below (previously a local closure only Effect
+ * 4 had) -- a null/undefined price removes that specific line rather
+ * than drawing a fabricated one at 0, the same honesty rule both the
+ * position overlay and the MTF structure overlay need. "Black Screen
+ * Crash" fix (2026-08-29): also treats a non-finite number (NaN,
+ * +/-Infinity) as "remove the line" -- lightweight-charts' own
+ * `createPriceLine`/`applyOptions` throw on a non-finite price, and an
+ * uncaught throw inside a render effect (before this sprint's own
+ * ErrorBoundary) unmounted the whole page. `Number.isFinite` narrows
+ * `number` on its own, no separate null check needed for that branch. */
 function syncPriceLine(
   candleSeries: ISeriesApi<'Candlestick'>,
   ref: MutableRefObject<IPriceLine | null>,
   price: number | null | undefined,
   opts: { color: string; lineWidth: 1 | 2; lineStyle: LineStyle; title: string },
 ): void {
-  if (price === null || price === undefined) {
+  if (price === null || price === undefined || !Number.isFinite(price)) {
     if (ref.current) {
       candleSeries.removePriceLine(ref.current)
       ref.current = null
@@ -447,26 +472,30 @@ export function LiveCandlestickChart({
     targetT2LineRef.current = null
   }, [symbol, interval])
 
-  // Effect 2: bind fetched bars into the series.
+  // Effect 2: bind fetched bars into the series. "Black Screen Crash"
+  // fix (2026-08-29): filtered through isFiniteBar first -- see that
+  // function's own comment -- so a malformed bar is silently dropped
+  // rather than thrown at lightweight-charts raw.
   useEffect(() => {
     const candleSeries = candleSeriesRef.current
     const volumeSeries = volumeSeriesRef.current
-    if (!candleSeries || !volumeSeries || bars.length === 0) return
+    const validBars = bars.filter(isFiniteBar)
+    if (!candleSeries || !volumeSeries || validBars.length === 0) return
 
     if (isFirstLoadRef.current) {
-      candleSeries.setData(bars.map(toCandle))
-      volumeSeries.setData(bars.map(toVolume))
+      candleSeries.setData(validBars.map(toCandle))
+      volumeSeries.setData(validBars.map(toVolume))
       chartRef.current?.timeScale().fitContent()
       isFirstLoadRef.current = false
     } else {
       const since = lastBarTimeRef.current ?? -Infinity
-      for (const bar of bars) {
+      for (const bar of validBars) {
         if (bar.time < since) continue
         candleSeries.update(toCandle(bar))
         volumeSeries.update(toVolume(bar))
       }
     }
-    lastBarTimeRef.current = bars[bars.length - 1].time
+    lastBarTimeRef.current = validBars[validBars.length - 1].time
   }, [bars])
 
   // Effect 3: Active Trade Chart Overlay ("Terminal Edge" sprint,
@@ -647,7 +676,15 @@ export function LiveCandlestickChart({
     // type comment) -- its color is re-applied on every update since
     // the SAME series is reused across a bullish<->bearish flip, not
     // recreated.
-    const trendline = smc?.ready ? smc.trendlines?.[0] : undefined
+    // "Black Screen Crash" fix (2026-08-29): also requires both points'
+    // own time/value to be finite -- same reasoning as isFiniteBar's
+    // own comment above, applied to the one other place this component
+    // feeds raw numeric coordinates to lightweight-charts.
+    const rawTrendline = smc?.ready ? smc.trendlines?.[0] : undefined
+    const trendline =
+      rawTrendline && rawTrendline.points.every((p) => Number.isFinite(p.time) && Number.isFinite(p.value))
+        ? rawTrendline
+        : undefined
     if (!trendline) {
       trendlineSeriesRef.current?.setData([])
     } else {
@@ -680,6 +717,13 @@ export function LiveCandlestickChart({
     }
   }, [smc])
 
+  // "Black Screen Crash" fix (2026-08-29): an empty/blank symbol prop
+  // (belt-and-suspenders -- every real call site already guards this
+  // before rendering the component at all) gets its own honest message
+  // rather than silently falling through to "No intraday bars cached
+  // yet for ." A real symbol still fetching its first bars gets a
+  // pulsing skeleton bar, not a plain static sentence, so "the new
+  // symbol's data is in flight" reads as a loading state at a glance.
   return (
     <div
       className={`relative w-full overflow-hidden rounded-lg ${heightClassName}`}
@@ -687,12 +731,20 @@ export function LiveCandlestickChart({
     >
       <div ref={containerRef} className="h-full w-full" />
       {bars.length === 0 && (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-xs text-hud-muted">
-          {error
-            ? `Chart data unavailable: ${error.message}`
-            : loading
-              ? 'Loading 1-min bars…'
-              : `No intraday bars cached yet for ${symbol}.`}
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3 text-xs text-hud-muted">
+          {!symbol ? (
+            'No symbol selected.'
+          ) : error ? (
+            `Chart data unavailable: ${error.message}`
+          ) : loading ? (
+            <>
+              <div className="h-2 w-40 animate-pulse rounded-full bg-hud-panel-hover" />
+              <div className="h-2 w-28 animate-pulse rounded-full bg-hud-panel-hover" />
+              <span>Loading 1-min bars for {symbol}…</span>
+            </>
+          ) : (
+            `No intraday bars cached yet for ${symbol}.`
+          )}
         </div>
       )}
     </div>

@@ -68,7 +68,7 @@ def test_range_state_never_fabricates_a_directional_target_zone() -> None:
     assert result["trend_state"] == 0
     assert result["swing_high_1"] == 120
     assert result["swing_low_1"] == 95
-    assert result["target_zones"] == {"t2": None, "t3": None, "direction": None}
+    assert result["target_zones"] == {"t1": None, "t2": None, "t3": None, "direction": None}
     assert result["bos_choch_events"] == []
     assert result["order_block_bullish"] is None
     # Both swing lows are known here (95 at bar 2, and only one so far --
@@ -99,11 +99,15 @@ def test_full_bullish_scenario_detects_bos_sweep_ob_and_targets() -> None:
     assert result["order_block_bullish"] == {"low": 90, "high": 101, "validated": True}
     assert result["order_block_bearish"] is None
 
-    # 1.618 / 2.618 extension of the final swing range (90 -> 120).
+    # P0 audit fix (2026-08-29): T1/T2/T3 anchored on CURRENT PRICE (the
+    # final bar's own close, 124), not on the swing extreme itself --
+    # magnitude still the real swing range (120 - 90 = 30).
     target_zones = result["target_zones"]
     assert target_zones["direction"] == "bullish"
-    assert target_zones["t2"] == round(90 + 30 * 1.618, 2)
-    assert target_zones["t3"] == round(90 + 30 * 2.618, 2)
+    assert target_zones["t1"] == (124 + 30)
+    assert target_zones["t2"] == round(124 + 30 * 1.618, 2)
+    assert target_zones["t3"] == round(124 + 30 * 2.618, 2)
+    assert target_zones["t1"] < target_zones["t2"] < target_zones["t3"]
 
     # "TradingView Parity" sprint (2026-08-29): ascending trendline
     # through the two most recent real confirmed swing LOWS -- bar 2's
@@ -166,6 +170,23 @@ def test_bearish_trendline_uses_the_two_most_recent_swing_highs() -> None:
             ],
         }
     ]
+
+
+def test_bearish_target_zones_are_strictly_descending_from_current_price() -> None:
+    """P0 audit fix (2026-08-29): bearish T1/T2/T3 anchored on current
+    price (the final bar's own close, 80), swing_range = swing_high_1
+    (125) - swing_low_1 (90) = 35 -- must land strictly BELOW current
+    price and strictly descending T1 > T2 > T3, never inverted."""
+    result = compute_smc_geometry(_RANGE_BARS + _IMPULSE_BARS + _REVERSAL_BARS)
+    target_zones = result["target_zones"]
+    assert target_zones["direction"] == "bearish"
+    assert target_zones["t1"] == (80 - 35)
+    assert target_zones["t2"] == round(80 - 35 * 1.618, 2)
+    assert target_zones["t3"] == round(80 - 35 * 2.618, 2)
+    assert target_zones["t1"] > target_zones["t2"] > target_zones["t3"]
+    current_price = 80
+    assert target_zones["t1"] < current_price
+    assert target_zones["t2"] < current_price
 
 
 def test_event_lists_are_capped_to_the_most_recent_max_events(monkeypatch) -> None:
