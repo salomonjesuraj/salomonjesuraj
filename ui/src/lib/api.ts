@@ -30,6 +30,8 @@ import type {
   SmcGeometry,
   StagedTicketsResponse,
   StrategySelectorResult,
+  StructureBacktestRun,
+  StructureOptimizeResult,
   StructureSignal,
   StructureUniverseMap,
   SuppressedSignalRow,
@@ -234,6 +236,38 @@ export async function fetchStructureUniverse(timeframe: string): Promise<Structu
     `/api/structure/universe?timeframe=${encodeURIComponent(timeframe)}`,
   )
   return body.rows || {}
+}
+
+/** POST /api/structure/backtest/run -- "Structure & Breakout Suite"
+ * Phase 3 (2026-08-29). Kicks off a real historical replay; returns a
+ * run_id immediately, poll fetchStructureBacktestRun() for status. */
+export async function postStructureBacktestRun(body: {
+  symbols: string[]
+  timeframes: string[]
+  start_date: string
+  end_date: string
+  side: 'LONG_ONLY' | 'SHORT_ONLY' | 'BOTH'
+}): Promise<{ available: boolean; reason?: string; run_id?: string; status?: string }> {
+  return postJson('/api/structure/backtest/run', body)
+}
+
+/** GET /api/structure/backtest/{run_id} -- poll until status is DONE
+ * (or FAILED) to read the real computed metrics. */
+export async function fetchStructureBacktestRun(runId: string): Promise<StructureBacktestRun> {
+  return getJson<StructureBacktestRun>(`/api/structure/backtest/${encodeURIComponent(runId)}`)
+}
+
+/** GET /api/structure/optimize/{run_id} -- Phase 4 (2026-08-29). Reads
+ * back a cached optimizer result by default; pass forceRefresh to
+ * re-run the real (sampled) grid search. */
+export async function fetchStructureOptimize(
+  runId: string,
+  forceRefresh = false,
+): Promise<StructureOptimizeResult> {
+  const qs = forceRefresh ? '?refresh=1' : ''
+  return getJson<StructureOptimizeResult>(
+    `/api/structure/optimize/${encodeURIComponent(runId)}${qs}`,
+  )
 }
 
 /** GET /api/backtest/summary -- server-cached 90s, so client polling

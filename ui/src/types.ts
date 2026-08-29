@@ -530,6 +530,94 @@ export interface StructureUniverseRow {
 }
 export type StructureUniverseMap = Record<string, StructureUniverseRow>
 
+/** GET/POST /api/structure/backtest/* -- "Structure & Breakout Suite"
+ * Phase 3 (2026-08-29) real historical replay metrics. `overview` (and
+ * every `by_*` breakdown entry) shares this same shape -- see
+ * api.structure_backtest.summarize_trades()'s own docstring for exactly
+ * what each field means and why Net P&L is R-multiple-primary. */
+export interface StructureBacktestMetricsGroup {
+  trade_count: number
+  reason?: string
+  win_rate_pct?: number
+  net_pnl_r?: number
+  net_pnl_per_unit?: number
+  profit_factor?: number | null
+  profit_factor_note?: string | null
+  avg_win_r?: number | null
+  avg_loss_r?: number | null
+  avg_r?: number
+  expectancy_r?: number
+  max_drawdown_r?: number
+  max_consecutive_losses?: number
+  sharpe?: { n: number; mean: number | null; std: number | null; sharpe: number | null; skew: number | null; kurtosis: number | null }
+  exit_reason_breakdown?: Record<string, number>
+}
+
+export interface StructureBacktestRun {
+  available: boolean
+  reason?: string
+  run_id: string
+  status: 'RUNNING' | 'DONE' | 'FAILED'
+  error?: string | null
+  symbols: string[]
+  timeframes: string[]
+  start_date: string
+  end_date: string
+  side: 'LONG_ONLY' | 'SHORT_ONLY' | 'BOTH'
+  requested_at?: string
+  completed_at?: string | null
+  metrics?: {
+    overview: StructureBacktestMetricsGroup
+    by_symbol: Record<string, StructureBacktestMetricsGroup>
+    by_timeframe: Record<string, StructureBacktestMetricsGroup>
+    by_setup_quality: Record<string, StructureBacktestMetricsGroup>
+    bars_available: Record<string, { daily_bars: number; intraday_1m_bars: number }>
+  } | null
+}
+
+/** GET /api/structure/optimize/{run_id} -- Phase 4 (2026-08-29). Never
+ * "perfect"/"guaranteed" -- `disclaimer` carries the same real text the
+ * backend returns verbatim, same convention as StructureSignal's own. */
+export interface StructureOptimizedProfile {
+  params: {
+    min_setup_quality: number
+    min_bias_edge: number
+    fast_trigger_lookback: number
+    atr_breakout_buffer: number
+    strict_stop_max_atr: number
+    tp1_r: number
+    tp2_r: number
+    tp3_r: number
+    trade_mode: string
+    trigger_source: string
+  }
+  train_metrics: StructureBacktestMetricsGroup
+  test_metrics: StructureBacktestMetricsGroup
+  consistency_symbols: number
+  consistency_timeframes: number
+  overfit_gap_r: number | null
+  confidence: 'LOW' | 'MEDIUM' | 'HIGH'
+  robustness_score: number
+  rejected: boolean
+  rejection_reasons: string[]
+  rank?: number | null
+}
+
+export interface StructureOptimizeResult {
+  available: boolean
+  reason?: string
+  cached?: boolean
+  run_id?: string
+  full_grid_size?: number
+  sampled_combinations?: number
+  recommended: StructureOptimizedProfile | null
+  candidates: StructureOptimizedProfile[]
+  rejected_count?: number
+  survivor_count?: number
+  note: string
+  disclaimer: string
+}
+
 /** One leg inside a RankedStrategy's `legs` array
  * (api/options_strategies.py's `_leg()`). */
 export interface StrategyLeg {

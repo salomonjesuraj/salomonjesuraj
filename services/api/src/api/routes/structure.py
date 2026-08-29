@@ -26,9 +26,16 @@ from aiohttp import web
 from api.structure_backtest import (
     CostAssumptions,
     Side,
+    _date_to_ts,
     create_backtest_run,
     get_backtest_run,
     run_structure_backtest,
+)
+from api.structure_optimize import (
+    DEFAULT_MAX_COMBINATIONS,
+    get_cached_optimize_result,
+    optimize_structure_backtest,
+    persist_optimized_profiles,
 )
 from api.structure_signal import (
     TIMEFRAME_MINUTES,
@@ -244,3 +251,69 @@ async def structure_backtest_get(request: web.Request) -> web.Response:
     if run is None:
         return web.json_response({"available": False, "reason": f"No run found for {run_id!r}."})
     return web.json_response({"available": True, **run})
+
+
+@routes.get("/api/structure/optimize/{run_id}")
+async def structure_optimize_get(request: web.Request) -> web.Response:
+    """Runs (or, by default, reads back a previously-persisted) Phase 4
+    optimizer search over the given backtest run's own symbols/
+    timeframes/side/date-range/costs -- see api.structure_optimize's
+    own module docstring for the real, disclosed compute constraint
+    that makes a sampled search (not the full 18,000-combination grid)
+    the honest choice here. ?refresh=1 forces a fresh search even when
+    a cached result already exists; ?max_combinations= overrides the
+    real default cap."""
+    pg_pool = request.app.get("pg_pool")
+    if not pg_pool:
+        return web.json_response(
+            {"available": False, "reason": "Postgres analytics pool is not available."}
+        )
+    run_id = request.match_info["run_id"]
+    run = await get_backtest_run(pg_pool, run_id)
+    if run is None:
+        return web.json_response({"available": False, "reason": f"No run found for {run_id!r}."})
+    if run["status"] != "DONE":
+        return web.json_response(
+            {
+                "available": False,
+                "reason": f"Run {run_id!r} is not DONE yet (status={run['status']!r}) -- optimize needs a completed backtest to know its real symbol/timeframe/date scope.",
+            }
+        )
+
+    refresh = request.query.get("refresh") == "1"
+    if not refresh:
+        cached = await get_cached_optimize_result(pg_pool, run_id)
+        if cached is not None:
+            return web.json_response(
+                {"available": True, "cached": True, "run_id": run_id, **cached}
+            )
+
+    try:
+        max_combinations = int(request.query.get("max_combinations", DEFAULT_MAX_COMBINATIONS))
+    except (TypeError, ValueError):
+        max_combinations = DEFAULT_MAX_COMBINATIONS
+    max_combinations = max(1, min(max_combinations, 2000))
+
+    redis = request.app["redis"]
+    start_date = dt.date.fromisoformat(run["start_date"])
+    end_date = dt.date.fromisoformat(run["end_date"])
+    cost_body = run.get("cost_assumptions") or {}
+    costs = CostAssumptions(
+        slippage_bps=float(cost_body.get("slippage_bps", CostAssumptions().slippage_bps)),
+        brokerage_per_trade=float(
+            cost_body.get("brokerage_per_trade", CostAssumptions().brokerage_per_trade)
+        ),
+    )
+
+    result = await optimize_structure_backtest(
+        redis,
+        symbols=run["symbols"],
+        timeframes=run["timeframes"],
+        side=cast(Side, run["side"]),
+        start_ts=_date_to_ts(start_date),
+        end_ts=_date_to_ts(end_date, end_of_day=True),
+        costs=costs,
+        max_combinations=max_combinations,
+    )
+    await persist_optimized_profiles(pg_pool, run_id, result)
+    return web.json_response({"available": True, "cached": False, "run_id": run_id, **result})

@@ -324,6 +324,20 @@ async def _replay_symbol_timeframe(
     open_position: _OpenPosition | None = None
 
     for i in range(MIN_WARMUP_BARS, len(bars)):
+        # Real production issue found via this sprint's own live
+        # verification: this loop (and compute_structure_signal_from_bars
+        # inside it) is entirely synchronous CPU work with no `await` of
+        # its own. Without a periodic voluntary yield, a single replay --
+        # let alone the optimizer's dozens of them back-to-back -- starves
+        # aiohttp's single-threaded event loop for its ENTIRE duration
+        # (confirmed live: other concurrent requests, e.g. the dashboard's
+        # own market-indices polling, returned 502/504 for the ~90s a
+        # real 60-combination optimize call ran). `asyncio.sleep(0)` is
+        # the standard, minimal fix -- hands control back to the loop
+        # after every chunk of bars so other requests keep being served,
+        # without the larger refactor a process-pool executor would need.
+        if i % 20 == 0:
+            await asyncio.sleep(0)
         bar = bars[i]
         bar_time = float(bar["time"])
 

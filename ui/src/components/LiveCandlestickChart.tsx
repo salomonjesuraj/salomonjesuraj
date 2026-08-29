@@ -26,7 +26,7 @@ import { usePolling } from '../hooks/usePolling'
 import { fetchSmcGeometry, fetchTradeBlueprint, type ChartInterval } from '../lib/api'
 import { CHART_BEAR, CHART_BULL } from '../lib/chartTheme'
 import { useUiEngineStore } from '../store/useUiEngineStore'
-import type { ChartBar } from '../types'
+import type { ChartBar, StructureSignal } from '../types'
 
 // "TradingView Parity" sprint (2026-08-29): the NSE session (09:15-
 // 15:30) is defined in IST -- this chart must read in IST regardless of
@@ -118,6 +118,18 @@ const TARGET_ZONE_COLOR = '#fbbf24' // matches --color-horizon-btst
 // a lighter-weight, deliberately less assertive line on the chart.
 const TRENDLINE_BULLISH_COLOR = '#4ade80' // Tailwind green-400
 const TRENDLINE_BEARISH_COLOR = '#f87171' // Tailwind red-400
+
+// "Structure & Breakout Suite" Phase 4 (2026-08-29) -- the structure
+// signal's own trigger/entry/SL/TP1-3 lines are a DIFFERENT real
+// position than whatever useActivePosition/brokerPosition resolves
+// (Effect 3 below): a symbol can have both a real open broker position
+// AND a live structure-signal reading at once, and conflating their
+// lines would misrepresent one as the other. Amber for the breakout
+// trigger (matches SWEEP_MARKER_COLOR's own "not yet resolved either
+// way" amber convention); entry/SL/TP1-3 reuse the same white/red/
+// bull-or-bear-by-direction convention Effect 3's own broker-position
+// lines already establish for the same real concepts.
+const STRUCT_TRIGGER_LINE_COLOR = '#f59e0b' // Tailwind amber-400, matches SWEEP_MARKER_COLOR
 
 const ENTRY_LINE_COLOR = '#FFFFFF'
 const CHANNEL_LINE_COLOR = '#6b7684' // matches --color-hud-muted -- deliberately
@@ -232,6 +244,15 @@ interface LiveCandlestickChartProps {
   // might be embedded in. Defaults to '1m', matching every caller from
   // before this prop existed.
   interval?: ChartInterval
+  // "Structure & Breakout Suite" Phase 4 (2026-08-29) -- when provided,
+  // draws the real structure signal's own BUY ABOVE/SELL BELOW trigger
+  // line, entry/SL/TP1-3 (once its own candle has confirmed), and its
+  // momentum/breakout markers directly on this chart. Optional and
+  // independent of brokerPosition/activePosition above -- a symbol can
+  // have both a real open position AND a live structure-signal reading
+  // showing at once. null/undefined draws none of it, same as every
+  // other optional overlay this component already has.
+  structureSignal?: StructureSignal | null
 }
 
 /** Live 1-min candlestick chart for the Sniper HUD (2026-08-27 charting
@@ -259,6 +280,7 @@ export function LiveCandlestickChart({
   heightClassName = 'h-80',
   brokerPosition,
   interval = '1m',
+  structureSignal,
 }: LiveCandlestickChartProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
@@ -291,6 +313,23 @@ export function LiveCandlestickChart({
   // above). Created lazily (on first real trendline data), since unlike
   // the candle/volume series this one doesn't always exist.
   const trendlineSeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
+  // "Structure & Breakout Suite" Phase 4 (2026-08-29) -- the structure
+  // signal's own 6 price lines, independent of Effect 3's broker-
+  // position lines (see structureSignal's own prop comment above).
+  const structTriggerLineRef = useRef<IPriceLine | null>(null)
+  const structEntryLineRef = useRef<IPriceLine | null>(null)
+  const structSlLineRef = useRef<IPriceLine | null>(null)
+  const structTp1LineRef = useRef<IPriceLine | null>(null)
+  const structTp2LineRef = useRef<IPriceLine | null>(null)
+  const structTp3LineRef = useRef<IPriceLine | null>(null)
+  // Effect 5's own SMC markers (BOS/CHOCH/sweep) and Effect 6's new
+  // structure-signal markers (momentum/breakout) both draw onto the ONE
+  // real markers plugin lightweight-charts allows per series -- each
+  // effect owns its own half of the combined set in its own ref and
+  // calls applyMarkers() (below) to merge+redraw both together, so
+  // neither effect's own update ever silently erases the other's.
+  const smcMarkersRef = useRef<SeriesMarker<Time>[]>([])
+  const structMarkersRef = useRef<SeriesMarker<Time>[]>([])
   // Perfect-fit, once per symbol/interval: fitContent() already runs
   // once when bars first load (Effect 2 below); this fires it ONE more
   // time after the SMC markers/trendline first arrive for this same
@@ -301,6 +340,19 @@ export function LiveCandlestickChart({
   // routine refresh, undoing Effect 2's own careful update()-not-
   // setData() UX.
   const hasFitSmcRef = useRef(false)
+
+  // Merges smcMarkersRef + structMarkersRef and redraws the one real
+  // marker set the plugin owns -- see structMarkersRef's own comment
+  // above for why neither ref's owning effect calls setMarkers()
+  // directly. lightweight-charts requires markers sorted ascending by
+  // time, same requirement Effect 5 already honored on its own before
+  // this merge existed.
+  function applyMarkers(): void {
+    const merged = [...smcMarkersRef.current, ...structMarkersRef.current].sort(
+      (a, b) => (a.time as number) - (b.time as number),
+    )
+    markersPluginRef.current?.setMarkers(merged)
+  }
 
   const { bars, loading, error } = useHistoricalData(symbol, interval)
   const journalPosition = useActivePosition(symbol)
@@ -423,6 +475,14 @@ export function LiveCandlestickChart({
       obBearishLineRef.current = null
       targetT2LineRef.current = null
       trendlineSeriesRef.current = null
+      structTriggerLineRef.current = null
+      structEntryLineRef.current = null
+      structSlLineRef.current = null
+      structTp1LineRef.current = null
+      structTp2LineRef.current = null
+      structTp3LineRef.current = null
+      smcMarkersRef.current = []
+      structMarkersRef.current = []
     }
   }, [])
 
@@ -453,10 +513,19 @@ export function LiveCandlestickChart({
       if (obBullishLineRef.current) candleSeries.removePriceLine(obBullishLineRef.current)
       if (obBearishLineRef.current) candleSeries.removePriceLine(obBearishLineRef.current)
       if (targetT2LineRef.current) candleSeries.removePriceLine(targetT2LineRef.current)
+      if (structTriggerLineRef.current) candleSeries.removePriceLine(structTriggerLineRef.current)
+      if (structEntryLineRef.current) candleSeries.removePriceLine(structEntryLineRef.current)
+      if (structSlLineRef.current) candleSeries.removePriceLine(structSlLineRef.current)
+      if (structTp1LineRef.current) candleSeries.removePriceLine(structTp1LineRef.current)
+      if (structTp2LineRef.current) candleSeries.removePriceLine(structTp2LineRef.current)
+      if (structTp3LineRef.current) candleSeries.removePriceLine(structTp3LineRef.current)
     }
-    // The old symbol's BOS/CHOCH/sweep markers and trendline likewise
-    // belong to a different instrument/timeframe -- clear immediately
-    // rather than leaving stale ones up until the new SMC poll lands.
+    // The old symbol's BOS/CHOCH/sweep/structure-signal markers and
+    // trendline likewise belong to a different instrument/timeframe --
+    // clear immediately rather than leaving stale ones up until the
+    // next SMC/structure-signal poll lands.
+    smcMarkersRef.current = []
+    structMarkersRef.current = []
     markersPluginRef.current?.setMarkers([])
     trendlineSeriesRef.current?.setData([])
     hasFitSmcRef.current = false
@@ -470,6 +539,12 @@ export function LiveCandlestickChart({
     obBullishLineRef.current = null
     obBearishLineRef.current = null
     targetT2LineRef.current = null
+    structTriggerLineRef.current = null
+    structEntryLineRef.current = null
+    structSlLineRef.current = null
+    structTp1LineRef.current = null
+    structTp2LineRef.current = null
+    structTp3LineRef.current = null
   }, [symbol, interval])
 
   // Effect 2: bind fetched bars into the series. "Black Screen Crash"
@@ -608,7 +683,8 @@ export function LiveCandlestickChart({
     if (!candleSeries || !markersPlugin) return
 
     if (!smc?.ready) {
-      markersPlugin.setMarkers([])
+      smcMarkersRef.current = []
+      applyMarkers()
     } else {
       type RawEvent =
         | { kind: 'bos'; time: number; direction: 'bullish' | 'bearish'; label: string }
@@ -644,7 +720,8 @@ export function LiveCandlestickChart({
               text: 'SW',
             },
       )
-      markersPlugin.setMarkers(markers)
+      smcMarkersRef.current = markers
+      applyMarkers()
     }
 
     syncPriceLine(candleSeries, obBullishLineRef, smc?.ready ? smc.order_block_bullish?.high : null, {
@@ -716,6 +793,105 @@ export function LiveCandlestickChart({
       hasFitSmcRef.current = true
     }
   }, [smc])
+
+  // Effect 6: "Structure & Breakout Suite" Phase 4 (2026-08-29) -- the
+  // real on-canvas drawing this phase's own review found missing
+  // (Phase 1/2 only ever rendered status chips beside the chart). Draws
+  // directly from the `structureSignal` prop, independent of Effect 3's
+  // broker-position lines and Effect 5's own SMC markers -- see
+  // structureSignal's own prop comment and structMarkersRef's own
+  // comment above for why these don't overwrite either.
+  //
+  // BUY ABOVE/SELL BELOW is the one line always shown once a real
+  // trigger price exists; entry/SL/TP1-3 only draw once the signal's
+  // own breakout candle has actually confirmed (trade_readiness ===
+  // BUY_ARMED/SELL_ARMED) -- a real, computed level, not the trigger
+  // guessed forward. Momentum uses a circle marker with a diamond glyph
+  // (lightweight-charts v5 has no native diamond shape -- same "shape +
+  // text glyph" approach Effect 5's own BOS/CHOCH markers already use
+  // for their own text) at the LAST closed bar; breakout uses the real
+  // directional arrow shape (arrowUp/arrowDown -- already literally
+  // triangle-shaped) with a triangle glyph, matching direction + color
+  // the same way Effect 5's own BOS markers do.
+  useEffect(() => {
+    const candleSeries = candleSeriesRef.current
+    if (!candleSeries) return
+
+    const bullish = structureSignal?.dominant_bias === 'BULLISH'
+    const tpColor = bullish ? CHART_BULL : CHART_BEAR
+
+    syncPriceLine(candleSeries, structTriggerLineRef, structureSignal?.trigger_price, {
+      color: STRUCT_TRIGGER_LINE_COLOR,
+      lineWidth: 2,
+      lineStyle: LineStyle.Dashed,
+      title: structureSignal?.trigger_side === 'SELL_BELOW' ? 'SELL BELOW' : 'BUY ABOVE',
+    })
+
+    const confirmed =
+      structureSignal?.candle_confirmed &&
+      (structureSignal.trade_readiness === 'BUY_ARMED' ||
+        structureSignal.trade_readiness === 'SELL_ARMED')
+    syncPriceLine(candleSeries, structEntryLineRef, confirmed ? structureSignal?.entry : null, {
+      color: ENTRY_LINE_COLOR,
+      lineWidth: 1,
+      lineStyle: LineStyle.Dashed,
+      title: 'STRUCT ENTRY',
+    })
+    syncPriceLine(candleSeries, structSlLineRef, confirmed ? structureSignal?.sl : null, {
+      color: CHART_BEAR,
+      lineWidth: 2,
+      lineStyle: LineStyle.Solid,
+      title: 'STRUCT SL',
+    })
+    syncPriceLine(candleSeries, structTp1LineRef, confirmed ? structureSignal?.tp1 : null, {
+      color: tpColor,
+      lineWidth: 1,
+      lineStyle: LineStyle.Dashed,
+      title: 'STRUCT TP1',
+    })
+    syncPriceLine(candleSeries, structTp2LineRef, confirmed ? structureSignal?.tp2 : null, {
+      color: tpColor,
+      lineWidth: 1,
+      lineStyle: LineStyle.Dashed,
+      title: 'STRUCT TP2',
+    })
+    syncPriceLine(candleSeries, structTp3LineRef, confirmed ? structureSignal?.tp3 : null, {
+      color: tpColor,
+      lineWidth: 2,
+      lineStyle: LineStyle.Solid,
+      title: 'STRUCT TP3',
+    })
+
+    // Markers anchor to the last real closed bar this chart actually has
+    // -- the structure signal is a "right now" read, not tied to a
+    // specific historical event the way a BOS/CHOCH break is.
+    const lastBarTime = lastBarTimeRef.current
+    const markers: SeriesMarker<Time>[] = []
+    if (lastBarTime !== null && structureSignal) {
+      if (structureSignal.visual_markers.momentum_diamond) {
+        const diamondBullish = structureSignal.visual_markers.momentum_diamond === 'GREEN'
+        markers.push({
+          time: lastBarTime as UTCTimestamp,
+          position: diamondBullish ? 'belowBar' : 'aboveBar',
+          color: diamondBullish ? CHART_BULL : CHART_BEAR,
+          shape: 'circle',
+          text: '◆',
+        })
+      }
+      if (structureSignal.visual_markers.breakout_triangle) {
+        const triangleBullish = structureSignal.visual_markers.breakout_triangle === 'GREEN'
+        markers.push({
+          time: lastBarTime as UTCTimestamp,
+          position: triangleBullish ? 'belowBar' : 'aboveBar',
+          color: triangleBullish ? CHART_BULL : CHART_BEAR,
+          shape: triangleBullish ? 'arrowUp' : 'arrowDown',
+          text: triangleBullish ? '▲' : '▼',
+        })
+      }
+    }
+    structMarkersRef.current = markers
+    applyMarkers()
+  }, [structureSignal])
 
   // "Black Screen Crash" fix (2026-08-29): an empty/blank symbol prop
   // (belt-and-suspenders -- every real call site already guards this
