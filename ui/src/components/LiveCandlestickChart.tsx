@@ -456,7 +456,32 @@ export function LiveCandlestickChart({
     }
 
     return () => {
-      chartRef.current?.remove()
+      try {
+        chartRef.current?.remove()
+      } catch (err) {
+        // Real, live bug (2026-08-31): switching symbols on
+        // /analytics?symbol=OBEROIRLTY threw "Failed to execute
+        // 'removeChild' on 'Node': the node to be removed is not a
+        // child of this node" out of THIS cleanup -- with `autoSize:
+        // true`, lightweight-charts attaches its own ResizeObserver to
+        // `container`; the parent Chart ErrorBoundary above is keyed on
+        // `activeSymbol` (see OptionsAnalytics.tsx), so a symbol switch
+        // unmounts this whole subtree, and that observer can still fire
+        // (or lightweight-charts' own internal teardown can still run)
+        // in the brief window after React has already detached
+        // `container` from the document but before this cleanup's own
+        // chart.remove() call finishes -- a benign DOM-timing race, not
+        // a real data/render bug. Because it's thrown from a cleanup
+        // running as PART of this keyed subtree's own unmount, the
+        // nearest boundary that can catch it is the page-level "Options
+        // Analytics" one, not the "Chart" one built specifically to
+        // contain exactly this kind of failure -- taking the ENTIRE
+        // page down over a chart that was already being thrown away.
+        // Swallowed here (never silently ignored -- logged) rather than
+        // letting a teardown-only race crash a page that has nothing
+        // left to actually render wrong.
+        console.warn('[LiveCandlestickChart] chart.remove() threw during unmount', err)
+      }
       chartRef.current = null
       candleSeriesRef.current = null
       volumeSeriesRef.current = null
